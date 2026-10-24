@@ -4,6 +4,7 @@
 import type {ModelPolicyModalController} from './useModelPolicyModalController'
 import {ErrorState} from '../../../../shared/ui/StateBlock'
 import {previewReasonLabel} from './policyModalPresentation'
+import {POLICY_PREVIEW_LABEL, policyPreviewState} from './policyPreviewStatus'
 
 type Props = {control: ModelPolicyModalController}
 
@@ -19,10 +20,8 @@ export function PolicyFormPreview({control}: Props) {
         lockoutAcknowledged, setLockoutAcknowledged, previewPending, pending,
         policyChangedExternally, handlePreview} = control
 
-    const statusLabel = previewPending ? 'Проверяется'
-        : currentPreview ? 'Проверено'
-            : policyPreview ? 'Требуется повторная проверка'
-                : previewError ? 'Ошибка проверки' : 'Не проверено'
+    const status = policyPreviewState({currentPreview, policyPreview, previewPending, previewError})
+    const statusLabel = POLICY_PREVIEW_LABEL[status]
 
     return (
         <div className="models-policy-check">
@@ -32,7 +31,7 @@ export function PolicyFormPreview({control}: Props) {
                     <p>Сервер оценит текущие настройки и покажет, какие модели доступны и почему отдельные варианты могут быть отклонены.
                         Проверка не отправляет пользовательский запрос нейросети.</p>
                 </div>
-                <span className="models-policy-check__status" role="status">{statusLabel}</span>
+                <span className={`models-policy-check__status models-policy-check__status--${status}`} role="status">{statusLabel}</span>
             </div>
 
             <section className="models-policy-check__criteria" aria-label="Параметры проверки">
@@ -82,8 +81,11 @@ export function PolicyFormPreview({control}: Props) {
 
             {currentPreview && (
                 <section className={'models-policy-form__preview ' +
-                    (currentPreview.wouldLockOutOrganization
-                        ? 'models-policy-form__preview--danger' : 'models-policy-form__preview--ok')}
+                    (status === 'blocked'
+                        ? 'models-policy-form__preview--danger'
+                        : status === 'restricted'
+                            ? 'models-policy-form__preview--warning'
+                            : 'models-policy-form__preview--ok')}
                          aria-label="Результат серверной проверки" aria-live="polite">
                     <div className="models-policy-form__preview-summary">
                         <div>
@@ -100,18 +102,30 @@ export function PolicyFormPreview({control}: Props) {
                         </span>
                     </div>
 
-                    <div className="models-policy-form__preview-list">
+                    <div className="models-policy-form__preview-list" aria-label="Результаты проверки моделей">
                         {currentPreview.models.map(item => (
-                            <div key={`${item.modelKey}:${item.catalogVersion}`} className="models-policy-form__preview-row">
-                                <code>{item.modelKey}</code>
-                                <span>v{item.catalogVersion}{' · '}{item.outcome === 'ALLOWED' ? 'Разрешено' : 'Отклонено'}</span>
-                                <small>
-                                    {item.reason ? previewReasonLabel(item.reason) : 'Проходит все проверки'}
-                                    {' · '}Лимиты: {item.effectiveInputLimit.toLocaleString('ru-RU')}
-                                    {' / '}{item.effectiveOutputLimit.toLocaleString('ru-RU')}
-                                    {' · '}{item.pricingComplete ? 'Тариф подтверждён' : 'Данные о стоимости неполные'}
-                                </small>
-                            </div>
+                            <article key={`${item.modelKey}:${item.catalogVersion}`}
+                                     className="models-policy-form__preview-row models-policy-check__model-result">
+                                <div className="models-policy-check__model-heading">
+                                    <div className="models-policy-check__model-id">
+                                        <code>{item.modelKey}</code>
+                                        <small>Версия модели в каталоге: {item.catalogVersion}</small>
+                                    </div>
+                                    <span className={`models-policy-check__model-outcome models-policy-check__model-outcome--${item.outcome.toLowerCase()}`}>
+                                        {item.outcome === 'ALLOWED' ? 'Доступ разрешён' : 'Доступ отклонён'}
+                                    </span>
+                                </div>
+                                <div className="models-policy-check__model-reason">
+                                    <strong>{item.reason ? 'Причина отклонения' : 'Результат проверки'}</strong>
+                                    <span>{item.reason ? previewReasonLabel(item.reason) : 'Модель соответствует проверенным правилам.'}</span>
+                                </div>
+                                <div className="models-policy-check__model-facts">
+                                    <div><small>Лимиты токенов · вход / выход</small>
+                                        <strong>{item.effectiveInputLimit.toLocaleString('ru-RU')} / {item.effectiveOutputLimit.toLocaleString('ru-RU')}</strong></div>
+                                    <div><small>Стоимость · сведения каталога</small>
+                                        <strong>{item.pricingComplete ? 'Данные о стоимости полные' : 'Данные о стоимости неполные'}</strong></div>
+                                </div>
+                            </article>
                         ))}
                         {currentPreview.models.length === 0 && (
                             <p className="models-policy-check__no-models">В результате проверки нет моделей для отображения.</p>

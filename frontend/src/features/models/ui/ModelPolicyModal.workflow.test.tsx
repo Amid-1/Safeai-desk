@@ -125,6 +125,7 @@ describe('Правила моделей — перенос и проверка',
         mount()
         fireEvent.click(screen.getByRole('tab', {name: /Требования к данным/}))
         // Existing metadata remains unchanged, only administrator messaging changes.
-        expect(screen.getAllByText(/NOT_DECLARED/).length).toBeGreaterThan(0)
+        expect(screen.getByText(/Отсутствие сведений не считается подтверждением/)).toBeInTheDocument()
+        expect(screen.queryByText(/NOT_DECLARED/)).not.toBeInTheDocument()
     })
 })

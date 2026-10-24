@@ -1,7 +1,8 @@
 // frontend/src/features/models/ui/modelPolicyModal/useModelPolicyModalController.ts
 // Контроллер черновика, проверки на сервере и безопасного сохранения.
 
-import {useEffect, useId, useMemo, useRef, useState} from 'react'
+import {useCallback, useEffect, useId, useMemo, useRef, useState} from 'react'
+import type {Dispatch, SetStateAction} from 'react'
 import type {
     CreateOrganizationModelPolicyVersionRequest,
     ModelPolicyPreview,
@@ -42,16 +43,22 @@ export function useModelPolicyModalController({
     const formId =
         useId()
 
-    const [
-        draft,
-        setDraft,
-    ] =
-        useState<PolicyDraft>(
-            () =>
-                createPolicyDraft(
-                    policy,
-                ),
-        )
+    // Every real edit advances a monotonic revision, including A -> B -> A.
+    // Comparing JSON alone would incorrectly revive an obsolete server preview.
+    const [draftState, setDraftState] = useState(() => ({
+        value: createPolicyDraft(policy),
+        revision: 0,
+    }))
+    const draft = draftState.value
+    const draftRevision = draftState.revision
+    const setDraft: Dispatch<SetStateAction<PolicyDraft>> = useCallback((update) => {
+        setDraftState((previous) => {
+            const next = typeof update === 'function' ? update(previous.value) : update
+            return JSON.stringify(next) === JSON.stringify(previous.value)
+                ? previous
+                : {value: next, revision: previous.revision + 1}
+        })
+    }, [])
 
     const [initialDraftFingerprint] =
         useState(() =>
@@ -77,6 +84,7 @@ export function useModelPolicyModalController({
         previewFingerprint,
         setPreviewFingerprint,
     ] = useState('')
+    const [verifiedDraftRevision, setVerifiedDraftRevision] = useState<number | null>(null)
 
     const [
         previewPending,
@@ -190,11 +198,13 @@ export function useModelPolicyModalController({
         ),
     })
     const [verifiedContextFingerprint, setVerifiedContextFingerprint] = useState('')
+    const contextGenerationRef = useRef(0)
 
     // Повторная версия политики делает прежний preview недействительным,
     // даже если текст черновика не изменился.
     const currentPreview =
         previewFingerprint === draftFingerprint
+        && verifiedDraftRevision === draftRevision
         && verifiedContextFingerprint === previewContextFingerprint
         && !policyChangedExternally
         && policyPreview?.organizationId === policy.organizationId
@@ -242,7 +252,17 @@ export function useModelPolicyModalController({
     useEffect(() => {
         setPreviewError('')
         setLockoutAcknowledged(false)
-    }, [draftFingerprint, previewContextFingerprint])
+    }, [draftRevision, previewContextFingerprint])
+
+    // A changed runtime/catalog invalidates the issued preview permanently,
+    // even if those props later happen to return to their previous values.
+    // The exact fingerprint check above closes the render-to-effect gap.
+    useEffect(() => {
+        contextGenerationRef.current += 1
+        // Keep the previous response as a visible *stale* result, never current.
+        setVerifiedDraftRevision(null)
+        setVerifiedContextFingerprint('')
+    }, [previewContextFingerprint])
 
     const isDirty =
         draftFingerprint !== initialDraftFingerprint
@@ -332,13 +352,16 @@ export function useModelPolicyModalController({
         }
 
         const fingerprint = draftFingerprint
+        const revision = draftRevision
         const contextFingerprint = previewContextFingerprint
+        const contextGeneration = contextGenerationRef.current
         setActiveSection('preview')
         previewInFlightRef.current = true
         setPreviewPending(true)
         // Hide the previous decision while a new server evaluation is in flight.
         setPolicyPreview(null)
         setPreviewFingerprint('')
+        setVerifiedDraftRevision(null)
         setVerifiedContextFingerprint('')
         setPreviewError('')
         setLockoutAcknowledged(false)
@@ -348,6 +371,7 @@ export function useModelPolicyModalController({
         const invalidatePreview = (message: string): void => {
             setPolicyPreview(null)
             setPreviewFingerprint('')
+            setVerifiedDraftRevision(null)
             setVerifiedContextFingerprint('')
             setPreviewError(message)
         }
@@ -357,6 +381,11 @@ export function useModelPolicyModalController({
 
             // Не допускаем использования проверки другой организации,
             // версии правил или состояния включения для текущего черновика.
+            if (contextGenerationRef.current !== contextGeneration) {
+                invalidatePreview('Подключение или каталог изменились во время проверки. Запустите проверку заново.')
+                return
+            }
+
             if (
                 result.organizationId !== policy.organizationId
                 || result.basePolicyVersion !== policy.version
@@ -372,6 +401,7 @@ export function useModelPolicyModalController({
 
             setPolicyPreview(result)
             setPreviewFingerprint(fingerprint)
+            setVerifiedDraftRevision(revision)
             setVerifiedContextFingerprint(contextFingerprint)
         } catch (failure) {
             invalidatePreview(
@@ -434,13 +464,13 @@ export function useModelPolicyModalController({
     const versionMessage =
         policy.configured
             ? (
-                `Сейчас действует версия ${policy.version}. `
-                + `После сохранения появится версия ${policy.version + 1}; `
-                + 'предыдущая останется неизменной.'
+                `Действующие правила организации: версия ${policy.version}. `
+                + `При успешном сохранении будет создана версия ${policy.version + 1}. `
+                + 'Предыдущая версия сохранится в истории.'
             )
             : (
                 'Это первая настройка правил. '
-                + 'После сохранения появится версия 1.'
+                + 'При успешном сохранении будет создана версия 1.'
             )
 
     const rulesStatusLabel =

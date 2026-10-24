@@ -228,13 +228,13 @@ describe('ModelPolicyModal production safety', () => {
             onSubmit={vi.fn<PolicySubmit>()}
         />)
         fireEvent.click(screen.getByRole('tab', {name: /Требования к данным/}))
-        const localTrainingWarning = screen.getByText('Несовместимость с требованием запрета обучения')
+        const localTrainingWarning = screen.getByText('Запрет обучения не подтверждён')
             .closest('.models-policy-form__warning')
         expect(localTrainingWarning).toHaveTextContent(
-            'Несовместимость с требованием запрета обучения',
+            'Запрет обучения не подтверждён',
         )
         expect(localTrainingWarning).toHaveTextContent(
-            'Проверьте черновик на сервере',
+            'откройте вкладку «Проверка»',
         )
         expect(localTrainingWarning)
             .not.toHaveClass('models-policy-form__warning--danger')
@@ -249,28 +249,28 @@ describe('ModelPolicyModal production safety', () => {
             'models-policy-form__warning--danger',
         )
         expect(confirmedTrainingLockout).toHaveTextContent(
-            'Правила блокируют доступные модели',
+            'Сервер подтвердил блокировку модели',
         )
         expect(confirmedTrainingLockout).toHaveTextContent(
             'Серверная проверка подтвердила блокировку',
         )
         expect(confirmedTrainingLockout).toHaveTextContent(ENTRY.modelKey)
         expect(confirmedTrainingLockout).toHaveTextContent(
-            'Исполняемых моделей: 0',
+            'Доступных для выполнения моделей: 0',
         )
         expect(confirmedTrainingLockout).not.toHaveTextContent(
-            'Проверьте черновик на сервере',
+            'откройте вкладку «Проверка»',
         )
 
         expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({
             enabled: true, requireNoTraining: true, budgetEnforcement: 'SOFT',
         }))
         fireEvent.click(screen.getByRole('checkbox', {name: 'Правила включены'}))
-        expect(screen.getByText('При включении правил возникнет несовместимость'))
+        expect(screen.getByText('При включении правил запрет обучения не будет подтверждён'))
             .toBeInTheDocument()
-        expect(screen.queryByText(/Исполняемых моделей: 0/)).not.toBeInTheDocument()
+        expect(screen.queryByText(/Доступных для выполнения моделей: 0|Исполняемых моделей: 0/)).not.toBeInTheDocument()
         fireEvent.click(screen.getByRole('checkbox', {name: /Не использовать данные для обучения/}))
-        expect(screen.queryByText('При включении правил возникнет несовместимость'))
+        expect(screen.queryByText('При включении правил запрет обучения не будет подтверждён'))
             .not.toBeInTheDocument()
     })
 
@@ -288,7 +288,7 @@ describe('ModelPolicyModal production safety', () => {
                 onPreview={unusedPreview}
                 onSubmit={vi.fn<PolicySubmit>()}
             />)
-            expect(screen.queryByText('Несовместимость с требованием запрета обучения'))
+            expect(screen.queryByText('Запрет обучения не подтверждён'))
                 .not.toBeInTheDocument()
         },
     )

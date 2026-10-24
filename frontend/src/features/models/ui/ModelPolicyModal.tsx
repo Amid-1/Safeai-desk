@@ -12,6 +12,7 @@ import {PolicyFormSelectors} from './modelPolicyModal/PolicyFormSelectors'
 import {PolicyFormSettings} from './modelPolicyModal/PolicyFormSettings'
 import {PolicyFormRequirements} from './modelPolicyModal/PolicyFormRequirements'
 import {PolicyFormTabs} from './modelPolicyModal/PolicyFormTabs'
+import {policyPreviewState} from './modelPolicyModal/policyPreviewStatus'
 import './ModelControlPlaneModalShell.css'
 import './ModelPolicyModal.css'
 import './ModelPolicyProductionEnhancements.css'
@@ -42,16 +43,22 @@ function ModelPolicyModalSession(props: ModelPolicyModalProps) {
     const {
         formId, isDirty, previewPending, handlePreview, handleSubmit,
         requestClose, activeSection, setActiveSection,
-        formError, versionMessage, draft, currentPreview, policyPreview,
+        formError, versionMessage, draft, currentPreview, policyPreview, previewError,
         policyChangedExternally,
     } = control
 
+    const previewStatus = policyPreviewState({currentPreview, policyPreview, previewPending, previewError})
+
     const footer = (
         <div className="models-policy-modal__footer">
-            <span className="models-policy-modal__footer-status" role="status">
-                {isDirty ? 'Есть несохранённые изменения' : 'Изменений нет'}
-                {draft.enabled && !currentPreview && ' · Требуется актуальная проверка'}
-            </span>
+            <div className="models-policy-modal__footer-status" role="status">
+                <span className="models-policy-modal__draft-indicator">
+                    {isDirty ? 'Есть несохранённые изменения' : 'Изменений нет'}
+                </span>
+                {draft.enabled && !currentPreview && (
+                    <span className="models-policy-modal__check-indicator">Требуется актуальная проверка</span>
+                )}
+            </div>
             <button
                 type="button"
                 disabled={pending || previewPending || policyChangedExternally}
@@ -137,8 +144,7 @@ function ModelPolicyModalSession(props: ModelPolicyModalProps) {
                     selected={activeSection}
                     onSelect={setActiveSection}
                     panels={panels}
-                    previewStale={policyPreview !== null && currentPreview === null}
-                    previewReady={currentPreview !== null}
+                    previewStatus={previewStatus}
                 />
             </form>
         </Modal>

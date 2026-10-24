@@ -3,6 +3,8 @@
 
 import {useRef} from 'react'
 import type {KeyboardEvent, ReactNode} from 'react'
+import {POLICY_PREVIEW_LABEL} from './policyPreviewStatus'
+import type {PolicyPreviewState} from './policyPreviewStatus'
 
 export const POLICY_TABS = ['access', 'limits', 'budget', 'data', 'preview'] as const
 export type PolicyTab = typeof POLICY_TABS[number]
@@ -20,11 +22,10 @@ type Props = {
     selected: PolicyTab
     onSelect: (tab: PolicyTab) => void
     panels: Readonly<Record<PolicyTab, ReactNode>>
-    previewStale?: boolean
-    previewReady?: boolean
+    previewStatus?: PolicyPreviewState
 }
 
-export function PolicyFormTabs({formId, selected, onSelect, panels, previewStale, previewReady}: Props) {
+export function PolicyFormTabs({formId, selected, onSelect, panels, previewStatus = 'idle'}: Props) {
     const tabsRef = useRef<Partial<Record<PolicyTab, HTMLButtonElement | null>>>({})
 
     function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, current: PolicyTab): void {
@@ -53,6 +54,9 @@ export function PolicyFormTabs({formId, selected, onSelect, panels, previewStale
                         id={`${formId}-tab-${tab}`}
                         role="tab"
                         aria-selected={selected === tab}
+                        aria-label={tab === 'preview' && previewStatus !== 'idle'
+                            ? `Проверка — ${POLICY_PREVIEW_LABEL[previewStatus]}`
+                            : undefined}
                         aria-controls={`${formId}-panel-${tab}`}
                         tabIndex={selected === tab ? 0 : -1}
                         onClick={() => onSelect(tab)}
@@ -61,8 +65,8 @@ export function PolicyFormTabs({formId, selected, onSelect, panels, previewStale
                     >
                         <span className="models-policy-tabs__number" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
                         <span>{TAB_DETAILS[tab].label}</span>
-                        {tab === 'preview' && (previewStale || previewReady) && (
-                            <span className={`models-policy-tabs__dot models-policy-tabs__dot--${previewStale ? 'stale' : 'ready'}`} aria-hidden="true" />
+                        {tab === 'preview' && previewStatus !== 'idle' && (
+                            <span className={`models-policy-tabs__dot models-policy-tabs__dot--${previewStatus}`} aria-hidden="true" />
                         )}
                     </button>
                 ))}
