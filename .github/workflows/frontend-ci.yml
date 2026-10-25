@@ -1,0 +1,55 @@
+name: Проверка фронтенда
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'frontend/**'
+      - 'scripts/verify-build.mjs'
+      - '.github/workflows/frontend-ci.yml'
+
+  push:
+    branches:
+      - main
+    paths:
+      - 'frontend/**'
+      - 'scripts/verify-build.mjs'
+      - '.github/workflows/frontend-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Архитектура, ESLint, тесты и сборка
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Получение исходного кода
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Установка Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Проверка версий Node.js и npm
+        run: |
+          node --version
+          npm --version
+
+      - name: Установка зависимостей
+        run: npm ci
+
+      - name: Проверка архитектуры, ESLint, тестов и сборки
+        run: npm run ci
