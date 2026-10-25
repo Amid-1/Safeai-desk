@@ -30,11 +30,13 @@ export function useModelPolicyModalController({
     // Исходная версия фиксируется на весь сеанс редактирования. Нельзя
     // сохранять старый черновик под новой optimistic-lock версией после
     // фонового обновления политики другой административной операцией.
-    const openedPolicyVersionRef = useRef(policy.version)
-    const openedPolicyIdRef = useRef(policy.id)
+    const [openedPolicy] = useState(() => ({
+        id: policy.id,
+        version: policy.version,
+    }))
     const policyChangedExternally =
-        openedPolicyVersionRef.current !== policy.version
-        || openedPolicyIdRef.current !== policy.id
+        openedPolicy.version !== policy.version
+        || openedPolicy.id !== policy.id
 
     // Защищаем запросы от повторных действий до следующего обновления React.
     const previewInFlightRef = useRef(false)

@@ -8,7 +8,7 @@ import type {
     OrganizationModelPolicy,
     RuntimeModelStatus,
 } from '../../../entities/model/api/modelApi'
-import { modelConfigurationReadiness } from './ModelAvailabilitySummary'
+import { modelConfigurationReadiness } from './modelConfigurationReadiness'
 
 // Complete contract fixtures: missing required fields must fail TypeScript
 // compilation rather than being hidden by assertions or unknown casts.

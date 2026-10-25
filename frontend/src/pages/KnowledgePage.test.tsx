@@ -12,6 +12,7 @@ import {
     updateKnowledgeBase,
 } from '../entities/knowledge/api/knowledgeApi'
 import type { KnowledgeBase } from '../entities/knowledge/api/knowledgeApi'
+import { getKnowledgeHealth } from '../entities/knowledge/api/knowledgeDocumentApi'
 import KnowledgePage from './KnowledgePage'
 
 const authMock = vi.hoisted(() => ({
@@ -84,6 +85,21 @@ function displayPage() {
 describe('KnowledgePage', () => {
     beforeEach(() => {
         vi.clearAllMocks()
+        // mockReset: true clears factory-level mockResolvedValue before each test.
+        vi.mocked(getKnowledgeHealth).mockResolvedValue({
+            knowledgeBaseId: testBase.id,
+            state: 'HEALTHY',
+            activeEmbeddingModel: 'test-embedding-model',
+            totalDocuments: 4,
+            enabledDocuments: 4,
+            searchableDocuments: 3,
+            pendingDocuments: 1,
+            processingDocuments: 0,
+            failedDocuments: 0,
+            staleEmbeddingDocuments: 0,
+            activeChunks: 5,
+            checkedAt: '2026-10-17T00:00:00Z',
+        })
         authMock.currentUser = currentUser('ADMIN')
         listMock.mockResolvedValue({
             content: [], page: 0, size: 12,
@@ -175,7 +191,7 @@ describe('KnowledgePage', () => {
             name: 'Тестовая база',
         })).toBeInTheDocument()
         expect(screen.getByRole('button', {
-            name: /Доступ/i,
+            name: /^Доступ/i,
         })).toBeInTheDocument()
         expect(screen.getByRole('button', {
             name: /Настройки/i,

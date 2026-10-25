@@ -80,7 +80,7 @@ describe('Organization details: safe actions and explanations', () => {
         const actions = renderDetails(platform)
         expect(screen.queryByRole('button', { name: 'Отключить организацию' })).toBeNull()
         expect(screen.queryByRole('button', { name: 'Переименовать' })).toBeNull()
-        expect(screen.getByText(/необходимо для работы SafeAI Desk/)).toBeTruthy()
+        expect(screen.getByText(/необходима для работы SafeAI Desk/)).toBeTruthy()
         expect(actions.onDisable).not.toHaveBeenCalled()
         expect(actions.onRename).not.toHaveBeenCalled()
     })

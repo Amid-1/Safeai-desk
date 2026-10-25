@@ -1,6 +1,6 @@
 // frontend/vite.config.ts
 // Сборка Vite, локальный proxy и изолированные тесты Vitest.
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
@@ -37,6 +37,8 @@ export default defineConfig({
     },
 
     test: {
+        // Node's node:test suites in scripts/ are run separately by npm scripts.
+        exclude: [...configDefaults.exclude, 'scripts/**/*.test.cjs'],
         environment: 'jsdom',
         globals: true,
         setupFiles: ['./src/test/setup.ts'],

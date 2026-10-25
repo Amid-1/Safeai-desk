@@ -82,7 +82,8 @@ describe('usageApi — маршруты и сигналы', () => {
         expect(options?.signal).toBe(controller.signal)
     })
     it('не отправляет запрос при некорректном UUID организации', async () => {
-        await expect(getUsageByOrganization('../other-tenant')).rejects.toThrow()
+        expect(() => getUsageByOrganization('../other-tenant'))
+            .toThrow('Некорректный UUID path segment')
         expect(request).not.toHaveBeenCalled()
     })
     it('не принимает объект вместо массива модельного отчёта', async () => {

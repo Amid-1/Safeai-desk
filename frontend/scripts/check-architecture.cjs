@@ -4,6 +4,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const ts = require('typescript')
+const { isForbiddenFeatureDependency } = require('./architecture-feature-rules.cjs')
 const root = path.resolve(__dirname, '..')
 const src = path.join(root, 'src')
 
@@ -48,6 +49,9 @@ function check(from, specifier) {
         (a.name === 'entities' && ['features', 'pages', 'app'].includes(b.name)) ||
         (a.name === 'features' && ['pages', 'app'].includes(b.name))
     if (forbidden) errors.push(`${relative(from)} → ${relative(to)}: нарушены границы слоёв`)
+    if (isForbiddenFeatureDependency(a, b)) {
+        errors.push(`${relative(from)} → ${relative(to)}: audit must not import admin`)
+    }
     if (a.name === 'features' && b.name === 'features' && a.feature !== b.feature) {
         const pair = `${a.feature} → ${b.feature}`
         crossFeatureEdges.set(pair, (crossFeatureEdges.get(pair) ?? 0) + 1)

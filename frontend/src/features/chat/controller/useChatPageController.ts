@@ -3,6 +3,7 @@
 // frontend/src/features/chat/controller/useChatPageController.ts
 // ============================================================
 import {
+    useCallback,
     useEffect,
     useLayoutEffect,
     useMemo,
@@ -302,14 +303,18 @@ export function useChatPageController() {
         activePendingTurn?.status,
     ])
 
+    const abortActiveRequests = useCallback(() => {
+        listControllerRef.current?.abort()
+        openControllerRef.current?.abort()
+        historyControllerRef.current?.abort()
+    }, [])
+
     useEffect(() => {
         const controllers =
             reconciliationControllersRef.current
 
         return () => {
-            listControllerRef.current?.abort()
-            openControllerRef.current?.abort()
-            historyControllerRef.current?.abort()
+            abortActiveRequests()
 
             controllers.forEach(
                 (controller) => {
@@ -319,9 +324,10 @@ export function useChatPageController() {
 
             controllers.clear()
         }
-    }, [])
+    }, [abortActiveRequests])
 
-    const { loadMoreChats, handleRenameChat, handleRenameFromHistory, refreshChatTitle, handleCreateChat, handleArchiveChat } = createDirectoryActions({
+    function directoryActions() {
+        return createDirectoryActions({
         chats,
         activeChat,
         pendingTurns,
@@ -356,9 +362,24 @@ export function useChatPageController() {
         setHistoryHasNext,
         chatPageSize,
         openChat,
-    })
+        })
+    }
 
-    const { applySendSuccess, applyTurnSuccess, applyReloadedSuccess, applyTurnMessages, finishPendingTurn, setDraft, putPendingTurn } = createTurnUpdates({
+    const loadMoreChats: ReturnType<typeof createDirectoryActions>['loadMoreChats'] =
+        (...args) => directoryActions().loadMoreChats(...args)
+    const handleRenameChat: ReturnType<typeof createDirectoryActions>['handleRenameChat'] =
+        (...args) => directoryActions().handleRenameChat(...args)
+    const handleRenameFromHistory: ReturnType<typeof createDirectoryActions>['handleRenameFromHistory'] =
+        (...args) => directoryActions().handleRenameFromHistory(...args)
+    const refreshChatTitle: ReturnType<typeof createDirectoryActions>['refreshChatTitle'] =
+        (...args) => directoryActions().refreshChatTitle(...args)
+    const handleCreateChat: ReturnType<typeof createDirectoryActions>['handleCreateChat'] =
+        (...args) => directoryActions().handleCreateChat(...args)
+    const handleArchiveChat: ReturnType<typeof createDirectoryActions>['handleArchiveChat'] =
+        (...args) => directoryActions().handleArchiveChat(...args)
+
+    function turnUpdates() {
+        return createTurnUpdates({
         reconciliationControllersRef,
         scrollIntentRef,
         pendingTurnsRef,
@@ -368,9 +389,26 @@ export function useChatPageController() {
         setDrafts,
         setPendingTurns,
         setSendError,
-    })
+        })
+    }
 
-    const { reconcilePendingTurn } = createTurnReconciliation({
+    const applySendSuccess: ReturnType<typeof createTurnUpdates>['applySendSuccess'] =
+        (...args) => turnUpdates().applySendSuccess(...args)
+    const applyTurnSuccess: ReturnType<typeof createTurnUpdates>['applyTurnSuccess'] =
+        (...args) => turnUpdates().applyTurnSuccess(...args)
+    const applyReloadedSuccess: ReturnType<typeof createTurnUpdates>['applyReloadedSuccess'] =
+        (...args) => turnUpdates().applyReloadedSuccess(...args)
+    const applyTurnMessages: ReturnType<typeof createTurnUpdates>['applyTurnMessages'] =
+        (...args) => turnUpdates().applyTurnMessages(...args)
+    const finishPendingTurn: ReturnType<typeof createTurnUpdates>['finishPendingTurn'] =
+        (...args) => turnUpdates().finishPendingTurn(...args)
+    const setDraft: ReturnType<typeof createTurnUpdates>['setDraft'] =
+        (...args) => turnUpdates().setDraft(...args)
+    const putPendingTurn: ReturnType<typeof createTurnUpdates>['putPendingTurn'] =
+        (...args) => turnUpdates().putPendingTurn(...args)
+
+    function turnReconciliation() {
+        return createTurnReconciliation({
         reconciliationControllersRef,
         setSendError,
         refreshChatTitle,
@@ -378,16 +416,28 @@ export function useChatPageController() {
         applyReloadedSuccess,
         applyTurnMessages,
         putPendingTurn,
-    })
+        })
+    }
 
-    const { handleSendFailure } = createTurnFailureHandler({
-        setSendError,
-        setClock,
-        reconcilePendingTurn,
-        putPendingTurn,
-    })
+    const reconcilePendingTurn: ReturnType<typeof createTurnReconciliation>['reconcilePendingTurn'] =
+        (...args) => turnReconciliation().reconcilePendingTurn(...args)
 
-    const { handleSendMessage, retryPendingTurn, prepareNewRequestFromPending, dismissUnsafePending, copyPendingText, handleTextareaKeyDown } = createTurnSubmission({
+    // Обработчик ошибок создаётся при выполнении операции,
+    // а не во время React render.
+    function turnFailureHandler() {
+        return createTurnFailureHandler({
+            setSendError,
+            setClock,
+            reconcilePendingTurn,
+            putPendingTurn,
+        })
+    }
+
+    const handleSendFailure: ReturnType<typeof createTurnFailureHandler>['handleSendFailure'] =
+        (...args) => turnFailureHandler().handleSendFailure(...args)
+
+    function turnSubmission() {
+        return createTurnSubmission({
         capabilities,
         activeChat,
         knowledgeMode,
@@ -407,9 +457,24 @@ export function useChatPageController() {
         setDraft,
         putPendingTurn,
         sendInFlightRef,
-    })
+        })
+    }
 
-    const { loadEarlierHistory } = createHistoryActions({
+    const handleSendMessage: ReturnType<typeof createTurnSubmission>['handleSendMessage'] =
+        (...args) => turnSubmission().handleSendMessage(...args)
+    const retryPendingTurn: ReturnType<typeof createTurnSubmission>['retryPendingTurn'] =
+        (...args) => turnSubmission().retryPendingTurn(...args)
+    const prepareNewRequestFromPending: ReturnType<typeof createTurnSubmission>['prepareNewRequestFromPending'] =
+        (...args) => turnSubmission().prepareNewRequestFromPending(...args)
+    const dismissUnsafePending: ReturnType<typeof createTurnSubmission>['dismissUnsafePending'] =
+        (...args) => turnSubmission().dismissUnsafePending(...args)
+    const copyPendingText: ReturnType<typeof createTurnSubmission>['copyPendingText'] =
+        (...args) => turnSubmission().copyPendingText(...args)
+    const handleTextareaKeyDown: ReturnType<typeof createTurnSubmission>['handleTextareaKeyDown'] =
+        (...args) => turnSubmission().handleTextareaKeyDown(...args)
+
+    function historyActions() {
+        return createHistoryActions({
         historyLoading,
         historyPage,
         historyHasNext,
@@ -425,7 +490,11 @@ export function useChatPageController() {
         setHistoryHasNext,
         messagePageSize,
         restoreAnswerPassports,
-    })
+        })
+    }
+
+    const loadEarlierHistory: ReturnType<typeof createHistoryActions>['loadEarlierHistory'] =
+        (...args) => historyActions().loadEarlierHistory(...args)
 
     const retryAfterSeconds =
         activePendingTurn

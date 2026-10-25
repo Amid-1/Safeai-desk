@@ -19,7 +19,8 @@ vi.mock('../../api/chatApi', async (importOriginal) => ({
     sendMessage: vi.fn(),
 }))
 vi.mock('../../../../shared/lib/secureUuid', () => ({
-    createSecureUuid: vi.fn(() => IDS.request),
+    // vi.mock is hoisted before module imports: avoid accessing fixture IDS in its factory.
+    createSecureUuid: vi.fn(() => 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'),
 }))
 
 const sendMock = vi.mocked(sendMessage)

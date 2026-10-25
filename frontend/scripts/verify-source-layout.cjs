@@ -18,7 +18,18 @@ function walk(dir) {
         const rel = path.relative(src, file).split(path.sep).join('/')
         const content = fs.readFileSync(file, 'utf8')
         const header = (file.endsWith('.css') ? '/* ' : '// ') + 'frontend/src/' + rel
-        if (!content.startsWith(header)) errors.push('Нет актуального заголовка пути: ' + rel)
+        const opening = content.split(/\r?\n/, 3)
+        const atStart = file.endsWith('.css')
+            ? content.startsWith(header)
+            : opening[0] === header
+        const afterBanner =
+            !file.endsWith('.css') &&
+            /^\/\/ ={8,}$/.test(opening[0] ?? '') &&
+            opening[1] === header
+
+        if (!atStart && !afterBanner) {
+            errors.push('Нет актуального заголовка пути: ' + rel)
+        }
         if (routes.has(entry.name) && !rel.startsWith('pages/')) {
             errors.push('Маршрут ошибочно находится вне pages/: ' + rel)
         }

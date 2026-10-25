@@ -11,7 +11,7 @@ import {
 } from 'vitest'
 import type {
     AuditEvent,
-} from '../../admin/api/adminApi'
+} from '../api/adminAuditApi'
 import AuditActor from './AuditActor'
 
 const BASE_EVENT: AuditEvent = {

@@ -385,11 +385,25 @@ describe('AdminModelsPage', () => {
         render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
         fireEvent.click(await screen.findByRole('tab', { name: 'Каталог' }))
         fireEvent.click(screen.getByRole('button', {name: 'Создать модель'}))
+        // The runtime key already exists in the catalog: the initial draft
+        // must be an immutable new version, not a duplicate first version.
+        expect(screen.getByRole('dialog', {name: 'Новая версия: mock-safeai'}))
+            .toBeInTheDocument()
+        // Selecting a genuinely new key switches to first-version creation.
+        fireEvent.change(screen.getByRole('textbox', {name: /Ключ модели/}), {
+            target: {value: 'vendor:new-model'},
+        })
         expect(screen.getByRole('dialog', {name: 'Добавление модели в каталог'}))
             .toBeInTheDocument()
-        fireEvent.click(screen.getByRole('button', {name: 'Закрыть окно'}))
-        expect(screen.queryByRole('dialog', {name: 'Добавление модели в каталог'}))
-            .not.toBeInTheDocument()
+        const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+        try {
+            fireEvent.click(screen.getByRole('button', {name: 'Закрыть окно'}))
+            expect(screen.queryByRole('dialog', {name: 'Добавление модели в каталог'}))
+                .not.toBeInTheDocument()
+            expect(confirm).toHaveBeenCalled()
+        } finally {
+            confirm.mockRestore()
+        }
     })
 
     it('не сообщает об ошибке mutation, если Runtime уже сохранён, а refresh упал', async () => {

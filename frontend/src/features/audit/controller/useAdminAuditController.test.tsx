@@ -96,10 +96,12 @@ describe('useAdminAuditController — контракты фильтров', () =
             ...result.current.draftFilter,
             dateFrom: '2026-10-20', dateTo: '2026-10-19',
         }))
-        const requests = eventsMock.mock.calls.length
+        // useAuditEvents is a React hook: it is invoked on each render.
+        // An invalid draft must not change the applied request arguments.
+        const appliedRequest = eventsMock.mock.lastCall?.[0]
         act(() => result.current.applyFilters())
         expect(result.current.filterError).not.toBe('')
-        expect(eventsMock.mock.calls).toHaveLength(requests)
+        expect(eventsMock.mock.lastCall?.[0]).toEqual(appliedRequest)
         expect(result.current.filtersDirty).toBe(true)
     })
 
@@ -137,10 +139,11 @@ describe('useAdminAuditController — контракты фильтров', () =
 
     it('меняет только черновик при выборе пресета до нажатия «Применить»', () => {
         const { result } = renderHook(useAdminAuditController)
-        const before = eventsMock.mock.calls.length
+        // Changing a draft rerenders the hook, but must not change GET args.
+        const appliedRequest = eventsMock.mock.lastCall?.[0]
         act(() => result.current.applyDatePreset('last7Days'))
         expect(result.current.draftFilter.dateFrom).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-        expect(eventsMock.mock.calls.length).toBe(before)
+        expect(eventsMock.mock.lastCall?.[0]).toEqual(appliedRequest)
     })
 
     it('обрабатывает пагинацию, повтор загрузки и серверную коррекцию страницы', () => {

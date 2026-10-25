@@ -133,7 +133,7 @@ describe('ModelCatalogVersionModal — production regression', () => {
     it('проверяет ограничения, JSON тарификации и не отправляет некорректный черновик', () => {
         const props = createProps()
         render(<ModelCatalogVersionModal {...props} />)
-        fireEvent.change(screen.getByLabelText('JSON-параметры'), {
+        fireEvent.change(screen.getByLabelText(/JSON-параметры/), {
             target: { value: 'не JSON' },
         })
         submitForm()

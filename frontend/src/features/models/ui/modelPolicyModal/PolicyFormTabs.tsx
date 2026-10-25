@@ -6,8 +6,8 @@ import type {KeyboardEvent, ReactNode} from 'react'
 import {POLICY_PREVIEW_LABEL} from './policyPreviewStatus'
 import type {PolicyPreviewState} from './policyPreviewStatus'
 
-export const POLICY_TABS = ['access', 'limits', 'budget', 'data', 'preview'] as const
-export type PolicyTab = typeof POLICY_TABS[number]
+import { POLICY_TABS } from './policyFormTabsConfig'
+import type { PolicyTab } from './policyFormTabsConfig'
 
 const TAB_DETAILS: Readonly<Record<PolicyTab, {label: string; subtitle: string}>> = {
     access: {label: 'Доступ', subtitle: 'Разрешения, запреты и модель по умолчанию'},

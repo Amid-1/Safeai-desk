@@ -3,12 +3,8 @@
 
 import type { ModelRouteDecision } from '../../../../entities/model/api/modelApi'
 import {formatDateTime, formatUsd} from '../../../../shared/lib/format'
-import {
-    StatusPill,
-    routeReasonLabel,
-    monthlyCostStateLabel,
-    budgetEnforcementLabel,
-} from './viewPresentation'
+import { StatusPill } from './viewPresentation'
+import { routeReasonLabel, monthlyCostStateLabel, budgetEnforcementLabel } from './viewPresentationLabels'
 
 export function RouteDecisionEvidence({
     decision,

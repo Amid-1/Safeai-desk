@@ -99,19 +99,19 @@ export function getResizeLimits(
 ) {
     const viewportWidth =
         Math.max(
-            320,
+            0,
             window.innerWidth,
         )
 
     const viewportHeight =
         Math.max(
-            320,
+            0,
             window.innerHeight,
         )
 
     const availableWidth =
         Math.max(
-            240,
+            1,
             viewportWidth
             - RESIZE_VIEWPORT_MARGIN
             * 2,
@@ -119,7 +119,7 @@ export function getResizeLimits(
 
     const availableHeight =
         Math.max(
-            240,
+            1,
             viewportHeight
             - RESIZE_VIEWPORT_MARGIN
             * 2,

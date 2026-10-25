@@ -9,7 +9,7 @@ import type { ModelRouteDecision, RuntimeModelProbe } from '../../../entities/mo
 import { getApiErrorMessage } from '../../../shared/api/http'
 
 const UUID_PATTERN =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export function useAdminModelsDiagnostics(
     isSuperAdmin: boolean,
@@ -63,7 +63,7 @@ export function useAdminModelsDiagnostics(
             } finally {
                 setRuntimeProbePending(false)
             }
-        }, [isSuperAdmin])
+        }, [isSuperAdmin, setError])
 
     const routeControllerRef = useRef<AbortController | null>(null)
     useEffect(() => () => routeControllerRef.current?.abort(), [])

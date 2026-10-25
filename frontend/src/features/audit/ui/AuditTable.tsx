@@ -6,7 +6,7 @@
 import type {
     AuditEvent,
     AuditTargetOrganizationDirectoryItem,
-} from '../../admin/api/adminApi'
+} from '../api/adminAuditApi'
 import {
     getAuditEventTypeLabel,
 } from '../constants/auditEvents'

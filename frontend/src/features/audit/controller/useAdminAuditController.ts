@@ -4,7 +4,7 @@
 // Контроллер журнала аудита: фильтры, адресная строка, пагинация и права.
 // ============================================================
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { AuditEvent } from '../../admin/api/adminApi'
+import type { AuditEvent } from '../api/adminAuditApi'
 import { useAuth } from '../../auth/state/useAuth'
 import { auditDraftFiltersEqual } from '../ui/types'
 import type { AuditDraftFilter, DatePreset } from '../ui/types'

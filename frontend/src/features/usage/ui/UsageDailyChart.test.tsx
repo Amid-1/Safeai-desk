@@ -55,7 +55,10 @@ describe('UsageDailyChart', () => {
         fireEvent.change(screen.getByLabelText('Показатель'), { target: { value: 'total' } })
         expect(screen.getByText('Всего токенов')).toBeTruthy()
         fireEvent.change(screen.getByLabelText('Показатель'), { target: { value: 'cost' } })
-        expect(screen.getByText('Известная стоимость, USD')).toBeTruthy()
+        // The label occurs in both <option> and the chart; assert the chart.
+        expect(screen.getByRole('region', { name: 'График использования AI по дням' })
+            .querySelector('.usage-chart-viewport'))
+            .toHaveTextContent('Известная стоимость, USD')
         expect(rows[0]).toEqual(day)
     })
 

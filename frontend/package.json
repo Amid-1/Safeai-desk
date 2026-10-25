@@ -21,7 +21,7 @@
     "check": "npm run architecture:check && npm run lint && npm run test && npm run build",
     "ci": "npm run architecture:check && npm run lint && npm run test:coverage && npm run build",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
-    "architecture:check": "node scripts/check-architecture.cjs && node scripts/verify-source-layout.cjs"
+    "architecture:check": "node --test scripts/architecture-feature-rules.test.cjs scripts/audit-dependencies.test.cjs && node scripts/check-architecture.cjs && node scripts/verify-source-layout.cjs && node scripts/audit-dependencies.cjs --strict"
   },
   "dependencies": {
     "react": "19.2.7",

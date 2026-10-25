@@ -3,7 +3,7 @@
 
 import type {ModelPolicyModalController} from './useModelPolicyModalController'
 import {ErrorState} from '../../../../shared/ui/StateBlock'
-import {previewReasonLabel} from './policyModalPresentation'
+import { previewReasonLabel } from './policyModalLabels'
 import {POLICY_PREVIEW_LABEL, policyPreviewState} from './policyPreviewStatus'
 
 type Props = {control: ModelPolicyModalController}

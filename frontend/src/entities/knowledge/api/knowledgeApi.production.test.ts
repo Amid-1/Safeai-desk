@@ -35,11 +35,11 @@ describe('knowledgeApi — все 11 операций',()=>{
     await getKnowledgeBaseMembers(ID)
     await searchKnowledgeMemberCandidates('a',20)
     expect(request.mock.calls.map(([url])=>url)).toEqual([
-      '/api/knowledge-bases/search?page=0&size=50&query=Run&enabled=true&visibility=MEMBERS',
+      '/api/knowledge-bases/search?enabled=true&page=0&query=Run&size=50&visibility=MEMBERS',
       '/api/knowledge-bases?page=0&size=50',
       `/api/knowledge-bases/${ID}`, `/api/knowledge-bases/${ID}/access`,
       `/api/knowledge-bases/${ID}/members?page=0&size=50`,
-      '/api/knowledge-bases/member-candidates?query=a&limit=20',
+      '/api/knowledge-bases/member-candidates?limit=20&query=a',
     ])
     expect(request.mock.calls.every(([,o])=>o?.timeoutMs===API_TIMEOUTS.default)).toBe(true)
   })

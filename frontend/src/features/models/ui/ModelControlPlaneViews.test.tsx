@@ -164,11 +164,11 @@ describe('ModelControlPlaneViews semantics', () => {
         ).toBeInTheDocument()
 
         expect(
-            screen.getByText('Последняя версия'),
+            screen.getByText('Последняя сохраненная · v1'),
         ).toBeInTheDocument()
 
         expect(
-            screen.getByText('Действующая версия'),
+            screen.getByText('Действующая · v1'),
         ).toBeInTheDocument()
 
         expect(
@@ -207,11 +207,11 @@ describe('ModelControlPlaneViews semantics', () => {
         )
 
         expect(
-            screen.getByText('Запланирована'),
+            screen.getByText('Последняя версия пока не действует'),
         ).toBeInTheDocument()
 
         expect(
-            screen.getByText('Сейчас действует версия 1'),
+            screen.getByText(/Сейчас действует версия\s+1/),
         ).toBeInTheDocument()
     })
 

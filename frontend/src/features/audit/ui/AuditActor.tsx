@@ -6,7 +6,7 @@
 import { useState } from 'react'
 import type {
     AuditEvent,
-} from '../../admin/api/adminApi'
+} from '../api/adminAuditApi'
 
 type AuditActorProps = {
     event: AuditEvent

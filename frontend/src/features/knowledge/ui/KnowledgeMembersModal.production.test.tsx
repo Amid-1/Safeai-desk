@@ -99,12 +99,22 @@ describe('KnowledgeMembersModal — конкурентность и ACL', () => 
 
     it('при неудачном PATCH не вызывает onChanged и не удаляет текущую ACL-строку', async () => {
         updateMember.mockRejectedValueOnce(new Error('Conflict expectedVersion'))
-        render(<KnowledgeMembersModal knowledgeBase={kb} onClose={vi.fn()} onChanged={vi.fn()} />)
+        const onChanged = vi.fn()
+        render(<KnowledgeMembersModal knowledgeBase={kb} onClose={vi.fn()} onChanged={onChanged} />)
         await screen.findByText('Владелец')
         fireEvent.change(screen.getByRole('combobox', { name: 'Права в этой базе для owner@example.com' }), { target: { value: 'VIEWER' } })
         expect(updateMember).not.toHaveBeenCalled()
         fireEvent.click(screen.getByRole('button', { name: 'Изменить права' }))
-        await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Не удалось изменить доступ.'))
+        await waitFor(() => expect(screen.getByText('Не удалось изменить доступ.'))
+            .toBeInTheDocument())
+        expect(updateMember).toHaveBeenCalledWith(kb.id, owner.userId, {
+            accessLevel: 'VIEWER',
+            expectedVersion: owner.version,
+        })
+        expect(onChanged).not.toHaveBeenCalled()
+        // Ошибка оставляет ConfirmDialog открытым; он делает исходный диалог inert.
+        // Закрываем подтверждение, затем проверяем исходное значение ACL.
+        fireEvent.click(screen.getByRole('button', { name: 'Отмена' }))
         expect(screen.getByRole('combobox', { name: 'Права в этой базе для owner@example.com' })).toHaveValue('OWNER')
     })
 

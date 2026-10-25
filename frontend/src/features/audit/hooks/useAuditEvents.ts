@@ -10,11 +10,11 @@ import {
 } from 'react'
 import {
     getAuditEvents,
-} from '../../admin/api/adminApi'
+} from '../api/adminAuditApi'
 import type {
     AuditEvent,
     AuditEventFilter,
-} from '../../admin/api/adminApi'
+} from '../api/adminAuditApi'
 import {
     ApiError,
     getApiErrorMessage,
