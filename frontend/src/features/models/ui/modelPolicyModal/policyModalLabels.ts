@@ -1,0 +1,46 @@
+// frontend/src/features/models/ui/modelPolicyModal/policyModalLabels.ts
+import type {BudgetEnforcement, ModelRouteReason} from '../../../../entities/model/api/modelApi'
+
+export function budgetEnforcementLabel(
+    value:
+        BudgetEnforcement,
+) {
+    switch (
+        value
+    ) {
+        case 'SOFT':
+            return 'Мягкий — предупреждать'
+
+        case 'HARD':
+            return 'Жёсткий — блокировать'
+    }
+}
+
+
+export function previewReasonLabel(
+    reason: ModelRouteReason,
+): string {
+    const labels: Partial<Record<ModelRouteReason, string>> = {
+        REQUESTED_MODEL: 'Модель проходит проверку',
+        POLICY_DEFAULT: 'Модель по умолчанию проходит проверку',
+        RUNTIME_ONLY_MATCH: 'Подключённая модель однозначно сопоставлена',
+        LEGACY_RUNTIME_FALLBACK: 'Использован режим совместимости со старой конфигурацией',
+        MODEL_NOT_ALLOWED: 'Модель отсутствует в списке разрешённых',
+        MODEL_DENIED: 'Модель находится в списке запрещённых',
+        MODEL_NOT_FOUND: 'Действующая модель каталога не найдена',
+        AMBIGUOUS_RUNTIME_MAPPING: 'Подключение неоднозначно сопоставлено с каталогом',
+        MODEL_DISABLED: 'Модель отключена или выведена из эксплуатации',
+        RUNTIME_MISMATCH: 'Модель не совпадает с текущим подключением',
+        CAPABILITY_UNSUPPORTED: 'Требуемая возможность не поддерживается',
+        INPUT_LIMIT_EXCEEDED: 'Превышен входной лимит',
+        OUTPUT_LIMIT_EXCEEDED: 'Превышен выходной лимит',
+        PRICING_INCOMPLETE: 'Недостаточно данных о стоимости',
+        TRAINING_POLICY_UNSATISFIED: 'Не подтверждено, что данные не используются для обучения. Модель не соответствует требованиям организации.',
+        RETENTION_POLICY_UNSATISFIED: 'Не выполнено требование по хранению данных',
+        REQUEST_COST_LIMIT_EXCEEDED: 'Превышен лимит стоимости запроса',
+        MONTHLY_BUDGET_EXCEEDED: 'Превышен месячный бюджет',
+        MONTHLY_BUDGET_UNVERIFIABLE: 'Месячный бюджет нельзя надёжно проверить',
+    }
+
+    return labels[reason] ?? reason
+}

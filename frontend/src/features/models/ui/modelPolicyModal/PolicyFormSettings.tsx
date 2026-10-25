@@ -7,7 +7,8 @@ import {DefaultModelSelector} from '../ModelPolicyModelSelectors'
 import {DecimalInput} from '../ModelFormControls'
 import {BUDGET_ENFORCEMENTS} from '../../../../entities/model/api/modelApi'
 import type {BudgetEnforcement} from '../../../../entities/model/api/modelApi'
-import {InfoHint, budgetEnforcementLabel} from './policyModalPresentation'
+import { InfoHint } from './policyModalPresentation'
+import { budgetEnforcementLabel } from './policyModalLabels'
 
 type Props = {
     control: ModelPolicyModalController

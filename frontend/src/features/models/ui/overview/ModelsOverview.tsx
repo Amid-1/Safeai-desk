@@ -1,7 +1,8 @@
 // frontend/src/features/models/ui/overview/ModelsOverview.tsx
 import type { AdminModelsController } from '../../controller/useAdminModelsController'
-import { ModelAvailabilitySummary, modelConfigurationReadiness } from '../ModelAvailabilitySummary'
-import type { ModelsSection } from '../AdminModelsNavigation'
+import { ModelAvailabilitySummary } from '../ModelAvailabilitySummary'
+import { modelConfigurationReadiness } from '../modelConfigurationReadiness'
+import type { ModelsSection } from '../modelsNavigationState'
 
 export function ModelsOverview({ controller, navigate }: {
     controller: AdminModelsController

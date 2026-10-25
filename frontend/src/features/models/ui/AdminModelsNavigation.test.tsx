@@ -1,7 +1,8 @@
 // frontend/src/features/models/ui/AdminModelsNavigation.test.tsx
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { AdminModelsNavigation, parseModelsSection } from './AdminModelsNavigation'
+import { AdminModelsNavigation } from './AdminModelsNavigation'
+import { parseModelsSection } from './modelsNavigationState'
 
 describe('разделы управления моделями', () => {
     it('не принимает произвольные query-параметры как разделы', () => {

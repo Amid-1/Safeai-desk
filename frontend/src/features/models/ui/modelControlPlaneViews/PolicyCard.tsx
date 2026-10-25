@@ -8,13 +8,8 @@ import type {
 } from '../../../../entities/model/api/modelApi'
 import type { OrganizationDirectoryItem } from '../../../../entities/organization/api/organizationApi'
 import {formatUsd} from '../../../../shared/lib/format'
-import {
-    StatusPill,
-    InfoHint,
-    policyAccessSummary,
-    policyDataRequirements,
-    policyTokenLimits,
-} from './viewPresentation'
+import { StatusPill, InfoHint } from './viewPresentation'
+import { policyAccessSummary, policyDataRequirements, policyTokenLimits } from './viewPresentationLabels'
 
 export function PolicyCard({
     policy,

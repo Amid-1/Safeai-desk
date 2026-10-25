@@ -13,7 +13,7 @@ import type {
 } from 'react'
 import type {
     AuditEvent,
-} from '../../admin/api/adminApi'
+} from '../api/adminAuditApi'
 import {
     getAuditEventTypeLabel,
 } from '../constants/auditEvents'

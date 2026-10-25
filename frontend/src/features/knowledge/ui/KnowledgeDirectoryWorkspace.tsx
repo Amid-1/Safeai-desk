@@ -9,8 +9,8 @@ import { useKnowledgeDirectoryController } from '../controller/useKnowledgeDirec
 import type { ActivityFilter, VisibilityFilter } from '../model/knowledgeDirectoryTypes'
 
 export function KnowledgeDirectoryWorkspace() {
-    const { canManage, page, setPage, basePage, searchInput, setSearchInput, activity, setActivity,
-        visibility, setVisibility, loading, error, success, createOpen, setCreateOpen, editing,
+    const { canManage, setPage, basePage, searchInput, setSearchInput, activity, setActivity,
+        visibility, setVisibility, loading, error, success, setSuccess, createOpen, setCreateOpen, editing,
         setEditing, membersBase, setMembersBase, busy, activeFilters, refreshList, resetFilters,
         handleCreate, reloadEditingBase, handleUpdate } = useKnowledgeDirectoryController()
 

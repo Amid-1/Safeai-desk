@@ -4,7 +4,7 @@
 // ============================================================
 import type {
     AuditEventFilter,
-} from '../../admin/api/adminApi'
+} from '../api/adminAuditApi'
 import {
     uuidPathSegment,
 } from '../../../shared/api/query'

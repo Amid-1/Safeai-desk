@@ -3,7 +3,7 @@
 // frontend/src/features/audit/ui/auditFilters/auditFilterTypes.ts
 // ============================================================
 import type { Dispatch, SetStateAction } from 'react'
-import type { AuditActorDirectoryItem, AuditTargetOrganizationDirectoryItem } from '../../../admin/api/adminApi'
+import type { AuditActorDirectoryItem, AuditTargetOrganizationDirectoryItem } from '../../api/adminAuditApi'
 import type { AuditDraftFilter, DatePreset } from '../types'
 
 export type AuditFiltersProps = {

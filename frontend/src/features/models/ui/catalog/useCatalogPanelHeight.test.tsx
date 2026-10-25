@@ -13,14 +13,23 @@ import {
 } from './useCatalogPanelHeight'
 
 function Harness() {
-    const panel = useCatalogPanelHeight()
+    const {
+        regionRef,
+        height,
+        onPointerDown,
+        onPointerMove,
+        onPointerUp,
+        onPointerCancel,
+        onKeyDown,
+        onDoubleClick,
+    } = useCatalogPanelHeight()
     return (
         <div>
-            <div role="separator" aria-label="Высота каталога" aria-valuenow={panel.height}
-                tabIndex={0} onPointerDown={panel.onPointerDown} onPointerMove={panel.onPointerMove}
-                onPointerUp={panel.onPointerUp} onPointerCancel={panel.onPointerCancel}
-                onKeyDown={panel.onKeyDown} onDoubleClick={panel.onDoubleClick} />
-            <div ref={panel.regionRef} data-testid="viewport" style={{height: panel.height}} />
+            <div role="separator" aria-label="Высота каталога" aria-valuenow={height}
+                tabIndex={0} onPointerDown={onPointerDown} onPointerMove={onPointerMove}
+                onPointerUp={onPointerUp} onPointerCancel={onPointerCancel}
+                onKeyDown={onKeyDown} onDoubleClick={onDoubleClick} />
+            <div ref={regionRef} data-testid="viewport" style={{height: height}} />
         </div>
     )
 }

@@ -9,6 +9,7 @@ import ru.safeai.gateway.testsupport.AbstractPostgresIntegrationTest;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -44,7 +45,7 @@ class KnowledgeIngestionQueueIntegrationTest
                 UUID.randomUUID();
 
         Instant createdAt =
-                Instant.now();
+                Instant.now().truncatedTo(ChronoUnit.MICROS);
 
         insertUser(
                 userId,
@@ -164,7 +165,7 @@ class KnowledgeIngestionQueueIntegrationTest
                 UUID.randomUUID();
 
         Instant createdAt =
-                Instant.now();
+                Instant.now().truncatedTo(ChronoUnit.MICROS);
 
         insertUser(
                 userId,
@@ -283,7 +284,7 @@ class KnowledgeIngestionQueueIntegrationTest
                 UUID.randomUUID();
 
         Instant createdAt =
-                Instant.now();
+                Instant.now().truncatedTo(ChronoUnit.MICROS);
 
         insertUser(
                 userId,

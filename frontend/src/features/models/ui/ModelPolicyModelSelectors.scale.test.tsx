@@ -67,8 +67,8 @@ describe('Масштабируемые списки правил моделей'
         expect(screen.getByText(/Показаны первые 200 из 210/)).toBeInTheDocument()
         expect(screen.getAllByRole('option')).toHaveLength(200)
         fireEvent.change(search, {target: {value: 'choice-210'}})
-        expect(screen.getByRole('option', {name: /choice-210/})).toBeInTheDocument()
-        fireEvent.click(screen.getByRole('option', {name: /choice-210/}))
+        expect(screen.getByRole('option', {name: /^Модель 210 mock:choice-210/})).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('option', {name: /^Модель 210 mock:choice-210/}))
         expect(screen.getByRole('button', {name: 'Удалить mock:choice-210'})).toBeInTheDocument()
     })
 

@@ -155,7 +155,9 @@ describe('AdminUsersDialogs: сохранение контрактов и защ
     it('SUPER_ADMIN видит UUID пользователя и организации в сведениях', () => {
         open({ detailsUser: DETAILS, currentUserIsSuperAdmin: true })
         expect(screen.getByText('UUID пользователя')).toBeInTheDocument()
-        expect(screen.getByText('UUID организации')).toBeInTheDocument()
+        expect(screen.getByRole('button', {
+            name: 'Копировать UUID организации',
+        })).toBeInTheDocument()
     })
 
     it('редактирование блокирует пустое изменение и сообщает об отзыве сессий при смене логина', () => {
@@ -207,7 +209,9 @@ describe('AdminUsersDialogs: сохранение контрактов и защ
         rerender(<AdminUsersDialogs {...props} resetPasswordValue={'Ж'.repeat(37)} resetPasswordConfirm={'Ж'.repeat(37)} />)
         expect(screen.getByRole('button', { name: 'Установить новый пароль' })).toBeDisabled()
         expect(screen.getByText(/превышен допустимый предел/)).toBeInTheDocument()
-        rerender(<AdminUsersDialogs {...props} />)
+        // В исходных props подтверждение намеренно не совпадает.
+        // После проверки длины передаём корректное подтверждение.
+        rerender(<AdminUsersDialogs {...props} resetPasswordConfirm={props.resetPasswordValue} />)
         expect(screen.getByRole('button', { name: 'Установить новый пароль' })).toBeEnabled()
         submitDialogForm()
         expect(props.submitResetPassword).toHaveBeenCalledTimes(1)
@@ -252,7 +256,7 @@ describe('AdminUsersDialogs: сохранение контрактов и защ
             deleteConfirmationEmail: USER.email,
             hasPendingMutation: true,
         })
-        expect(screen.getByRole('button', { name: 'Удалить навсегда' })).toBeDisabled()
+        expect(screen.getByRole('button', { name: 'Выполнение...' })).toBeDisabled()
         expect(screen.getByRole('button', { name: 'Отмена' })).toBeDisabled()
     })
 

@@ -121,7 +121,11 @@ describe('date utilities', () => {
         expect(toUtcStartOfDayIso('0099-12-31')).toBe('0099-12-31T00:00:00.000Z')
         expect(getInclusiveDayCount('0099-12-31', '0100-01-01')).toBe(2)
         expect(() => addCalendarDays('0099-02-29', 1)).toThrow('Некорректная календарная дата')
-        expect(toLocalStartOfDayIso('0099-01-01')).toContain('0099')
+        // UTC-представление локальной полуночи может попасть в предыдущий год.
+        const localMidnight = new Date(toLocalStartOfDayIso('0099-01-01'))
+        expect(localMidnight.getFullYear()).toBe(99)
+        expect(localMidnight.getMonth()).toBe(0)
+        expect(localMidnight.getDate()).toBe(1)
     })
 
 })

@@ -13,7 +13,7 @@ afterEach(() => {
     else Reflect.deleteProperty(URL, 'revokeObjectURL')
 })
 function objectUrls() {
-    const create = vi.fn(() => 'blob:safeai-test')
+    const create = vi.fn((_blob: Blob) => 'blob:safeai-test')
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: create })
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
     return create

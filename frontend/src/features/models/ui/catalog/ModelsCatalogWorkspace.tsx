@@ -9,7 +9,17 @@ export function ModelsCatalogWorkspace({ controller }: { controller: AdminModels
     const { catalog, effectiveCatalog, runtime, isSuperAdmin, mutationPending,
         handleImportRuntime, setCatalogModal, setHistoryModalEntry,
         catalogPermissionNotice, setCatalogPermissionNotice, importError } = controller
-    const panel = useCatalogPanelHeight()
+    const {
+        regionRef,
+        height,
+        maxHeight,
+        onPointerDown,
+        onPointerMove,
+        onPointerUp,
+        onPointerCancel,
+        onKeyDown,
+        onDoubleClick,
+    } = useCatalogPanelHeight()
     if (!runtime) return null
 
     return (
@@ -49,25 +59,25 @@ export function ModelsCatalogWorkspace({ controller }: { controller: AdminModels
                     aria-label="Изменить высоту таблицы каталога"
                     aria-orientation="horizontal"
                     aria-valuemin={CATALOG_PANEL_MIN_HEIGHT}
-                    aria-valuemax={panel.maxHeight}
-                    aria-valuenow={panel.height}
+                    aria-valuemax={maxHeight}
+                    aria-valuenow={height}
                     aria-controls="models-catalog-table-viewport"
                     tabIndex={0}
-                    onPointerDown={panel.onPointerDown}
-                    onPointerMove={panel.onPointerMove}
-                    onPointerUp={panel.onPointerUp}
-                    onPointerCancel={panel.onPointerCancel}
-                    onKeyDown={panel.onKeyDown}
-                    onDoubleClick={panel.onDoubleClick}
+                    onPointerDown={onPointerDown}
+                    onPointerMove={onPointerMove}
+                    onPointerUp={onPointerUp}
+                    onPointerCancel={onPointerCancel}
+                    onKeyDown={onKeyDown}
+                    onDoubleClick={onDoubleClick}
                     title="Потяните вверх, чтобы увеличить таблицу, вниз — чтобы уменьшить. Стрелки ↑/↓ также меняют высоту; двойной щелчок возвращает автоматическую высоту."
                 ><span className="models-catalog-resize-handle__grip" aria-hidden="true" />
                     <span className="models-catalog-resize-handle__label" aria-hidden="true">Размер таблицы</span>
                 </div>
             )}
-            <div id="models-catalog-table-viewport" ref={panel.regionRef}
+            <div id="models-catalog-table-viewport" ref={regionRef}
                 className={`models-catalog-table-region${catalog.length === 0 ? ' models-catalog-table-region--empty' : ''}`}
                 role="region" aria-label="Таблица каталога моделей" tabIndex={0}
-                style={catalog.length > 0 ? { height: `${panel.height}px` } : undefined}>
+                style={catalog.length > 0 ? { height: `${height}px` } : undefined}>
                 {catalog.length === 0 ? <CatalogEmptyState isSuperAdmin={isSuperAdmin} mutationPending={mutationPending}
                     onImportRuntime={() => { void handleImportRuntime() }} onCreateModel={() => setCatalogModal({ base: null })} />
                     : <CatalogTable entries={catalog} effectiveEntries={effectiveCatalog} runtime={runtime}

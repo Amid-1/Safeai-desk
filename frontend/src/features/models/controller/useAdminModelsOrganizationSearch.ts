@@ -85,7 +85,10 @@ export function useAdminModelsOrganizationSearch(isSuperAdmin: boolean) {
         if (!isSuperAdmin || organizationQuery.trim().length < 2
             || lastSearchedQueryRef.current === organizationQuery.trim()) return
         const timeoutId = window.setTimeout(() => {
-            void handleOrganizationSearch()
+            // Явный поиск мог завершиться до исполнения старого debounce-таймера.
+            if (lastSearchedQueryRef.current !== organizationQuery.trim()) {
+                void handleOrganizationSearch()
+            }
         }, SEARCH_DEBOUNCE_MS)
         return () => window.clearTimeout(timeoutId)
     }, [handleOrganizationSearch, isSuperAdmin, organizationQuery])

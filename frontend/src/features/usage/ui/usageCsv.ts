@@ -5,7 +5,7 @@ import type { UsageReportTab } from '../lib/adminUsageFilterState'
 function safeCell(value: string): string {
     const raw = String(value)
     const formula = /^[\p{Cc}\p{Cf}\p{Z}\s]*[=+\-@]/u.test(raw)
-    const printable = raw.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')
+    const printable = raw.replace(/[\p{Cc}]/gu, ' ')
     const neutral = formula ? `\u0027${printable}` : printable
     return `"${neutral.replaceAll('"', '""')}"`
 }

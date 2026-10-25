@@ -3,17 +3,9 @@
 
 import type { ModelCatalogEntry, RuntimeModelStatus } from '../../../../entities/model/api/modelApi'
 import {formatDateTime} from '../../../../shared/lib/format'
-import {
-    StatusPill,
-    lifecycleTone,
-    lifecycleLabel,
-    catalogSourceLabel,
-    catalogCapabilities,
-    pricingStatusLabel,
-    retentionLabel,
-    trainingUseLabel,
-} from './viewPresentation'
-import type { StatusTone } from './viewPresentation'
+import { StatusPill } from './viewPresentation'
+import { lifecycleTone, lifecycleLabel, catalogSourceLabel, catalogCapabilities, pricingStatusLabel, retentionLabel, trainingUseLabel } from './viewPresentationLabels'
+import type { StatusTone } from './viewPresentationLabels'
 
 export function CatalogTable({
     entries,

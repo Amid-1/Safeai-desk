@@ -162,7 +162,7 @@ export function useKnowledgeDirectoryController() {
     }
 
     return { canManage, page, setPage, basePage, searchInput, setSearchInput, activity, setActivity,
-        visibility, setVisibility, loading, error, success, createOpen, setCreateOpen,
+        visibility, setVisibility, loading, error, success, setSuccess, createOpen, setCreateOpen,
         editing, setEditing, membersBase, setMembersBase, busy, activeFilters,
         refreshList, resetFilters, handleCreate, reloadEditingBase, handleUpdate }
 }

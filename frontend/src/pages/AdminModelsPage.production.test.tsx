@@ -281,6 +281,8 @@ describe('AdminModelsPage — контрактные и регрессионны
         vi.mocked(getEffectiveModelCatalog).mockRejectedValueOnce(
             new Error('effective failed'),
         )
+        // The import action is located on the Catalog tab, not Overview.
+        fireEvent.click(screen.getByRole('tab', { name: 'Каталог' }))
         fireEvent.click(screen.getByRole('button', { name: 'Добавить подключённую модель в каталог' }))
         expect(await screen.findByText(/повторно добавлять модель не нужно/i))
             .toBeInTheDocument()

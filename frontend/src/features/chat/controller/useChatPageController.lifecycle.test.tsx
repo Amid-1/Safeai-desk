@@ -4,7 +4,7 @@
 // Интеграционные регрессии жизненного цикла, загрузки и отправки чата.
 // ============================================================
 import { act, renderHook, waitFor } from '@testing-library/react'
-import type { ChatDetails } from '../api/chatApi'
+import type { ChatDetails, SendMessageResponse } from '../api/chatApi'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
     getAnswerPassport,
@@ -91,6 +91,51 @@ describe('useChatPageController — жизненный цикл', () => {
         finishFirst({ ...chat(), messages: [] })
         await act(async () => { await openingFirst })
         expect(result.current.activeChat?.id).toBe(another)
+    })
+
+    it('не создаёт второй POST при двух быстрых вызовах отправки', async () => {
+        getMessagesMock.mockResolvedValue(slice([userMessage()]))
+
+        let resolveSend!: (value: SendMessageResponse) => void
+
+        sendMock.mockImplementationOnce(
+            () => new Promise<SendMessageResponse>((resolve) => {
+                resolveSend = resolve
+            }),
+        )
+
+        const { result } = renderHook(() => useChatPageController())
+
+        await waitFor(() =>
+            expect(result.current.activeChat?.id).toBe(IDS.chat),
+        )
+
+        act(() => {
+            result.current.setDraft(IDS.chat, 'hello')
+        })
+
+        let first!: Promise<void>
+        let second!: Promise<void>
+
+        act(() => {
+            first = result.current.handleSendMessage()
+            second = result.current.handleSendMessage()
+        })
+
+        // Первый запрос ещё не завершён.
+        expect(sendMock).toHaveBeenCalledTimes(1)
+
+        await act(async () => {
+            resolveSend(succeeded({
+                userMessage: userMessage(),
+                assistantMessage: assistantMessage(),
+            }))
+
+            await Promise.all([first, second])
+        })
+
+        expect(sendMock).toHaveBeenCalledTimes(1)
+        expect(result.current.pendingTurns[IDS.chat]).toBeUndefined()
     })
 
     it('завершает штатную отправку без повторного сообщения и оставшегося pending', async () => {

@@ -75,7 +75,7 @@ class KnowledgeS3EndToEndIntegrationTest
     static final GenericContainer<?> MINIO =
             new GenericContainer<>(
                     DockerImageName.parse(
-                            "minio/minio:RELEASE.2025-07-23T15-54-02Z"
+                            "pgsty/silo:RELEASE.2026-10-18T00-00-00Z"
                     )
             )
                     .withEnv(

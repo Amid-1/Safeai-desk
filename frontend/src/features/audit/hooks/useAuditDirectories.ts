@@ -12,11 +12,11 @@ import {
     getAuditEventTypes,
     searchAuditActors,
     searchAuditTargetOrganizations,
-} from '../../admin/api/adminApi'
+} from '../api/adminAuditApi'
 import type {
     AuditActorDirectoryItem,
     AuditTargetOrganizationDirectoryItem,
-} from '../../admin/api/adminApi'
+} from '../api/adminAuditApi'
 import {
     ApiError,
     getApiErrorMessage,

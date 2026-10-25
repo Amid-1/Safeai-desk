@@ -7,17 +7,8 @@ import type {
     RuntimeModelStatus,
 } from '../../../../entities/model/api/modelApi'
 import {formatDateTime} from '../../../../shared/lib/format'
-import {
-    StatusPill,
-    InfoHint,
-    runtimeModeLabel,
-    runtimeHealthLabel,
-    runtimeCapabilities,
-    pricingStatusLabel,
-    retentionLabel,
-    probeTone,
-    probeLabel,
-} from './viewPresentation'
+import { StatusPill, InfoHint } from './viewPresentation'
+import { runtimeModeLabel, runtimeHealthLabel, runtimeCapabilities, pricingStatusLabel, retentionLabel, probeTone, probeLabel } from './viewPresentationLabels'
 
 export function RuntimeCard({
     runtime,

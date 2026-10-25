@@ -250,11 +250,47 @@ export function useAdminUserMutations({
         requireVersion, canManageUser, canPermanentlyDelete, runUserMutation,
     } satisfies MutationContext
 
-    const { openEditModal, refreshEditedUser, submitEditUser } = createEditMutations(context)
-    const { openRolesModal, submitRoles } = createRoleMutations(context)
-    const { openResetPasswordModal, submitResetPassword } = createPasswordMutations(context)
-    const { openDeleteModal, submitPermanentDelete } = createDeleteMutations(context)
-    const { confirmEnabledChange } = createEnabledMutations(context)
+    // Фабрики выполняются только внутри обработчиков действий пользователя.
+    // Общая синхронная блокировка pendingMutationRef остаётся неизменной.
+    function openEditModal(user: User) {
+        return createEditMutations(context).openEditModal(user)
+    }
+
+    function refreshEditedUser() {
+        return createEditMutations(context).refreshEditedUser()
+    }
+
+    function submitEditUser() {
+        return createEditMutations(context).submitEditUser()
+    }
+
+    function openRolesModal(user: User) {
+        return createRoleMutations(context).openRolesModal(user)
+    }
+
+    function submitRoles() {
+        return createRoleMutations(context).submitRoles()
+    }
+
+    function openResetPasswordModal(user: User) {
+        return createPasswordMutations(context).openResetPasswordModal(user)
+    }
+
+    function submitResetPassword() {
+        return createPasswordMutations(context).submitResetPassword()
+    }
+
+    function openDeleteModal(user: User) {
+        return createDeleteMutations(context).openDeleteModal(user)
+    }
+
+    function submitPermanentDelete() {
+        return createDeleteMutations(context).submitPermanentDelete()
+    }
+
+    function confirmEnabledChange() {
+        return createEnabledMutations(context).confirmEnabledChange()
+    }
 
     return {
         mutationError,

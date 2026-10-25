@@ -2,7 +2,7 @@
 // ============================================================
 // frontend/src/features/audit/ui/auditFilters/auditDirectoryOptions.ts
 // ============================================================
-import type { AuditActorDirectoryItem, AuditTargetOrganizationDirectoryItem } from '../../../admin/api/adminApi'
+import type { AuditActorDirectoryItem, AuditTargetOrganizationDirectoryItem } from '../../api/adminAuditApi'
 
 export function buildVisibleActors(
     actors:

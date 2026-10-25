@@ -1,5 +1,5 @@
 // frontend/src/features/audit/ui/auditCsv.ts
-import type { AuditEvent } from '../../admin/api/adminApi'
+import type { AuditEvent } from '../api/adminAuditApi'
 import { getAuditEventTypeLabel } from '../constants/auditEvents'
 import { formatDateTime } from '../../../shared/lib/format'
 
@@ -39,7 +39,14 @@ export function escapeAuditCsvCell(value: string): string {
     // A spreadsheet may ignore leading whitespace, control or format chars.
     const formula = /^[\p{Cc}\p{Cf}\p{Z}\s]*[=+\-@]/u.test(raw)
     // NUL and other nonprinting control chars should not reach CSV parsers.
-    const printable = raw.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ' ')
+    const printable = raw.replace(/[\p{Cc}]/gu, (character) => {
+        const code = character.charCodeAt(0)
+        // Preserve tab, LF, CR and C1 control characters.
+        return code <= 8 || code === 11 || code === 12
+            || (code >= 14 && code <= 31) || code === 127
+            ? ' '
+            : character
+    })
     const safe = formula ? "'" + printable : printable
     return `"${safe.replaceAll('"', '""')}"`
 }

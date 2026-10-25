@@ -121,7 +121,9 @@ describe('ModelPolicyModal: production preview hardening', () => {
         expect(screen.getByText('Доступ заблокирован')).toBeInTheDocument()
         expect(screen.getByText(`Версия модели в каталоге: ${entry.version}`)).toBeInTheDocument()
         expect(screen.getByText('Доступ отклонён')).toBeInTheDocument()
-        expect(screen.getByText(/Не подтверждено, что данные не используются для обучения/)).toBeInTheDocument()
+        // The reason is shown in both the policy summary and the selected model.
+        expect(screen.getAllByText(/Не подтверждено, что данные не используются для обучения/).length)
+            .toBeGreaterThan(0)
         expect(screen.getByText('Данные о стоимости полные')).toBeInTheDocument()
         expect(screen.getByText('Лимиты токенов · вход / выход')).toBeInTheDocument()
         expect(screen.queryByText(/CONTRACTUAL_NO_TRAINING|NOT_DECLARED|NOT_USED/)).not.toBeInTheDocument()

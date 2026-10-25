@@ -160,8 +160,10 @@ export function parseRetryAfter(
 
     const seconds = Number(value)
 
-    if (Number.isFinite(seconds) && seconds >= 0) {
-        return Math.max(1, Math.ceil(seconds))
+    if (Number.isFinite(seconds)) {
+        return seconds >= 0
+            ? Math.max(1, Math.ceil(seconds))
+            : undefined
     }
 
     const timestamp = Date.parse(value)
