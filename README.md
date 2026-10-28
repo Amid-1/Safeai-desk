@@ -271,7 +271,9 @@ Identity
 Статус каждого набора необходимо сверить с `git status`,
 `git diff --cached` и `flyway_schema_history`:
 
-- **Chat / V77 и интеграция title lifecycle.** Подготовлены backfill старых названий, automatic title при первой принятой reservation, ручное rename, frontend refresh, route-bound quota reservation и продление lease по времени PostgreSQL. Применение миграции, сборка и тесты должны подтверждаться отдельно.
+- **Chat / V77 и интеграция title lifecycle.** Подготовлены backfill старых названий, automatic title при первой
+  принятой reservation, ручное rename, frontend refresh, route-bound quota reservation и продление lease по времени
+  PostgreSQL. Применение миграции, сборка и тесты должны подтверждаться отдельно.
 - **Organization / V73.** Согласована канонизация Unicode-
   пробелов в Java и PostgreSQL. Усилены проверка коллизий,
   ISO controls, индекса V23 и конкурентной записи.
@@ -528,7 +530,7 @@ TypeScript 6.0.3, Vite 8.0.16, Vitest 4.1.10;
 
 # Структура frontend
 
-```text       
+```text
 frontend/
 ├── .gitignore
 ├── eslint.config.mjs
@@ -562,13 +564,13 @@ frontend/
     ├── shared/
     │   │
     │   ├── api/
-    │   │   │   
-    │   │   ├── http/ 
+    │   │   │
+    │   │   ├── http/
     │   │   │   ├──
     │   │   │   ├──
     │   │   │   ├──
-    │   │   │   ├──    
-    │   │   │   └──                                       
+    │   │   │   ├──
+    │   │   │   └──
     │   │   │
     │   │   └──
     │   │
@@ -799,6 +801,10 @@ backend/
 │   │       │       ├── V75__audit_dead_letter_recovery_event_type.sql
 │   │       │       ├── V76__knowledge_retrieval_query_privacy.sql
 │   │       │       ├── V77__backfill_legacy_default_chat_titles.sql
+│   │       │       ├── V78__knowledge_document_deletion_foundation.sql
+│   │       │       ├── V79__knowledge_deletion_request_audit_type.sql
+│   │       │       ├── V80__knowledge_erasure_provenance_identities.sql
+│   │       │       ├── V81__knowledge_erasure_executor_guards.sql
 │   │       │       └── README_DB.md
 │   │       │
 │   │       ├── META-INF/
@@ -2821,7 +2827,12 @@ Provider call не выполняется внутри долгой business tra
 
 ## Lease / fencing
 
-Watchdog `ChatTurnLeaseService` использует `ChatTurnRepository.renewLeaseUsingDatabaseClock(turnId, processingToken, leaseMillis)` — PostgreSQL `clock_timestamp()` определяет и проверку действующего срока, и новую границу lease в одном SQL-запросе. Сохраняются условия `PROCESSING`, точного `processing_token` и непросроченной аренды; результат, отличный от одной обновлённой строки, означает потерю ownership. Ошибка БД также инвалидирует watchdog; нельзя переключаться на разрешающий fallback по локальным часам JVM. Сигнатура конструктора service сохранена для совместимости существующих consumers.
+Watchdog `ChatTurnLeaseService` использует
+`ChatTurnRepository.renewLeaseUsingDatabaseClock(turnId, processingToken, leaseMillis)` — PostgreSQL `clock_timestamp()`
+определяет и проверку действующего срока, и новую границу lease в одном SQL-запросе. Сохраняются условия `PROCESSING`,
+точного `processing_token` и непросроченной аренды; результат, отличный от одной обновлённой строки, означает потерю
+ownership. Ошибка БД также инвалидирует watchdog; нельзя переключаться на разрешающий fallback по локальным часам JVM.
+Сигнатура конструктора service сохранена для совместимости существующих consumers.
 
 
 `processingToken` является fencing token.
@@ -2893,7 +2904,12 @@ epoch-колонки запрещает DB-trigger.
 
 ## Quota reservation
 
-Новая reservation-путь вызывает перегрузку `ChatQuotaService.reserve(..., ChatQuotaReservation)` вместо устаревшего пятиаргументного `reserve(...)`. `ChatQuotaReservation` привязывается к immutable `ModelRouteResult.decisionId`, использует `estimatedInputTokens`, `estimatedOutputTokens`, верхнюю оценку `estimatedMaxCostUsd` и `pricingComplete`. Сервис отдельно подтверждает поддерживаемую схему через `hasVerifiedRoutePricingScheme`; неизвестная стоимость не подменяется доказанным нулём и не обходит денежный hard quota. Старую перегрузку не следует возвращать в production-flow лишь ради предупреждений IDE.
+Новая reservation-путь вызывает перегрузку `ChatQuotaService.reserve(..., ChatQuotaReservation)` вместо устаревшего
+пятиаргументного `reserve(...)`. `ChatQuotaReservation` привязывается к immutable `ModelRouteResult.decisionId`,
+использует `estimatedInputTokens`, `estimatedOutputTokens`, верхнюю оценку `estimatedMaxCostUsd` и `pricingComplete`.
+Сервис отдельно подтверждает поддерживаемую схему через `hasVerifiedRoutePricingScheme`; неизвестная стоимость не
+подменяется доказанным нулём и не обходит денежный hard quota. Старую перегрузку не следует возвращать в production-flow
+лишь ради предупреждений IDE.
 
 
 Quota резервируется до provider call и затем finalization корректирует состояние согласно persisted
@@ -2942,20 +2958,41 @@ Automatic naming:
 
 ### Автоматическое и ручное переименование — интеграция 17.10.2026
 
-- `ChatTitlePolicy.automaticTitle()` формирует заголовок детерминированно из первого принятого сообщения пользователя, не вызывая LLM; длина ограничена 72 Unicode code points.
-- Frontend при создании пустого чата должен отправлять `title: null` или неявное значение по контракту `CreateChatRequest`, **не** строку `«Новый чат»` как пользовательский заголовок: иначе `ChatSessionEntity.create()` установит `title_source=USER` и автоматическое назначение не сработает. Совместимость JSON уточняется по актуальному DTO.
-- `ChatTurnReservationService.reserveOrReplay()` выполняет проверку идемпотентности до любых новых изменений заголовка; при первом новом принятом USER-сообщении под `ChatTurnMutexRepository.lockChat()` вызывает `assignAutomaticTitle(...)` только если `title_source=DEFAULT`. Все изменения заголовка принадлежат той же транзакции reservation и откатываются при её отказе.
-- Если заголовок имеет источник `AUTO` или `USER`, последующие сообщения не меняют его. Явное изменение пользователем имеет приоритет и переводит источник в `USER`.
-- `ChatTitleService.rename()` проверяет владельца/организацию, использует ту же mutex boundary и регистрирует `CHAT_RENAMED` без помещения текста заголовка в audit details; повторное одинаковое пользовательское переименование идемпотентно.
-- Заголовок в истории должен перечитываться из API после отправки сообщения, чтобы новое название появилось без обновления страницы. Успешный ответ провайдера **не является** необходимым условием для названия уже принятого сообщения: наименование привязано к успешной reservation transaction.
+- `ChatTitlePolicy.automaticTitle()` формирует заголовок детерминированно из первого принятого сообщения пользователя,
+  не вызывая LLM; длина ограничена 72 Unicode code points.
+- Frontend при создании пустого чата должен отправлять `title: null` или неявное значение по контракту
+  `CreateChatRequest`, **не** строку `«Новый чат»` как пользовательский заголовок: иначе `ChatSessionEntity.create()`
+  установит `title_source=USER` и автоматическое назначение не сработает. Совместимость JSON уточняется по актуальному
+  DTO.
+- `ChatTurnReservationService.reserveOrReplay()` выполняет проверку идемпотентности до любых новых изменений заголовка;
+  при первом новом принятом USER-сообщении под `ChatTurnMutexRepository.lockChat()` вызывает `assignAutomaticTitle(...)`
+  только если `title_source=DEFAULT`. Все изменения заголовка принадлежат той же транзакции reservation и откатываются
+  при её отказе.
+- Если заголовок имеет источник `AUTO` или `USER`, последующие сообщения не меняют его. Явное изменение пользователем
+  имеет приоритет и переводит источник в `USER`.
+- `ChatTitleService.rename()` проверяет владельца/организацию, использует ту же mutex boundary и регистрирует
+  `CHAT_RENAMED` без помещения текста заголовка в audit details; повторное одинаковое пользовательское переименование
+  идемпотентно.
+- Заголовок в истории должен перечитываться из API после отправки сообщения, чтобы новое название появилось без
+  обновления страницы. Успешный ответ провайдера **не является** необходимым условием для названия уже принятого
+  сообщения: наименование привязано к успешной reservation transaction.
 
 ### V77 — однократный backfill исторических заголовков
 
-`V77__backfill_legacy_default_chat_titles.sql` обрабатывает только строки `chat_sessions`, где `title = 'Новый чат'`. Для них по первому непустому `USER`-сообщению (сортировка `created_at, id`) вычисляется заголовок с ограничением до 72 символов, устанавливается `title_source='AUTO'` и увеличивается optimistic `version`. Остальные пользовательские названия сохраняются.
+`V77__backfill_legacy_default_chat_titles.sql` обрабатывает только строки `chat_sessions`, где `title = 'Новый чат'`.
+Для них по первому непустому `USER`-сообщению (сортировка `created_at, id`) вычисляется заголовок с ограничением до 72
+символов, устанавливается `title_source='AUTO'` и увеличивается optimistic `version`. Остальные пользовательские
+названия сохраняются.
 
-Пустые старые чаты с заглушкой, без USER-сообщений, получают `title_source='DEFAULT'`, чтобы первое новое сообщение могло назвать их автоматически. Миграция не передаёт сообщения провайдеру и не изменяет tenant ownership. При повторном исполнении обновлённые строки не подходят под условие заглушки; однако **Flyway не следует запускать повторно с изменённой checksum**.
+Пустые старые чаты с заглушкой, без USER-сообщений, получают `title_source='DEFAULT'`, чтобы первое новое сообщение
+могло назвать их автоматически. Миграция не передаёт сообщения провайдеру и не изменяет tenant ownership. При повторном
+исполнении обновлённые строки не подходят под условие заглушки; однако **Flyway не следует запускать повторно с
+изменённой checksum**.
 
-**Неустранимая неоднозначность legacy:** старый frontend мог записать буквальную строку `Новый чат` как `USER`; по данным БД нельзя надёжно отличить это от сознательного ручного выбора такого же названия. V77 реализует явную политику восстановления всех заглушек, заказанную владельцем проекта. Перед применением к populated БД необходимо сделать backup и оценить этот компромисс. V58 задним числом не менять.
+**Неустранимая неоднозначность legacy:** старый frontend мог записать буквальную строку `Новый чат` как `USER`; по
+данным БД нельзя надёжно отличить это от сознательного ручного выбора такого же названия. V77 реализует явную политику
+восстановления всех заглушек, заказанную владельцем проекта. Перед применением к populated БД необходимо сделать backup
+и оценить этот компромисс. V58 задним числом не менять.
 
 ---
 # Модуль `model`
@@ -3668,7 +3705,10 @@ knowledge/
 ├── controller/
 │   ├── AnswerPassportController
 │   ├── KnowledgeBaseController
+│   ├── KnowledgeBaseSearchController
 │   ├── KnowledgeDocumentController
+│   ├── KnowledgeDocumentDeletionCapabilityController
+│   ├── KnowledgeDocumentDeletionController
 │   ├── KnowledgeEvaluationController
 │   └── KnowledgeRetrievalController
 ├── dto/
@@ -3681,6 +3721,7 @@ knowledge/
 │   ├── KnowledgeBaseMemberResponse
 │   ├── KnowledgeBasePageResponse
 │   ├── KnowledgeBaseResponse
+│   ├── KnowledgeDocumentDeletionResponse
 │   ├── KnowledgeDocumentPageResponse
 │   ├── KnowledgeDocumentResponse
 │   ├── KnowledgeDocumentVersionPageResponse
@@ -3750,6 +3791,7 @@ knowledge/
 ├── model/
 │   ├── KnowledgeBaseAccessLevel
 │   ├── KnowledgeBaseVisibility
+│   ├── KnowledgeDocumentLifecycleState
 │   ├── KnowledgeHealthState
 │   └── KnowledgeIngestionStatus
 ├── ocr/
@@ -3760,6 +3802,7 @@ knowledge/
 │   └── OcrPage
 ├── rag/
 │   ├── AnswerPassportService
+│   ├── KnowledgeChatContext
 │   ├── KnowledgeCitationValidator
 │   ├── KnowledgeContextAssembler
 │   ├── KnowledgeContextSource
@@ -3774,6 +3817,7 @@ knowledge/
 ├── repository/
 │   ├── KnowledgeBaseMembershipRepository
 │   ├── KnowledgeBaseRepository
+│   ├── KnowledgeDocumentDeletionRepository
 │   ├── KnowledgeDocumentQueryRepository
 │   ├── KnowledgeDocumentRepository
 │   ├── KnowledgeDocumentVersionRepository
@@ -3786,7 +3830,11 @@ knowledge/
 ├── service/
 │   ├── KnowledgeAccessService
 │   ├── KnowledgeBaseNameNormalizer
+│   ├── KnowledgeBaseSearchPattern
+│   ├── KnowledgeBaseSearchService
 │   ├── KnowledgeBaseService
+│   ├── KnowledgeDocumentDeletionAcceptanceService
+│   ├── KnowledgeDocumentDeletionExecutor
 │   ├── KnowledgeDocumentFileValidator
 │   ├── KnowledgeDocumentMediaTypeDetector
 │   ├── KnowledgeDocumentMediaTypes
@@ -3806,6 +3854,7 @@ knowledge/
     │   ├── KnowledgeStorageReconciliationConfiguration
     │   ├── KnowledgeStorageReconciliationProperties
     │   ├── KnowledgeStorageReconciliationScheduler
+    │   ├── KnowledgeStorageReviewMetrics
     │   └── KnowledgeStorageUploadJournal
     ├── KnowledgeStorageConfiguration
     ├── KnowledgeStorageProductionInvariantVerifier
@@ -4117,7 +4166,10 @@ POST /api/chats/{id}/messages
 GET  /api/chats/{chatId}/turns/by-client-request/{clientRequestId}
 ```
 
-Ручное переименование обслуживает отдельный `ChatTitleController` / `ChatTitleService`; точный HTTP verb и путь сверять с текущим кодом контроллера. Доступ только к собственным неархивированным чатам своей организации; повторное одинаковое пользовательское название — no-op. Заголовки при создании без пользовательского ввода не должны передаваться как явное `"Новый чат"`.
+Ручное переименование обслуживает отдельный `ChatTitleController` / `ChatTitleService`; точный HTTP verb и путь сверять
+с текущим кодом контроллера. Доступ только к собственным неархивированным чатам своей организации; повторное одинаковое
+пользовательское название — no-op. Заголовки при создании без пользовательского ввода не должны передаваться как явное
+`"Новый чат"`.
 
 ## Users
 
@@ -4436,7 +4488,17 @@ plaintext in newly created retrieval runs на отдельном PostgreSQL с�
     Частичный индекс ускоряет обработку `NEEDS_REVIEW` upload intents.
     Исторический plaintext требует отдельного privacy/retention решения.
 - **`V77`**
-  - **Назначение:** восстановление исторических названий чатов `Новый чат` из первого пользовательского сообщения; `AUTO`-provenance для заполненных чатов, `DEFAULT` для пустых legacy-чата, увеличение optimistic `version` без изменения сообщений/tenant. Дополнительных AI-вызовов нет.
+- **Назначение:** восстановление исторических названий чатов `Новый чат` из первого пользовательского сообщения;
+    `AUTO`-provenance для заполненных чатов, `DEFAULT` для пустых legacy-чата, увеличение optimistic `version` без
+    изменения сообщений/tenant. Дополнительных AI-вызовов нет.
+- **`V78`**
+ - **Назначение:**
+- **`V79`**
+ - **Назначение:**
+- **`V80`**
+ - **Назначение:**
+- **`V81`**
+ - **Назначение:**
 
 
 
@@ -4554,9 +4616,17 @@ V1–V72  →  V73 (Organization)
 
 ## V77 — безопасный backfill исторических чатов
 
-Перед применением `V77__backfill_legacy_default_chat_titles.sql` проверить, что V58 и все V73–V76 уже успешно применены в правильном порядке, сделать snapshot populated БД и провести dry-run подсчёта строк. Данные первого сообщения используются **только внутри того же чата**; миграция не меняет `organization_id`, `user_id`, `created_at`, `chat_messages` и audit trail. Legacy-заголовок `Новый чат` по своей природе неоднозначен, поэтому возможное намеренное название, совпадающее с заглушкой, также будет заменено: это явно принятая политика backfill, а не универсальное восстановление provenance.
+Перед применением `V77__backfill_legacy_default_chat_titles.sql` проверить, что V58 и все V73–V76 уже успешно применены
+в правильном порядке, сделать snapshot populated БД и провести dry-run подсчёта строк. Данные первого сообщения
+используются **только внутри того же чата**; миграция не меняет `organization_id`, `user_id`, `created_at`,
+`chat_messages` и audit trail. Legacy-заголовок `Новый чат` по своей природе неоднозначен, поэтому возможное намеренное
+название, совпадающее с заглушкой, также будет заменено: это явно принятая политика backfill, а не универсальное
+восстановление provenance.
 
-После применения проверить число оставшихся заглушек с/без сообщений, распределение `title_source`, `version` и неизменность названий, отличных от заглушки. Новые транзакционные проверки должны охватывать идемпотентный replay, ошибку Redis/quota, ручное rename одновременно с первым сообщением и frontend refresh списка. Если V77 уже есть в `flyway_schema_history`, изменять её нельзя; correction требует следующей свободной версии.
+После применения проверить число оставшихся заглушек с/без сообщений, распределение `title_source`, `version` и
+неизменность названий, отличных от заглушки. Новые транзакционные проверки должны охватывать идемпотентный replay,
+ошибку Redis/quota, ручное rename одновременно с первым сообщением и frontend refresh списка. Если V77 уже есть в
+`flyway_schema_history`, изменять её нельзя; correction требует следующей свободной версии.
 
 ## V72 — границы транзакционного допуска и обратная совместимость
 
@@ -4766,9 +4836,11 @@ README не утверждает `BUILD SUCCESS` без фактического
   extraction timeout, object hash/size, embedding vector validity и shutdown.
 - Retrieval V76: PostgreSQL constraint negative tests, preserved historical
   row, inserted redacted query and valid hash, immutable trigger, review index.
-- Chat title V58/V77: first accepted message, manually named chats, default placeholder submitted as `null`, concurrent rename/reservation, idempotent replay, rollback, legacy backfill on populated PostgreSQL and UI list refresh.
+- Chat title V58/V77: first accepted message, manually named chats, default placeholder submitted as `null`, concurrent
+  rename/reservation, idempotent replay, rollback, legacy backfill on populated PostgreSQL and UI list refresh.
 - Lease: PostgreSQL-clock renewal, fencing token mismatch, expired lease, DB outage and watchdog ownership-loss metrics.
-- Quota: route-bound reservation, verified/unverified pricing scheme, hard monthly cost limit, unknown-cost fail-closed and rollback consistency.
+- Quota: route-bound reservation, verified/unverified pricing scheme, hard monthly cost limit, unknown-cost fail-closed
+  and rollback consistency.
 - Upgrade: populated Flyway V72 → V77, application startup, production profile,
   Testcontainers PostgreSQL/Redis и отсутствие регрессии публичных API.
 
@@ -5876,7 +5948,8 @@ Spring wiring, database triggers и concurrency.
 ---
 
 **Актуализация:** 17 октября 2026 года. Сохранён исторический baseline PR #8;
-учтены подготовленные V73–V77 и chat-title/lease/quota integration, Model pricing, Knowledge ingestion и Audit/Usage hardening.
+учтены подготовленные V73–V77 и chat-title/lease/quota integration, Model pricing, Knowledge ingestion и Audit/Usage
+hardening.
 Публичный baseline `main` в ранее проведённой проверке содержал V1–V72;
 локальный checkout и реальная схема БД не прочитаны.
 Полный release gate и deployment не заявляются.
@@ -5911,7 +5984,8 @@ ORDER BY installed_rank;
 
 После миграции проверить canonical names, dirty queue,
 `audit_event_types`, V76 CHECK, retrieval query redaction,
-review queue index и PostgreSQL index validity. Проверить V77 backfill, автоматическое название при первой reservation, ручное rename и DB-clock lease; затем
+review queue index и PostgreSQL index validity. Проверить V77 backfill, автоматическое название при первой reservation,
+ручное rename и DB-clock lease; затем
 два экземпляра backend, Redis/DB failures, retention contention
 и реальные события `firing` плюс получение уведомления.
 

@@ -9,4 +9,13 @@ public interface ObjectStorage {
     StoredObject get(String key) throws IOException;
 
     void delete(String key) throws IOException;
+
+    /**
+     * Destructive erasure requires verification of *all* physical versions.
+     * A plain delete(key) must never be used as proof of physical erasure.
+     * Providers not implementing this MUST fail closed.
+     */
+    default void purgeAllVersionsVerified(String key) throws IOException {
+        throw new IOException("Verified physical erasure is not supported by this storage provider");
+    }
 }

@@ -13,6 +13,7 @@ import { EmptyState, ErrorState, LoadingState } from '../../../../shared/ui/Stat
 import ResizableScrollRegion from '../../../../shared/ui/ResizableScrollRegion'
 import KnowledgePagination from '../KnowledgePagination'
 import { formatBytes } from './knowledgeDocumentFormat'
+import type {KnowledgeDocumentDeletion} from '../../../../entities/knowledge/api/knowledgeDocumentDeletionApi'
 
 const STATUS_LABEL:
     Record<KnowledgeIngestionStatus, string> = {
@@ -56,6 +57,13 @@ export type KnowledgeDetailsContentProps = {
     reindexNotice: string
     openingDocumentId: string
     downloadingDocumentId: string
+    changingEnabledId: string
+    canDeleteDocuments: boolean
+    canShowDeleteAction: boolean
+    deleteUnavailableReason: string
+    requestDeletion: (document: KnowledgeDocument) => void
+    deletionOperations: KnowledgeDocumentDeletion[]
+    requestEnabledChange: (document: KnowledgeDocument) => void
     setDocumentPage: (page: number) => void
     openUpload: (target: KnowledgeDocument | 'new') => void
     openDocumentPreview: (document: KnowledgeDocument) => void | Promise<void>
@@ -81,6 +89,13 @@ export function KnowledgeDetailsContent({
     reindexNotice,
     openingDocumentId,
     downloadingDocumentId,
+    changingEnabledId,
+    canDeleteDocuments,
+    canShowDeleteAction,
+    deleteUnavailableReason,
+    requestDeletion,
+    deletionOperations,
+    requestEnabledChange,
     setDocumentPage,
     openUpload,
     openDocumentPreview,
@@ -296,6 +311,22 @@ export function KnowledgeDetailsContent({
                 maxHeight={760}
                 minUpperHeight={128}
             >
+                {deletionOperations.length > 0 && (
+                    <section className="knowledge-documents__notice" aria-label="Операции удаления документов">
+                        <strong>Операции удаления</strong>
+                        {deletionOperations.map(operation => (
+                            <p key={operation.operationId} role="status">
+                                {operation.state === 'DELETED' ? 'Документ удалён' :
+                                 operation.state === 'DELETING' ? 'Удаление выполняется' :
+                                 operation.state === 'BLOCKED_BY_RETENTION'
+                                     ? 'Удаление заблокировано правилами хранения' :
+                                     'Удаление требует проверки администратором'}
+                                {' · '}{operation.documentId}
+                            </p>
+                        ))}
+                    </section>
+                )}
+
                 {reindexNotice && (
                     <div className="knowledge-documents__notice" role="status">
                         {reindexNotice}
@@ -436,6 +467,11 @@ export function KnowledgeDetailsContent({
                                                     >
                                                         {STATUS_LABEL[status]}
                                                     </span>
+                                                    {!document.enabled && (
+                                                        <small className="knowledge-document-status-cell__published">
+                                                            Отключён — не участвует в AI-поиске
+                                                        </small>
+                                                    )}
                                                     {status === 'FAILED' && (
                                                         <small className="knowledge-document-status-cell__issue">
                                                             Обработка завершилась ошибкой.
@@ -505,6 +541,29 @@ export function KnowledgeDetailsContent({
                                                                 >
                                                                     Версии
                                                                 </button>
+                                                                <button
+                                                                    type="button"
+                                                                    className="secondary-button"
+                                                                    disabled={busy || changingEnabledId !== ''}
+                                                                    onClick={() => requestEnabledChange(document)}
+                                                                >
+                                                                    {changingEnabledId === document.id
+                                                                        ? 'Сохраняем…'
+                                                                        : document.enabled
+                                                                            ? 'Отключить'
+                                                                            : 'Включить'}
+                                                                </button>
+                                                                {canShowDeleteAction && (
+                                                                    <button type="button"
+                                                                        className="secondary-button"
+                                                                        disabled={busy || !canDeleteDocuments}
+                                                                        title={canDeleteDocuments
+                                                                            ? 'Безвозвратно удалить документ и все версии'
+                                                                            : deleteUnavailableReason}
+                                                                        onClick={() => requestDeletion(document)}>
+                                                                        Удалить…
+                                                                    </button>
+                                                                )}
                                                                 <button
                                                                     type="button"
                                                                     className="secondary-button document-reindex-button"

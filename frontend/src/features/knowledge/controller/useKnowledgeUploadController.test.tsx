@@ -1,8 +1,9 @@
 // frontend/src/features/knowledge/controller/useKnowledgeUploadController.test.tsx
 // Двойная отправка, версия документа и безопасный сброс состояния загрузки.
-import { act, renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { uploadKnowledgeDocument, uploadKnowledgeDocumentVersion } from '../../../entities/knowledge/api/knowledgeDocumentApi'
+import { ApiError } from '../../../shared/api/http'
 import { useKnowledgeUploadController } from './useKnowledgeUploadController'
 
 vi.mock('../../../entities/knowledge/api/knowledgeDocumentApi', () => ({
@@ -58,15 +59,60 @@ describe('useKnowledgeUploadController concurrency', () => {
         await act(async () => { await result.current.submitUpload() })
         expect(upload).not.toHaveBeenCalled()
     })
-    it('снимает блокировку после ошибки backend для ручного повтора', async () => {
-        upload.mockRejectedValueOnce(new Error('failed'))
-        const {result} = mount()
+    it('показывает ошибку валидации 400 и допускает ручное исправление', async () => {
+        upload.mockRejectedValueOnce(new ApiError(
+            'Расширение файла не соответствует содержимому.',
+            {code: 'BAD_REQUEST'},
+            400,
+        ))
+        const {result, refresh} = mount()
         act(() => { result.current.openUpload('new') })
         act(() => { result.current.selectFile(uploadFile()) })
         await act(async () => { await result.current.submitUpload() })
         expect(result.current.busy).toBe(false)
-        expect(result.current.uploadError).not.toBe('')
+        expect(result.current.uploadError).toContain('Расширение файла')
+        expect(result.current.uploadSubmitDisabled).toBe(false)
+        expect(refresh).not.toHaveBeenCalled()
         await act(async () => { await result.current.submitUpload() })
-        await waitFor(() => expect(upload).toHaveBeenCalledTimes(2))
+        expect(upload).toHaveBeenCalledTimes(2)
+    })
+
+    it.each([0, 408, 500])(
+        'после неопределённого результата %i обновляет список, но не повторяет POST',
+        async (status) => {
+            upload.mockRejectedValueOnce(new ApiError(
+                'Ответ не получен',
+                {code: 'REQUEST_TIMEOUT', requestId: 'req-upload-test'},
+                status,
+            ))
+            const {result, refresh, setDocumentPage} = mount()
+            act(() => { result.current.openUpload('new') })
+            act(() => { result.current.selectFile(uploadFile()) })
+            await act(async () => { await result.current.submitUpload() })
+            expect(upload).toHaveBeenCalledTimes(1)
+            expect(refresh).toHaveBeenCalledWith(0, false)
+            expect(setDocumentPage).toHaveBeenCalledWith(0)
+            expect(result.current.uploadError).toContain('мог сохраниться')
+            expect(result.current.uploadSubmitDisabled).toBe(true)
+            if (status === 0 || status >= 500) {
+                expect(result.current.uploadRequestId).toBe('req-upload-test')
+            }
+            await act(async () => { await result.current.submitUpload() })
+            expect(upload).toHaveBeenCalledTimes(1)
+        },
+    )
+
+    it('позволяет новую осознанную попытку только после закрытия окна', async () => {
+        upload.mockRejectedValueOnce(new Error('network lost'))
+        const {result} = mount()
+        act(() => { result.current.openUpload('new') })
+        act(() => { result.current.selectFile(uploadFile()) })
+        await act(async () => { await result.current.submitUpload() })
+        expect(result.current.uploadSubmitDisabled).toBe(true)
+        act(() => { result.current.closeUpload() })
+        act(() => { result.current.openUpload('new') })
+        act(() => { result.current.selectFile(uploadFile()) })
+        await act(async () => { await result.current.submitUpload() })
+        expect(upload).toHaveBeenCalledTimes(2)
     })
 })

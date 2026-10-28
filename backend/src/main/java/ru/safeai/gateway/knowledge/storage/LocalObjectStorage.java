@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -126,6 +127,25 @@ public class LocalObjectStorage
                         key
                 )
         );
+    }
+
+    @Override
+    public void purgeAllVersionsVerified(String key) throws IOException {
+        Path path = resolve(key);
+        // Refuse symlinked parent directories: otherwise normalized in-root
+        // paths can resolve to files *outside* the configured storage root.
+        Path parent = path.getParent();
+        while (parent != null && parent.startsWith(root)) {
+            if (Files.isSymbolicLink(parent)) {
+                throw new IOException("Cannot verify purge through symbolic-link directory");
+            }
+            parent = parent.getParent();
+        }
+        // Deleting a symlink at the leaf removes only the link, not the target.
+        Files.deleteIfExists(path);
+        if (Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException("Local object still exists after erasure verification");
+        }
     }
 
     private void moveIntoPlace(

@@ -95,7 +95,8 @@ public class KnowledgeRetrievalRepository {
                     where g.organization_id=:organizationId
                       and g.knowledge_base_id=:knowledgeBaseId
                       and g.embedding_model=:embeddingModel
-                      and g.state='ACTIVE' and d.enabled and b.enabled
+                      and g.state='ACTIVE' and d.enabled
+                      and d.lifecycle_state='AVAILABLE' and b.enabled
                       and (:administrator or b.visibility='ORGANIZATION' or exists (
                           select 1 from knowledge_base_memberships m
                           where m.knowledge_base_id=b.id and m.organization_id=b.organization_id
@@ -174,6 +175,7 @@ public class KnowledgeRetrievalRepository {
                               :embeddingModel
                       and knowledge_base.enabled
                       and document.enabled
+                      and document.lifecycle_state='AVAILABLE'
                       and (
                           :administrator
                           or knowledge_base.visibility =

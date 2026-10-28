@@ -2,6 +2,9 @@ package ru.safeai.gateway.knowledge.storage;
 
 import io.minio.BucketExistsArgs;
 import io.minio.GetObjectArgs;
+import io.minio.ListObjectsArgs;
+import io.minio.Result;
+import io.minio.messages.Item;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.RemoveObjectArgs;
@@ -176,6 +179,78 @@ public class S3ObjectStorage implements ObjectStorage {
                     "Не удалось удалить объект из S3 storage",
                     exception
             );
+        }
+    }
+
+    /**
+     * Removes every enumerated version and delete marker; never bypasses Object Lock.
+     * A storage failure or ambiguous result is NOT success. Caller must keep the
+     * durable deletion operation pending for reconciliation.
+     *
+     * Only call when document publication and late uploads are fenced elsewhere.
+     */
+    @Override
+    public void purgeAllVersionsVerified(String key) throws IOException {
+        requireKey(key);
+        try {
+            // Cap work per key; do not claim success on an unexpectedly large listing.
+            int iterations = 0;
+            while (true) {
+                if (++iterations > 10000) {
+                    throw new IOException("S3 erasure exceeded safe iteration limit");
+                }
+                java.util.List<Item> versions = listExactKeyVersions(key);
+                if (versions.isEmpty()) {
+                    // ListObjectVersions and HEAD are independent verification paths.
+                    if (!objectExists(key)) {
+                        return;
+                    }
+                    // Handles an unversioned key not reported by an unusual provider.
+                    client.removeObject(RemoveObjectArgs.builder()
+                            .bucket(bucket).object(key).build());
+                    continue;
+                }
+                for (Item item : versions) {
+                    RemoveObjectArgs.Builder builder = RemoveObjectArgs.builder()
+                            .bucket(bucket).object(key);
+                    String versionId = item.versionId();
+                    if (versionId != null && !versionId.isBlank()) {
+                        builder.versionId(versionId);
+                    }
+                    // Do NOT bypass governance retention or legal holds.
+                    client.removeObject(builder.build());
+                }
+            }
+        } catch (IOException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new IOException("S3 physical erasure cannot be verified", exception);
+        }
+    }
+
+    private java.util.List<Item> listExactKeyVersions(String key) throws Exception {
+        java.util.List<Item> versions = new java.util.ArrayList<>();
+        Iterable<Result<Item>> results = client.listObjects(
+                ListObjectsArgs.builder().bucket(bucket).prefix(key)
+                        .recursive(true).includeVersions(true).build());
+        for (Result<Item> result : results) {
+            Item item = result.get(); // a lazy listing may fail here
+            // Prefix listing could otherwise delete adjacent documents.
+            if (key.equals(item.objectName())) {
+                versions.add(item);
+            }
+        }
+        return versions;
+    }
+
+    private boolean objectExists(String key) throws Exception {
+        try {
+            client.statObject(StatObjectArgs.builder()
+                    .bucket(bucket).object(key).build());
+            return true;
+        } catch (ErrorResponseException exception) {
+            if (isObjectNotFound(exception)) return false;
+            throw exception;
         }
     }
 

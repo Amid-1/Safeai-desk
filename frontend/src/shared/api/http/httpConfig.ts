@@ -7,6 +7,8 @@
 
 export const API_TIMEOUTS = {
     default: 30_000,
+    // Upload can include object-storage I/O; do not cut off a committed POST early.
+    upload: 120_000,
     auth: 20_000,
 
     // Немного больше Nginx proxy timeout 90s, чтобы frontend получил

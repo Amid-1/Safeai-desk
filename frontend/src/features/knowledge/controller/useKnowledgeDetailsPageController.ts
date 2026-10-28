@@ -6,6 +6,7 @@ import { useKnowledgeDetailsData } from './useKnowledgeDetailsData'
 import { useKnowledgeDocumentActions } from './useKnowledgeDocumentActions'
 import { useKnowledgeUploadController } from './useKnowledgeUploadController'
 import { useKnowledgeVersionsController } from './useKnowledgeVersionsController'
+import { useKnowledgeDeletionController } from './useKnowledgeDeletionController'
 
 export function useKnowledgeDetailsPageController() {
     const {
@@ -44,5 +45,14 @@ export function useKnowledgeDetailsPageController() {
             setError: data.setError,
         })
 
-    return { data, upload, documentActions, versions, documentsSectionRef }
+    const deletion = useKnowledgeDeletionController({
+        knowledgeBaseId,
+        isOwner: data.access?.administrator === true || data.access?.accessLevel === 'OWNER',
+        setError: data.setError,
+        refresh: async () => {
+            await Promise.all([data.loadOverview(), data.loadDocuments(data.documentPage)])
+        },
+    })
+
+    return { data, upload, documentActions, versions, deletion, documentsSectionRef }
 }

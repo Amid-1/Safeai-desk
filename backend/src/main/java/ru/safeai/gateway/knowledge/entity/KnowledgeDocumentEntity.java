@@ -6,6 +6,8 @@ import lombok.Setter;
 import org.hibernate.annotations.Generated;
 import org.hibernate.generator.EventType;
 
+import ru.safeai.gateway.knowledge.model.KnowledgeDocumentLifecycleState;
+
 import java.time.Instant;
 import java.util.UUID;
 
@@ -30,6 +32,11 @@ public class KnowledgeDocumentEntity {
 
     @Column(nullable = false)
     private boolean enabled = true;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "lifecycle_state", nullable = false, length = 16)
+    private KnowledgeDocumentLifecycleState lifecycleState =
+            KnowledgeDocumentLifecycleState.AVAILABLE;
 
     /** Latest uploaded version, regardless of ingestion outcome. */
     @Column(name = "current_version_id")

@@ -126,7 +126,7 @@ export function useKnowledgeDetailsData(
 
     const refreshAfterSuccessfulUpload =
         useCallback(
-            async (targetPage: number) => {
+            async (targetPage: number, confirmed = true) => {
                 setError('')
                 setDocumentsError('')
 
@@ -145,7 +145,9 @@ export function useKnowledgeDetailsData(
                     setError(
                         getApiErrorMessage(
                             overviewResult.reason,
-                            'Документ загружен, но не удалось обновить состояние базы знаний.',
+                            confirmed
+                                ? 'Документ загружен, но не удалось обновить состояние базы знаний.'
+                                : 'Не удалось проверить состояние базы после попытки загрузки.',
                         ),
                     )
                 }
@@ -157,7 +159,9 @@ export function useKnowledgeDetailsData(
                     setDocumentsError(
                         getApiErrorMessage(
                             documentsResult.reason,
-                            'Документ загружен, но не удалось обновить список документов.',
+                            confirmed
+                                ? 'Документ загружен, но не удалось обновить список документов.'
+                                : 'Не удалось проверить список документов после попытки загрузки.',
                         ),
                     )
                 }

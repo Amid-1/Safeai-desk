@@ -5,6 +5,7 @@ import {
     render,
     screen,
     waitFor,
+    within,
 } from '@testing-library/react'
 import {
     MemoryRouter,
@@ -33,12 +34,18 @@ import {
     getKnowledgeDocuments,
     getKnowledgeHealth,
     reindexKnowledgeDocument,
+    updateKnowledgeDocument,
     uploadKnowledgeDocument,
     uploadKnowledgeDocumentVersion,
 } from '../entities/knowledge/api/knowledgeDocumentApi'
 import type {
     KnowledgeDocument,
 } from '../entities/knowledge/api/knowledgeDocumentApi'
+import {
+    acceptDocumentDeletion,
+    deletionCapability,
+    listDocumentDeletions,
+} from '../entities/knowledge/api/knowledgeDocumentDeletionApi'
 import KnowledgeDetailsPage
     from './KnowledgeDetailsPage'
 
@@ -72,6 +79,8 @@ vi.mock(
                 vi.fn(),
             reindexKnowledgeDocument:
                 vi.fn(),
+            updateKnowledgeDocument:
+                vi.fn(),
             uploadKnowledgeDocument:
                 vi.fn(),
             uploadKnowledgeDocumentVersion:
@@ -79,6 +88,12 @@ vi.mock(
         }
     },
 )
+
+vi.mock('../entities/knowledge/api/knowledgeDocumentDeletionApi', () => ({
+    acceptDocumentDeletion: vi.fn(),
+    deletionCapability: vi.fn(),
+    listDocumentDeletions: vi.fn(),
+}))
 
 const KNOWLEDGE_BASE_ID =
     '28ae4cac-2f14-42af-85e9-e3f1385a249f'
@@ -142,6 +157,10 @@ const DOCUMENT:
         '2026-08-16T18:23:49Z',
 }
 
+const deletionCapabilityMock = vi.mocked(deletionCapability)
+const listDocumentDeletionsMock = vi.mocked(listDocumentDeletions)
+const acceptDocumentDeletionMock = vi.mocked(acceptDocumentDeletion)
+
 const getKnowledgeBaseMock =
     vi.mocked(
         getKnowledgeBase,
@@ -164,6 +183,7 @@ const fetchKnowledgeDocumentBlobMock =
 
 const getKnowledgeHealthMock = vi.mocked(getKnowledgeHealth)
 const reindexKnowledgeDocumentMock = vi.mocked(reindexKnowledgeDocument)
+const updateKnowledgeDocumentMock = vi.mocked(updateKnowledgeDocument)
 
 const uploadKnowledgeDocumentMock =
     vi.mocked(
@@ -259,6 +279,9 @@ describe(
         beforeEach(() => {
             vi.clearAllMocks()
 
+            deletionCapabilityMock.mockResolvedValue(false)
+            listDocumentDeletionsMock.mockResolvedValue([])
+
             getKnowledgeBaseMock
                 .mockResolvedValue(
                     KNOWLEDGE_BASE,
@@ -325,6 +348,144 @@ describe(
                 status: 'PENDING',
                 requestedAt: '2026-08-21T10:00:00Z',
             })
+        })
+
+        it('OWNER видит неактивное удаление, пока backend запрещает его', async () => {
+            renderPage()
+            fireEvent.click(await screen.findByText('Другие действия'))
+            const button = screen.getByRole('button', {name: 'Удалить…'})
+            await waitFor(() => expect(deletionCapabilityMock).toHaveBeenCalledWith(
+                KNOWLEDGE_BASE_ID, expect.any(AbortSignal),
+            ))
+            expect(button).toBeDisabled()
+            await waitFor(() => expect(button).toHaveAttribute('title',
+                'Безвозвратное удаление пока не включено на сервере.'))
+            expect(acceptDocumentDeletionMock).not.toHaveBeenCalled()
+            expect(listDocumentDeletionsMock).not.toHaveBeenCalled()
+        })
+
+        it('ошибка capability закрывает опасную команду, а не разрешает удаление', async () => {
+            deletionCapabilityMock.mockRejectedValue(new Error('Backend unavailable'))
+            renderPage()
+            fireEvent.click(await screen.findByText('Другие действия'))
+            const button = screen.getByRole('button', {name: 'Удалить…'})
+            await waitFor(() => expect(button.getAttribute('title'))
+                .toMatch(/Не удалось проверить возможность удаления/))
+            expect(button).toBeDisabled()
+            expect(acceptDocumentDeletionMock).not.toHaveBeenCalled()
+        })
+
+        it('OWNER подтверждает удаление точным названием, DELETING не считается DELETED', async () => {
+            deletionCapabilityMock.mockResolvedValue(true)
+            acceptDocumentDeletionMock.mockResolvedValue({
+                operationId: '5cb5d02d-88ec-4970-812f-c421af5239e3',
+                documentId: DOCUMENT_ID,
+                state: 'DELETING',
+                createdAt: '2026-10-28T18:00:00Z',
+                completedAt: null,
+            })
+            renderPage()
+                fireEvent.click(await screen.findByText('Другие действия'))
+                const button = screen.getByRole('button', {name: 'Удалить…'})
+                await waitFor(() => expect(button).toBeEnabled())
+                fireEvent.click(button)
+                const dialog = screen.getByRole('dialog')
+                const confirm = within(dialog).getByRole('button', {name: 'Удалить безвозвратно'})
+                expect(confirm).toBeDisabled()
+                fireEvent.change(within(dialog).getByRole('textbox', {name: 'Название документа'}),
+                    {target: {value: DOCUMENT.name}})
+                fireEvent.click(confirm)
+                await waitFor(() => expect(acceptDocumentDeletionMock).toHaveBeenCalledWith(
+                    KNOWLEDGE_BASE_ID, DOCUMENT_ID, DOCUMENT.version,
+                    expect.stringMatching(/^[a-f0-9-]{36}$/),
+                ))
+                expect(await screen.findByText(/Удаление выполняется/)).toBeInTheDocument()
+                expect(screen.queryByText(/Документ удалён/)).not.toBeInTheDocument()
+        })
+
+        it('VIEWER не видит команду удаления даже при разрешённом feature flag', async () => {
+            deletionCapabilityMock.mockResolvedValue(true)
+            getKnowledgeBaseAccessMock.mockResolvedValue({
+                knowledgeBaseId: KNOWLEDGE_BASE_ID,
+                accessLevel: 'VIEWER', administrator: false,
+                canEditDocuments: false, canManageBase: false, canManageMembers: false,
+            })
+            renderPage()
+            await screen.findByText(DOCUMENT.name)
+            expect(screen.queryByRole('button', {name: 'Удалить…'})).not.toBeInTheDocument()
+            expect(acceptDocumentDeletionMock).not.toHaveBeenCalled()
+        })
+
+        it('отключает документ одним PATCH после подтверждения и обновляет список', async () => {
+            updateKnowledgeDocumentMock.mockResolvedValue({
+                ...DOCUMENT,
+                enabled: false,
+                version: 2,
+            })
+            renderPage()
+            fireEvent.click(await screen.findByText('Другие действия'))
+            fireEvent.click(screen.getByRole('button', {name: 'Отключить'}))
+            expect(updateKnowledgeDocumentMock).not.toHaveBeenCalled()
+            fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', {name: 'Отключить'}))
+            await waitFor(() => {
+                expect(updateKnowledgeDocumentMock).toHaveBeenCalledWith(
+                    KNOWLEDGE_BASE_ID,
+                    DOCUMENT_ID,
+                    {name: DOCUMENT.name, enabled: false, expectedVersion: 1},
+                )
+            })
+            expect(updateKnowledgeDocumentMock).toHaveBeenCalledTimes(1)
+        })
+
+        it('при сетевой ошибке PATCH не показывает успех и не делает повторных запросов', async () => {
+            updateKnowledgeDocumentMock.mockRejectedValue(new Error('Сеть недоступна'))
+            renderPage()
+            fireEvent.click(await screen.findByText('Другие действия'))
+            fireEvent.click(screen.getByRole('button', {name: 'Отключить'}))
+            fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', {
+                name: 'Отключить',
+            }))
+            await waitFor(() => {
+                expect(updateKnowledgeDocumentMock).toHaveBeenCalledTimes(1)
+                expect(screen.getByRole('dialog')).toBeInTheDocument()
+            })
+        })
+
+        it('включает ранее отключённый документ с актуальной версией', async () => {
+            getKnowledgeDocumentsMock.mockResolvedValue({
+                content: [{...DOCUMENT, enabled: false, version: 8}],
+                page: 0, size: 50, totalElements: 1, totalPages: 1,
+            })
+            updateKnowledgeDocumentMock.mockResolvedValue({
+                ...DOCUMENT,
+                enabled: true,
+                version: 9,
+            })
+            renderPage()
+            fireEvent.click(await screen.findByText('Другие действия'))
+            fireEvent.click(screen.getByRole('button', {name: 'Включить'}))
+            fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', {
+                name: 'Включить',
+            }))
+            await waitFor(() => expect(updateKnowledgeDocumentMock).toHaveBeenCalledWith(
+                KNOWLEDGE_BASE_ID,
+                DOCUMENT_ID,
+                {name: DOCUMENT.name, enabled: true, expectedVersion: 8},
+            ))
+        })
+
+        it('VIEWER не получает управление состоянием документа', async () => {
+            getKnowledgeBaseAccessMock.mockResolvedValue({
+                knowledgeBaseId: KNOWLEDGE_BASE_ID,
+                accessLevel: 'VIEWER',
+                administrator: false,
+                canEditDocuments: false,
+                canManageBase: false,
+                canManageMembers: false,
+            })
+            renderPage()
+            await screen.findByText(DOCUMENT.name)
+            expect(screen.queryByText('Другие действия')).not.toBeInTheDocument()
         })
 
         it('не запускает reindex, пока документ обрабатывается', async () => {
@@ -735,7 +896,7 @@ describe(
         )
 
         it(
-            'для внутренней 500 ошибки показывает код запроса',
+            'для 500 сохраняет Request ID, проверяет список и блокирует повторный POST',
             async () => {
                 uploadKnowledgeDocumentMock
                     .mockRejectedValue(
@@ -764,18 +925,51 @@ describe(
 
                 expect(alert)
                     .toHaveTextContent(
-                        'Не удалось загрузить файл.',
+                        'Не удалось подтвердить результат загрузки.',
                     )
-
+                expect(alert)
+                    .toHaveTextContent(
+                        'Документ мог сохраниться на сервере.',
+                    )
+                expect(alert)
+                    .toHaveTextContent(
+                        'Не отправляйте тот же файл повторно до проверки.',
+                    )
+                expect(alert)
+                    .not.toHaveTextContent(
+                        'Sensitive internal details',
+                    )
+                expect(alert)
+                    .not.toHaveTextContent(
+                        'INTERNAL_ERROR',
+                    )
                 expect(alert)
                     .toHaveTextContent(
                         'Код запроса:',
                     )
-
                 expect(alert)
                     .toHaveTextContent(
                         'request-server-500',
                     )
+
+                // Initial read + read-only reconciliation after uncertain POST.
+                await waitFor(() => {
+                    expect(getKnowledgeDocumentsMock)
+                        .toHaveBeenCalledTimes(2)
+                })
+                expect(uploadKnowledgeDocumentMock)
+                    .toHaveBeenCalledTimes(1)
+                expect(uploadKnowledgeDocumentVersionMock)
+                    .not.toHaveBeenCalled()
+
+                const submitButton = screen.getByRole(
+                    'button',
+                    { name: 'Загрузить' },
+                )
+                expect(submitButton).toBeDisabled()
+                fireEvent.click(submitButton)
+                expect(uploadKnowledgeDocumentMock)
+                    .toHaveBeenCalledTimes(1)
             },
         )
 

@@ -1,13 +1,15 @@
 // frontend/src/features/knowledge/ui/KnowledgeDetailsWorkspace.tsx
 // Композиция карточки базы знаний, предпросмотра документов и диалогов версий.
 import { ErrorState, LoadingState } from '../../../shared/ui/StateBlock'
+import ConfirmDialog from '../../../shared/ui/ConfirmDialog'
 import { KnowledgeDetailsContent } from './details/KnowledgeDetailsContent'
 import { KnowledgeUploadDialog } from './details/KnowledgeUploadDialog'
 import { KnowledgeVersionsDialog } from './details/KnowledgeVersionsDialog'
+import { KnowledgeDeleteDialog } from './details/KnowledgeDeleteDialog'
 import { useKnowledgeDetailsPageController } from '../controller/useKnowledgeDetailsPageController'
 
 export function KnowledgeDetailsWorkspace() {
-    const { data, upload, documentActions, versions, documentsSectionRef } =
+    const { data, upload, documentActions, versions, deletion, documentsSectionRef } =
         useKnowledgeDetailsPageController()
 
     if (data.loading) {
@@ -56,6 +58,13 @@ export function KnowledgeDetailsWorkspace() {
                 downloadingDocumentId={
                     documentActions.downloadingDocumentId
                 }
+                changingEnabledId={documentActions.changingEnabledId}
+                canDeleteDocuments={deletion.available}
+                canShowDeleteAction={deletion.canShowAction}
+                deleteUnavailableReason={deletion.unavailableReason}
+                requestDeletion={deletion.requestDeletion}
+                deletionOperations={deletion.operations}
+                requestEnabledChange={documentActions.requestEnabledChange}
                 setDocumentPage={
                     data.setDocumentPage
                 }
@@ -79,6 +88,36 @@ export function KnowledgeDetailsWorkspace() {
                     data.retryDocuments
                 }
             />
+
+            {data.access?.canEditDocuments
+                && documentActions.enabledTarget && (
+                <ConfirmDialog
+                    title={documentActions.enabledTarget.enabled
+                        ? 'Отключить документ'
+                        : 'Включить документ'}
+                    message={documentActions.enabledTarget.enabled
+                        ? `Документ «${documentActions.enabledTarget.name}» перестанет использоваться `
+                            + 'в ответах AI. Он останется в базе знаний, и его можно будет включить снова.'
+                        : `Документ «${documentActions.enabledTarget.name}» снова станет доступен `
+                            + 'для поиска и ответов AI, если он обработан и готов к использованию.'}
+                    confirmText={documentActions.enabledTarget.enabled
+                        ? 'Отключить'
+                        : 'Включить'}
+                    danger={documentActions.enabledTarget.enabled}
+                    onCancel={documentActions.cancelEnabledChange}
+                    onConfirm={documentActions.confirmEnabledChange}
+                />
+            )}
+
+            {deletion.available && deletion.target && (
+                <KnowledgeDeleteDialog
+                    key={deletion.target.document.id}
+                    document={deletion.target.document}
+                    busy={deletion.busy}
+                    onCancel={deletion.cancelDeletion}
+                    onConfirm={deletion.confirmDeletion}
+                />
+            )}
 
             {data.access?.canEditDocuments
                 && upload.uploadTarget && (
