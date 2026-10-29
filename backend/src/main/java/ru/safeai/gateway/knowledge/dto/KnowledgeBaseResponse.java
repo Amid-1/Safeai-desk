@@ -16,8 +16,17 @@ public record KnowledgeBaseResponse(
         UUID createdByUserId,
         long version,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        String lifecycleState
 ) {
+
+    /** Legacy positional constructor retained for existing test fixtures. */
+    public KnowledgeBaseResponse(UUID id, UUID organizationId, String name, String description,
+                                 KnowledgeBaseVisibility visibility, boolean enabled,
+                                 UUID createdByUserId, long version, Instant createdAt, Instant updatedAt) {
+        this(id, organizationId, name, description, visibility, enabled,
+                createdByUserId, version, createdAt, updatedAt, "AVAILABLE");
+    }
 
     public static KnowledgeBaseResponse from(KnowledgeBaseEntity entity) {
         return new KnowledgeBaseResponse(
@@ -30,7 +39,8 @@ public record KnowledgeBaseResponse(
                 entity.getCreatedByUserId(),
                 entity.getVersion(),
                 entity.getCreatedAt(),
-                entity.getUpdatedAt()
+                entity.getUpdatedAt(),
+                entity.getLifecycleState()
         );
     }
 }

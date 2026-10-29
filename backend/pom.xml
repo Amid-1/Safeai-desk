@@ -34,13 +34,20 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
-        <!-- Security updates for entire families managed by Spring Boot 4.1.1. -->
-        <jackson-2-bom.version>2.21.7</jackson-2-bom.version>
-        <jackson-bom.version>3.1.7</jackson-bom.version>
-        <tomcat.version>11.0.26</tomcat.version>
+        <!-- CVE-2026-110879 (Jackson 2.x/3.x) and Tomcat 11.x security fixes. -->
+        <jackson-2-bom.version>2.21.8</jackson-2-bom.version>
+        <jackson-bom.version>3.1.8</jackson-bom.version>
+        <tomcat.version>11.0.27</tomcat.version>
         <netty.version>4.2.18.Final</netty.version>
         <logback.version>1.6.5</logback.version>
         <slf4j.version>2.0.19</slf4j.version>
+
+        <!-- ASM 9.11.1 fixes the October 2026 class-file processing advisories,
+             including CVE-2026-110260 and the 9.11 regression CVE-2026-112046. -->
+        <asm.version>9.11.1</asm.version>
+        <!-- Use a maintained org.json implementation in the test runtime, not
+             the unmaintained Vaadin android-json fork (CVE-2026-110974). -->
+        <json-java.version>20260814</json-java.version>
 
         <testcontainers.version>2.0.5</testcontainers.version>
         <archunit.version>1.5.1</archunit.version>
@@ -86,6 +93,16 @@
                 <groupId>org.testcontainers</groupId>
                 <artifactId>testcontainers-bom</artifactId>
                 <version>${testcontainers.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Keep the entire ASM family aligned; prevents older transitive
+                 ASM implementations from reintroducing 2026 DoS vulnerabilities. -->
+            <dependency>
+                <groupId>org.ow2.asm</groupId>
+                <artifactId>asm-bom</artifactId>
+                <version>${asm.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -293,6 +310,22 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+            <!-- JSONassert stays on the classpath. Only the obsolete duplicate
+                 org.json implementation is replaced, preserving JSON assertions. -->
+            <exclusions>
+                <exclusion>
+                    <groupId>com.vaadin.external.google</groupId>
+                    <artifactId>android-json</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <!-- Supported org.json implementation for JSONassert and other tests. -->
+        <dependency>
+            <groupId>org.json</groupId>
+            <artifactId>json</artifactId>
+            <version>${json-java.version}</version>
             <scope>test</scope>
         </dependency>
 

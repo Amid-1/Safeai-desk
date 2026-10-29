@@ -43,6 +43,9 @@ public class KnowledgeBaseEntity {
     @Column(name = "enabled", nullable = false)
     private boolean enabled;
 
+    @Column(name = "lifecycle_state", nullable = false, length = 16)
+    private String lifecycleState = "AVAILABLE";
+
     @Column(name = "created_by_user_id", nullable = false, updatable = false)
     private UUID createdByUserId;
 
