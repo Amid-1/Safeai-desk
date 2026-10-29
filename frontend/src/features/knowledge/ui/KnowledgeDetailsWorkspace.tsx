@@ -1,5 +1,7 @@
 // frontend/src/features/knowledge/ui/KnowledgeDetailsWorkspace.tsx
 // Композиция карточки базы знаний, предпросмотра документов и диалогов версий.
+import { useNavigate } from 'react-router-dom'
+import { KnowledgeBaseDeleteAction } from './KnowledgeBaseDeleteAction'
 import { ErrorState, LoadingState } from '../../../shared/ui/StateBlock'
 import ConfirmDialog from '../../../shared/ui/ConfirmDialog'
 import { KnowledgeDetailsContent } from './details/KnowledgeDetailsContent'
@@ -9,6 +11,7 @@ import { KnowledgeDeleteDialog } from './details/KnowledgeDeleteDialog'
 import { useKnowledgeDetailsPageController } from '../controller/useKnowledgeDetailsPageController'
 
 export function KnowledgeDetailsWorkspace() {
+    const navigate = useNavigate()
     const { data, upload, documentActions, versions, deletion, documentsSectionRef } =
         useKnowledgeDetailsPageController()
 
@@ -31,6 +34,10 @@ export function KnowledgeDetailsWorkspace() {
 
     return (
         <div className="page knowledge-details knowledge-details-page">
+            {data.access?.administrator && <div className="knowledge-base-delete-toolbar">
+                <KnowledgeBaseDeleteAction base={data.base}
+                    onAccepted={() => navigate('/knowledge')}/>
+            </div>}
             <KnowledgeDetailsContent
                 base={data.base}
                 health={data.health}

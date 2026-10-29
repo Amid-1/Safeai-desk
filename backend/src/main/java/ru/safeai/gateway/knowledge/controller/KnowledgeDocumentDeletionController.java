@@ -14,8 +14,8 @@ import ru.safeai.gateway.knowledge.service.KnowledgeDocumentDeletionAcceptanceSe
 import java.util.UUID;
 
 /**
- * Deliberately NOT mapped by default: never leave documents in DELETING before
- * the verified, restart-safe purge worker is deployed and enabled.
+ * Destructive endpoint only. Read-only deletion history is mapped separately
+ * so existing operations remain observable while deletion flags are OFF.
  */
 @RestController
 @RequiredArgsConstructor
@@ -36,21 +36,6 @@ public class KnowledgeDocumentDeletionController {
             @AuthenticationPrincipal(errorOnInvalidType = true) SafeAiUserPrincipal user) {
         return acceptance.accept(knowledgeBaseId, documentId,
                 parseExpectedVersion(ifMatch), idempotencyKey, user);
-    }
-
-    @GetMapping("/document-deletions/{operationId}")
-    public KnowledgeDocumentDeletionResponse status(
-            @PathVariable UUID knowledgeBaseId,
-            @PathVariable UUID operationId,
-            @AuthenticationPrincipal(errorOnInvalidType = true) SafeAiUserPrincipal user) {
-        return acceptance.status(knowledgeBaseId, operationId, user);
-    }
-
-    @GetMapping("/document-deletions")
-    public java.util.List<KnowledgeDocumentDeletionResponse> list(
-            @PathVariable UUID knowledgeBaseId,
-            @AuthenticationPrincipal(errorOnInvalidType = true) SafeAiUserPrincipal user) {
-        return acceptance.list(knowledgeBaseId, user);
     }
 
     private static long parseExpectedVersion(String ifMatch) {

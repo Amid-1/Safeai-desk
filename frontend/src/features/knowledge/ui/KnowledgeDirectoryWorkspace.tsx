@@ -4,6 +4,7 @@ import KnowledgeBaseCard from './KnowledgeBaseCard'
 import KnowledgeBaseFormModal from './KnowledgeBaseFormModal'
 import KnowledgeMembersModal from './KnowledgeMembersModal'
 import KnowledgePagination from './KnowledgePagination'
+import { BaseDeletionHistory } from './BaseDeletionHistory'
 import { EmptyState, ErrorState, LoadingState } from '../../../shared/ui/StateBlock'
 import { useKnowledgeDirectoryController } from '../controller/useKnowledgeDirectoryController'
 import type { ActivityFilter, VisibilityFilter } from '../model/knowledgeDirectoryTypes'
@@ -137,6 +138,7 @@ export function KnowledgeDirectoryWorkspace() {
                                     canManage={canManage}
                                     onEdit={setEditing}
                                     onMembers={setMembersBase}
+                                    onDeletionAccepted={refreshList}
                                 />
                             ))}
                         </div>
@@ -153,6 +155,8 @@ export function KnowledgeDirectoryWorkspace() {
                     </>
                 )}
             </div>
+
+            {canManage && <BaseDeletionHistory refreshVersion={basePage.totalElements}/> }
 
             {createOpen && (
                 <KnowledgeBaseFormModal

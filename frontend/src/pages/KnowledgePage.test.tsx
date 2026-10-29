@@ -36,6 +36,12 @@ vi.mock('../entities/knowledge/api/knowledgeApi', () => ({
     removeKnowledgeBaseMember: vi.fn(),
 }))
 
+vi.mock('../entities/knowledge/api/knowledgeBaseDeletionApi', () => ({
+    baseDeletionCapability: vi.fn().mockResolvedValue(false),
+    acceptBaseDeletion: vi.fn(),
+    listBaseDeletions: vi.fn().mockResolvedValue([]),
+}))
+
 vi.mock('../entities/knowledge/api/knowledgeDocumentApi', () => ({
     getKnowledgeHealth: vi.fn().mockResolvedValue({
         totalDocuments: 4,

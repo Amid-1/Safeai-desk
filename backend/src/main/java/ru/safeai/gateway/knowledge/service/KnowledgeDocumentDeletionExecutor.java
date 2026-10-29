@@ -1,6 +1,5 @@
 package ru.safeai.gateway.knowledge.service;
 
-import io.minio.errors.ErrorResponseException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -10,6 +9,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import ru.safeai.gateway.knowledge.storage.ObjectStorage;
+import ru.safeai.gateway.knowledge.storage.VerifiedObjectLockException;
 
 import java.util.List;
 import java.util.Locale;
@@ -372,18 +372,17 @@ public class KnowledgeDocumentDeletionExecutor {
     }
 
     private void fail(Claim claim, Exception error) {
-        String code = error.getClass().getSimpleName().toUpperCase(Locale.ROOT);
         boolean blockedByRetention = false;
         for (Throwable cause = error; cause != null; cause = cause.getCause()) {
-            if (cause instanceof ErrorResponseException response
-                    && response.errorResponse() != null) {
-                String providerCode = response.errorResponse().code();
-                if ("ObjectLocked".equals(providerCode)
-                        || "InvalidObjectState".equals(providerCode)) {
-                    blockedByRetention = true;
-                }
+            if (cause instanceof VerifiedObjectLockException) {
+                blockedByRetention = true;
+                break;
             }
         }
+        // Retention has been verified for the specific S3 version, not inferred
+        // from a generic provider code that could mean insufficient permissions.
+        String code = blockedByRetention ? "OBJECT_LOCK_VERIFIED"
+                : error.getClass().getSimpleName().toUpperCase(Locale.ROOT);
 
         String newState = blockedByRetention ? "BLOCKED_BY_RETENTION"
                 : claim.attempts() >= MAX_ATTEMPTS ? "NEEDS_REVIEW" : "DELETING";

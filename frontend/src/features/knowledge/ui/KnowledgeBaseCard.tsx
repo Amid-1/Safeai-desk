@@ -7,11 +7,13 @@ import {
 } from '../../../shared/lib/format'
 import { Link } from 'react-router-dom'
 import { useEffect, useState } from 'react'
+import { KnowledgeBaseDeleteAction } from './KnowledgeBaseDeleteAction'
 import { getKnowledgeHealth } from '../../../entities/knowledge/api/knowledgeDocumentApi'
 
 type KnowledgeBaseCardProps = {
     knowledgeBase: KnowledgeBase
     canManage: boolean
+    onDeletionAccepted?: () => void
     onEdit:
         (knowledgeBase: KnowledgeBase) => void
     onMembers:
@@ -21,6 +23,7 @@ type KnowledgeBaseCardProps = {
 function KnowledgeBaseCard({
     knowledgeBase,
     canManage,
+    onDeletionAccepted,
     onEdit,
     onMembers,
 }: KnowledgeBaseCardProps) {
@@ -74,7 +77,9 @@ function KnowledgeBaseCard({
 
                     <span
                         className={
-                            knowledgeBase.enabled
+                            knowledgeBase.lifecycleState === 'DELETING'
+                                ? 'knowledge-status knowledge-status--disabled'
+                                : knowledgeBase.enabled
                                 ? (
                                     'knowledge-status '
                                     + 'knowledge-status--enabled'
@@ -86,9 +91,9 @@ function KnowledgeBaseCard({
                         }
                     >
                         {
-                            knowledgeBase.enabled
-                                ? 'Активна'
-                                : 'Отключена'
+                            knowledgeBase.lifecycleState === 'DELETING'
+                                ? 'Удаляется'
+                                : knowledgeBase.enabled ? 'Активна' : 'Отключена'
                         }
                     </span>
                 </div>
@@ -166,6 +171,7 @@ function KnowledgeBaseCard({
 
                     <button
                         type="button"
+                        disabled={knowledgeBase.lifecycleState === 'DELETING'}
                         className="knowledge-card__management-action knowledge-card__management-action--settings"
                         title="Изменить настройки базы знаний"
                         onClick={() =>
@@ -185,6 +191,8 @@ function KnowledgeBaseCard({
                             →
                         </span>
                     </button>
+                    <KnowledgeBaseDeleteAction base={knowledgeBase}
+                        onAccepted={() => onDeletionAccepted?.()}/>
                 </div>
             )}
             <Link className="knowledge-card__open" to={`/knowledge/${knowledgeBase.id}`}>Открыть базу</Link>
