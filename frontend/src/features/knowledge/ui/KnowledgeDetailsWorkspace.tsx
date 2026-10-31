@@ -71,6 +71,7 @@ export function KnowledgeDetailsWorkspace() {
                 deleteUnavailableReason={deletion.unavailableReason}
                 requestDeletion={deletion.requestDeletion}
                 deletionOperations={deletion.operations}
+                deletionHistoryError={deletion.historyError}
                 requestEnabledChange={documentActions.requestEnabledChange}
                 setDocumentPage={
                     data.setDocumentPage

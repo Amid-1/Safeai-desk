@@ -63,6 +63,7 @@ export type KnowledgeDetailsContentProps = {
     deleteUnavailableReason: string
     requestDeletion: (document: KnowledgeDocument) => void
     deletionOperations: KnowledgeDocumentDeletion[]
+    deletionHistoryError: boolean
     requestEnabledChange: (document: KnowledgeDocument) => void
     setDocumentPage: (page: number) => void
     openUpload: (target: KnowledgeDocument | 'new') => void
@@ -95,6 +96,7 @@ export function KnowledgeDetailsContent({
     deleteUnavailableReason,
     requestDeletion,
     deletionOperations,
+    deletionHistoryError,
     requestEnabledChange,
     setDocumentPage,
     openUpload,
@@ -311,6 +313,11 @@ export function KnowledgeDetailsContent({
                 maxHeight={760}
                 minUpperHeight={128}
             >
+                {deletionHistoryError && (
+                    <p role="alert" className="knowledge-documents__notice">
+                        История удаления временно недоступна. Не повторяйте удаление до проверки статуса на сервере.
+                    </p>
+                )}
                 {deletionOperations.length > 0 && (
                     <section className="knowledge-documents__notice" aria-label="Операции удаления документов">
                         <strong>Операции удаления</strong>

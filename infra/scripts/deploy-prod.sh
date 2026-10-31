@@ -70,7 +70,7 @@ docker compose \
     --wait \
     --wait-timeout 180 \
     --remove-orphans \
-    backend nginx
+    backend nginx prometheus
 
 docker compose --env-file "$env_file" -f "$compose_file" ps
 curl --fail --silent --show-error "http://${SAFEAI_PUBLIC_BIND}/healthz"

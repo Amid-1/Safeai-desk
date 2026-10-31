@@ -361,7 +361,9 @@ describe(
             await waitFor(() => expect(button).toHaveAttribute('title',
                 'Безвозвратное удаление пока не включено на сервере.'))
             expect(acceptDocumentDeletionMock).not.toHaveBeenCalled()
-            expect(listDocumentDeletionsMock).not.toHaveBeenCalled()
+            await waitFor(() => expect(listDocumentDeletionsMock).toHaveBeenCalledWith(
+                    KNOWLEDGE_BASE_ID, expect.any(AbortSignal),
+                ))
         })
 
         it('ошибка capability закрывает опасную команду, а не разрешает удаление', async () => {

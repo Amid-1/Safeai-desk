@@ -10,7 +10,7 @@ x-logging: &default-logging
 
 services:
   backend:
-    image: "${SAFEAI_BACKEND_IMAGE:?SAFEAI_BACKEND_IMAGE is required}"
+    image: "${SAFEAI_BACKEND_IMAGE:?SAFEAI_BACKEND_IMAGE_REQUIRED}"
 
     # This passes non-secret runtime settings into the container. Compose-file
     # interpolation still requires CLI --env-file backend/.env.prod.
@@ -127,7 +127,7 @@ services:
 
   postgres:
     # Must contain the pgvector extension used by V41+ migrations.
-    image: "${POSTGRES_IMAGE:?POSTGRES_IMAGE is required}"
+    image: "${POSTGRES_IMAGE:?POSTGRES_IMAGE_REQUIRED}"
 
     environment:
       POSTGRES_DB: "${POSTGRES_DB:?POSTGRES_DB is required}"
@@ -169,7 +169,7 @@ services:
     restart: unless-stopped
 
   db-bootstrap:
-    image: "${POSTGRES_IMAGE:?POSTGRES_IMAGE is required}"
+    image: "${POSTGRES_IMAGE:?POSTGRES_IMAGE_REQUIRED}"
 
     entrypoint:
       - /bin/bash
@@ -214,7 +214,7 @@ services:
     restart: "no"
 
   redis:
-    image: "${REDIS_IMAGE:?REDIS_IMAGE is required}"
+    image: "${REDIS_IMAGE:?REDIS_IMAGE_REQUIRED}"
 
     entrypoint:
       - /bin/sh
@@ -286,10 +286,15 @@ services:
     restart: unless-stopped
 
   nginx:
-    image: "${SAFEAI_NGINX_IMAGE:?SAFEAI_NGINX_IMAGE is required}"
+    image: "${SAFEAI_NGINX_IMAGE:?SAFEAI_NGINX_IMAGE_REQUIRED}"
 
     ports:
-      - "${SAFEAI_PUBLIC_BIND:?SAFEAI_PUBLIC_BIND is required}:8080"
+      # Host Nginx is the public HTTPS edge; container Nginx stays localhost-only.
+      # Canonical SAFEAI_PUBLIC_BIND=127.0.0.1:8080 (backend/.env.prod.example).
+      - target: 8080
+        published: "8080"
+        host_ip: 127.0.0.1
+        protocol: tcp
 
     depends_on:
       backend:
@@ -330,7 +335,8 @@ services:
     restart: unless-stopped
 
   prometheus:
-    image: "prom/prometheus:v3.13.2"
+    # Pinned by digest: required by production preflight.
+    image: "${SAFEAI_PROMETHEUS_IMAGE:?SAFEAI_PROMETHEUS_IMAGE_REQUIRED}"
 
     command:
       - --config.file=/etc/prometheus/prometheus.yml

@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -86,20 +87,75 @@ class KnowledgeDeletionOperatorSafetyIntegrationTest extends AbstractPostgresInt
 
     @Test
     void immutableRetentionBlockCannotBeResumed() {
-        Fixture fixture = fixture();
-        jdbcTemplate.update("""
+        // A verified retention block is a terminal outcome of the active DELETING
+        // worker, not a direct replacement for a NEEDS_REVIEW decision.
+        Fixture fixture = deletingFixture();
+        assertThat(state(fixture.operation())).isEqualTo("DELETING");
+        assertThat(auditEvents("KNOWLEDGE_DOCUMENT_DELETION_RETENTION_BLOCKED", fixture.operation()))
+                .isZero();
+
+        assertThat(jdbcTemplate.update("""
                 UPDATE public.knowledge_document_deletions_v78
-                SET state='BLOCKED_BY_RETENTION',last_error_code='OBJECT_LOCK_VERIFIED'
+                SET state='BLOCKED_BY_RETENTION', attempts=1,
+                    last_error_code='OBJECT_LOCK_VERIFIED'
                 WHERE id=?
-                """, fixture.operation());
+                """, fixture.operation())).isEqualTo(1);
+
         var operator = enabledOperator();
         var diagnostics = operator.documentDiagnostics(fixture.base(), fixture.operation(), fixture.admin());
         assertThat(diagnostics.state()).isEqualTo("BLOCKED_BY_RETENTION");
+        assertThat(diagnostics.lastErrorCode()).isEqualTo("OBJECT_LOCK_VERIFIED");
+        assertThat(diagnostics.attempts()).isEqualTo(1);
+        assertThat(auditEvents("KNOWLEDGE_DOCUMENT_DELETION_RETENTION_BLOCKED", fixture.operation()))
+                .isEqualTo(1L);
+
+        // Even an enabled operator must never turn verified Object Lock evidence
+        // back into a retryable operation.
         assertThatThrownBy(() -> new TransactionTemplate(transactionManager).execute(tx ->
                 operator.resumeDocument(fixture.base(), fixture.operation(),
                         diagnostics.updatedAt().toString(), "OPERATOR_REVIEWED", fixture.admin())))
                 .isInstanceOf(ConflictException.class);
+
+        // V81 also rejects direct writes to an already blocked operation.
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                UPDATE public.knowledge_document_deletions_v78
+                SET attempts=attempts+1 WHERE id=?
+                """, fixture.operation()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
         assertThat(state(fixture.operation())).isEqualTo("BLOCKED_BY_RETENTION");
+        assertThat(auditEvents("KNOWLEDGE_DOCUMENT_DELETION_RETENTION_BLOCKED", fixture.operation()))
+                .isEqualTo(1L);
+        assertThat(auditEvents("KNOWLEDGE_DOCUMENT_DELETION_RESUMED", fixture.operation()))
+                .isZero();
+    }
+
+    @Test
+    void needsReviewCannotJumpDirectlyToVerifiedRetentionBlock() {
+        Fixture fixture = fixture();
+        assertThat(state(fixture.operation())).isEqualTo("NEEDS_REVIEW");
+        assertThat(auditEvents("KNOWLEDGE_DOCUMENT_DELETION_REVIEW_REQUIRED", fixture.operation()))
+                .isEqualTo(1L);
+
+        // V84 requires an authorized, audited NEEDS_REVIEW -> DELETING resume
+        // before any new terminal decision. Bypassing it must fail closed.
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                UPDATE public.knowledge_document_deletions_v78
+                SET state='BLOCKED_BY_RETENTION', last_error_code='OBJECT_LOCK_VERIFIED'
+                WHERE id=?
+                """, fixture.operation()))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("V84: invalid erasure transition to audited state");
+
+        assertThat(state(fixture.operation())).isEqualTo("NEEDS_REVIEW");
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT last_error_code FROM public.knowledge_document_deletions_v78
+                WHERE id=?
+                """, String.class, fixture.operation())).isEqualTo("IOEXCEPTION");
+        assertThat(auditEvents("KNOWLEDGE_DOCUMENT_DELETION_REVIEW_REQUIRED", fixture.operation()))
+                .isEqualTo(1L);
+        assertThat(auditEvents("KNOWLEDGE_DOCUMENT_DELETION_RETENTION_BLOCKED", fixture.operation()))
+                .isZero();
     }
 
     @Test
@@ -130,7 +186,7 @@ class KnowledgeDeletionOperatorSafetyIntegrationTest extends AbstractPostgresInt
 
     @Test
     void uncertainUploadIntentForbidsManualResume() {
-        Fixture fixture = fixture(true);
+        Fixture fixture = fixtureWithUnsettledUploadIntent();
         var operator = enabledOperator();
         var snapshot = operator.documentDiagnostics(fixture.base(), fixture.operation(), fixture.admin());
         assertThat(snapshot.unsettledUploadIntents()).isEqualTo(1);
@@ -177,10 +233,18 @@ class KnowledgeDeletionOperatorSafetyIntegrationTest extends AbstractPostgresInt
     }
 
     private Fixture fixture() {
-        return fixture(false);
+        return fixture(false, true);
     }
 
-    private Fixture fixture(boolean ambiguousUpload) {
+    private Fixture fixtureWithUnsettledUploadIntent() {
+        return fixture(true, true);
+    }
+
+    private Fixture deletingFixture() {
+        return fixture(false, false);
+    }
+
+    private Fixture fixture(boolean ambiguousUpload, boolean initiallyNeedsReview) {
         UUID actor = UUID.randomUUID();
         UUID base = UUID.randomUUID();
         UUID document = UUID.randomUUID();
@@ -220,12 +284,25 @@ class KnowledgeDeletionOperatorSafetyIntegrationTest extends AbstractPostgresInt
                 SET enabled=false,lifecycle_state='DELETING',version=version+1
                 WHERE id=?
                 """, document);
-        jdbcTemplate.update("""
-                UPDATE public.knowledge_document_deletions_v78
-                SET state='NEEDS_REVIEW',attempts=5,last_error_code='IOEXCEPTION'
-                WHERE id=?
-                """, operation);
+        if (initiallyNeedsReview) {
+            jdbcTemplate.update("""
+                    UPDATE public.knowledge_document_deletions_v78
+                    SET state='NEEDS_REVIEW',attempts=5,last_error_code='IOEXCEPTION'
+                    WHERE id=?
+                    """, operation);
+        }
         return new Fixture(actor, base, operation, admin(actor));
+    }
+
+    /** Count committed audit evidence whether the outbox is pending or already delivered. */
+    private Long auditEvents(String eventType, UUID operationId) {
+        return jdbcTemplate.queryForObject("""
+                SELECT (SELECT count(*) FROM public.audit_outbox
+                        WHERE event_type=? AND details->>'operationId'=?)
+                     + (SELECT count(*) FROM public.audit_events
+                        WHERE event_type=? AND details->>'operationId'=?)
+                """, Long.class, eventType, operationId.toString(),
+                eventType, operationId.toString());
     }
 
     private KnowledgeDeletionOperatorService enabledOperator() {
