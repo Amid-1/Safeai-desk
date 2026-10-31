@@ -1,0 +1,44 @@
+/* Scoped confirmation controls. Shared modal form rules must not overlap the label and input. */
+.modal-card .knowledge-deletion-confirmation__field {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    margin: 14px 0;
+    min-width: 0;
+}
+
+.modal-card .knowledge-deletion-confirmation__field > label {
+    position: static;
+    display: block;
+    margin: 0;
+    padding: 0;
+    transform: none;
+    line-height: 1.45;
+    font-weight: 600;
+}
+
+.modal-card .knowledge-deletion-confirmation__field > input {
+    position: static;
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-height: 44px;
+    margin: 0;
+    padding: 9px 12px;
+    transform: none;
+}
+
+.modal-card .knowledge-deletion-confirmation__hint {
+    margin: 0;
+    font-size: 0.875rem;
+    line-height: 1.45;
+    color: var(--safeai-muted, #64748b);
+    overflow-wrap: anywhere;
+}
+
+.modal-card .knowledge-deletion-confirmation__notice {
+    margin: 12px 0;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}

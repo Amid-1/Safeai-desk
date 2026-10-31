@@ -13,6 +13,7 @@ import { EmptyState, ErrorState, LoadingState } from '../../../../shared/ui/Stat
 import ResizableScrollRegion from '../../../../shared/ui/ResizableScrollRegion'
 import KnowledgePagination from '../KnowledgePagination'
 import { formatBytes } from './knowledgeDocumentFormat'
+import { KnowledgeDocumentDeleteAction } from './KnowledgeDocumentDeleteAction'
 import type {KnowledgeDocumentDeletion} from '../../../../entities/knowledge/api/knowledgeDocumentDeletionApi'
 
 const STATUS_LABEL:
@@ -313,6 +314,11 @@ export function KnowledgeDetailsContent({
                 maxHeight={760}
                 minUpperHeight={128}
             >
+                {canShowDeleteAction && !canDeleteDocuments && (
+                    <p role="status" className="knowledge-documents__notice">
+                        {deleteUnavailableReason}
+                    </p>
+                )}
                 {deletionHistoryError && (
                     <p role="alert" className="knowledge-documents__notice">
                         История удаления временно недоступна. Не повторяйте удаление до проверки статуса на сервере.
@@ -561,15 +567,13 @@ export function KnowledgeDetailsContent({
                                                                             : 'Включить'}
                                                                 </button>
                                                                 {canShowDeleteAction && (
-                                                                    <button type="button"
-                                                                        className="secondary-button"
-                                                                        disabled={busy || !canDeleteDocuments}
-                                                                        title={canDeleteDocuments
-                                                                            ? 'Безвозвратно удалить документ и все версии'
-                                                                            : deleteUnavailableReason}
-                                                                        onClick={() => requestDeletion(document)}>
-                                                                        Удалить…
-                                                                    </button>
+                                                                    <KnowledgeDocumentDeleteAction
+                                                                        document={document}
+                                                                        canDelete={canDeleteDocuments}
+                                                                        busy={busy}
+                                                                        unavailableReason={deleteUnavailableReason}
+                                                                        onDelete={requestDeletion}
+                                                                    />
                                                                 )}
                                                                 <button
                                                                     type="button"
@@ -747,4 +751,3 @@ function documentTypeLabel(
 
     return ''
 }
-

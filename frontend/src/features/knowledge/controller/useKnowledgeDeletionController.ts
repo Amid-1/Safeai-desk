@@ -12,9 +12,11 @@ type Target = {document: KnowledgeDocument; key: string}
 type CapabilityStatus = 'checking' | 'enabled' | 'disabled' | 'error'
 
 const UNAVAILABLE_MESSAGES: Record<Exclude<CapabilityStatus, 'enabled'>, string> = {
-    checking: 'Проверяем разрешение сервера на безвозвратное удаление.',
-    disabled: 'Безвозвратное удаление пока не включено на сервере.',
-    error: 'Не удалось проверить возможность удаления. Обновите страницу или проверьте backend.',
+    checking: 'Проверяем, доступно ли удаление документов…',
+    disabled: 'Удаление документов отключено в настройках системы. '
+        + 'Документы и файлы остаются на месте.',
+    error: 'Не удалось проверить доступность удаления. '
+        + 'Обновите страницу или обратитесь к администратору системы.',
 }
 
 export function useKnowledgeDeletionController(options: {
@@ -33,8 +35,8 @@ export function useKnowledgeDeletionController(options: {
     const available = isOwner && capabilityStatus === 'enabled'
         && validatedBaseId === knowledgeBaseId
 
-    // Reading deletion evidence is independent from the destructive feature flag.
-    // Never infer "no operations" from a disabled capability or a failed GET.
+    // История операций доступна отдельно от разрешения на новые удаления.
+    // Ошибка загрузки истории не означает отсутствия ранее принятых операций.
     const [historyError, setHistoryError] = useState(false)
 
     useEffect(() => {
@@ -51,11 +53,11 @@ export function useKnowledgeDeletionController(options: {
         setCapabilityStatus('checking')
         setValidatedBaseId('')
         setHistoryError(false)
-        setOperations([]) // Prevent showing another base's history while switching.
+        setOperations([]) // Не показываем историю другой базы при переключении.
         setTarget(null)
 
         const load = async () => {
-            // GET must be attempted even if DELETE is disabled or capability fails.
+            // Проверяем историю даже при запрете удаления или ошибке проверки доступности.
             const [capability, history] = await Promise.allSettled([
                 deletionCapability(knowledgeBaseId, controller.signal),
                 listDocumentDeletions(knowledgeBaseId, controller.signal),
@@ -70,7 +72,7 @@ export function useKnowledgeDeletionController(options: {
                 setHistoryError(true)
             }
 
-            // A writable UI additionally requires a healthy status API.
+            // Для удаления нужны и разрешение сервера, и успешно загруженная история.
             if (capability.status === 'rejected' || history.status === 'rejected') {
                 setCapabilityStatus('error')
                 setValidatedBaseId('')
@@ -86,8 +88,8 @@ export function useKnowledgeDeletionController(options: {
     useEffect(() => {
         if (!isOwner || !knowledgeBaseId) return
         const controller = new AbortController()
-        // Poll GET even while DELETE is disabled. Never poll the capability
-        // route (conditional DELETE mappings may otherwise produce 404 floods).
+        // Продолжаем читать историю при выключенном удалении.
+        // Не повторяем запрос проверки доступности при каждом опросе.
         const handle = window.setInterval(() => {
             void listDocumentDeletions(knowledgeBaseId, controller.signal)
                 .then(active => {
@@ -97,7 +99,7 @@ export function useKnowledgeDeletionController(options: {
                 })
                 .catch(() => {
                     if (controller.signal.aborted) return
-                    // Fail closed, but never render stale history as authoritative.
+                    // При ошибке не считаем старую историю достоверной и запрещаем удаление.
                     setHistoryError(true)
                     setOperations([])
                     setCapabilityStatus('error')
@@ -122,7 +124,7 @@ export function useKnowledgeDeletionController(options: {
         setBusy(true)
         setError('')
         try {
-            // Reuse the same Idempotency-Key if timeout makes the result ambiguous.
+            // Повторный запрос после таймаута использует тот же ключ идемпотентности.
             const accepted = await acceptDocumentDeletion(knowledgeBaseId,
                 target.document.id, target.document.version, target.key)
             setOperations(current => [accepted, ...current.filter(o => o.operationId !== accepted.operationId)])
@@ -135,7 +137,7 @@ export function useKnowledgeDeletionController(options: {
         } catch (error) {
             setError(getApiErrorMessage(error,
                 'Не удалось подтвердить удаление. Проверьте статус, прежде чем повторять запрос.'))
-            // Keep modal and idempotency key intact until the server state is known.
+            // Сохраняем окно и ключ запроса до выяснения состояния операции.
             throw error
         } finally {
             inFlight.current = false
