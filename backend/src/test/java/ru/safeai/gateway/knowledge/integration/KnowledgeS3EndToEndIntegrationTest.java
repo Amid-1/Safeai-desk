@@ -34,6 +34,8 @@ import ru.safeai.gateway.testsupport.AbstractPostgresIntegrationTest;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.NoSuchFileException;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -47,10 +49,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 
-@SuppressWarnings({
-        "SqlResolve",
-        "SqlNoDataSourceInspection"
-})
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest
 @ActiveProfiles("test")
@@ -66,10 +64,13 @@ class KnowledgeS3EndToEndIntegrationTest
     private static final String BUCKET =
             "safeai-knowledge-e2e";
 
-    /*
-     * Lifecycle контейнера управляется Testcontainers через @Container.
-     * Контейнер должен оставаться запущенным на протяжении всего test class.
+    /**
+     * Жизненным циклом контейнера управляет Testcontainers через {@code @Container}.
+     * Контейнер используется только в тестах и остаётся доступен до завершения класса.
      */
+    // Этот контейнер закрывает расширение JUnit Testcontainers после выполнения
+    // всего тестового класса. try-with-resources здесь закрыл бы его слишком рано.
+    // Подавляется только инспекция AutoCloseable для этого конкретного поля.
     @SuppressWarnings("resource")
     @Container
     static final GenericContainer<?> MINIO =
@@ -102,9 +103,8 @@ class KnowledgeS3EndToEndIntegrationTest
                     );
 
     /**
-     * Выполняется при подготовке Spring test context, до создания
-     * S3ObjectStorage bean. Поэтому test bucket создаётся заранее,
-     * а production S3ObjectStorage может оставаться fail-fast.
+     * Создаёт тестовый bucket до инициализации Spring-компонента S3ObjectStorage.
+     * Производственное поведение fail-fast не изменяется.
      */
     @DynamicPropertySource
     static void storageProperties(
@@ -137,8 +137,8 @@ class KnowledgeS3EndToEndIntegrationTest
                 () -> BUCKET
         );
 
-        // Never run background S3 cleanup in this integration-test context.
-        // The test exercises reconciliation explicitly with a controlled clock.
+        // Запрещаем фоновую очистку только в данном тестовом контексте.
+        // Reconciliation вызывается явно с управляемым временем.
         registry.add(
                 "safeai.knowledge.storage-reconciliation.enabled",
                 () -> "false"
@@ -317,8 +317,13 @@ class KnowledgeS3EndToEndIntegrationTest
                         uploaded.currentVersionId()
                 );
 
+        // Проверяем не только формат хеша, но и криптографическую связь
+        // метаданных с фактически загруженными байтами.
+        String expectedSha256 = HexFormat.of().formatHex(
+                MessageDigest.getInstance("SHA-256").digest(payload));
         assertThat(sha256)
-                .hasSize(64);
+                .hasSize(64)
+                .isEqualToIgnoringCase(expectedSha256);
 
         String journalState = jdbcTemplate.queryForObject(
                 """
@@ -374,8 +379,9 @@ class KnowledgeS3EndToEndIntegrationTest
                 principal
         );
 
-        // Force the *metadata transaction* to fail only after a successful PUT
-        // and the separately committed durable journal state STORED.
+        // Имитируем отказ аудита уже после успешной загрузки объекта в S3
+        // и фиксации состояния STORED в независимой транзакции журнала.
+        // Это проверяет сохранность объекта при откате транзакции метаданных.
         doThrow(new IllegalStateException("audit write failed"))
                 .when(auditEventService)
                 .recordPrincipalSnapshot(
@@ -442,15 +448,15 @@ class KnowledgeS3EndToEndIntegrationTest
         );
         assertThat(versionCount).isZero();
 
-        // V56 intentionally keeps this confirmed object, rather than
-        // immediately deleting it on a failed/possibly ambiguous DB commit.
+        // V56 намеренно сохраняет подтверждённый объект после отката БД:
+        // при неоднозначном результате транзакции немедленное удаление опасно.
         try (var input = storage.get(intent.storageKey())
                 .resource().getInputStream()) {
             assertThat(input.readAllBytes()).containsExactly(payload);
         }
 
-        // The scheduler is disabled in the Spring context. Invoke it with a
-        // controlled clock to verify that a fresh STORED object is protected.
+        // Планировщик отключён только в тестовом Spring-контексте.
+        // При контролируемом текущем времени свежий STORED-объект защищён.
         new KnowledgeStorageReconciliationScheduler(
                 uploadJournal,
                 storage,
@@ -463,8 +469,8 @@ class KnowledgeS3EndToEndIntegrationTest
             assertThat(input.readAllBytes()).containsExactly(payload);
         }
 
-        // After the 24h grace period, the *same fenced reconciliation path*
-        // removes the unlinked S3 object and records durable CLEANED state.
+        // После 24-часового защитного периода тот же fenced-механизм
+        // очищает неподключённый объект и фиксирует устойчивое состояние CLEANED.
         new KnowledgeStorageReconciliationScheduler(
                 uploadJournal,
                 storage,
@@ -496,10 +502,9 @@ class KnowledgeS3EndToEndIntegrationTest
     ) { }
 
     /**
-     * Создаёт test bucket до инициализации S3ObjectStorage.
+     * Подготавливает тестовый bucket до инициализации S3ObjectStorage.
      *
-     * <p>Метод идемпотентный: если bucket уже существует,
-     * повторно он не создаётся.</p>
+     * <p>Операция идемпотентна: существующий bucket не пересоздаётся.</p>
      */
     private static void ensureTestBucketExists() {
         try (
@@ -539,10 +544,11 @@ class KnowledgeS3EndToEndIntegrationTest
     }
 
     /**
-     * MinIO Testcontainer в integration test работает по локальному HTTP.
-     * Production S3 endpoint должен использовать HTTPS.
+     * Возвращает HTTP-адрес одноразового контейнера MinIO.
+     *
+     * <p>Незашифрованный HTTP допустим только внутри изолированного теста.
+     * К production endpoint это не относится: там требуется HTTPS.</p>
      */
-    @SuppressWarnings("HttpUrlsUsage")
     private static String minioEndpoint() {
         return "http://"
                 + MINIO.getHost()

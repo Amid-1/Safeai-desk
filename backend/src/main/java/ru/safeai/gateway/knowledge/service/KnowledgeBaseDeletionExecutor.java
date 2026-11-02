@@ -3,12 +3,15 @@ package ru.safeai.gateway.knowledge.service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import ru.safeai.gateway.knowledge.rag.KnowledgeRagExecutionPermitService;
+import ru.safeai.gateway.knowledge.storage.ErasureTombstoneJournal;
 
 import java.util.List;
 import java.util.Locale;
@@ -29,16 +32,36 @@ public class KnowledgeBaseDeletionExecutor {
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transactions;
     private final boolean childExecutorEnabled;
+    private final KnowledgeRagExecutionPermitService executionPermits;
+    private final ErasureTombstoneJournal tombstoneJournal;
 
     public KnowledgeBaseDeletionExecutor(
             JdbcTemplate jdbc, PlatformTransactionManager transactionManager,
-            @Value("${safeai.knowledge.deletion.executor-enabled:false}") boolean childExecutorEnabled) {
+            boolean childExecutorEnabled) {
+        this(jdbc, transactionManager, childExecutorEnabled, null, null);
+    }
+
+    public KnowledgeBaseDeletionExecutor(
+            JdbcTemplate jdbc, PlatformTransactionManager transactionManager,
+            boolean childExecutorEnabled, KnowledgeRagExecutionPermitService executionPermits) {
+        this(jdbc, transactionManager, childExecutorEnabled, executionPermits, null);
+    }
+
+    @Autowired
+    public KnowledgeBaseDeletionExecutor(
+            JdbcTemplate jdbc, PlatformTransactionManager transactionManager,
+            @Value("${safeai.knowledge.deletion.executor-enabled:false}") boolean childExecutorEnabled,
+            KnowledgeRagExecutionPermitService executionPermits,
+            ErasureTombstoneJournal tombstoneJournal) {
         this.jdbc = jdbc;
         this.transactions = new TransactionTemplate(transactionManager);
         this.childExecutorEnabled = childExecutorEnabled;
+        this.executionPermits = executionPermits;
+        this.tombstoneJournal = tombstoneJournal;
     }
 
-    private record Claim(UUID id, UUID baseId, UUID orgId, UUID token, int attempts) { }
+    private record Claim(UUID id, UUID baseId, UUID orgId, UUID requestedByUserId,
+                         long expectedVersion, UUID token, int attempts) { }
     private static final class LeaseLost extends RuntimeException { }
 
     @Scheduled(fixedDelayString = "${safeai.knowledge.base-deletion.poll-delay:PT20S}")
@@ -49,6 +72,7 @@ public class KnowledgeBaseDeletionExecutor {
             Claim claim = claim();
             if (claim == null) return;
             try {
+                publishBaseTombstoneIfReady(claim);
                 transactions.executeWithoutResult(tx -> finishOrReschedule(claim));
             } catch (LeaseLost lost) {
                 log.warn("Base deletion lease expired or fenced: {}", claim.id());
@@ -71,12 +95,46 @@ public class KnowledgeBaseDeletionExecutor {
                    SET lease_token=?,lease_until=clock_timestamp()+interval '2 minutes',
                        updated_at=clock_timestamp()
                   FROM candidate WHERE op.id=candidate.id
-                RETURNING op.id,op.knowledge_base_id,op.organization_id,op.lease_token,op.attempts
+                RETURNING op.id,op.knowledge_base_id,op.organization_id,
+                          op.requested_by_user_id,op.expected_version,op.lease_token,op.attempts
                 """, (rs, n) -> new Claim(
                 rs.getObject("id", UUID.class), rs.getObject("knowledge_base_id", UUID.class),
                 rs.getObject("organization_id", UUID.class),
+                rs.getObject("requested_by_user_id", UUID.class),
+                rs.getLong("expected_version"),
                 rs.getObject("lease_token", UUID.class), rs.getInt("attempts")), token);
         return claimed.isEmpty() ? null : claimed.getFirst();
+    }
+
+    /** External journal I/O is deliberately outside the PostgreSQL transaction. */
+    private void publishBaseTombstoneIfReady(Claim claim) throws java.io.IOException {
+        if (tombstoneJournal == null) {
+            throw new IllegalStateException("External erasure tombstone journal is required before DELETED");
+        }
+        if (executionPermits != null && executionPermits.hasActiveAttemptsForBase(claim.orgId(), claim.baseId())) {
+            return;
+        }
+        List<String> childStates = jdbc.queryForList("""
+                SELECT state FROM public.knowledge_document_deletions_v78
+                 WHERE organization_id=? AND knowledge_base_id=?
+                """, String.class, claim.orgId(), claim.baseId());
+        if (childStates.stream().anyMatch(state -> !"DELETED".equals(state))) return;
+        boolean unsettled = Boolean.TRUE.equals(jdbc.queryForObject("""
+                SELECT EXISTS (SELECT 1 FROM public.knowledge_storage_upload_intents
+                 WHERE organization_id=? AND knowledge_base_id=?
+                   AND state NOT IN ('LINKED','CLEANED'))
+                """, Boolean.class, claim.orgId(), claim.baseId()));
+        if (unsettled) return;
+        boolean remaining = Boolean.TRUE.equals(jdbc.queryForObject("""
+                SELECT EXISTS(SELECT 1 FROM public.knowledge_documents WHERE knowledge_base_id=?)
+                    OR EXISTS(SELECT 1 FROM public.knowledge_document_versions WHERE knowledge_base_id=?)
+                    OR EXISTS(SELECT 1 FROM public.knowledge_document_chunks WHERE knowledge_base_id=?)
+                    OR EXISTS(SELECT 1 FROM public.knowledge_ingestion_jobs WHERE knowledge_base_id=?)
+                """, Boolean.class, claim.baseId(), claim.baseId(), claim.baseId(), claim.baseId()));
+        if (!remaining) {
+            tombstoneJournal.publishBaseCommitted(claim.id(), claim.orgId(), claim.baseId(),
+                    claim.requestedByUserId(), claim.expectedVersion());
+        }
     }
 
     private void finishOrReschedule(Claim claim) {
@@ -89,6 +147,14 @@ public class KnowledgeBaseDeletionExecutor {
             throw new IllegalStateException("BASE_NOT_DELETING");
         }
         requireLease(claim);
+
+        // Empty-retrieval Knowledge turns are not tied to a document source,
+        // therefore the parent must also wait on base-scoped attempt leases.
+        if (executionPermits != null
+                && executionPermits.hasActiveAttemptsForBase(claim.orgId(), claim.baseId())) {
+            reschedule(claim);
+            return;
+        }
 
         List<String> childStates = jdbc.queryForList("""
                 SELECT state FROM public.knowledge_document_deletions_v78

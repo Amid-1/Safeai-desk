@@ -30,24 +30,37 @@ public class KnowledgeBaseDeletionService {
     private final boolean baseExecutorEnabled;
     private final boolean documentAcceptEnabled;
     private final boolean documentExecutorEnabled;
+    private final boolean erasureJournalEnabled;
 
+    public KnowledgeBaseDeletionService(
+            JdbcTemplate jdbc, AuditEventService audit,
+            boolean baseAcceptEnabled, boolean baseExecutorEnabled,
+            boolean documentAcceptEnabled, boolean documentExecutorEnabled) {
+        this(jdbc, audit, baseAcceptEnabled, baseExecutorEnabled,
+                documentAcceptEnabled, documentExecutorEnabled, true);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
     public KnowledgeBaseDeletionService(
             JdbcTemplate jdbc, AuditEventService audit,
             @Value("${safeai.knowledge.base-deletion.accept-enabled:false}") boolean baseAcceptEnabled,
             @Value("${safeai.knowledge.base-deletion.executor-enabled:false}") boolean baseExecutorEnabled,
             @Value("${safeai.knowledge.deletion.accept-enabled:false}") boolean documentAcceptEnabled,
-            @Value("${safeai.knowledge.deletion.executor-enabled:false}") boolean documentExecutorEnabled) {
+            @Value("${safeai.knowledge.deletion.executor-enabled:false}") boolean documentExecutorEnabled,
+            @Value("${safeai.knowledge.erasure-journal.enabled:false}") boolean erasureJournalEnabled) {
         this.jdbc = jdbc;
         this.audit = audit;
         this.baseAcceptEnabled = baseAcceptEnabled;
         this.baseExecutorEnabled = baseExecutorEnabled;
         this.documentAcceptEnabled = documentAcceptEnabled;
         this.documentExecutorEnabled = documentExecutorEnabled;
+        this.erasureJournalEnabled = erasureJournalEnabled;
     }
 
     public boolean enabled() {
         return baseAcceptEnabled && baseExecutorEnabled
-                && documentAcceptEnabled && documentExecutorEnabled;
+                && documentAcceptEnabled && documentExecutorEnabled
+                && erasureJournalEnabled;
     }
 
     @Transactional(readOnly = true)
@@ -120,7 +133,15 @@ public class KnowledgeBaseDeletionService {
                 VALUES (?,?,?,?,?,?) ON CONFLICT DO NOTHING
                 """, operationId, orgId, baseId, actor.getId(), expectedVersion, idempotencyKey);
         if (inserted != 1) {
-            throw new ConflictException("Удаление базы уже зарегистрировано.");
+            // INSERT .. ON CONFLICT waits for the concurrent winner. Under
+            // READ COMMITTED the following statement sees its committed row.
+            // Return the same operation for an exact replay; never create a
+            // second operation or turn a successful retry into a spurious 409.
+            List<KnowledgeBaseDeletionResponse> concurrent = findByKey(orgId, idempotencyKey);
+            if (!concurrent.isEmpty()) {
+                return exactReplay(concurrent.getFirst(), baseId, expectedVersion);
+            }
+            throw new ConflictException("Удаление этой базы уже зарегистрировано с другим ключом.");
         }
         if (jdbc.update("""
                 UPDATE public.knowledge_bases

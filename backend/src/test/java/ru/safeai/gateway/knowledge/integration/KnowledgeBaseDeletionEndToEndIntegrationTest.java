@@ -14,6 +14,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import ru.safeai.gateway.knowledge.testsupport.KnowledgeErasureTestJournal;
 import ru.safeai.gateway.common.exception.ConflictException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -371,11 +372,11 @@ class KnowledgeBaseDeletionEndToEndIntegrationTest extends AbstractPostgresInteg
     }
 
     private KnowledgeBaseDeletionExecutor parentWorker() {
-        return new KnowledgeBaseDeletionExecutor(jdbcTemplate, transactionManager, true);
+        return new KnowledgeBaseDeletionExecutor(jdbcTemplate, transactionManager, true, null, KnowledgeErasureTestJournal.INSTANCE);
     }
 
     private KnowledgeDocumentDeletionExecutor childWorker(ObjectStorage storage) {
-        return new KnowledgeDocumentDeletionExecutor(jdbcTemplate, transactionManager, storage);
+        return new KnowledgeDocumentDeletionExecutor(jdbcTemplate, transactionManager, storage, null, KnowledgeErasureTestJournal.INSTANCE);
     }
 
     private String baseDeletionState(UUID operation) {

@@ -201,35 +201,59 @@ public class S3ObjectStorage implements ObjectStorage {
      */
     @Override
     public void purgeAllVersionsVerified(String key) throws IOException {
+        purgeAllVersionsVerified(key, () -> { });
+    }
+
+    /**
+     * Removes all versions and delete markers in bounded batches. The listing
+     * is restarted after each batch, so deleting a page cannot invalidate a
+     * provider continuation marker. JVM memory is bounded independently of the
+     * number of versions for one key. A final fresh listing plus HEAD verifies
+     * absence; ambiguous network outcomes are retried by the durable executor.
+     */
+    @Override
+    public void purgeAllVersionsVerified(String key, Runnable heartbeat) throws IOException {
         requireKey(key);
+        Objects.requireNonNull(heartbeat, "heartbeat");
+        final int batchSize = 128;
         try {
-            // Cap work per key; do not claim success on an unexpectedly large listing.
             int iterations = 0;
             while (true) {
                 if (++iterations > 10000) {
                     throw new IOException("S3 erasure exceeded safe iteration limit");
                 }
-                java.util.List<Item> versions = listExactKeyVersions(key);
-                if (versions.isEmpty()) {
-                    // ListObjectVersions and HEAD are independent verification paths.
-                    if (!objectExists(key)) {
-                        return;
+                heartbeat.run();
+                java.util.List<Item> batch = new java.util.ArrayList<>(batchSize);
+                Iterable<Result<Item>> results = client.listObjects(
+                        ListObjectsArgs.builder().bucket(bucket).prefix(key)
+                                .recursive(true).includeVersions(true).build());
+                for (Result<Item> result : results) {
+                    heartbeat.run();
+                    Item item = result.get(); // Lazy provider/network errors must propagate.
+                    if (key.equals(item.objectName())) {
+                        batch.add(item);
+                        if (batch.size() >= batchSize) break;
                     }
-                    // Handles an unversioned key not reported by an unusual provider.
+                }
+
+                if (batch.isEmpty()) {
+                    // The version listing is authoritative for historical versions;
+                    // HEAD independently detects an unversioned current object.
+                    if (!objectExists(key)) return;
                     client.removeObject(RemoveObjectArgs.builder()
                             .bucket(bucket).object(key).build());
                     continue;
                 }
-                for (Item item : versions) {
+
+                for (Item item : batch) {
+                    heartbeat.run();
                     RemoveObjectArgs.Builder builder = RemoveObjectArgs.builder()
                             .bucket(bucket).object(key);
                     String versionId = item.versionId();
                     if (versionId != null && !versionId.isBlank()) {
                         builder.versionId(versionId);
                     }
-                    // Do NOT bypass governance retention or legal holds.
-                    // Refusal code alone is NOT proof of Object Lock: the same
-                    // InvalidRequest/AccessDenied may indicate a provider or IAM error.
+                    // Never bypass Governance/Compliance retention or legal holds.
                     try {
                         client.removeObject(builder.build());
                     } catch (ErrorResponseException refused) {
@@ -237,14 +261,17 @@ public class S3ObjectStorage implements ObjectStorage {
                                 && isPossibleObjectLockRefusal(refused)
                                 && isVersionProtectedByObjectLock(key, versionId, refused)) {
                             throw new VerifiedObjectLockException(
-                                    "S3 Object Lock verified for the refused object version",
-                                    refused);
+                                    "S3 Object Lock verified for the refused object version", refused);
                         }
                         throw refused;
                     }
                 }
             }
+        } catch (VerifiedObjectLockException exception) {
+            throw exception;
         } catch (IOException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
             throw exception;
         } catch (Exception exception) {
             throw new IOException("S3 physical erasure cannot be verified", exception);
@@ -289,21 +316,6 @@ public class S3ObjectStorage implements ObjectStorage {
             deleteError.addSuppressed(metadataError);
             return false;
         }
-    }
-
-    private java.util.List<Item> listExactKeyVersions(String key) throws Exception {
-        java.util.List<Item> versions = new java.util.ArrayList<>();
-        Iterable<Result<Item>> results = client.listObjects(
-                ListObjectsArgs.builder().bucket(bucket).prefix(key)
-                        .recursive(true).includeVersions(true).build());
-        for (Result<Item> result : results) {
-            Item item = result.get(); // a lazy listing may fail here
-            // Prefix listing could otherwise delete adjacent documents.
-            if (key.equals(item.objectName())) {
-                versions.add(item);
-            }
-        }
-        return versions;
     }
 
     private boolean objectExists(String key) throws Exception {

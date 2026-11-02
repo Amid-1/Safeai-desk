@@ -859,7 +859,8 @@ backend/
 │   │       │       ├── V81__knowledge_erasure_executor_guards.sql
 │   │       │       ├── V82__knowledge_base_erasure_foundation.sql
 │   │       │       ├── V83__knowledge_erasure_operator_audit_types.sql
-│   │       │       └── V84__knowledge_erasure_terminal_audit.sql
+│   │       │       ├── V84__knowledge_erasure_terminal_audit.sql
+│   │       │       └── V85__knowledge_rag_execution_leases_and_erasure_guards.sql
 │   │       │
 │   │       │   └── README_DB.md              # документация DB; структура db/
 │   │       │
@@ -868,7 +869,9 @@ backend/
 │   │       ├── application-local.yml
 │   │       ├── application-local-nginx.yml
 │   │       ├── application-prod.yml
+│   │       ├── application-prod-knowledge.example.yml
 │   │       ├── application-prod-knowledge-reconciliation.example.yml
+│   │       ├── application-security-example.yml
 │   │       └── logback-spring.xml
 │   │
 │   └── test/
@@ -3549,6 +3552,7 @@ ai/
 │   ├── AiProviderTimeoutException
 │   └── AiProviderUnavailableException
 ├── execution/
+│   ├── AiExecutionAttemptAuthorization
 │   ├── AiExecutionAttemptObserver
 │   ├── AiExecutionAttemptRecorder
 │   ├── AiExecutionAttemptScope
@@ -4009,6 +4013,9 @@ knowledge/
 │   ├── KnowledgeMode
 │   ├── KnowledgeRagContextReceiptRepository
 │   ├── KnowledgeRagContextReceiptService
+│   ├── KnowledgeRagContextRevokedException
+│   ├── KnowledgeRagErasureGuard
+│   ├── KnowledgeRagExecutionPermitService
 │   ├── KnowledgeRagService
 │   ├── RagCitation
 │   ├── RagCompletion
@@ -4059,6 +4066,8 @@ knowledge/
     │   ├── KnowledgeStorageReconciliationScheduler
     │   ├── KnowledgeStorageReviewMetrics
     │   └── KnowledgeStorageUploadJournal
+    ├── ErasureTombstoneJournal
+│   ├── KnowledgeErasureTombstoneJournal
     ├── KnowledgeStorageConfiguration
     ├── KnowledgeStorageProductionInvariantVerifier
     ├── KnowledgeStorageProperties

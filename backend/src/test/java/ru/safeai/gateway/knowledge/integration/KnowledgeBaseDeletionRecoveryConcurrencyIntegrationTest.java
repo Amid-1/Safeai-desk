@@ -19,6 +19,7 @@ import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
+import ru.safeai.gateway.knowledge.testsupport.KnowledgeErasureTestJournal;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.knowledge.dto.KnowledgeBaseDeletionResponse;
@@ -91,6 +92,7 @@ class KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest
         addVersion(target, targetKey);
         KnowledgeBaseDeletionResponse accepted = accept(target);
         UUID childOperation = documentOperation(target);
+        prioritizeTargetDeletion(target, childOperation);
 
         String endpoint = "http://" + MINIO.getHost() + ":" + MINIO.getMappedPort(9000);
         String bucket = "safeai-restart-" + UUID.randomUUID().toString().replace("-", "");
@@ -122,8 +124,8 @@ class KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest
                         assertThat(key).isEqualTo(targetKey);
                         calls.incrementAndGet();
                         storage.purgeAllVersionsVerified(key);
-                        // An actual process could die at exactly this point. Model
-                        // failure before the DB finalization/acknowledgement.
+                        // Реальный процесс может завершиться именно здесь. Имитируем
+                        // сбой до фиксации результата удаления в PostgreSQL.
                         throw new IOException("injected failure after real verified S3 purge");
                     }
                 };
@@ -145,8 +147,8 @@ class KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest
                         + "WHERE operation_id=? AND storage_key=?", childOperation, targetKey))
                         .isEqualTo(1);
 
-                // Restarted worker sees committed inventory, repeats verified purge
-                // idempotently and only then acknowledges database erasure.
+                // Перезапущенный исполнитель читает сохранённую инвентаризацию,
+                // повторяет подтверждённую очистку и только затем фиксирует результат.
                 jdbcTemplate.update("UPDATE knowledge_document_deletions_v78 "
                         + "SET next_attempt_at=clock_timestamp() WHERE id=?", childOperation);
                 childWorker(storage).poll();
@@ -176,6 +178,7 @@ class KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest
         addVersion(target, key);
         KnowledgeBaseDeletionResponse accepted = accept(target);
         UUID childOperation = documentOperation(target);
+        prioritizeTargetDeletion(target, childOperation);
         CountDownLatch insidePurge = new CountDownLatch(1);
         CountDownLatch finishPurge = new CountDownLatch(1);
         AtomicInteger purges = new AtomicInteger();
@@ -189,7 +192,7 @@ class KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             try {
                 Future<?> first = executor.submit(() -> childWorker(blockingStorage).poll());
-                assertThat(insidePurge.await(15, TimeUnit.SECONDS)).isTrue();
+                awaitPurgeOrReport(insidePurge, first, childOperation);
                 assertThat(count("SELECT count(*) FROM knowledge_document_erasure_objects_v81 "
                         + "WHERE operation_id=? AND storage_key=?", childOperation, key))
                         .isEqualTo(1);
@@ -198,7 +201,7 @@ class KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest
                         UUID.class, childOperation);
                 assertThat(originalLease).isNotNull();
 
-                // A second JVM-like worker cannot claim the live lease.
+                // Второй независимый исполнитель не вправе захватить действующую аренду.
                 childWorker(blockingStorage).poll();
                 assertThat(purges.get()).isEqualTo(1);
                 assertThat(jdbcTemplate.queryForObject(
@@ -226,6 +229,7 @@ class KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest
         addVersion(target, key);
         KnowledgeBaseDeletionResponse accepted = accept(target);
         UUID childOperation = documentOperation(target);
+        prioritizeTargetDeletion(target, childOperation);
         CountDownLatch firstEntered = new CountDownLatch(1);
         CountDownLatch releaseFirst = new CountDownLatch(1);
         AtomicInteger calls = new AtomicInteger();
@@ -240,7 +244,7 @@ class KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             try {
                 Future<?> oldWorker = executor.submit(() -> childWorker(fencedStorage).poll());
-                assertThat(firstEntered.await(15, TimeUnit.SECONDS)).isTrue();
+                awaitPurgeOrReport(firstEntered, oldWorker, childOperation);
                 UUID previousToken = jdbcTemplate.queryForObject(
                         "SELECT lease_token FROM knowledge_document_deletions_v78 WHERE id=?",
                         UUID.class, childOperation);
@@ -249,7 +253,7 @@ class KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest
                         + "WHERE operation_id=? AND storage_key=?", childOperation, key))
                         .isEqualTo(1);
 
-                // Simulate lease expiry / process pause ONLY inside disposable test DB.
+                // Истечение аренды имитируется только в одноразовой тестовой базе.
                 jdbcTemplate.update("UPDATE knowledge_document_deletions_v78 "
                         + "SET lease_until=clock_timestamp()-interval '1 second', "
                         + "next_attempt_at=clock_timestamp() WHERE id=?", childOperation);
@@ -261,8 +265,8 @@ class KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest
                 assertThat(count("SELECT count(*) FROM knowledge_document_erasure_objects_v81 "
                         + "WHERE operation_id=?", childOperation)).isZero();
 
-                // Old worker wakes after the new worker has finished. Its stale
-                // token must not transition the operation or delete further rows.
+                // Старый исполнитель просыпается после нового: его устаревший
+                // токен не должен изменять состояние или удалять дополнительные строки.
                 releaseFirst.countDown();
                 oldWorker.get(15, TimeUnit.SECONDS);
                 assertThat(childState(childOperation)).isEqualTo("DELETED");
@@ -307,7 +311,7 @@ class KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest
         assertThat(count("SELECT count(*) FROM knowledge_bases WHERE id=?", target.base()))
                 .isEqualTo(1);
 
-        // After expiry a fresh worker can complete; the neighbor must survive.
+        // После истечения аренды новый исполнитель завершает операцию; соседняя база сохраняется.
         jdbcTemplate.update("UPDATE knowledge_base_deletions_v82 "
                 + "SET lease_until=clock_timestamp()-interval '1 second', "
                 + "next_attempt_at=clock_timestamp() WHERE id=?", accepted.operationId());
@@ -318,6 +322,70 @@ class KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest
         assertThat(count("SELECT count(*) FROM knowledge_bases WHERE id=? "
                 + "AND lifecycle_state='AVAILABLE' AND enabled", untouched.base()))
                 .isEqualTo(1);
+    }
+
+    /**
+     * Помещает только операцию данного сценария в начало реальной очереди V78.
+     *
+     * <p>Тестовый PostgreSQL общий. В нём могут оставаться доказательства других
+     * операций, которые намеренно запрещено удалять триггерами V78/V82.
+     * В production poll() обрабатывает не более пяти заявок за вызов.
+     * Без приоритета сценарий конкуренции иногда проверял бы чужую заявку,
+     * а целевой purge вообще не был бы вызван.</p>
+     *
+     * <p>Не меняем состояние операции, её владельца, токен аренды, попытки,
+     * защитные триггеры или алгоритм захвата. Корректируем только разрешённое
+     * время очередной попытки у ещё не арендованной тестовой операции.</p>
+     */
+    private void prioritizeTargetDeletion(Fixture target, UUID childOperation) {
+        int updated = jdbcTemplate.update("""
+                UPDATE public.knowledge_document_deletions_v78
+                   SET next_attempt_at = (
+                       SELECT COALESCE(MIN(next_attempt_at), clock_timestamp())
+                              - interval '1 day'
+                         FROM public.knowledge_document_deletions_v78
+                        WHERE state = 'DELETING'
+                   ),
+                       updated_at = clock_timestamp()
+                 WHERE id = ?
+                   AND organization_id = ?
+                   AND knowledge_base_id = ?
+                   AND document_id = ?
+                   AND state = 'DELETING'
+                   AND lease_token IS NULL
+                   AND lease_until IS NULL
+                """, childOperation, PLATFORM_ORGANIZATION_ID,
+                target.base(), target.document());
+        assertThat(updated)
+                .as("В очередь разрешено переместить ровно одну неарендованную тестовую операцию")
+                .isEqualTo(1);
+    }
+
+    /**
+     * Не скрывает остановку фонового исполнителя за сообщением «ожидалось true».
+     * При отсутствии входа в S3 сообщает состояние, счётчик попыток,
+     * код ошибки и времена аренды из PostgreSQL.
+     */
+    private void awaitPurgeOrReport(CountDownLatch latch, Future<?> worker, UUID operationId)
+            throws Exception {
+        if (latch.await(15, TimeUnit.SECONDS)) {
+            return;
+        }
+        // Если фоновый процесс завершился с исключением, возвращаем исходную
+        // причину, а не заменяем её ошибкой тайм-аута.
+        if (worker.isDone()) {
+            worker.get(1, TimeUnit.SECONDS);
+        }
+        var state = jdbcTemplate.queryForMap("""
+                SELECT state, attempts, last_error_code, next_attempt_at,
+                       lease_token, lease_until
+                  FROM public.knowledge_document_deletions_v78
+                 WHERE id = ?
+                """, operationId);
+        throw new AssertionError(
+                "Удаление не дошло до подтверждённого S3 purge. "
+                        + "Операция: " + operationId + ", состояние: " + state
+                        + ", worker.isDone(): " + worker.isDone());
     }
 
     private Fixture fixture(boolean withDocument) {
@@ -376,11 +444,11 @@ class KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest
     }
 
     private KnowledgeDocumentDeletionExecutor childWorker(ObjectStorage store) {
-        return new KnowledgeDocumentDeletionExecutor(jdbcTemplate, transactionManager, store);
+        return new KnowledgeDocumentDeletionExecutor(jdbcTemplate, transactionManager, store, null, KnowledgeErasureTestJournal.INSTANCE);
     }
 
     private KnowledgeBaseDeletionExecutor parentWorker() {
-        return new KnowledgeBaseDeletionExecutor(jdbcTemplate, transactionManager, true);
+        return new KnowledgeBaseDeletionExecutor(jdbcTemplate, transactionManager, true, null, KnowledgeErasureTestJournal.INSTANCE);
     }
 
     private String childState(UUID operation) {

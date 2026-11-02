@@ -1,25 +1,55 @@
 package ru.safeai.gateway.testsupport;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.parallel.ResourceAccessMode;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.Objects;
 import java.util.UUID;
 
-@SuppressWarnings({
-        "SqlResolve",
-        "SqlNoDataSourceInspection"
-})
+/**
+ * Общее окружение интеграционных проверок с настоящим PostgreSQL.
+ *
+ * <p>Контейнер и таблицы используются совместно в рамках JVM. Поэтому тесты,
+ * наследующие этот класс, не могут одновременно очищать общую базу. JUnit
+ * резервирует указанную блокировку на весь жизненный цикл каждого теста,
+ * включая {@code @BeforeEach} и {@code @AfterEach}. Внутренняя конкуренция,
+ * создаваемая самими тестами через отдельные соединения, остаётся доступной.</p>
+ */
+// Указываем полный Spring Boot-контекст для анализа IDE и для наследников,
+// не имеющих собственной @SpringBootTest. Аннотация наследуется; явная
+// конфигурация конкретного теста имеет приоритет. SpringExtension уже
+// зарегистрирован самой @SpringBootTest и повторно не требуется.
+@SpringBootTest(classes = ru.safeai.gateway.SafeaiBackendApplication.class)
+@ResourceLock(value = AbstractPostgresIntegrationTest.SHARED_DATABASE_RESOURCE,
+        mode = ResourceAccessMode.READ_WRITE)
 public abstract class AbstractPostgresIntegrationTest {
+
+    private static final Logger log = LoggerFactory.getLogger(AbstractPostgresIntegrationTest.class);
+
+    /** Общая блокировка JUnit для тестовых классов, работающих с этим контейнером. */
+    public static final String SHARED_DATABASE_RESOURCE = "safeai.shared.postgresql.integration";
+
+    /** Повторяем только подтверждённый PostgreSQL deadlock, а не произвольные ошибки. */
+    private static final String DEADLOCK_SQL_STATE = "40P01";
+    private static final int CLEANUP_MAX_ATTEMPTS = 4;
+    private static final long CLEANUP_RETRY_BASE_MILLIS = 40L;
 
     public static final UUID PLATFORM_ORGANIZATION_ID =
             UUID.fromString("00000000-0000-0000-0000-000000000001");
@@ -108,45 +138,127 @@ public abstract class AbstractPostgresIntegrationTest {
                 "false");
     }
 
+    /**
+     * Зависимости внедряются Spring Test в экземпляр теста до вызова @BeforeEach.
+     * Абстрактный класс не объявляется Spring-бином; получение зависимостей
+     * обеспечивается унаследованным расширением SpringExtension.
+     */
     @Autowired
     protected JdbcTemplate jdbcTemplate;
 
     @Autowired
     protected PlatformTransactionManager transactionManager;
 
+    /**
+     * Выполняет очистку и восстановление платформенной организации атомарно.
+     *
+     * <p>Повтор разрешён только после подтверждённой взаимной блокировки
+     * PostgreSQL (40P01). Каждая попытка запускается в новой транзакции.
+     * Остальные ошибки не перехватываются и не маскируются.</p>
+     */
     @BeforeEach
     void cleanDatabase() {
-        jdbcTemplate.execute("""
-                truncate table
-                    public.audit_outbox,
-                    public.audit_events,
-                    public.refresh_tokens,
-                    public.chat_messages,
-                    public.chat_sessions,
-                    public.usage_daily_user_model_rollups,
-                    public.usage_daily_org_model_rollups,
-                    public.user_ai_quotas,
-                    public.organization_ai_quotas,
-                    public.user_roles,
-                    public.users,
-                    public.organizations
-                cascade
-                """);
+        // Явная диагностика на случай ошибочного запуска без SpringExtension.
+        Objects.requireNonNull(jdbcTemplate,
+                "Spring Test не внедрил JdbcTemplate");
+        Objects.requireNonNull(transactionManager,
+                "Spring Test не внедрил PlatformTransactionManager");
 
-        insertOrganization(
-                PLATFORM_ORGANIZATION_ID,
-                "SafeAI Platform",
-                true
-        );
+        int attempt = 0;
+        while (true) {
+            attempt++;
+            try {
+                TransactionTemplate cleanup = new TransactionTemplate(transactionManager);
+                // Каждая попытка — отдельная транзакция. При 40P01 Spring
+                // откатывает её до выхода из executeWithoutResult().
+                cleanup.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+                cleanup.executeWithoutResult(status -> {
+                    jdbcTemplate.execute("""
+                            TRUNCATE TABLE
+                                public.audit_outbox,
+                                public.audit_events,
+                                public.refresh_tokens,
+                                public.chat_messages,
+                                public.chat_sessions,
+                                public.usage_daily_user_model_rollups,
+                                public.usage_daily_org_model_rollups,
+                                public.user_ai_quotas,
+                                public.organization_ai_quotas,
+                                public.user_roles,
+                                public.users,
+                                public.organizations
+                            CASCADE
+                            """);
+
+                    // Платформенная организация восстанавливается атомарно
+                    // с очисткой, чтобы тест не увидел промежуточное состояние.
+                    insertOrganization(
+                            PLATFORM_ORGANIZATION_ID,
+                            "SafeAI Platform",
+                            true
+                    );
+                });
+                return;
+            } catch (RuntimeException failure) {
+                // Не повторяем ошибки ограничений, некорректные миграции,
+                // потерю соединения и любые SQLSTATE, кроме 40P01.
+                if (!isPostgresDeadlock(failure)) {
+                    throw failure;
+                }
+                if (attempt >= CLEANUP_MAX_ATTEMPTS) {
+                    throw new IllegalStateException(
+                            "Очистка PostgreSQL завершилась взаимной блокировкой после "
+                                    + attempt + " попыток. Проверьте фоновые транзакции "
+                                    + "и параллельные тесты.",
+                            failure
+                    );
+                }
+                log.warn(
+                        "PostgreSQL deadlock (40P01) при подготовке тестовой БД: "
+                                + "попытка {} из {}. Повтор только после отката транзакции.",
+                        attempt, CLEANUP_MAX_ATTEMPTS, failure
+                );
+                pauseBeforeRetry(attempt, failure);
+            }
+        }
     }
 
-    @SuppressWarnings("SameParameterValue")
-protected void insertOrganization(
-        UUID id,
-        String name,
-        boolean enabled
-) {
-    jdbcTemplate.update("""
+    /**
+     * Определяет deadlock исключительно по SQLSTATE PostgreSQL 40P01.
+     * Другие нарушения ограничений, тайм-ауты и сбои подключения не повторяем.
+     */
+    private static boolean isPostgresDeadlock(Throwable failure) {
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            if (cause instanceof SQLException sqlException) {
+                for (SQLException sql = sqlException; sql != null; sql = sql.getNextException()) {
+                    if (DEADLOCK_SQL_STATE.equals(sql.getSQLState())) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /** Короткая ограниченная задержка уменьшает вероятность повторной гонки. */
+    private static void pauseBeforeRetry(int attempt, Throwable previousFailure) {
+        try {
+            Thread.sleep(CLEANUP_RETRY_BASE_MILLIS * attempt);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(
+                    "Поток прерван при повторной очистке PostgreSQL",
+                    previousFailure
+            );
+        }
+    }
+
+    protected void insertOrganization(
+            UUID id,
+            String name,
+            boolean enabled
+    ) {
+        jdbcTemplate.update("""
                     insert into public.organizations (
                         id,
                         name,
@@ -165,12 +277,12 @@ protected void insertOrganization(
                         0
                     )
                     """,
-            id,
-            name,
-            name,
-            enabled
-    );
-}
+                id,
+                name,
+                name,
+                enabled
+        );
+    }
 
     protected void insertUser(
             UUID id,
@@ -224,11 +336,42 @@ protected void insertOrganization(
         });
     }
 
-    @SuppressWarnings("SameParameterValue")
+    /**
+     * Создаёт активный refresh-токен для фактической версии пользователя.
+     *
+     * <p>Версия читается из PostgreSQL, а не задаётся постоянным нулём.
+     * Проверка работает и после изменения token_version в тестовом сценарии.
+     * Специализированный метод с явной версией ниже сохранён для сценариев
+     * проверки отозванных или устаревших токенов.</p>
+     */
+    protected void insertActiveRefreshToken(UUID userId) {
+        Objects.requireNonNull(userId, "userId не должен быть null");
+        Long actualTokenVersion = jdbcTemplate.queryForObject(
+                "select token_version from public.users where id = ?",
+                Long.class, userId
+        );
+        if (actualTokenVersion == null) {
+            throw new IllegalStateException(
+                    "PostgreSQL вернул null для token_version пользователя " + userId
+            );
+        }
+        insertActiveRefreshToken(userId, actualTokenVersion);
+    }
+
+    /**
+     * Создаёт refresh-токен с явно указанной версией.
+     * Нужен в регрессионных тестах отзыва сессий и устаревших токенов.
+     */
     protected void insertActiveRefreshToken(
             UUID userId,
             long issuedTokenVersion
     ) {
+        Objects.requireNonNull(userId, "userId не должен быть null");
+        if (issuedTokenVersion < 0) {
+            throw new IllegalArgumentException(
+                    "Версия refresh-токена не может быть отрицательной"
+            );
+        }
         Instant createdAt =
                 Instant.now().minus(
                         Duration.ofHours(1)

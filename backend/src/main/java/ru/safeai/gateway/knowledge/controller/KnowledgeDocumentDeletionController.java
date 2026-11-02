@@ -23,6 +23,8 @@ import java.util.UUID;
 @PreAuthorize("hasAnyRole('ADMIN','USER')")
 @ConditionalOnProperty(prefix = "safeai.knowledge.deletion", name = {"accept-enabled", "executor-enabled"},
         havingValue = "true")
+@ConditionalOnProperty(prefix = "safeai.knowledge.erasure-journal", name = "enabled",
+        havingValue = "true")
 public class KnowledgeDocumentDeletionController {
     private final KnowledgeDocumentDeletionAcceptanceService acceptance;
 

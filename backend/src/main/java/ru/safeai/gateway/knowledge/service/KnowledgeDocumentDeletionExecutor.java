@@ -3,6 +3,7 @@ package ru.safeai.gateway.knowledge.service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -10,22 +11,26 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import ru.safeai.gateway.knowledge.storage.ObjectStorage;
 import ru.safeai.gateway.knowledge.storage.VerifiedObjectLockException;
+import ru.safeai.gateway.knowledge.rag.KnowledgeRagExecutionPermitService;
+import ru.safeai.gateway.knowledge.storage.ErasureTombstoneJournal;
+
+import java.util.concurrent.atomic.AtomicLong;
 
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
 /**
- * Disabled by default. Implements a restart-safe, fenced two-phase erasure:
- * (1) commit a durable inventory, (2) purge every object version outside any
- * DB transaction, (3) atomically remove online content and acknowledge DELETED.
+ * По умолчанию отключённый исполнитель безопасного удаления документов.
+ * Порядок работы: (1) транзакционно зафиксировать инвентаризацию, (2) удалить
+ * все версии объектов вне DB-транзакции, (3) атомарно очистить оперативные
+ * данные и зафиксировать DELETED при соблюдении защитных инвариантов.
  *
- * <p>V80/V57 provenance, V56 upload-intent evidence, earlier RAG responses and
- * backup snapshots are deliberately outside this erasure contract. Those
- * retention exceptions must be disclosed before enabling the public API.</p>
+ * <p>Исторические идентификаторы V80/V57, доказательства V56, предыдущие
+ * RAG-ответы и резервные копии подчиняются отдельным политикам хранения.</p>
  *
- * <p>Requires Flyway migrations V78, V80 and V81; never run this executor
- * against a database whose migration history has not been validated.</p>
+ * <p>Требуются валидированные Flyway V78, V80, V81, V84 и V85.
+ * Не запускать при непроверенной истории миграций.</p>
  */
 @Component
 @ConditionalOnProperty(
@@ -44,17 +49,55 @@ public class KnowledgeDocumentDeletionExecutor {
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transactions;
     private final ObjectStorage storage;
+    private final KnowledgeRagExecutionPermitService executionPermits;
+    private final ErasureTombstoneJournal tombstoneJournal;
 
+    /**
+     * Совместимость со старыми изолированными тестами.
+     * Без внешнего журнала удаление завершиться не может: проверка выполняется
+     * до первого необратимого обращения к объектному хранилищу.
+     */
     public KnowledgeDocumentDeletionExecutor(JdbcTemplate jdbc,
                                              PlatformTransactionManager transactionManager,
                                              ObjectStorage storage) {
-        this.jdbc = jdbc;
-        this.transactions = new TransactionTemplate(transactionManager);
-        this.storage = storage;
+        this(jdbc, transactionManager, storage, null, null);
+    }
+
+    /**
+     * Совместимость с кодом V85, который передаёт защиту RAG, но ещё не передаёт журнал.
+     * Отсутствующий журнал не подменяется заглушкой и не ослабляет защиту удаления.
+     */
+    public KnowledgeDocumentDeletionExecutor(JdbcTemplate jdbc,
+                                             PlatformTransactionManager transactionManager,
+                                             ObjectStorage storage,
+                                             KnowledgeRagExecutionPermitService executionPermits) {
+        this(jdbc, transactionManager, storage, executionPermits, null);
+    }
+
+    /**
+     * Основной конструктор production и интеграционных тестов.
+     * Spring обязан передать реализацию ErasureTombstoneJournal; отсутствие bean
+     * предотвращает запуск включённого исполнителя в production.
+     * В тестах допускается null только для executionPermits: вместо реального
+     * журнала обязательно передаётся тестовая реализация.
+     */
+    @Autowired
+    public KnowledgeDocumentDeletionExecutor(JdbcTemplate jdbc,
+                                             PlatformTransactionManager transactionManager,
+                                             ObjectStorage storage,
+                                             KnowledgeRagExecutionPermitService executionPermits,
+                                             ErasureTombstoneJournal tombstoneJournal) {
+        this.jdbc = java.util.Objects.requireNonNull(jdbc, "jdbc");
+        this.transactions = new TransactionTemplate(
+                java.util.Objects.requireNonNull(transactionManager, "transactionManager"));
+        this.storage = java.util.Objects.requireNonNull(storage, "storage");
+        this.executionPermits = executionPermits;
+        this.tombstoneJournal = tombstoneJournal;
     }
 
     private record Claim(UUID id, UUID organizationId, UUID knowledgeBaseId,
-                         UUID documentId, UUID token, int attempts) { }
+                         UUID documentId, UUID requestedByUserId, long expectedVersion,
+                         UUID token, int attempts) { }
 
     private static final class LeaseLostException extends IllegalStateException {
         private LeaseLostException() {
@@ -62,47 +105,110 @@ public class KnowledgeDocumentDeletionExecutor {
         }
     }
 
+    /**
+     * Плановый запуск: обрабатывает ограниченный пакет готовых операций.
+     * Логика аренды, внешнего журнала и подтверждения удаления не различается
+     * между плановым и однократным исполнением.
+     */
     @Scheduled(fixedDelayString = "${safeai.knowledge.deletion.poll-delay:PT20S}")
     public void poll() {
-        for (int i = 0; i < MAX_CLAIMS_PER_POLL; i++) {
+        processUpTo(MAX_CLAIMS_PER_POLL);
+    }
+
+    /**
+     * Выполняет не более одного штатного захвата из очереди.
+     *
+     * <p>Используется для ограниченного ручного запуска и интеграционных проверок
+     * с отдельным хранилищем. Не обходит условия готовности, lease, fencing,
+     * внешний журнал или проверки полной физической очистки.</p>
+     */
+    public void pollOne() {
+        processUpTo(1);
+    }
+
+    private void processUpTo(int maximumClaims) {
+        for (int i = 0; i < maximumClaims; i++) {
             Claim claim = claim();
             if (claim == null) {
                 return;
             }
 
             try {
-                // Inventory is committed before any irreversible storage I/O.
+                // Инвентаризация фиксируется в БД до необратимых операций с хранилищем.
                 boolean ready = Boolean.TRUE.equals(
                         transactions.execute(tx -> prepareInventory(claim)));
                 if (!ready) {
                     continue;
                 }
+                requireTombstoneJournal().publishDocumentIntent(
+                        claim.id(), claim.organizationId(), claim.knowledgeBaseId(), claim.documentId(),
+                        claim.requestedByUserId(), claim.expectedVersion());
 
-                List<String> keys = jdbc.queryForList("""
-                        SELECT storage_key
-                        FROM public.knowledge_document_erasure_objects_v81
-                        WHERE operation_id = ?
-                        ORDER BY storage_key
-                        """, String.class, claim.id());
-
-                for (String key : keys) {
-                    requireRenewedLease(claim);
-                    // Never perform network I/O inside a PostgreSQL transaction.
-                    // This provider operation MUST verify all versions and markers.
-                    storage.purgeAllVersionsVerified(key);
+                // Читаем инвентаризацию порциями по ключу. Не загружаем
+                // неограниченное количество объектов в память JVM.
+                String lastKey = null;
+                while (true) {
+                    List<String> keys = lastKey == null
+                            ? jdbc.queryForList("""
+                                    SELECT storage_key
+                                      FROM public.knowledge_document_erasure_objects_v81
+                                     WHERE operation_id=?
+                                     ORDER BY storage_key LIMIT 128
+                                    """, String.class, claim.id())
+                            : jdbc.queryForList("""
+                                    SELECT storage_key
+                                      FROM public.knowledge_document_erasure_objects_v81
+                                     WHERE operation_id=? AND storage_key > ?
+                                     ORDER BY storage_key LIMIT 128
+                                    """, String.class, claim.id(), lastKey);
+                    if (keys.isEmpty()) break;
+                    for (String key : keys) {
+                        requireRenewedLease(claim);
+                        AtomicLong lastHeartbeat = new AtomicLong(System.nanoTime());
+                        // Не выполняем сетевые запросы внутри транзакции PostgreSQL.
+                        // Хранилище вызывает heartbeat при обходе и удалении версий.
+                        requireTombstoneJournal().publishObjectPurgeIntent(
+                                claim.id(), claim.organizationId(), claim.knowledgeBaseId(),
+                                claim.documentId(), key);
+                        storage.purgeAllVersionsVerified(key, () -> {
+                            long now = System.nanoTime();
+                            long previous = lastHeartbeat.get();
+                            if (now - previous >= java.util.concurrent.TimeUnit.SECONDS.toNanos(20)
+                                    && lastHeartbeat.compareAndSet(previous, now)) {
+                                requireRenewedLease(claim);
+                            }
+                        });
+                        // Внешнее доказательство фиксируется только после повторной
+                        // проверки очистки именно этого ключа.
+                        requireTombstoneJournal().publishObjectPurged(
+                                claim.id(), claim.organizationId(), claim.knowledgeBaseId(),
+                                claim.documentId(), key);
+                    }
+                    lastKey = keys.getLast();
                 }
 
                 requireRenewedLease(claim);
+                requireTombstoneJournal().publishDocumentCommitted(
+                        claim.id(), claim.organizationId(), claim.knowledgeBaseId(), claim.documentId());
                 boolean completed = Boolean.TRUE.equals(
                         transactions.execute(tx -> eraseDatabase(claim)));
                 if (!completed) {
                     throw new LeaseLostException();
                 }
             } catch (LeaseLostException lost) {
-                // An expired lease may already belong to a different worker.
-                // Never reset its status/token or acknowledge an old claim.
+                // Истёкшая аренда могла перейти другому исполнителю.
+                // Нельзя сбрасывать чужой токен или подтверждать устаревший захват.
                 log.warn("Knowledge deletion lease lost: operationId={}", claim.id());
             } catch (Exception error) {
+                if (isVerifiedRetentionFailure(error)) {
+                    try {
+                        requireTombstoneJournal().publishAttention(
+                                claim.id(), claim.organizationId(), claim.knowledgeBaseId(),
+                                claim.documentId(), "OBJECT_LOCK_VERIFIED");
+                    } catch (Exception journalFailure) {
+                        error.addSuppressed(journalFailure);
+                    }
+                }
                 fail(claim, error);
             }
         }
@@ -129,12 +235,15 @@ public class KnowledgeDocumentDeletionExecutor {
                 FROM candidate
                 WHERE d.id = candidate.id
                 RETURNING d.id, d.organization_id, d.knowledge_base_id,
-                          d.document_id, d.lease_token, d.attempts
+                          d.document_id, d.requested_by_user_id, d.expected_version,
+                        d.lease_token, d.attempts
                 """, (rs, rowNum) -> new Claim(
                 rs.getObject("id", UUID.class),
                 rs.getObject("organization_id", UUID.class),
                 rs.getObject("knowledge_base_id", UUID.class),
                 rs.getObject("document_id", UUID.class),
+                rs.getObject("requested_by_user_id", UUID.class),
+                rs.getLong("expected_version"),
                 rs.getObject("lease_token", UUID.class),
                 rs.getInt("attempts")), token);
 
@@ -157,8 +266,16 @@ public class KnowledgeDocumentDeletionExecutor {
     private boolean prepareInventory(Claim claim) {
         assertDeletionLeaseUnderDocumentLock(claim);
 
-        // In-flight uploads can still have unknown physical state. Never
-        // presume such an object absent or continue with a partial inventory.
+        // AI-вызов, начатый до DELETING, может ещё выполняться.
+        // Новые попытки блокируются V85 через блокировки строк базы/документа.
+        if (executionPermits != null && executionPermits.hasActiveAttemptsForDocument(
+                claim.organizationId(), claim.knowledgeBaseId(), claim.documentId())) {
+            rescheduleForActiveExecution(claim);
+            return false;
+        }
+
+        // Исход незавершённой загрузки может быть неизвестен.
+        // Нельзя считать объект отсутствующим и продолжать неполную очистку.
         boolean uncertainIntent = Boolean.TRUE.equals(jdbc.queryForObject("""
                 SELECT EXISTS (
                     SELECT 1 FROM public.knowledge_storage_upload_intents
@@ -174,8 +291,8 @@ public class KnowledgeDocumentDeletionExecutor {
             return false;
         }
 
-        // Even CLEANED intents must be checked: an earlier ordinary S3 DELETE
-        // may have left physical historical versions in a versioned bucket.
+        // Даже CLEANED требует проверки: обычный S3 DELETE ранее мог оставить
+        // старые физические версии в бакете с версионированием.
         jdbc.update("""
                 INSERT INTO public.knowledge_document_erasure_objects_v81
                     (operation_id, storage_key)
@@ -198,7 +315,7 @@ public class KnowledgeDocumentDeletionExecutor {
     private boolean eraseDatabase(Claim claim) {
         assertDeletionLeaseUnderDocumentLock(claim);
 
-        // Fail closed if a storage key was added since the committed inventory.
+        // При появлении нового ключа после инвентаризации прекращаем удаление.
         boolean missingKey = Boolean.TRUE.equals(jdbc.queryForObject("""
                 SELECT EXISTS (
                     SELECT storage_key
@@ -222,8 +339,8 @@ public class KnowledgeDocumentDeletionExecutor {
             throw new IllegalStateException("INCOMPLETE_ERASURE_INVENTORY");
         }
 
-        // Session settings are transaction-local and authenticated again by
-        // V81 against the active DB lease and the DELETING document.
+        // Настройки сессии ограничены текущей транзакцией и повторно
+        // проверяются V81 по активной аренде и статусу DELETING.
         jdbc.queryForObject(
                 "SELECT set_config('safeai.knowledge.erasure_operation', ?, true)",
                 String.class, claim.id().toString());
@@ -243,8 +360,8 @@ public class KnowledgeDocumentDeletionExecutor {
             throw new IllegalStateException("ERASURE_DOCUMENT_NOT_DELETING");
         }
 
-        // Change the user-supplied name snapshot; V80 retains independent
-        // immutable chunk identities so citations do not lose their FK.
+        // Очищаем пользовательское имя в сохранённом снимке; V80 сохраняет
+        // независимые идентификаторы chunks, чтобы не нарушить FK цитат.
         jdbc.update("""
                 UPDATE public.knowledge_retrieval_hits h
                    SET document_name_snapshot = 'Удалённый документ'
@@ -260,8 +377,8 @@ public class KnowledgeDocumentDeletionExecutor {
                  WHERE document_id = ? AND organization_id = ? AND knowledge_base_id = ?
                 """, claim.documentId(), claim.organizationId(), claim.knowledgeBaseId());
 
-        // V57/V63 require real GC state transitions and retain generation
-        // evidence. Clear chunks first to satisfy the cited-chunk GC guard.
+        // V57/V63 требуют переходов состояния GC и сохранения доказательств поколений.
+        // Сначала удаляем chunks, соблюдая ограничения GC для цитируемых фрагментов.
         jdbc.update("""
                 UPDATE public.knowledge_index_generations
                    SET state = 'RETIRED',
@@ -312,7 +429,7 @@ public class KnowledgeDocumentDeletionExecutor {
             throw new IllegalStateException("INCOMPLETE_DB_ERASURE");
         }
 
-        // V81 independently rejects DELETED while inventory/content remains.
+        // V81 независимо запрещает DELETED при оставшемся содержимом.
         jdbc.update("""
                 DELETE FROM public.knowledge_document_erasure_objects_v81
                  WHERE operation_id = ?
@@ -322,8 +439,8 @@ public class KnowledgeDocumentDeletionExecutor {
     }
 
     /**
-     * Throws instead of returning a flag that callers could silently ignore.
-     * Must be called inside the corresponding TransactionTemplate callback.
+     * Бросаем исключение вместо булева результата, который вызывающий код
+     * мог бы проигнорировать. Вызывается только внутри DB-транзакции.
      */
     private void assertDeletionLeaseUnderDocumentLock(Claim claim) {
         List<String> states = jdbc.queryForList("""
@@ -352,8 +469,8 @@ public class KnowledgeDocumentDeletionExecutor {
     }
 
     /**
-     * Persist a terminal status only while this worker owns the current lease.
-     * Losing the lease is exceptional, never a silently ignored boolean result.
+     * Сохраняем терминальное состояние лишь при подтверждённом владении арендой.
+     * Потеря аренды всегда приводит к исключению, а не молчаливому продолжению.
      */
     private void requireTerminalTransition(Claim claim, String state, String errorCode) {
         int updated = jdbc.update("""
@@ -371,16 +488,37 @@ public class KnowledgeDocumentDeletionExecutor {
         }
     }
 
-    private void fail(Claim claim, Exception error) {
-        boolean blockedByRetention = false;
-        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
-            if (cause instanceof VerifiedObjectLockException) {
-                blockedByRetention = true;
-                break;
-            }
+    private void rescheduleForActiveExecution(Claim claim) {
+        int updated = jdbc.update("""
+                UPDATE public.knowledge_document_deletions_v78
+                   SET attempts=GREATEST(0, attempts-1),
+                       next_attempt_at=clock_timestamp()+interval '20 seconds',
+                       lease_token=NULL, lease_until=NULL,
+                       updated_at=clock_timestamp()
+                 WHERE id=? AND lease_token=? AND state='DELETING'
+                   AND lease_until > clock_timestamp()
+                """, claim.id(), claim.token());
+        if (updated != 1) throw new LeaseLostException();
+    }
+
+    private ErasureTombstoneJournal requireTombstoneJournal() {
+        if (tombstoneJournal == null) {
+            throw new IllegalStateException("External erasure tombstone journal is required before DELETED");
         }
-        // Retention has been verified for the specific S3 version, not inferred
-        // from a generic provider code that could mean insufficient permissions.
+        return tombstoneJournal;
+    }
+
+    private static boolean isVerifiedRetentionFailure(Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (cause instanceof VerifiedObjectLockException) return true;
+        }
+        return false;
+    }
+
+    private void fail(Claim claim, Exception error) {
+        boolean blockedByRetention = isVerifiedRetentionFailure(error);
+        // Retention подтверждается для конкретной версии S3, а не выводится
+        // из общей ошибки провайдера, которая может означать недостаток прав.
         String code = blockedByRetention ? "OBJECT_LOCK_VERIFIED"
                 : error.getClass().getSimpleName().toUpperCase(Locale.ROOT);
 

@@ -1,3 +1,4 @@
+// SafeAI-Desk/backend/src/main/java/ru/safeai/gateway/chat/service/ChatTurnExecutionCoordinator.java
 package ru.safeai.gateway.chat.service;
 
 import lombok.extern.slf4j.Slf4j;
@@ -19,6 +20,7 @@ import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.knowledge.rag.KnowledgeRagService;
 import ru.safeai.gateway.knowledge.rag.RagCompletion;
 import ru.safeai.gateway.knowledge.rag.RagPreparation;
+import ru.safeai.gateway.knowledge.rag.KnowledgeRagContextRevokedException;
 import ru.safeai.gateway.model.exception.ModelRouteEnvelopeExceededException;
 import ru.safeai.gateway.model.service.ModelRouteExecutionGuard;
 import ru.safeai.gateway.model.service.ModelRouteExecutionIdentity;
@@ -100,6 +102,7 @@ final class ChatTurnExecutionCoordinator {
 
         ChatTurnLeaseService.LeaseWatch leaseWatch =
                 null;
+        RagPreparation ragPreparation = null;
 
         try {
             ChatProcessingContext context =
@@ -128,7 +131,7 @@ final class ChatTurnExecutionCoordinator {
                             "reserved aiRequest не должен быть null"
                     );
 
-            RagPreparation ragPreparation =
+            ragPreparation =
                     prepareRag(
                             context,
                             currentUser
@@ -154,10 +157,9 @@ final class ChatTurnExecutionCoordinator {
                     );
 
             /*
-             * Knowledge ACL contract: successful prepare(...) authorizes this
-             * turn and materializes retrieval context. ACL changes after this
-             * point apply to future turns; strict in-flight revocation is not
-             * claimed by the current contract.
+             * RAG prepare materializes the authorized context. A second DB check
+             * below rejects sources already marked for deletion before provider
+             * dispatch. Full in-flight revocation still needs durable leases.
              */
 
             // V67/V72: only a successfully committed physical STARTED attempt
@@ -170,11 +172,16 @@ final class ChatTurnExecutionCoordinator {
                     currentUser
             );
 
+            // Повторно проверяем Knowledge после materialization и перед физическим вызовом.
+            // Ошибка чтения БД также запрещает отправку ранее подготовленного содержимого.
+            ensureKnowledgeAvailableBeforeProvider(ragPreparation, context, currentUser);
+
             AiChatResponse providerResponse =
                     invokeProvider(
                             context,
                             reservedAiRequest,
                             executionIdentity,
+                            ragPreparation.executionPermitId(),
                             currentUser
                     );
 
@@ -214,6 +221,12 @@ final class ChatTurnExecutionCoordinator {
 
             return result;
         } finally {
+            try {
+                ragService.closeExecutionPermit(ragPreparation);
+            } catch (RuntimeException closeFailure) {
+                log.error("Failed to close Knowledge execution permit: turnId={}",
+                        ragPreparation == null ? null : ragPreparation.retrievalRunId(), closeFailure);
+            }
             leaseService.close(
                     leaseWatch
             );
@@ -421,6 +434,31 @@ final class ChatTurnExecutionCoordinator {
         }
     }
 
+    private void ensureKnowledgeAvailableBeforeProvider(
+            RagPreparation preparation,
+            ChatProcessingContext context,
+            SafeAiUserPrincipal currentUser
+    ) {
+        if (!preparation.mode().usesKnowledge()) {
+            return;
+        }
+        try {
+            ragService.assertSourcesAvailable(preparation, currentUser);
+        } catch (RuntimeException exception) {
+            persistPreProviderFailureQuietly(
+                    context,
+                    "KNOWLEDGE_CONTEXT_UNAVAILABLE",
+                    "KNOWLEDGE_CONTEXT_UNAVAILABLE_BEFORE_PROVIDER",
+                    currentUser,
+                    exception
+            );
+            throw new ChatTurnFailedException(
+                    context.chatId(), context.turnId(), context.clientRequestId(),
+                    "KNOWLEDGE_CONTEXT_UNAVAILABLE_BEFORE_PROVIDER", exception
+            );
+        }
+    }
+
     private void ensureOwnershipBeforeProvider(
             ChatProcessingContext context,
             ChatLockService.ChatLock redisLock,
@@ -495,6 +533,7 @@ final class ChatTurnExecutionCoordinator {
             ChatProcessingContext context,
             AiChatRequest reservedAiRequest,
             ModelRouteExecutionIdentity executionIdentity,
+            UUID knowledgeExecutionPermitId,
             SafeAiUserPrincipal currentUser
     ) {
         AiChatResponse response;
@@ -511,7 +550,8 @@ final class ChatTurnExecutionCoordinator {
                             context.aiRequest(),
                             aiExecutionService.targetFor(model),
                             executionIdentity,
-                            reservedAiRequest
+                            reservedAiRequest,
+                            knowledgeExecutionPermitId
                         )
             ).response();
         } catch (AiProviderException exception) {
@@ -578,6 +618,16 @@ final class ChatTurnExecutionCoordinator {
                     "ORGANIZATION_SECURITY_EPOCH_REVOKED",
                     denied
             );
+        } catch (KnowledgeRagContextRevokedException revoked) {
+            try {
+                finalizationService.failBeforePhysicalAttemptAfterKnowledgeRevocation(
+                        context, currentUser);
+            } catch (RuntimeException finalizationFailure) {
+                revoked.addSuppressed(finalizationFailure);
+            }
+            throw new ChatTurnFailedException(
+                    context.chatId(), context.turnId(), context.clientRequestId(),
+                    "KNOWLEDGE_CONTEXT_REVOKED_DURING_RETRY", revoked);
         } catch (RuntimeException unexpectedProviderException) {
             markAmbiguousQuietly(
                     context,
@@ -674,6 +724,22 @@ final class ChatTurnExecutionCoordinator {
                     completion,
                     currentUser
             );
+        } catch (KnowledgeRagContextRevokedException revoked) {
+            try {
+                finalizationService.failAfterProviderContextRevoked(
+                        context, completion, response, currentUser);
+            } catch (RuntimeException failurePersistence) {
+                revoked.addSuppressed(failurePersistence);
+                markAmbiguousQuietly(
+                        context, response.requestedModel(), response.providerRequestId(),
+                        "KNOWLEDGE_CONTEXT_REVOKED_FINALIZATION_PERSISTENCE_FAILED",
+                        "KNOWLEDGE_CONTEXT_FINALIZATION_STATE_UNKNOWN",
+                        currentUser, revoked);
+                throw ambiguous(context, revoked);
+            }
+            throw new ChatTurnFailedException(
+                    context.chatId(), context.turnId(), context.clientRequestId(),
+                    "KNOWLEDGE_CONTEXT_REVOKED_BEFORE_FINALIZATION", revoked);
         } catch (ChatStaleProcessorException exception) {
             throw ambiguous(
                     context,

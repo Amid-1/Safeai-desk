@@ -6,6 +6,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.transaction.PlatformTransactionManager;
+import ru.safeai.gateway.knowledge.testsupport.KnowledgeErasureTestJournal;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.knowledge.service.KnowledgeDocumentDeletionAcceptanceService;
 import ru.safeai.gateway.knowledge.service.KnowledgeDocumentDeletionExecutor;
@@ -66,7 +67,7 @@ class KnowledgeDocumentDeletionExecutorIntegrationTest extends AbstractPostgresI
             @Override public void delete(String k) { }
             @Override public void purgeAllVersionsVerified(String k) { purged.add(k); }
         };
-        new KnowledgeDocumentDeletionExecutor(jdbcTemplate, transactions, store).poll();
+        new KnowledgeDocumentDeletionExecutor(jdbcTemplate, transactions, store, null, KnowledgeErasureTestJournal.INSTANCE).poll();
 
         assertThat(purged).containsExactly(key);
         assertThat(acceptance.status(base, operation.operationId(), admin).state())
@@ -118,7 +119,7 @@ class KnowledgeDocumentDeletionExecutorIntegrationTest extends AbstractPostgresI
             @Override public void delete(String k) { }
             @Override public void purgeAllVersionsVerified(String k) { purged.add(k); }
         };
-        new KnowledgeDocumentDeletionExecutor(jdbcTemplate, transactions, store).poll();
+        new KnowledgeDocumentDeletionExecutor(jdbcTemplate, transactions, store, null, KnowledgeErasureTestJournal.INSTANCE).poll();
         assertThat(purged).isEmpty();
         assertThat(acceptance.status(base, operation.operationId(), admin).state())
                 .isEqualTo("NEEDS_REVIEW");

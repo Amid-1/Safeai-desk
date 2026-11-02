@@ -308,6 +308,9 @@ knowledge/
 │   ├── KnowledgeMode.java
 │   ├── KnowledgeRagContextReceiptRepository.java
 │   ├── KnowledgeRagContextReceiptService.java
+│   ├── KnowledgeRagContextRevokedException.java
+│   ├── KnowledgeRagErasureGuard.java
+│   ├── KnowledgeRagExecutionPermitService.java
 │   ├── KnowledgeRagService.java
 │   ├── RagCitation.java
 │   ├── RagCompletion.java
@@ -358,6 +361,8 @@ knowledge/
 │   │   ├── KnowledgeStorageReconciliationScheduler.java
 │   │   ├── KnowledgeStorageReviewMetrics.java
 │   │   └── KnowledgeStorageUploadJournal.java
+│   ├── ErasureTombstoneJournal.java
+│   ├── KnowledgeErasureTombstoneJournal.java
 │   ├── KnowledgeStorageConfiguration.java
 │   ├── KnowledgeStorageProductionInvariantVerifier.java
 │   ├── KnowledgeStorageProperties.java
@@ -440,6 +445,7 @@ backend/src/test/java/ru/safeai/gateway/knowledge/
 │   ├── KnowledgeGenerationUpgradeIntegrationTest.java
 │   ├── KnowledgeMigrationIntegrityIntegrationTest.java
 │   ├── KnowledgePersistenceIntegrationTest.java
+│   ├── KnowledgeRagErasureGuardIntegrationTest.java
 │   └── KnowledgeS3EndToEndIntegrationTest.java
 ├── ocr
 │   └── KnowledgeOcrBoundaryRegressionTest.java
@@ -450,6 +456,7 @@ backend/src/test/java/ru/safeai/gateway/knowledge/
 │   ├── KnowledgeCitationValidatorTest.java
 │   ├── KnowledgeContextAssemblerRegressionTest.java
 │   ├── KnowledgeContextAssemblerTest.java
+│   ├── KnowledgeRagErasureGuardTest.java
 │   ├── KnowledgeRagGovernedEnvelopeTest.java
 │   ├── KnowledgeRagServiceRegressionTest.java
 │   └── RagPreparationContractRegressionTest.java
@@ -460,6 +467,7 @@ backend/src/test/java/ru/safeai/gateway/knowledge/
 │   ├── KnowledgeBaseNameNormalizerTest.java
 │   ├── KnowledgeBaseSearchPatternTest.java
 │   ├── KnowledgeBaseServiceTest.java
+│   ├── KnowledgeDocumentDeletionExecutorWiringTest.java
 │   ├── KnowledgeDocumentFileValidatorTest.java
 │   ├── KnowledgeDocumentNameNormalizerTest.java
 │   ├── KnowledgeDocumentServiceTest.java
@@ -472,6 +480,7 @@ backend/src/test/java/ru/safeai/gateway/knowledge/
 │   │   ├── KnowledgeStorageReconciliationSchedulerTest.java
 │   │   └── KnowledgeStorageReviewMetricsTest.java
 │   ├── KnowledgeDocumentErasureRealMinioIntegrationTest.java
+│   ├── KnowledgeErasureTombstoneJournalWiringTest.java
 │   ├── KnowledgeStorageConfigurationBindingTest.java
 │   ├── KnowledgeStorageProductionConditionTest.java
 │   ├── KnowledgeStorageProductionInvariantVerifierTest.java
@@ -482,6 +491,7 @@ backend/src/test/java/ru/safeai/gateway/knowledge/
 │   ├── S3VerifiedKnowledgeObjectPurgeIntegrationTest.java
 │   └── VerifiedKnowledgeObjectPurgeTest.java
 ├── testsupport
+│   ├── KnowledgeErasureTestJournal.java
 │   └── KnowledgeRegressionFixtures.java
 └── README.md
 ```

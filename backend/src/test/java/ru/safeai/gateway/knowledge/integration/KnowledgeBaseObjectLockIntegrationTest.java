@@ -26,6 +26,7 @@ import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
+import ru.safeai.gateway.knowledge.testsupport.KnowledgeErasureTestJournal;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.knowledge.dto.KnowledgeBaseDeletionResponse;
@@ -138,7 +139,7 @@ class KnowledgeBaseObjectLockIntegrationTest extends AbstractPostgresIntegration
                 JOIN public.knowledge_document_deletions_v78 d ON d.id = i.operation_id
                 WHERE d.knowledge_base_id = ? AND i.storage_key = ?
                 """, Integer.class, base, key)).isEqualTo(1);
-        new KnowledgeBaseDeletionExecutor(jdbcTemplate, transactionManager, true).poll();
+        new KnowledgeBaseDeletionExecutor(jdbcTemplate, transactionManager, true, null, KnowledgeErasureTestJournal.INSTANCE).poll();
         assertThat(jdbcTemplate.queryForObject("""
                 SELECT state FROM public.knowledge_base_deletions_v82 WHERE id = ?
                 """, String.class, accepted.operationId())).isEqualTo("NEEDS_REVIEW");
@@ -158,7 +159,7 @@ class KnowledgeBaseObjectLockIntegrationTest extends AbstractPostgresIntegration
                 throw new IOException("InvalidRequest without verified retention");
             }
         };
-        return new KnowledgeDocumentDeletionExecutor(jdbcTemplate, transactionManager, refused);
+        return new KnowledgeDocumentDeletionExecutor(jdbcTemplate, transactionManager, refused, null, KnowledgeErasureTestJournal.INSTANCE);
     }
 
     private void assertBlockedEndToEnd(boolean legalHold) throws Exception {
@@ -231,7 +232,7 @@ class KnowledgeBaseObjectLockIntegrationTest extends AbstractPostgresIntegration
                 assertThat(accepted.state()).isEqualTo("DELETING");
 
                 new KnowledgeDocumentDeletionExecutor(jdbcTemplate, transactionManager,
-                        storage).poll();
+                        storage, null, KnowledgeErasureTestJournal.INSTANCE).poll();
                 String childState = jdbcTemplate.queryForObject("""
                         SELECT state FROM public.knowledge_document_deletions_v78
                         WHERE knowledge_base_id = ? AND document_id = ?
@@ -246,7 +247,7 @@ class KnowledgeBaseObjectLockIntegrationTest extends AbstractPostgresIntegration
                         .isEqualTo("BLOCKED_BY_RETENTION");
 
                 new KnowledgeBaseDeletionExecutor(jdbcTemplate, transactionManager,
-                        true).poll();
+                        true, null, KnowledgeErasureTestJournal.INSTANCE).poll();
                 String parentState = jdbcTemplate.queryForObject("""
                         SELECT state FROM public.knowledge_base_deletions_v82
                         WHERE id = ?

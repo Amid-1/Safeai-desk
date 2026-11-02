@@ -3,6 +3,7 @@ package ru.safeai.gateway.knowledge.integration;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import ru.safeai.gateway.knowledge.testsupport.KnowledgeErasureTestJournal;
 import ru.safeai.gateway.knowledge.service.KnowledgeBaseDeletionExecutor;
 import ru.safeai.gateway.knowledge.service.KnowledgeDocumentDeletionExecutor;
 import ru.safeai.gateway.knowledge.storage.KnowledgeStorageProperties;
@@ -57,11 +58,11 @@ public final class KnowledgeDeletionWorkerProcessMain {
             ObjectStorage storage = "crash".equals(mode)
                     ? new HaltAfterVerifiedPurge(realStorage, expectedKey, nonce)
                     : realStorage;
-            new KnowledgeDocumentDeletionExecutor(jdbc, transactionManager, storage).poll();
+            new KnowledgeDocumentDeletionExecutor(jdbc, transactionManager, storage, null, KnowledgeErasureTestJournal.INSTANCE).poll();
             if ("crash".equals(mode)) {
                 throw new IllegalStateException("Crash phase returned without observed purge");
             }
-            new KnowledgeBaseDeletionExecutor(jdbc, transactionManager, true).poll();
+            new KnowledgeBaseDeletionExecutor(jdbc, transactionManager, true, null, KnowledgeErasureTestJournal.INSTANCE).poll();
             System.out.println("SAFEAI_TEST_RECOVERED " + nonce);
             System.out.flush();
         } finally {
