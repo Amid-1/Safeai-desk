@@ -1,9 +1,11 @@
+// frontend/src/features/knowledge/controller/useKnowledgeDeletionController.test.tsx
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
     acceptDocumentDeletion, deletionCapability, listDocumentDeletions,
 } from '../../../entities/knowledge/api/knowledgeDocumentDeletionApi'
 import { useKnowledgeDeletionController } from './useKnowledgeDeletionController'
+import type {KnowledgeDocument} from '../../../entities/knowledge/api/knowledgeDocumentApi'
 
 vi.mock('../../../entities/knowledge/api/knowledgeDocumentDeletionApi', () => ({
     acceptDocumentDeletion: vi.fn(),
@@ -100,5 +102,119 @@ describe('knowledge deletion: read-only history independent of DELETE flags', ()
         } finally {
             vi.useRealTimers()
         }
+    })
+})
+
+const DOCUMENT: KnowledgeDocument = {
+    id: OP.documentId,
+    knowledgeBaseId: BASE,
+    name: 'Документ для удаления',
+    version: 7,
+    enabled: true,
+    currentVersionId: null,
+    searchableVersionId: null,
+    versionNumber: null,
+    originalFilename: null,
+    mediaType: null,
+    sizeBytes: 0,
+    status: 'READY' as const,
+    createdAt: '2026-10-29T12:00:00Z',
+    updatedAt: '2026-10-29T12:00:00Z',
+}
+
+describe('knowledge deletion: подтверждение, идемпотентность и изоляция', () => {
+    it('запрещает повторный DELETE при существующем BLOCKED_BY_RETENTION', async () => {
+        capability.mockResolvedValue(true)
+        const {result} = renderHook(() => useKnowledgeDeletionController(config()))
+        await waitFor(() => expect(result.current.operations).toEqual([OP]))
+        act(() => result.current.requestDeletion(DOCUMENT))
+        expect(result.current.target).toBeNull()
+        expect(result.current.visibleOperation).toEqual(OP)
+        expect(accept).not.toHaveBeenCalled()
+    })
+
+    it('принимает 202 как DELETING, не как завершение', async () => {
+        capability.mockResolvedValue(true)
+        history.mockResolvedValue([])
+        const accepted = {...OP, state: 'DELETING' as const}
+        accept.mockResolvedValue(accepted)
+        const {result} = renderHook(() => useKnowledgeDeletionController(config()))
+        await waitFor(() => expect(result.current.available).toBe(true))
+        act(() => result.current.requestDeletion(DOCUMENT))
+        expect(result.current.target).not.toBeNull()
+        await act(async () => { await result.current.confirmDeletion() })
+        expect(result.current.visibleOperation?.state).toBe('DELETING')
+        expect(result.current.target).toBeNull()
+        expect(accept).toHaveBeenCalledTimes(1)
+        expect(accept).toHaveBeenCalledWith(BASE, DOCUMENT.id, DOCUMENT.version, expect.any(String))
+    })
+
+    it('сверяет capability перед DELETE; при выключении не вызывает мутацию', async () => {
+        capability.mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+        history.mockResolvedValue([])
+        const {result} = renderHook(() => useKnowledgeDeletionController(config()))
+        await waitFor(() => expect(result.current.available).toBe(true))
+        act(() => result.current.requestDeletion(DOCUMENT))
+        await act(async () => {
+            await expect(result.current.confirmDeletion()).rejects.toThrow('Удаление отключено')
+        })
+        expect(accept).not.toHaveBeenCalled()
+    })
+
+    it('не принимает ответ DELETE с идентификатором другого документа', async () => {
+        capability.mockResolvedValue(true)
+        history.mockResolvedValue([])
+        accept.mockResolvedValue({
+            ...OP, documentId: '66666666-6666-4666-8666-666666666666', state: 'DELETING',
+        })
+        const props = config()
+        const {result} = renderHook(() => useKnowledgeDeletionController(props))
+        await waitFor(() => expect(result.current.available).toBe(true))
+        act(() => result.current.requestDeletion(DOCUMENT))
+        await act(async () => {
+            await expect(result.current.confirmDeletion())
+                .rejects.toThrow('Сервер вернул операцию другого документа')
+        })
+        expect(accept).toHaveBeenCalledTimes(1)
+        expect(result.current.available).toBe(false)
+        expect(result.current.visibleOperation).toBeNull()
+        expect(result.current.target).not.toBeNull()
+        expect(result.current.busy).toBe(false)
+    })
+
+    it('при недоступной предварительной истории запрещает DELETE без сверки', async () => {
+        capability.mockResolvedValue(true)
+        history.mockResolvedValueOnce([]).mockRejectedValueOnce(new Error('История недоступна'))
+        const props = config()
+        const {result} = renderHook(() => useKnowledgeDeletionController(props))
+        await waitFor(() => expect(result.current.available).toBe(true))
+        act(() => result.current.requestDeletion(DOCUMENT))
+        await act(async () => {
+            await expect(result.current.confirmDeletion()).rejects.toThrow('История недоступна')
+        })
+        expect(accept).not.toHaveBeenCalled()
+        expect(result.current.available).toBe(false)
+        expect(result.current.historyError).toBe(true)
+        expect(result.current.busy).toBe(false)
+    })
+
+    it('сохраняет тот же ключ и версию при неопределённой сетевой ошибке', async () => {
+        capability.mockResolvedValue(true)
+        history.mockResolvedValue([])
+        accept.mockRejectedValueOnce(new Error('HTTP response lost'))
+            .mockResolvedValueOnce({...OP, state: 'DELETING'})
+        const {result} = renderHook(() => useKnowledgeDeletionController(config()))
+        await waitFor(() => expect(result.current.available).toBe(true))
+        act(() => result.current.requestDeletion(DOCUMENT))
+        await act(async () => {
+            try { await result.current.confirmDeletion() } catch { /* Ожидаем потерю ответа. */ }
+        })
+        expect(result.current.target).not.toBeNull()
+        await act(async () => { await result.current.confirmDeletion() })
+        const calls = accept.mock.calls
+        expect(calls).toHaveLength(2)
+        expect(calls[0]?.[3]).toBe(calls[1]?.[3])
+        expect(calls[0]?.[2]).toBe(calls[1]?.[2])
+        expect(result.current.visibleOperation?.state).toBe('DELETING')
     })
 })

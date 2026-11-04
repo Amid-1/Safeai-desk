@@ -15,6 +15,8 @@ import KnowledgePagination from '../KnowledgePagination'
 import { formatBytes } from './knowledgeDocumentFormat'
 import { KnowledgeDocumentDeleteAction } from './KnowledgeDocumentDeleteAction'
 import type {KnowledgeDocumentDeletion} from '../../../../entities/knowledge/api/knowledgeDocumentDeletionApi'
+import {KnowledgeDeletionProgress} from '../KnowledgeDeletionProgress'
+import {isUnfinishedDeletion} from '../KnowledgeDeletionProgress'
 
 const STATUS_LABEL:
     Record<KnowledgeIngestionStatus, string> = {
@@ -63,6 +65,7 @@ export type KnowledgeDetailsContentProps = {
     canShowDeleteAction: boolean
     deleteUnavailableReason: string
     requestDeletion: (document: KnowledgeDocument) => void
+    openDeletionOperation: (document: KnowledgeDocument, operation: KnowledgeDocumentDeletion) => void
     deletionOperations: KnowledgeDocumentDeletion[]
     deletionHistoryError: boolean
     requestEnabledChange: (document: KnowledgeDocument) => void
@@ -96,6 +99,7 @@ export function KnowledgeDetailsContent({
     canShowDeleteAction,
     deleteUnavailableReason,
     requestDeletion,
+    openDeletionOperation,
     deletionOperations,
     deletionHistoryError,
     requestEnabledChange,
@@ -325,18 +329,17 @@ export function KnowledgeDetailsContent({
                     </p>
                 )}
                 {deletionOperations.length > 0 && (
-                    <section className="knowledge-documents__notice" aria-label="Операции удаления документов">
-                        <strong>Операции удаления</strong>
-                        {deletionOperations.map(operation => (
-                            <p key={operation.operationId} role="status">
-                                {operation.state === 'DELETED' ? 'Документ удалён' :
-                                 operation.state === 'DELETING' ? 'Удаление выполняется' :
-                                 operation.state === 'BLOCKED_BY_RETENTION'
-                                     ? 'Удаление заблокировано правилами хранения' :
-                                     'Удаление требует проверки администратором'}
-                                {' · '}{operation.documentId}
-                            </p>
-                        ))}
+                    <section id="knowledge-document-deletion-history" className="knowledge-documents__notice"
+                        aria-label="Операции удаления документов">
+                        <details open={deletionOperations.some(operation => isUnfinishedDeletion(operation.state))}>
+                            <summary><strong>История удаления документов ({deletionOperations.length})</strong></summary>
+                            <div className="knowledge-erasure-history">
+                                {deletionOperations.map(operation => (
+                                    <KnowledgeDeletionProgress key={operation.operationId}
+                                        operation={operation}/>
+                                ))}
+                            </div>
+                        </details>
                     </section>
                 )}
 
@@ -573,6 +576,9 @@ export function KnowledgeDetailsContent({
                                                                         busy={busy}
                                                                         unavailableReason={deleteUnavailableReason}
                                                                         onDelete={requestDeletion}
+                                                                        activeOperation={deletionOperations.find(operation =>
+                                                                            operation.documentId === document.id)}
+                                                                        onOpenOperation={openDeletionOperation}
                                                                     />
                                                                 )}
                                                                 <button

@@ -1,46 +1,43 @@
-// frontend/src/features/knowledge/ui/details/KnowledgeDocumentDeleteAction.tsx
 import {useState} from 'react'
 import type {KnowledgeDocument} from '../../../../entities/knowledge/api/knowledgeDocumentApi'
-import Modal from '../../../../shared/ui/Modal'
+import type {KnowledgeDocumentDeletion} from '../../../../entities/knowledge/api/knowledgeDocumentDeletionApi'
+import {KnowledgeErasureDialog} from '../KnowledgeErasureDialog'
 
-export function KnowledgeDocumentDeleteAction({document, canDelete, busy, unavailableReason, onDelete}: {
+export function KnowledgeDocumentDeleteAction({document, canDelete, busy, unavailableReason,
+    activeOperation, onOpenOperation, onDelete}: {
     document: KnowledgeDocument
     canDelete: boolean
     busy: boolean
     unavailableReason: string
+    activeOperation?: KnowledgeDocumentDeletion
+    onOpenOperation?: (document: KnowledgeDocument, operation: KnowledgeDocumentDeletion) => void
     onDelete: (document: KnowledgeDocument) => void
 }) {
     const [showReason, setShowReason] = useState(false)
 
     function handleClick() {
         if (busy) return
-        if (!canDelete) {
-            // Если удаление недоступно, объясняем причину без запроса на удаление.
+        if (activeOperation) {
+            onOpenOperation?.(document, activeOperation)
+        } else if (!canDelete) {
+            // Запрещённое действие разъясняется без обращения к DELETE API.
             setShowReason(true)
-            return
+        } else {
+            onDelete(document)
         }
-        onDelete(document)
     }
 
     return <>
         <button type="button" className="secondary-button" disabled={busy}
-            title={canDelete
-                ? 'Удалить документ и все его версии'
-                : 'Удаление сейчас недоступно. Нажмите, чтобы узнать причину'}
+            title={activeOperation ? 'Посмотреть уже принятую операцию удаления'
+                : canDelete ? 'Удалить документ и все его версии'
+                    : 'Удаление недоступно. Нажмите, чтобы узнать причину'}
             onClick={handleClick}>
-            Удалить…
+            {activeOperation ? 'Статус удаления…' : 'Удалить…'}
         </button>
-        {showReason && <Modal title="Удаление документа недоступно" size="md"
-            onClose={() => setShowReason(false)}>
-            <p>{unavailableReason || 'Удаление документа сейчас недоступно.'}</p>
-            {unavailableReason.includes('отключено')
-                ? <p>Чтобы воспользоваться этой функцией, её необходимо включить и проверить.</p>
-                : <p>Обновите страницу или повторите попытку позже.</p>}
-            <p>Документ «{document.name}» и его файлы остаются без изменений.</p>
-            <div className="modal-actions">
-                <button type="button" className="secondary-button"
-                    onClick={() => setShowReason(false)}>Закрыть</button>
-            </div>
-        </Modal>}
+        {showReason && <KnowledgeErasureDialog mode="unavailable" kind="document"
+            entityName={document.name} reason={unavailableReason || 'Удаление документа сейчас недоступно.'}
+            checkFailed={!unavailableReason.includes('отключено')}
+            onClose={() => setShowReason(false)}/>}
     </>
 }

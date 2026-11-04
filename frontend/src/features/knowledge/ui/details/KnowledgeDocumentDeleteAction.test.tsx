@@ -24,11 +24,11 @@ describe('KnowledgeDocumentDeleteAction', () => {
             canDelete={false} unavailableReason={disabled} onDelete={onDelete}/>)
         fireEvent.click(screen.getByRole('button', {name: 'Удалить…'}))
         expect(screen.getByText(disabled)).toBeInTheDocument()
-        expect(screen.getByText('Чтобы воспользоваться этой функцией, её необходимо включить и проверить.'))
+        expect(screen.getByText(/Функция безвозвратного удаления отключена администратором/))
             .toBeInTheDocument()
         expect(screen.getByRole('dialog')).toBeInTheDocument()
         expect(onDelete).not.toHaveBeenCalled()
-        fireEvent.click(screen.getByRole('button', {name: 'Закрыть'}))
+        fireEvent.click(screen.getByRole('button', {name: 'Понятно'}))
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
 

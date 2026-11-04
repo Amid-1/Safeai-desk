@@ -259,6 +259,7 @@ transactional audit/metrics. Отдельно подтверждены пров�
   immutable provenance, исторических RAG/AI-артефактов и резервных копий по отдельной политике.
 - **Статус релиза:** код и схема подготовлены; enablement требует отдельного production-like
   end-to-end release gate, а не только компиляции, применённого SQL или проверенного YAML.
+- **V85:** 
 
 
 ## Audit / Usage / Rate limits
@@ -296,19 +297,20 @@ transactional audit/metrics. Отдельно подтверждены пров�
 `flyway_schema_history`.
 
 | Миграция / этап | Актуальная функциональность | Эксплуатационная оговорка |
-|---|---|---|
-| V73 | Канонизация Unicode whitespace в именах организаций; защита от коллизий при backfill | Применяется после анализа имен на populated БД |
-| V74 | Учёт dirty-date при UTC-полуночи, индексы физического usage, reconciliation | Не является invoice-grade settlement |
-| V75 | Тип аудита controlled dead-letter recovery | Работает только совместно с Java recovery и V68 guards |
-| V76 | Privacy новых retrieval runs: redacted query + SHA-256; индекс review | Исторические строки не очищаются автоматически |
-| V77 | Backfill legacy названий чатов, сохранение title provenance | Не вызывает внешние AI-модели |
-| V78 | Durable документная операция удаления, lifecycle, lock/ingestion fences | SQL не запускает физический purge |
-| V79 | Тип обязательного аудита принятия удаления документа | `202` означает принятие, не успех |
-| V80 | Immutable identities для версий/chunks, перенос и валидация исторических FK | Audit/provenance остаются после контентного purge |
-| V81 | DB fences для erasure, проверка lease, inventory S3 keys и запрет преждевременного `DELETED` | Object Lock и legal hold не обходятся |
-| V82 | Parent-op удаления Knowledge Base, lifecycle базы, tombstone identity, дочерние операции | Нельзя подтверждать удаление базы до детей |
-| V83 | Раздельные read-only GET и destructive routes, диагностика и controlled `NEEDS_REVIEW` resume | Только current ADMIN, все 5 flags; `BLOCKED_BY_RETENTION` immutable |
-| V84 | Атомарный audit outbox на terminal/attention transitions, low-cardinality Micrometer, Prometheus alerts | Без backfill старых событий; alerts требуют рабочего scrape/Alertmanager |
+|-----------------|---|---|
+| V73             | Канонизация Unicode whitespace в именах организаций; защита от коллизий при backfill | Применяется после анализа имен на populated БД |
+| V74             | Учёт dirty-date при UTC-полуночи, индексы физического usage, reconciliation | Не является invoice-grade settlement |
+| V75             | Тип аудита controlled dead-letter recovery | Работает только совместно с Java recovery и V68 guards |
+| V76             | Privacy новых retrieval runs: redacted query + SHA-256; индекс review | Исторические строки не очищаются автоматически |
+| V77             | Backfill legacy названий чатов, сохранение title provenance | Не вызывает внешние AI-модели |
+| V78             | Durable документная операция удаления, lifecycle, lock/ingestion fences | SQL не запускает физический purge |
+| V79             | Тип обязательного аудита принятия удаления документа | `202` означает принятие, не успех |
+| V80             | Immutable identities для версий/chunks, перенос и валидация исторических FK | Audit/provenance остаются после контентного purge |
+| V81             | DB fences для erasure, проверка lease, inventory S3 keys и запрет преждевременного `DELETED` | Object Lock и legal hold не обходятся |
+| V82             | Parent-op удаления Knowledge Base, lifecycle базы, tombstone identity, дочерние операции | Нельзя подтверждать удаление базы до детей |
+| V83             | Раздельные read-only GET и destructive routes, диагностика и controlled `NEEDS_REVIEW` resume | Только current ADMIN, все 5 flags; `BLOCKED_BY_RETENTION` immutable |
+| V84             | Атомарный audit outbox на terminal/attention transitions, low-cardinality Micrometer, Prometheus alerts | Без backfill старых событий; alerts требуют рабочего scrape/Alertmanager |
+| V85             |  |  |
 
 **Состояние frontend к 31.10:** существуют UI подтверждения удаления документов/баз,
 история операций и controller для capability/status. Изменение V84 отделило сбой
@@ -3895,6 +3897,7 @@ knowledge/
 ├── config/
 │   ├── KnowledgeEmbeddingConfigurationInvariantVerifier
 │   ├── KnowledgeEmbeddingProperties
+│   ├── KnowledgeErasureReleaseInvariantVerifier
 │   ├── KnowledgeIngestionProperties
 │   ├── KnowledgeOcrConfigurationInvariantVerifier
 │   ├── KnowledgeOcrProperties
@@ -4504,7 +4507,7 @@ executor и внутренних БД-ограничений; оно **не** о
 ## Миграции V78–V84: точные обязанности
 
 | Версия | SQL | Назначение |
-|---|---|---|
+|---|---|--|
 | **V78** | `V78__knowledge_document_deletion_foundation.sql` | `knowledge_documents.lifecycle_state`, durable `knowledge_document_deletions_v78`, unique tenant/document + tenant/idempotency, lease/completion CHECK, immutable operation identity, запреты поздних version/ingestion/chunk writes |
 | **V79** | `V79__knowledge_deletion_request_audit_type.sql` | Регистрация `KNOWLEDGE_DOCUMENT_DELETION_REQUESTED` в `audit_event_types` |
 | **V80** | `V80__knowledge_erasure_provenance_identities.sql` | Immutable version/chunk identity, backfill истории, validated FK для retrieval hits/index generations без необходимости удерживать оригинальный текст/embeddings |
@@ -4512,6 +4515,7 @@ executor и внутренних БД-ограничений; оно **не** о
 | **V82** | `V82__knowledge_base_erasure_foundation.sql` | Immutable base identity и backfill, validated FK исторических chat/retrieval/evaluation, `knowledge_base_deletions_v82`, lifecycle/child-write fences, verified owner fence перед физическим удалением базы, audit request type |
 | **V83** | `V83__knowledge_erasure_operator_audit_types.sql` | Регистрация `KNOWLEDGE_DOCUMENT_DELETION_RESUMED` и `KNOWLEDGE_BASE_DELETION_RESUMED` для авторизованного операторского requeue |
 | **V84** | `V84__knowledge_erasure_terminal_audit.sql` | Шесть terminal/attention audit types и два `AFTER UPDATE OF state` trigger, запись в `audit_outbox` в исходной транзакции |
+| **V84** | `V85__knowledge_rag_execution_leases_and_erasure_guards.sql` |  |
 
 V78: после принятия durable document operation состояние документа монотонно;
 новые версии, ingestion и chunk publication после `DELETING` отвергаются. Серверная
@@ -4549,6 +4553,7 @@ V84: триггеры фиксируют только **реальное изм�
 текст документа и provider exception text. `actor_user_id=NULL` означает системный
 worker; инициатор запроса остаётся в immutable V78/V82 operation. Уже завершённые
 **до** установки V84 операции не получают синтетического audit-backfill.
+V85:
 
 ## Backend-классы и ответственность
 
@@ -5173,18 +5178,22 @@ plaintext in newly created retrieval runs на отдельном PostgreSQL с�
     Откат записи outbox откатывает терминальный переход. Прямой
     `NEEDS_REVIEW → BLOCKED_BY_RETENTION` запрещён. Micrometer/Prometheus и проверки
     frontend/Java относятся к программному выпуску V84, а не к содержимому SQL-миграции.
+- **`V85`**
+  - **Назначение:**
+
 
 ## V78–V84 — эволюция жизненного цикла удаления
 
 | Этап | Durable schema / DB enforcement | Java и внешний эффект |
-|---|---|---|
-| V78 | `knowledge_document_deletions_v78`, документ `AVAILABLE/DELETING`, immutable intent, запрет поздней публикации | Приём операции, без физического удаления при самой миграции |
-| V79 | `audit_event_types` содержит `KNOWLEDGE_DOCUMENT_DELETION_REQUESTED` | Required audit при принятии |
-| V80 | `knowledge_document_version_identities_v80`, `knowledge_chunk_identities_v80`, перенесённые validated FK | История цитирования не блокирует удаление исходных bytes |
-| V81 | `knowledge_document_erasure_objects_v81`, fenced checks `is_knowledge_erasure_lease_owner_v81`, terminal guards | Executor вызывает verified S3 purge, затем защищённый DB cleanup |
-| V82 | `knowledge_base_identities_v82`, `knowledge_base_deletions_v82`, parent lifecycle/fences | Base executor ждёт состояния всех детей; не стирает audit/provenance |
-| V83 | Два новых `*_RESUMED` audit event types | Контролируемый operator resume только из `NEEDS_REVIEW`; независимая GET диагностика |
-| V84 | Два AFTER UPDATE trigger и шесть terminal/attention event types | Outbox сохраняется атомарно, low-cardinality мониторинг собирается отдельно |
+|------|---|---|
+| V78  | `knowledge_document_deletions_v78`, документ `AVAILABLE/DELETING`, immutable intent, запрет поздней публикации | Приём операции, без физического удаления при самой миграции |
+| V79  | `audit_event_types` содержит `KNOWLEDGE_DOCUMENT_DELETION_REQUESTED` | Required audit при принятии |
+| V80  | `knowledge_document_version_identities_v80`, `knowledge_chunk_identities_v80`, перенесённые validated FK | История цитирования не блокирует удаление исходных bytes |
+| V81  | `knowledge_document_erasure_objects_v81`, fenced checks `is_knowledge_erasure_lease_owner_v81`, terminal guards | Executor вызывает verified S3 purge, затем защищённый DB cleanup |
+| V82  | `knowledge_base_identities_v82`, `knowledge_base_deletions_v82`, parent lifecycle/fences | Base executor ждёт состояния всех детей; не стирает audit/provenance |
+| V83  | Два новых `*_RESUMED` audit event types | Контролируемый operator resume только из `NEEDS_REVIEW`; независимая GET диагностика |
+| V84  | Два AFTER UPDATE trigger и шесть terminal/attention event types | Outbox сохраняется атомарно, low-cardinality мониторинг собирается отдельно |
+| V85  |  | |
 
 
 V78–V81 образуют document-erasure фундамент, V82 добавляет удаление всей базы,

@@ -8,6 +8,7 @@ import { KnowledgeDetailsContent } from './details/KnowledgeDetailsContent'
 import { KnowledgeUploadDialog } from './details/KnowledgeUploadDialog'
 import { KnowledgeVersionsDialog } from './details/KnowledgeVersionsDialog'
 import { KnowledgeDeleteDialog } from './details/KnowledgeDeleteDialog'
+import { KnowledgeErasureDialog } from './KnowledgeErasureDialog'
 import { useKnowledgeDetailsPageController } from '../controller/useKnowledgeDetailsPageController'
 
 export function KnowledgeDetailsWorkspace() {
@@ -70,6 +71,7 @@ export function KnowledgeDetailsWorkspace() {
                 canShowDeleteAction={deletion.canShowAction}
                 deleteUnavailableReason={deletion.unavailableReason}
                 requestDeletion={deletion.requestDeletion}
+                openDeletionOperation={deletion.openOperation}
                 deletionOperations={deletion.operations}
                 deletionHistoryError={deletion.historyError}
                 requestEnabledChange={documentActions.requestEnabledChange}
@@ -117,7 +119,7 @@ export function KnowledgeDetailsWorkspace() {
                 />
             )}
 
-            {deletion.available && deletion.target && (
+            {deletion.target && (
                 <KnowledgeDeleteDialog
                     key={deletion.target.document.id}
                     document={deletion.target.document}
@@ -125,6 +127,17 @@ export function KnowledgeDetailsWorkspace() {
                     onCancel={deletion.cancelDeletion}
                     onConfirm={deletion.confirmDeletion}
                 />
+            )}
+
+            {deletion.operationTarget && deletion.visibleOperation && (
+                <KnowledgeErasureDialog key={deletion.visibleOperation.operationId}
+                    kind="document" mode="operation"
+                    entityName={deletion.operationTarget.documentName}
+                    operation={deletion.visibleOperation}
+                    statusError={deletion.historyError
+                        ? 'Не удалось обновить историю операций.' : ''}
+                    historyHref="#knowledge-document-deletion-history"
+                    onClose={deletion.closeOperation}/>
             )}
 
             {data.access?.canEditDocuments

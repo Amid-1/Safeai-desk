@@ -281,7 +281,8 @@ docker compose -f infra/docker-compose.local.yml up -d postgres redis
 
 ## 8. Полное удаление локальной базы данных
 
-> Внимание: следующая команда удаляет контейнеры, сеть и Docker volumes проекта. Все данные локальной PostgreSQL будут потеряны.
+> Внимание: следующая команда удаляет контейнеры, сеть и Docker volumes проекта. Все данные локальной PostgreSQL будут 
+> потеряны.
 
 ```bash
 cd ~/Workspace/Projects/Products/SafeAI-Desk
@@ -327,7 +328,8 @@ open -a "IntelliJ IDEA" ~/Workspace/Projects/Products/SafeAI-Desk
 ~/Workspace/Projects/Products/SafeAI-Desk
 ```
 
-Не открывай только `backend/pom.xml` как отдельный проект, если требуется одновременно работать с backend, frontend, infra и документацией.
+Не открывай только `backend/pom.xml` как отдельный проект, если требуется одновременно работать с backend, frontend, 
+infra и документацией.
 
 ## 11. Используемые порты
 

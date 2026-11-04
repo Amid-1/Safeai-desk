@@ -1,4 +1,5 @@
-/* Scoped confirmation controls. Shared modal form rules must not overlap the label and input. */
+/* frontend/src/features/knowledge/styles/KnowledgeDeletionConfirmation.css */
+/* Изолированные стили подтверждения: общие правила модальных форм не должны перекрывать метки и поля. */
 .modal-card .knowledge-deletion-confirmation__field {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -42,3 +43,53 @@
     line-height: 1.5;
     overflow-wrap: anywhere;
 }
+
+/* Общее оформление информационного, подтверждающего и статусного модального окна. */
+.modal-card.knowledge-erasure-dialog .knowledge-erasure-dialog__intro {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    background: color-mix(in srgb, var(--safeai-muted, #64748b) 7%, transparent);
+    border: 1px solid color-mix(in srgb, var(--safeai-muted, #64748b) 18%, transparent);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+}
+.modal-card.knowledge-erasure-dialog .knowledge-erasure-dialog__intro--danger {
+    background: #fff4f2;
+    border-color: #fecaca;
+    color: #7f1d1d;
+}
+.modal-card.knowledge-erasure-dialog .knowledge-erasure-dialog__intro p { margin: 6px 0 0; }
+.modal-card.knowledge-erasure-dialog .knowledge-erasure-dialog__symbol {
+    flex: 0 0 32px;
+    width: 32px;
+    height: 32px;
+    display: inline-grid;
+    place-items: center;
+    border-radius: 50%;
+    background: rgba(100, 116, 139, .15);
+    font-weight: 800;
+}
+.modal-card.knowledge-erasure-dialog .knowledge-erasure-dialog__intro--danger .knowledge-erasure-dialog__symbol {
+    background: #fee2e2;
+}
+.knowledge-erasure-status { border-radius: 12px; padding: 16px; border: 1px solid #cbd5e1; }
+.knowledge-erasure-status--deleting { background: #eff6ff; border-color: #bfdbfe; }
+.knowledge-erasure-status--needs_review { background: #fff7ed; border-color: #fed7aa; }
+.knowledge-erasure-status--blocked_by_retention { background: #fffbeb; border-color: #fcd34d; }
+.knowledge-erasure-status--deleted { background: #f0fdf4; border-color: #86efac; }
+.knowledge-erasure-status__heading { display: flex; align-items: center; gap: 8px; }
+.knowledge-erasure-status__dot { width: 10px; height: 10px; background: currentColor; border-radius: 50%; }
+.knowledge-erasure-status__busy { display: grid; gap: 5px; }
+.knowledge-erasure-status__busy progress { width: 100%; height: 8px; }
+.knowledge-erasure-status__facts { display: grid; grid-template-columns: max-content minmax(0,1fr); gap: 5px 12px; font-size: .875rem; }
+.knowledge-erasure-status__facts dt { color: #64748b; }
+.knowledge-erasure-status__facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.knowledge-erasure-status__link { display: inline-block; margin-top: 10px; }
+.knowledge-erasure-status p { line-height: 1.5; }
+.knowledge-erasure-status code { word-break: break-all; }
+.knowledge-erasure-history { display: grid; gap: 10px; margin: 12px 0; }
+.knowledge-erasure-history-section { margin-top: 24px; }
+.knowledge-erasure-history-section article { min-width: 0; }
+.knowledge-erasure-history-section code { overflow-wrap: anywhere; }

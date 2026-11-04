@@ -13,13 +13,17 @@ type Shared = {
     busy?: boolean
 }
 type DialogProps = Shared & (
-    | {mode: 'checking'}
-    | {mode: 'unavailable'; reason: string; checkFailed?: boolean}
-    | {mode: 'confirm'; typedName: string; onTypedNameChange: (name: string) => void
-        onConfirm: () => void; error?: string}
-    | {mode: 'operation'; operation: KnowledgeErasureOperation; historyHref?: string
-        statusError?: string}
-)
+    | { mode: 'checking' }
+    | { mode: 'unavailable'; reason: string; checkFailed?: boolean }
+    | {
+    mode: 'confirm'; typedName: string; onTypedNameChange: (name: string) => void
+    onConfirm: () => void; error?: string
+}
+    | {
+    mode: 'operation'; operation: KnowledgeErasureOperation; historyHref?: string
+    statusError?: string
+}
+    )
 
 /**
  * Единое представление четырёх состояний удаления документа и базы.
@@ -41,7 +45,7 @@ export function KnowledgeErasureDialog(props: DialogProps) {
         && matchesKnowledgeDeletionName(props.typedName, entityName)
 
     return <Modal title={title} size="md" className="knowledge-erasure-dialog"
-        onClose={onClose} closeDisabled={busy} closeOnBackdrop={false}>
+                  onClose={onClose} closeDisabled={busy} closeOnBackdrop={false}>
         {props.mode === 'checking' && <div role="status" className="knowledge-erasure-dialog__intro">
             <span className="knowledge-erasure-dialog__symbol" aria-hidden="true">◷</span>
             <p>Проверяем разрешение сервера и историю ранее принятых операций…</p>
@@ -56,7 +60,7 @@ export function KnowledgeErasureDialog(props: DialogProps) {
             </div>
             <p>{props.checkFailed
                 ? 'Доступность удаления не подтверждена. Пока проверка недоступна, новый запрос не отправляется.'
-                : 'Функция безвозвратного удаления отключена администратором системы. Для включения нужна проверка безопасности сервера.'}</p>
+                : 'Для включения безвозвратного удаления требуется предварительная проверка безопасности и конфигурации сервера.'}</p>
             <p>{isBase
                 ? `База «${entityName}» и её документы не изменены этим действием.`
                 : `Документ «${entityName}» и его версии не изменены этим действием.`}</p>
@@ -71,14 +75,17 @@ export function KnowledgeErasureDialog(props: DialogProps) {
                         : `Документ «${entityName}», все его версии и связанные поисковые данные будут поставлены на удаление.`}</p>
                 </div>
             </div>
-            <p>После подтверждения система начнёт удаление. После завершения восстановить исходные файлы обычным способом нельзя. Результат можно проверить в истории удаления. Записи о выполненных действиях сохраняются.</p>
+            <p>После подтверждения система начнёт удаление. После завершения восстановить исходные файлы обычным
+                способом нельзя. Результат можно проверить в истории удаления. Записи о выполненных действиях
+                сохраняются.</p>
             <div className="knowledge-deletion-confirmation__field">
                 <label htmlFor={fieldId}>{isBase ? 'Название базы знаний' : 'Название документа'}</label>
                 <input id={fieldId} value={props.typedName} type="text" autoComplete="off"
-                    spellCheck={false} maxLength={255} disabled={busy}
-                    placeholder={entityName} onChange={event => props.onTypedNameChange(event.target.value)}/>
+                       spellCheck={false} maxLength={255} disabled={busy}
+                       placeholder={entityName} onChange={event => props.onTypedNameChange(event.target.value)}/>
                 <p className="knowledge-deletion-confirmation__hint">
-                    Введите полное название. Регистр не важен, но символы других алфавитов и похожие цифры не заменяют исходные буквы.
+                    Введите полное название. Регистр не важен, но символы других алфавитов и похожие цифры не заменяют
+                    исходные буквы.
                 </p>
             </div>
             {props.error && <p role="alert" className="knowledge-deletion-confirmation__notice">
@@ -87,7 +94,7 @@ export function KnowledgeErasureDialog(props: DialogProps) {
         </>}
         {props.mode === 'operation' && <>
             <KnowledgeDeletionProgress operation={props.operation}
-                historyHref={props.historyHref} onHistoryClick={props.onClose}/>
+                                       historyHref={props.historyHref} onHistoryClick={props.onClose}/>
             {props.statusError && <p role="alert" className="knowledge-deletion-confirmation__notice">
                 {props.statusError} Последний полученный статус не считается подтверждением завершения.
             </p>}
@@ -98,7 +105,7 @@ export function KnowledgeErasureDialog(props: DialogProps) {
                     : props.mode === 'unavailable' ? 'Понятно' : 'Закрыть'}
             </button>
             {props.mode === 'confirm' && <button type="button" className="danger-button"
-                disabled={busy || !confirmed} onClick={props.onConfirm}>
+                                                 disabled={busy || !confirmed} onClick={props.onConfirm}>
                 {busy ? 'Отправляем запрос…'
                     : isBase ? 'Подтвердить удаление базы' : 'Подтвердить удаление документа'}
             </button>}

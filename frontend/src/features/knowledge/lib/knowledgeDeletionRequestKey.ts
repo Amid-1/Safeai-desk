@@ -1,3 +1,4 @@
+// frontend/src/features/knowledge/lib/knowledgeDeletionRequestKey.ts
 import {createSecureUuid} from '../../../shared/lib/secureUuid'
 
 /**

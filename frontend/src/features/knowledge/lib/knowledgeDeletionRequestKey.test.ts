@@ -1,3 +1,4 @@
+// frontend/src/features/knowledge/lib/knowledgeDeletionRequestKey.test.ts
 import {beforeEach, describe, expect, it} from 'vitest'
 import {getKnowledgeDeletionRequestKey, clearKnowledgeDeletionRequestKey}
     from './knowledgeDeletionRequestKey'
