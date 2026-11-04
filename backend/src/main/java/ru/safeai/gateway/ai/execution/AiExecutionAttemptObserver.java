@@ -6,6 +6,12 @@ import ru.safeai.gateway.ai.provider.AiProviderAttemptContext;
 
 public interface AiExecutionAttemptObserver {
     void started(AiProviderAttemptContext attempt);
+    /**
+     * Последняя проверка доступа перед физическим вызовом провайдера.
+     * Реализации без Knowledge-контекста могут использовать метод по умолчанию.
+     */
+    default void beforeNetworkDispatch(AiProviderAttemptContext attempt) { }
+
     void succeeded(AiProviderAttemptContext attempt, AiChatResponse response);
     void failed(AiProviderAttemptContext attempt, AiProviderException exception);
     void ambiguous(AiProviderAttemptContext attempt, RuntimeException exception);

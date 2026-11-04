@@ -1,3 +1,4 @@
+// backend/src/main/java/ru/safeai/gateway/knowledge/rag/KnowledgeRagExecutionPermitService.java
 package ru.safeai.gateway.knowledge.rag;
 
 import org.slf4j.Logger;
@@ -23,12 +24,15 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
- * Durable Knowledge execution admission.
+ * Долговременное разрешение на использование конкретных версий источников RAG.
  *
- * <p>One permit binds a ChatTurn to exact source document versions. Each
- * physical provider attempt obtains a separate DB lease immediately before
- * the provider adapter reports STARTED. Deletion serializes with lease
- * acquisition through base/document row locks and waits for ACTIVE leases.</p>
+ * <p>Разрешение связывает один ChatTurn с определёнными версиями документов.
+ * Каждая физическая попытка обращения к провайдеру получает отдельную аренду
+ * в PostgreSQL. Принятие удаления синхронизируется с выдачей аренд блокировками
+ * базы знаний и документов; активные аренды препятствуют физическому удалению.</p>
+ *
+ * <p>Сетевой вызов никогда не выполняется внутри транзакции проверки.
+ * Неопределённый результат провайдера не освобождает аренду автоматически.</p>
  */
 @Service
 public class KnowledgeRagExecutionPermitService implements AiExecutionAttemptAuthorization {
@@ -98,7 +102,10 @@ public class KnowledgeRagExecutionPermitService implements AiExecutionAttemptAut
         return permitId;
     }
 
-    /** Must join the ChatTurn success transaction. Lock order: base, documents, permit. */
+    /**
+     * Выполняется внутри транзакции завершения ChatTurn.
+     * Порядок блокировок: база знаний, документы, разрешение.
+     */
     @Transactional(propagation = Propagation.MANDATORY)
     public void assertFinalizationAllowed(UUID permitId, UUID chatTurnId, UUID organizationId) {
         Permit permit = findPermit(permitId);
@@ -163,38 +170,118 @@ public class KnowledgeRagExecutionPermitService implements AiExecutionAttemptAut
         UUID leaseId = UUID.randomUUID();
         UUID token = UUID.randomUUID();
         UUID organizationId = request.executionIdentity().organizationId();
-        if (organizationId == null) throw new KnowledgeRagContextRevokedException();
+        if (organizationId == null) {
+            throw new KnowledgeRagContextRevokedException();
+        }
 
+        // Сначала резервируем локальное владение, затем открываем транзакцию БД.
+        // Повтор с тем же attemptId не создаёт вторую ACTIVE-аренду, которую
+        // невозможно будет завершить по токену текущего JVM-процесса.
+        LeaseHandle handle = new LeaseHandle(leaseId, token);
+        if (localLeases.putIfAbsent(attempt.attemptId(), handle) != null) {
+            throw new KnowledgeRagContextRevokedException();
+        }
+        try {
+            transactions.executeWithoutResult(status -> {
+                Permit permit = findPermit(permitId);
+                if (!permit.chatTurnId().equals(request.chatTurnId())
+                        || !permit.organizationId().equals(organizationId)
+                        || !permit.knowledgeBaseId().equals(request.executionIdentity().knowledgeBaseId())) {
+                    throw new KnowledgeRagContextRevokedException();
+                }
+                lockAvailableBase(organizationId, permit.knowledgeBaseId());
+                lockAvailableSources(organizationId, permit.knowledgeBaseId(), loadSources(permitId));
+                List<String> active = jdbc.queryForList("""
+                        SELECT state
+                          FROM public.knowledge_rag_execution_permits_v85
+                         WHERE id=? AND organization_id=? AND chat_turn_id=?
+                           AND state='ACTIVE' AND expires_at > clock_timestamp()
+                         FOR UPDATE
+                        """, String.class, permitId, organizationId, request.chatTurnId());
+                if (active.size() != 1) throw new KnowledgeRagContextRevokedException();
+    
+                int inserted = jdbc.update("""
+                        INSERT INTO public.knowledge_rag_execution_attempt_leases_v85
+                            (id, permit_id, provider_attempt_id, attempt_number, lease_token, lease_until)
+                        VALUES (?, ?, ?, ?, ?, clock_timestamp() + (? * interval '1 second'))
+                        """, leaseId, permitId, attempt.attemptId(), attempt.attemptNumber(),
+                        token, leaseTtl.toSeconds());
+                if (inserted != 1) throw new KnowledgeRagContextRevokedException();
+            });
+        } catch (RuntimeException | Error failure) {
+            // Spring откатил неуспешную транзакцию. Удаляем только собственное
+            // локальное резервирование, не затрагивая другого владельца.
+            localLeases.remove(attempt.attemptId(), handle);
+            throw failure;
+        }
+        return leaseId;
+    }
+
+    /**
+     * Повторная проверка ровно того же lease непосредственно перед сетевым I/O.
+     *
+     * <p>Держим согласованный порядок блокировок: база, версии документов,
+     * разрешение, физическая попытка. При принятом удалении, просроченном
+     * разрешении или потерянном fencing-токене отправка запрещена.
+     * Транзакция проверки короткая; сетевой вызов внутри неё НЕ выполняется.</p>
+     *
+     * <p>Это уменьшает окно TOCTOU, но не превращает удалённый HTTP-вызов
+     * в атомарную операцию с PostgreSQL. Физическое удаление обязано также
+     * дожидаться завершения/сверки уже принятой ACTIVE-попытки.</p>
+     */
+    @Override
+    public void beforeNetworkDispatch(
+            AiExecutionRequest request,
+            AiProviderAttemptContext attempt,
+            UUID leaseId
+    ) {
+        Objects.requireNonNull(request, "request");
+        Objects.requireNonNull(attempt, "attempt");
+        if (!request.executionIdentity().usesKnowledge()) {
+            if (leaseId != null || request.knowledgeExecutionPermitId() != null) {
+                throw new KnowledgeRagContextRevokedException();
+            }
+            return;
+        }
+        if (leaseId == null || request.knowledgeExecutionPermitId() == null
+                || !attempt.operationId().equals(request.aiRequest().providerOperationId())) {
+            throw new KnowledgeRagContextRevokedException();
+        }
+        LeaseHandle handle = localLeases.get(attempt.attemptId());
+        if (handle == null || !handle.id().equals(leaseId)) {
+            throw new KnowledgeRagContextRevokedException();
+        }
+        UUID permitId = request.knowledgeExecutionPermitId();
+        UUID organizationId = request.executionIdentity().organizationId();
         transactions.executeWithoutResult(status -> {
             Permit permit = findPermit(permitId);
-            if (!permit.chatTurnId().equals(request.chatTurnId())
-                    || !permit.organizationId().equals(organizationId)
+            if (!permit.organizationId().equals(organizationId)
+                    || !permit.chatTurnId().equals(request.chatTurnId())
                     || !permit.knowledgeBaseId().equals(request.executionIdentity().knowledgeBaseId())) {
                 throw new KnowledgeRagContextRevokedException();
             }
             lockAvailableBase(organizationId, permit.knowledgeBaseId());
             lockAvailableSources(organizationId, permit.knowledgeBaseId(), loadSources(permitId));
-            List<String> active = jdbc.queryForList("""
-                    SELECT state
-                      FROM public.knowledge_rag_execution_permits_v85
+            List<UUID> activePermit = jdbc.queryForList("""
+                    SELECT id FROM public.knowledge_rag_execution_permits_v85
                      WHERE id=? AND organization_id=? AND chat_turn_id=?
                        AND state='ACTIVE' AND expires_at > clock_timestamp()
-                     FOR UPDATE
-                    """, String.class, permitId, organizationId, request.chatTurnId());
-            if (active.size() != 1) throw new KnowledgeRagContextRevokedException();
-
-            int inserted = jdbc.update("""
-                    INSERT INTO public.knowledge_rag_execution_attempt_leases_v85
-                        (id, permit_id, provider_attempt_id, attempt_number, lease_token, lease_until)
-                    VALUES (?, ?, ?, ?, ?, clock_timestamp() + (? * interval '1 second'))
-                    """, leaseId, permitId, attempt.attemptId(), attempt.attemptNumber(),
-                    token, leaseTtl.toSeconds());
-            if (inserted != 1) throw new KnowledgeRagContextRevokedException();
+                     FOR SHARE
+                    """, UUID.class, permitId, organizationId, request.chatTurnId());
+            if (activePermit.size() != 1) {
+                throw new KnowledgeRagContextRevokedException();
+            }
+            List<UUID> activeLease = jdbc.queryForList("""
+                    SELECT id FROM public.knowledge_rag_execution_attempt_leases_v85
+                     WHERE id=? AND permit_id=? AND provider_attempt_id=?
+                       AND lease_token=? AND state='ACTIVE'
+                       AND lease_until > clock_timestamp()
+                     FOR SHARE
+                    """, UUID.class, leaseId, permitId, attempt.attemptId(), handle.token());
+            if (activeLease.size() != 1) {
+                throw new KnowledgeRagContextRevokedException();
+            }
         });
-
-        LeaseHandle previous = localLeases.putIfAbsent(attempt.attemptId(), new LeaseHandle(leaseId, token));
-        if (previous != null) throw new IllegalStateException("Duplicate local Knowledge attempt lease");
-        return leaseId;
     }
 
     @Override
@@ -222,7 +309,7 @@ public class KnowledgeRagExecutionPermitService implements AiExecutionAttemptAut
         localLeases.remove(attempt.attemptId(), handle);
     }
 
-    /** Heartbeat only leases owned by this JVM; other replicas cannot renew them. */
+    /** Обновляет аренды только своего JVM-процесса, строго по fencing-токену. */
     @Scheduled(fixedDelayString = "${safeai.knowledge.execution-lease.heartbeat-delay:PT15S}")
     public void heartbeatLocalLeases() {
         for (var entry : localLeases.entrySet()) {
@@ -236,35 +323,34 @@ public class KnowledgeRagExecutionPermitService implements AiExecutionAttemptAut
                         """, leaseTtl.toSeconds(), handle.id(), handle.token());
                 if (updated != 1) log.error("Knowledge execution heartbeat lost ownership: attemptId={}", entry.getKey());
             } catch (RuntimeException failure) {
-                // Do not release on heartbeat failure. ACTIVE DB evidence blocks erasure.
+                // Не освобождаем аренду при сбое: ACTIVE-запись препятствует удалению.
                 log.error("Knowledge execution heartbeat failed: attemptId={}", entry.getKey(), failure);
             }
         }
     }
 
-    /** Expired leases are reconciled, never silently dropped. */
+    /** Истёкшие аренды сверяются с результатом AI-попытки и не исчезают молча. */
     @Scheduled(fixedDelayString = "${safeai.knowledge.execution-lease.recovery-delay:PT30S}")
     public void recoverExpiredLeases() {
         List<ExpiredLease> expired = jdbc.query("""
-                SELECT l.id, l.provider_attempt_id, a.outcome
+                SELECT l.id, l.provider_attempt_id, a.outcome,
+                       a.outcome_certainty, a.finished_at
                   FROM public.knowledge_rag_execution_attempt_leases_v85 l
                   LEFT JOIN public.model_execution_attempts a ON a.provider_attempt_id=l.provider_attempt_id
                  WHERE l.state='ACTIVE' AND l.lease_until <= clock_timestamp()
                  ORDER BY l.lease_until, l.id LIMIT 100
-                """, (rs, n) -> new ExpiredLease(rs.getObject("id", UUID.class),
-                rs.getObject("provider_attempt_id", UUID.class), rs.getString("outcome")));
+                """, (rs, n) -> new ExpiredLease(
+                rs.getObject("id", UUID.class),
+                rs.getObject("provider_attempt_id", UUID.class),
+                rs.getString("outcome"),
+                rs.getString("outcome_certainty"),
+                rs.getTimestamp("finished_at") != null));
         for (ExpiredLease item : expired) {
-            // An expired clock lease does NOT prove provider completion. The
-            // external HTTP request can still be in flight after a JVM crash,
-            // STW pause or network partition. Never unblock physical erasure
-            // based on age alone. Only independently recorded terminal
-            // execution evidence can close an attempt lease.
-            String terminal = switch (item.outcome() == null ? "MISSING" : item.outcome()) {
-                case "SUCCEEDED" -> "SUCCEEDED";
-                case "FAILED" -> "FAILED";
-                case "PROTOCOL_REJECTED" -> "FAILED";
-                default -> null;
-            };
+            // Истечение времени аренды не доказывает завершение HTTP-вызова.
+            // Требуем независимую запись о завершении, время завершения и
+            // определённость результата. Неизвестные состояния остаются ACTIVE.
+            String terminal = verifiedTerminalOutcome(
+                    item.outcome(), item.outcomeCertainty(), item.finished());
             if (terminal == null) {
                 log.warn("Knowledge attempt lease expired with unresolved provider outcome; "
                         + "erasure remains blocked: attemptId={}", item.providerAttemptId());
@@ -279,6 +365,40 @@ public class KnowledgeRagExecutionPermitService implements AiExecutionAttemptAut
                 localLeases.entrySet().removeIf(e -> e.getValue().id().equals(item.id()));
             }
         }
+    }
+
+    /**
+     * Сопоставляет доказательство завершения с матрицей исходов AI-попытки V66.
+     *
+     * <p>Истёкший TTL сам по себе не освобождает аренду. Допускается только
+     * завершённая физическая попытка с согласованными outcome и certainty:
+     * SUCCEEDED / KNOWN_EXECUTED; PROTOCOL_REJECTED / KNOWN_EXECUTED;
+     * FAILED / KNOWN_NOT_EXECUTED либо KNOWN_REJECTED.</p>
+     *
+     * <p>Несовместимые или неизвестные значения, включая AMBIGUOUS и STARTED,
+     * возвращают null. В таком случае аренда остаётся ACTIVE и продолжает
+     * запрещать физическое удаление источника знаний.</p>
+     *
+     * <p>Матрица соответствует CHECK-ограничению
+     * chk_model_execution_attempt_lifecycle_v66 в миграции V66.
+     * Дополнительная проверка в приложении сохраняет отказ по умолчанию
+     * даже при повреждённом или некорректно прочитанном доказательстве.</p>
+     */
+    static String verifiedTerminalOutcome(String outcome, String certainty, boolean finished) {
+        if (!finished || outcome == null || certainty == null) {
+            return null;
+        }
+
+        return switch (outcome) {
+            case "SUCCEEDED" -> "KNOWN_EXECUTED".equals(certainty)
+                    ? "SUCCEEDED" : null;
+            case "PROTOCOL_REJECTED" -> "KNOWN_EXECUTED".equals(certainty)
+                    ? "FAILED" : null;
+            case "FAILED" -> ("KNOWN_NOT_EXECUTED".equals(certainty)
+                    || "KNOWN_REJECTED".equals(certainty))
+                    ? "FAILED" : null;
+            default -> null;
+        };
     }
 
     public boolean hasActiveAttemptsForDocument(UUID organizationId, UUID baseId, UUID documentId) {
@@ -367,5 +487,6 @@ public class KnowledgeRagExecutionPermitService implements AiExecutionAttemptAut
     private record SourceVersion(UUID documentId, UUID versionId) { }
     private record Permit(UUID organizationId, UUID knowledgeBaseId, UUID chatTurnId) { }
     private record LeaseHandle(UUID id, UUID token) { }
-    private record ExpiredLease(UUID id, UUID providerAttemptId, String outcome) { }
+    private record ExpiredLease(UUID id, UUID providerAttemptId, String outcome,
+                                String outcomeCertainty, boolean finished) { }
 }

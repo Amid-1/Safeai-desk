@@ -190,6 +190,7 @@ knowledge/
 ├── config
 │   ├── KnowledgeEmbeddingConfigurationInvariantVerifier.java
 │   ├── KnowledgeEmbeddingProperties.java
+│   ├── KnowledgeErasureReleaseInvariantVerifier.java
 │   ├── KnowledgeIngestionProperties.java
 │   ├── KnowledgeOcrConfigurationInvariantVerifier.java
 │   ├── KnowledgeOcrProperties.java
@@ -393,6 +394,7 @@ backend/src/test/java/ru/safeai/gateway/knowledge/
 │   └── KnowledgeStructureAwareChunkerTest.java
 ├── config
 │   ├── KnowledgeConfigurationBoundariesTest.java
+│   ├── KnowledgeErasureReleaseInvariantVerifierTest.java
 │   ├── KnowledgeIngestionPropertiesConcurrencyTest.java
 │   ├── KnowledgeOcrSafetyMarginTest.java
 │   └── KnowledgeSecretPropertiesTest.java
@@ -457,8 +459,10 @@ backend/src/test/java/ru/safeai/gateway/knowledge/
 │   ├── KnowledgeContextAssemblerRegressionTest.java
 │   ├── KnowledgeContextAssemblerTest.java
 │   ├── KnowledgeRagErasureGuardTest.java
+│   ├── KnowledgeRagExpiredLeaseRecoveryPolicyTest.java
 │   ├── KnowledgeRagGovernedEnvelopeTest.java
 │   ├── KnowledgeRagServiceRegressionTest.java
+│   ├── KnowledgeRagV85SchemaIntegrationTest.java
 │   └── RagPreparationContractRegressionTest.java
 ├── retrieval
 │   └── KnowledgeRetrievalRepositoryIntegrationTest.java
@@ -480,6 +484,7 @@ backend/src/test/java/ru/safeai/gateway/knowledge/
 │   │   ├── KnowledgeStorageReconciliationSchedulerTest.java
 │   │   └── KnowledgeStorageReviewMetricsTest.java
 │   ├── KnowledgeDocumentErasureRealMinioIntegrationTest.java
+│   ├── KnowledgeErasureJournalCompliancePolicyTest.java
 │   ├── KnowledgeErasureTombstoneJournalWiringTest.java
 │   ├── KnowledgeStorageConfigurationBindingTest.java
 │   ├── KnowledgeStorageProductionConditionTest.java

@@ -21,6 +21,25 @@ public interface AiExecutionAttemptAuthorization {
             Outcome outcome
     );
 
+    /**
+     * Повторная авторизация непосредственно перед физической отправкой провайдеру.
+     *
+     * <p>Адаптер обязан вызывать этот метод ПОСЛЕ создания долговечной
+     * записи попытки, но ДО отправки HTTP. Дефолтный контракт не разрешает
+     * отправку Knowledge-запроса без реализации этого барьера.
+     * Обратная совместимость обычных GENERAL-запросов сохранена.</p>
+     */
+    default void beforeNetworkDispatch(
+            AiExecutionRequest request,
+            AiProviderAttemptContext attempt,
+            UUID leaseId
+    ) {
+        if (request.executionIdentity().usesKnowledge() || leaseId != null) {
+            throw new IllegalStateException(
+                    "Knowledge dispatch requires the durable pre-network guard");
+        }
+    }
+
     static AiExecutionAttemptAuthorization noOp() {
         return new AiExecutionAttemptAuthorization() {
             @Override

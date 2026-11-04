@@ -102,6 +102,9 @@ public class AiProviderRetryExecutor {
             try {
                 attemptScope.started(context);
 
+                // Контекст и долговечный lease уже созданы; проверяем отзыв
+                // непосредственно перед входом в адаптер физического I/O.
+                attemptScope.beforeNetworkDispatch(context);
                 AiChatResponse response = action.apply(context);
 
                 attemptScope.succeeded(context, response);

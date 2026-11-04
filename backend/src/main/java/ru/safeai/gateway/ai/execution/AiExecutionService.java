@@ -173,6 +173,16 @@ public class AiExecutionService {
         }
 
         @Override
+        public void beforeNetworkDispatch(AiProviderAttemptContext attempt) {
+            UUID leaseId = attemptLeases.get(attempt.attemptId());
+            if (request.executionIdentity().usesKnowledge() && leaseId == null) {
+                throw new IllegalStateException(
+                        "Knowledge dispatch is forbidden without an owned attempt lease");
+            }
+            attemptAuthorization.beforeNetworkDispatch(request, attempt, leaseId);
+        }
+
+        @Override
         public void succeeded(AiProviderAttemptContext attempt, AiChatResponse response) {
             // The physical attempt may be billable even if the resolved target
             // violates our deployment contract: retain usage/pricing first.

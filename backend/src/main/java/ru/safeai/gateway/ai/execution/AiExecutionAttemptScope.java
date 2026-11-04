@@ -127,6 +127,15 @@ public class AiExecutionAttemptScope {
         state.lastAttemptNumber = attempt.attemptNumber();
     }
 
+    /**
+     * Сохраняет порядок: долговечный STARTED -> проверка dispatch -> HTTP.
+     * Не разрешает проверять чужую или уже завершённую попытку.
+     */
+    public void beforeNetworkDispatch(AiProviderAttemptContext attempt) {
+        State state = active(attempt);
+        state.observer.beforeNetworkDispatch(attempt);
+    }
+
     public void succeeded(
             AiProviderAttemptContext attempt,
             AiChatResponse response

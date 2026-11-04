@@ -111,6 +111,19 @@ safeai:
       enabled: ${SAFEAI_KNOWLEDGE_ERASURE_JOURNAL_ENABLED:false}
       bucket: ${SAFEAI_KNOWLEDGE_ERASURE_JOURNAL_BUCKET:safeai-erasure-journal}
       object-lock-required: ${SAFEAI_KNOWLEDGE_ERASURE_JOURNAL_OBJECT_LOCK_REQUIRED:false}
+      # Проверяем COMPLIANCE конкретного S3 objectVersion, не только флаг бакета.
+      # Минимум ниже периода по умолчанию на бакете, чтобы учесть время записи.
+      min-retention: ${SAFEAI_KNOWLEDGE_ERASURE_JOURNAL_MIN_RETENTION:P7D}
+
+    # Только эксплуатационные подтверждения. Не являются результатами тестов!
+    # Пока хотя бы один пункт не закрыт, производственное удаление не запускаем.
+    erasure-release:
+      approval-id: ${SAFEAI_ERASURE_RELEASE_APPROVAL_ID:}
+      restore-drill-approved: ${SAFEAI_ERASURE_RESTORE_DRILL_APPROVED:false}
+      provider-boundary-approved: ${SAFEAI_ERASURE_PROVIDER_BOUNDARY_APPROVED:false}
+      derived-data-scope-approved: ${SAFEAI_ERASURE_DERIVED_SCOPE_APPROVED:false}
+      object-lock-drill-approved: ${SAFEAI_ERASURE_OBJECT_LOCK_DRILL_APPROVED:false}
+      multi-replica-drill-approved: ${SAFEAI_ERASURE_MULTI_REPLICA_DRILL_APPROVED:false}
 
   auth:
     cookies:
