@@ -1,3 +1,4 @@
+#SafeAI-Desk/github/workflows/frontend-ci.yml
 name: Проверка фронтенда
 
 on:
@@ -15,6 +16,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: frontend-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   frontend:
@@ -46,6 +51,9 @@ jobs:
 
       - name: Установка зависимостей
         run: npm ci
+
+      - name: Аудит production-зависимостей
+        run: npm run audit:prod
 
       - name: Проверка архитектуры, ESLint, тестов и сборки
         run: npm run ci

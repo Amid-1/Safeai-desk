@@ -15,6 +15,7 @@ import ru.safeai.gateway.knowledge.storage.StoredObject;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Method;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 
 /**
@@ -36,6 +37,8 @@ public final class KnowledgeDeletionWorkerProcessMain {
         String bucket = required("SAFEAI_SIGKILL_TEST_S3_BUCKET");
         String expectedKey = required("SAFEAI_SIGKILL_TEST_KEY");
         String nonce = required("SAFEAI_SIGKILL_TEST_NONCE");
+        UUID childOperationId = requiredUuid("SAFEAI_SIGKILL_TEST_CHILD_OPERATION_ID");
+        UUID baseOperationId = requiredUuid("SAFEAI_SIGKILL_TEST_BASE_OPERATION_ID");
         if (!"DISPOSABLE_TESTCONTAINERS_ONLY".equals(required("SAFEAI_SIGKILL_TEST_GUARD"))
                 || !jdbcUrl.matches("jdbc:postgresql://(?:localhost|127\\.0\\.0\\.1):[0-9]+/safeai_test(?:\\?.*)?")
                 || !endpoint.matches("http://(?:localhost|127\\.0\\.0\\.1):[0-9]+")
@@ -58,11 +61,18 @@ public final class KnowledgeDeletionWorkerProcessMain {
             ObjectStorage storage = "crash".equals(mode)
                     ? new HaltAfterVerifiedPurge(realStorage, expectedKey, nonce)
                     : realStorage;
-            new KnowledgeDocumentDeletionExecutor(jdbc, transactionManager, storage, null, KnowledgeErasureTestJournal.INSTANCE).poll();
+            KnowledgeDocumentDeletionExecutor documentExecutor =
+                    new KnowledgeDocumentDeletionExecutor(
+                            jdbc, transactionManager, storage, null, KnowledgeErasureTestJournal.INSTANCE);
+            documentExecutor.processOperation(childOperationId);
             if ("crash".equals(mode)) {
-                throw new IllegalStateException("Crash phase returned without observed purge");
+                throw new IllegalStateException(
+                        "Crash phase returned without observed purge for operation " + childOperationId);
             }
-            new KnowledgeBaseDeletionExecutor(jdbc, transactionManager, true, null, KnowledgeErasureTestJournal.INSTANCE).poll();
+            KnowledgeBaseDeletionExecutor baseExecutor =
+                    new KnowledgeBaseDeletionExecutor(
+                            jdbc, transactionManager, true, null, KnowledgeErasureTestJournal.INSTANCE);
+            baseExecutor.processOperation(baseOperationId);
             System.out.println("SAFEAI_TEST_RECOVERED " + nonce);
             System.out.flush();
         } finally {
@@ -79,6 +89,14 @@ public final class KnowledgeDeletionWorkerProcessMain {
             throw new IllegalStateException("Missing disposable-test setting: " + name);
         }
         return value;
+    }
+
+    private static UUID requiredUuid(String name) {
+        String value = required(name);
+        if (!value.matches("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")) {
+            throw new IllegalStateException("Invalid disposable-test UUID setting: " + name);
+        }
+        return UUID.fromString(value);
     }
 
     private record HaltAfterVerifiedPurge(S3ObjectStorage delegate, String expectedKey, String nonce)

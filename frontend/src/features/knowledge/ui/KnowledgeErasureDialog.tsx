@@ -1,3 +1,4 @@
+// frontend/src/features/knowledge/ui/KnowledgeErasureDialog.tsx
 import {useId} from 'react'
 import Modal from '../../../shared/ui/Modal'
 import {matchesKnowledgeDeletionName} from '../lib/knowledgeDeletionConfirmation'

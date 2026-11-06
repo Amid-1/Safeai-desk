@@ -1,3 +1,4 @@
+// frontend/src/features/knowledge/ui/KnowledgeDeletionProgress.tsx
 import type {KnowledgeDeletionState} from '../../../entities/knowledge/api/knowledgeDocumentDeletionApi'
 import {formatDateTime} from '../../../shared/lib/format'
 
@@ -8,10 +9,6 @@ export type KnowledgeErasureOperation = {
     createdAt: string
     completedAt: string | null
     errorCode?: string | null
-}
-
-export function isUnfinishedDeletion(state: KnowledgeDeletionState): boolean {
-    return state !== 'DELETED'
 }
 
 const STATUS: Record<KnowledgeDeletionState, {title: string; description: string}> = {
@@ -33,33 +30,69 @@ const STATUS: Record<KnowledgeDeletionState, {title: string; description: string
     },
 }
 
-export function KnowledgeDeletionProgress({operation, historyHref, onHistoryClick}: {
+export function KnowledgeDeletionProgress({
+    operation,
+    historyHref,
+    onHistoryClick,
+}: {
     operation: KnowledgeErasureOperation
     historyHref?: string
     onHistoryClick?: () => void
 }) {
     const status = STATUS[operation.state]
-    return <div className={`knowledge-erasure-status knowledge-erasure-status--${operation.state.toLowerCase()}`}
-        role="status" aria-live="polite" data-erasure-state={operation.state}>
-        <div className="knowledge-erasure-status__heading">
-            <span aria-hidden="true" className="knowledge-erasure-status__dot"/>
-            <strong>{status.title}</strong>
+
+    return (
+        <div
+            className={`knowledge-erasure-status knowledge-erasure-status--${operation.state.toLowerCase()}`}
+            role="status"
+            aria-live="polite"
+            data-erasure-state={operation.state}
+        >
+            <div className="knowledge-erasure-status__heading">
+                <span aria-hidden="true" className="knowledge-erasure-status__dot" />
+                <strong>{status.title}</strong>
+            </div>
+
+            <p>{status.description}</p>
+
+            {operation.state === 'DELETING' && (
+                <div className="knowledge-erasure-status__busy">
+                    <progress aria-label="Удаление выполняется — точный процент неизвестен" />
+                    <small>Точный процент выполнения сервер не предоставляет.</small>
+                </div>
+            )}
+
+            <dl className="knowledge-erasure-status__facts">
+                <dt>Операция</dt>
+                <dd><code>{operation.operationId}</code></dd>
+
+                <dt>Начата</dt>
+                <dd>{formatDateTime(operation.createdAt)}</dd>
+
+                {operation.completedAt && (
+                    <>
+                        <dt>Завершена</dt>
+                        <dd>{formatDateTime(operation.completedAt)}</dd>
+                    </>
+                )}
+
+                {operation.errorCode && (
+                    <>
+                        <dt>Код диагностики</dt>
+                        <dd><code>{operation.errorCode}</code></dd>
+                    </>
+                )}
+            </dl>
+
+            {historyHref && (
+                <a
+                    className="knowledge-erasure-status__link"
+                    href={historyHref}
+                    onClick={onHistoryClick}
+                >
+                    Посмотреть историю операций
+                </a>
+            )}
         </div>
-        <p>{status.description}</p>
-        {operation.state === 'DELETING' && <div className="knowledge-erasure-status__busy">
-            <progress aria-label="Удаление выполняется — точный процент неизвестен"/>
-            <small>Точный процент выполнения сервер не предоставляет.</small>
-        </div>}
-        <dl className="knowledge-erasure-status__facts">
-            <dt>Операция</dt><dd><code>{operation.operationId}</code></dd>
-            <dt>Начата</dt><dd>{formatDateTime(operation.createdAt)}</dd>
-            {operation.completedAt && <><dt>Завершена</dt>
-                <dd>{formatDateTime(operation.completedAt)}</dd></>}
-            {operation.errorCode && <><dt>Код диагностики</dt>
-                <dd><code>{operation.errorCode}</code></dd></>}
-        </dl>
-        {historyHref && <a className="knowledge-erasure-status__link" href={historyHref} onClick={onHistoryClick}>
-            Посмотреть историю операций
-        </a>}
-    </div>
+    )
 }

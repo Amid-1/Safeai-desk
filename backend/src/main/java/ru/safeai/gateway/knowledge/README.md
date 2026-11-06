@@ -337,6 +337,7 @@ knowledge/
 │   ├── KnowledgeBaseSearchPattern.java
 │   ├── KnowledgeBaseSearchService.java
 │   ├── KnowledgeBaseService.java
+│   ├── KnowledgeDeletionDiagnostics.java
 │   ├── KnowledgeDeletionOperatorService.java
 │   ├── KnowledgeDocumentDeletionAcceptanceService.java
 │   ├── KnowledgeDocumentDeletionExecutor.java

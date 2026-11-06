@@ -147,6 +147,7 @@ class KnowledgeBaseDeletionRealJvmCrashIntegrationTest
                         .execute(tx -> service.accept(base, 0L,
                                 "real-jvm-kill-" + nonce, principal));
                 assertThat(accepted).isNotNull();
+                assertThat(accepted.operationId()).isNotNull();
                 assertThat(accepted.state()).isEqualTo("DELETING");
                 UUID childOperation = jdbcTemplate.queryForObject("""
                         SELECT id FROM knowledge_document_deletions_v78
@@ -154,7 +155,8 @@ class KnowledgeBaseDeletionRealJvmCrashIntegrationTest
                         """, UUID.class, base, document);
                 assertThat(childOperation).isNotNull();
 
-                Process crashed = startProcess("crash", endpoint, bucket, key, nonce);
+                Process crashed = startProcess(
+                        "crash", endpoint, bucket, key, nonce, childOperation, accepted.operationId());
                 try (ExecutorService outputReader = Executors.newSingleThreadExecutor()) {
                     Future<String> purged = outputReader.submit(
                             () -> waitForPurgeMarker(crashed, nonce));
@@ -200,7 +202,8 @@ class KnowledgeBaseDeletionRealJvmCrashIntegrationTest
                             next_attempt_at=clock_timestamp()
                         WHERE id=? AND state='DELETING'
                         """, childOperation);
-                Process restarted = startProcess("recover", endpoint, bucket, key, nonce);
+                Process restarted = startProcess(
+                        "recover", endpoint, bucket, key, nonce, childOperation, accepted.operationId());
                 try {
                     assertThat(restarted.waitFor(45, TimeUnit.SECONDS))
                             .as("Second JVM must terminate after recovery").isTrue();
@@ -246,7 +249,8 @@ class KnowledgeBaseDeletionRealJvmCrashIntegrationTest
     }
 
     private Process startProcess(String mode, String endpoint, String bucket,
-                                 String key, UUID nonce) throws IOException {
+                                 String key, UUID nonce, UUID childOperationId,
+                                 UUID baseOperationId) throws IOException {
         String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
         String classpath = System.getProperty("surefire.test.class.path");
         if (classpath == null || classpath.isBlank()) {
@@ -268,6 +272,8 @@ class KnowledgeBaseDeletionRealJvmCrashIntegrationTest
         builder.environment().put("SAFEAI_SIGKILL_TEST_S3_PASSWORD", SECRET_KEY);
         builder.environment().put("SAFEAI_SIGKILL_TEST_KEY", key);
         builder.environment().put("SAFEAI_SIGKILL_TEST_NONCE", nonce.toString());
+        builder.environment().put("SAFEAI_SIGKILL_TEST_CHILD_OPERATION_ID", childOperationId.toString());
+        builder.environment().put("SAFEAI_SIGKILL_TEST_BASE_OPERATION_ID", baseOperationId.toString());
         return builder.start();
     }
 

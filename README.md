@@ -4044,6 +4044,7 @@ knowledge/
 │   ├── KnowledgeBaseSearchPattern
 │   ├── KnowledgeBaseSearchService
 │   ├── KnowledgeBaseService
+│   ├── KnowledgeDeletionDiagnostics
 │   ├── KnowledgeDeletionOperatorService
 │   ├── KnowledgeDocumentDeletionAcceptanceService
 │   ├── KnowledgeDocumentDeletionExecutor

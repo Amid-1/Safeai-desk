@@ -1,3 +1,4 @@
+// frontend/src/features/knowledge/ui/details/KnowledgeDeleteDialog.tsx
 import {useState} from 'react'
 import type {KnowledgeDocument} from '../../../../entities/knowledge/api/knowledgeDocumentApi'
 import {getApiErrorMessage} from '../../../../shared/api/http'

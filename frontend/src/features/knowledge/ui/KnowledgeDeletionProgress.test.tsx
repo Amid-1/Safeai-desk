@@ -1,3 +1,4 @@
+// frontend/src/features/knowledge/ui/KnowledgeDeletionProgress.test.tsx
 import {render, screen} from '@testing-library/react'
 import {describe, expect, it} from 'vitest'
 import {KnowledgeDeletionProgress} from './KnowledgeDeletionProgress'

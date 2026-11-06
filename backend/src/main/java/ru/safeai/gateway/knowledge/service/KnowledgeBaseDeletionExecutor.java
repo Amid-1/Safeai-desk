@@ -17,6 +17,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
+import static ru.safeai.gateway.knowledge.service.KnowledgeDeletionDiagnostics.diagnostic;
+
 /**
  * Parent coordinator. Never deletes objects directly: each V78 child operation
  * runs through the existing verified version-aware document erasure executor.
@@ -71,13 +73,52 @@ public class KnowledgeBaseDeletionExecutor {
         for (int i = 0; i < 5; i++) {
             Claim claim = claim();
             if (claim == null) return;
-            try {
-                publishBaseTombstoneIfReady(claim);
-                transactions.executeWithoutResult(tx -> finishOrReschedule(claim));
-            } catch (LeaseLost lost) {
-                log.warn("Base deletion lease expired or fenced: {}", claim.id());
-            } catch (Exception ex) {
-                fail(claim, ex);
+            processClaim(claim, false);
+        }
+    }
+
+    /**
+     * Адресно завершает только указанную операцию удаления базы знаний.
+     * Использует те же lease/fencing и проверки, что и штатный poll().
+     */
+    public void processOperation(UUID operationId) {
+        java.util.Objects.requireNonNull(operationId, "operationId");
+        if (!childExecutorEnabled) {
+            throw new IllegalStateException("Child document deletion executor must be enabled");
+        }
+        Claim claim = claim(operationId);
+        if (claim == null) {
+            requireOperationDeleted(operationId);
+            return;
+        }
+        processClaim(claim, true);
+        requireOperationDeleted(operationId);
+    }
+
+    private void requireOperationDeleted(UUID operationId) {
+        List<String> states = jdbc.queryForList("""
+                SELECT state FROM public.knowledge_base_deletions_v82 WHERE id=?
+                """, String.class, operationId);
+        if (states.size() != 1 || !"DELETED".equals(states.getFirst())) {
+            String state = states.isEmpty() ? "MISSING" : states.getFirst();
+            throw new IllegalStateException(
+                    "KNOWLEDGE_BASE_ERASURE_OPERATION_NOT_DELETED: operationId="
+                            + operationId + ", state=" + state);
+        }
+    }
+
+    private void processClaim(Claim claim, boolean propagateFailures) {
+        try {
+            publishBaseTombstoneIfReady(claim);
+            transactions.executeWithoutResult(tx -> finishOrReschedule(claim));
+        } catch (LeaseLost lost) {
+            log.warn("Base deletion lease expired or fenced: {}", claim.id());
+            if (propagateFailures) throw lost;
+        } catch (Exception error) {
+            fail(claim, error);
+            if (propagateFailures) {
+                throw new IllegalStateException(
+                        "Knowledge base deletion operation failed: " + claim.id(), error);
             }
         }
     }
@@ -103,6 +144,36 @@ public class KnowledgeBaseDeletionExecutor {
                 rs.getObject("requested_by_user_id", UUID.class),
                 rs.getLong("expected_version"),
                 rs.getObject("lease_token", UUID.class), rs.getInt("attempts")), token);
+        return claimed.isEmpty() ? null : claimed.getFirst();
+    }
+
+    private Claim claim(UUID operationId) {
+        UUID token = UUID.randomUUID();
+        List<Claim> claimed = jdbc.query("""
+                WITH candidate AS (
+                    SELECT id
+                    FROM public.knowledge_base_deletions_v82
+                    WHERE id=?
+                      AND state='DELETING'
+                      AND next_attempt_at<=clock_timestamp()
+                      AND (lease_until IS NULL OR lease_until<clock_timestamp())
+                    ORDER BY next_attempt_at,id
+                    FOR UPDATE SKIP LOCKED
+                    LIMIT 1
+                )
+                UPDATE public.knowledge_base_deletions_v82 op
+                   SET lease_token=?,lease_until=clock_timestamp()+interval '2 minutes',
+                       updated_at=clock_timestamp()
+                  FROM candidate WHERE op.id=candidate.id
+                RETURNING op.id,op.knowledge_base_id,op.organization_id,
+                          op.requested_by_user_id,op.expected_version,op.lease_token,op.attempts
+                """, (rs, n) -> new Claim(
+                rs.getObject("id", UUID.class), rs.getObject("knowledge_base_id", UUID.class),
+                rs.getObject("organization_id", UUID.class),
+                rs.getObject("requested_by_user_id", UUID.class),
+                rs.getLong("expected_version"),
+                rs.getObject("lease_token", UUID.class), rs.getInt("attempts")),
+                operationId, token);
         return claimed.isEmpty() ? null : claimed.getFirst();
     }
 
@@ -245,6 +316,7 @@ public class KnowledgeBaseDeletionExecutor {
                 """, claim.id(), claim.token()) != 1) throw new LeaseLost();
     }
 
+
     private void fail(Claim claim, Exception error) {
         String code = error.getClass().getSimpleName().toUpperCase(Locale.ROOT);
         int nextAttempt = claim.attempts() + 1;
@@ -258,7 +330,7 @@ public class KnowledgeBaseDeletionExecutor {
                 WHERE id=? AND lease_token=? AND state='DELETING' AND lease_until>clock_timestamp()
                 """, status, code.substring(0, Math.min(code.length(), 64)),
                 backoff, claim.id(), claim.token());
-        log.warn("KB erasure failed: opId={},status={},acknowledged={},reason={}",
-                claim.id(), status, updated == 1, code);
+        log.warn("KB erasure failed: opId={},status={},acknowledged={},reason={},diagnostic={}",
+                claim.id(), status, updated == 1, code, diagnostic(error));
     }
 }

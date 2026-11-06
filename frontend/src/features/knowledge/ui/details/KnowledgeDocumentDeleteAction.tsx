@@ -1,3 +1,4 @@
+// frontend/src/features/knowledge/ui/details/KnowledgeDocumentDeleteAction.tsx
 import {useState} from 'react'
 import type {KnowledgeDocument} from '../../../../entities/knowledge/api/knowledgeDocumentApi'
 import type {KnowledgeDocumentDeletion} from '../../../../entities/knowledge/api/knowledgeDocumentDeletionApi'
