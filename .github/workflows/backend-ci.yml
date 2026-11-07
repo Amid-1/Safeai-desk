@@ -53,6 +53,10 @@ jobs:
         working-directory: .
         run: python3 .github/scripts/check-maven-reports.py standard
 
+      - name: Контроль всех локальных IT и инвентаризация модулей
+        working-directory: .
+        run: python3 .github/scripts/check-backend-test-discovery.py
+
       - name: Критичные интеграционные тесты PostgreSQL и Redis
         run: >-
           ./mvnw --batch-mode --no-transfer-progress
