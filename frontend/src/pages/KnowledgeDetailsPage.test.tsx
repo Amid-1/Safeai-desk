@@ -1,6 +1,7 @@
 // frontend/src/pages/KnowledgeDetailsPage.test.tsx
 // Регрессии управления документами, границ доступа, операций и обработки ошибок.
 import {
+    act,
     fireEvent,
     render,
     screen,
@@ -215,15 +216,7 @@ function renderPage() {
 }
 
 async function openUploadAndSelectFile() {
-    fireEvent.click(
-        await screen.findByRole(
-            'button',
-            {
-                name:
-                    'Загрузить документ',
-            },
-        ),
-    )
+    await openUploadDialog()
 
     fireEvent.change(
         screen.getByLabelText(
@@ -262,17 +255,50 @@ async function openUploadAndSelectFile() {
         },
     )
 
-    fireEvent.click(
-        screen.getByRole(
-            'button',
-            {
-                name:
-                    'Загрузить',
-            },
-        ),
-    )
+    await act(async () => {
+        fireEvent.click(
+            screen.getByRole(
+                'button',
+                {
+                    name:
+                        'Загрузить',
+                },
+            ),
+        )
+    })
 }
 
+async function openUploadDialog() {
+    fireEvent.click(await screen.findByRole('button', {
+        name: 'Загрузить документ',
+    }))
+}
+
+// Ожидаем обе проверки сервера, не предполагая разрешение DELETE.
+async function openDeletionActionAfterInspection() {
+    fireEvent.click(await screen.findByText('Другие действия'))
+    const button = screen.getByRole('button', {name: 'Удалить…'})
+
+    await waitFor(() => {
+        expect(deletionCapabilityMock).toHaveBeenCalledWith(
+            KNOWLEDGE_BASE_ID,
+            expect.any(AbortSignal),
+        )
+        expect(listDocumentDeletionsMock).toHaveBeenCalledWith(
+            KNOWLEDGE_BASE_ID,
+            expect.any(AbortSignal),
+        )
+    })
+
+    return button
+}
+
+// Общая подготовка, но независимые проверки HTTP 409 и 500.
+async function uploadAndReadErrorAlert() {
+    renderPage()
+    await openUploadAndSelectFile()
+    return screen.findByRole('alert')
+}
 describe(
     'KnowledgeDetailsPage',
     () => {
@@ -350,30 +376,37 @@ describe(
             })
         })
 
-        it('OWNER видит неактивное удаление, пока backend запрещает его', async () => {
+        it('OWNER видит объяснение запрета без отправки DELETE', async () => {
             renderPage()
-            fireEvent.click(await screen.findByText('Другие действия'))
-            const button = screen.getByRole('button', {name: 'Удалить…'})
-            await waitFor(() => expect(deletionCapabilityMock).toHaveBeenCalledWith(
-                KNOWLEDGE_BASE_ID, expect.any(AbortSignal),
-            ))
-            expect(button).toBeDisabled()
-            await waitFor(() => expect(button).toHaveAttribute('title',
-                'Безвозвратное удаление пока не включено на сервере.'))
+            const button = await openDeletionActionAfterInspection()
+
+            // Кнопка открывает только информационный диалог, не DELETE.
+            expect(button).toBeEnabled()
+            expect(button).toHaveAttribute('title',
+                'Удаление недоступно. Нажмите, чтобы узнать причину')
+            fireEvent.click(button)
+            const dialog = screen.getByRole('dialog', {name: 'Удаление документа недоступно'})
+            expect(await within(dialog).findByText(
+                'Удаление документов сейчас недоступно. Документы и файлы остаются без изменений.',
+            )).toBeInTheDocument()
+            expect(within(dialog).queryByRole('button', {name: 'Подтвердить удаление документа'}))
+                .not.toBeInTheDocument()
             expect(acceptDocumentDeletionMock).not.toHaveBeenCalled()
-            await waitFor(() => expect(listDocumentDeletionsMock).toHaveBeenCalledWith(
-                    KNOWLEDGE_BASE_ID, expect.any(AbortSignal),
-                ))
         })
 
-        it('ошибка capability закрывает опасную команду, а не разрешает удаление', async () => {
+        it('ошибка capability закрывает опасную команду, оставляя только справку', async () => {
             deletionCapabilityMock.mockRejectedValue(new Error('Backend unavailable'))
             renderPage()
-            fireEvent.click(await screen.findByText('Другие действия'))
-            const button = screen.getByRole('button', {name: 'Удалить…'})
-            await waitFor(() => expect(button.getAttribute('title'))
-                .toMatch(/Не удалось проверить возможность удаления/))
-            expect(button).toBeDisabled()
+            const button = await openDeletionActionAfterInspection()
+            expect(button).toBeEnabled()
+            fireEvent.click(button)
+            const dialog = screen.getByRole('dialog', {name: 'Удаление документа недоступно'})
+            expect(await within(dialog).findByText(
+                'Не удалось проверить доступность удаления или получить историю операций. '
+                + 'Новый запрос запрещён до проверки статуса на сервере.',
+            )).toBeInTheDocument()
+            expect(within(dialog).queryByRole('button', {name: 'Подтвердить удаление документа'}))
+                .not.toBeInTheDocument()
             expect(acceptDocumentDeletionMock).not.toHaveBeenCalled()
         })
 
@@ -387,22 +420,44 @@ describe(
                 completedAt: null,
             })
             renderPage()
-                fireEvent.click(await screen.findByText('Другие действия'))
-                const button = screen.getByRole('button', {name: 'Удалить…'})
-                await waitFor(() => expect(button).toBeEnabled())
-                fireEvent.click(button)
-                const dialog = screen.getByRole('dialog')
-                const confirm = within(dialog).getByRole('button', {name: 'Удалить безвозвратно'})
-                expect(confirm).toBeDisabled()
-                fireEvent.change(within(dialog).getByRole('textbox', {name: 'Название документа'}),
-                    {target: {value: DOCUMENT.name}})
-                fireEvent.click(confirm)
-                await waitFor(() => expect(acceptDocumentDeletionMock).toHaveBeenCalledWith(
-                    KNOWLEDGE_BASE_ID, DOCUMENT_ID, DOCUMENT.version,
-                    expect.stringMatching(/^[a-f0-9-]{36}$/),
-                ))
-                expect(await screen.findByText(/Удаление выполняется/)).toBeInTheDocument()
-                expect(screen.queryByText(/Документ удалён/)).not.toBeInTheDocument()
+            const button = await openDeletionActionAfterInspection()
+            // Только успешный server capability разрешает открыть confirm.
+            await waitFor(() => expect(button).toHaveAttribute('title',
+                'Удалить документ и все его версии'))
+            fireEvent.click(button)
+            const dialog = await screen.findByRole('dialog', {name: 'Безвозвратно удалить документ?'})
+            const confirm = within(dialog).getByRole('button', {name: 'Подтвердить удаление документа'})
+            expect(confirm).toBeDisabled()
+            fireEvent.change(within(dialog).getByRole('textbox', {name: 'Название документа'}),
+                {target: {value: DOCUMENT.name}})
+            expect(confirm).toBeEnabled()
+            fireEvent.click(confirm)
+            await waitFor(() => expect(acceptDocumentDeletionMock).toHaveBeenCalledWith(
+                KNOWLEDGE_BASE_ID, DOCUMENT_ID, DOCUMENT.version,
+                expect.stringMatching(/^[a-f0-9-]{36}$/),
+            ))
+            // Проверяем статус отдельно в диалоге и в истории удаления.
+            const operationDialog = await screen.findByRole('dialog', {
+                name: 'Состояние удаления',
+            })
+
+            const dialogStatus = within(operationDialog).getByRole('status')
+            expect(dialogStatus).toHaveAttribute('data-erasure-state', 'DELETING')
+            expect(within(dialogStatus).getByText('Удаление выполняется'))
+                .toBeInTheDocument()
+
+            const historyRegion = screen.getByRole('region', {
+                name: 'Операции удаления документов',
+            })
+
+            const historyStatus = within(historyRegion).getByRole('status')
+            expect(historyStatus).toHaveAttribute('data-erasure-state', 'DELETING')
+            expect(within(historyStatus).getByText('Удаление выполняется'))
+                .toBeInTheDocument()
+
+            expect(acceptDocumentDeletionMock).toHaveBeenCalledTimes(1)
+            expect(screen.queryByText('Удаление завершено')).not.toBeInTheDocument()
+            expect(screen.queryByText(/Документ удалён/)).not.toBeInTheDocument()
         })
 
         it('VIEWER не видит команду удаления даже при разрешённом feature flag', async () => {
@@ -524,15 +579,7 @@ describe(
             async () => {
                 renderPage()
 
-                fireEvent.click(
-                    await screen.findByRole(
-                        'button',
-                        {
-                            name:
-                                'Загрузить документ',
-                        },
-                    ),
-                )
+                await openUploadDialog()
 
                 const input =
                     screen.getByLabelText(
@@ -864,13 +911,7 @@ describe(
                         ),
                     )
 
-                renderPage()
-                await openUploadAndSelectFile()
-
-                const alert =
-                    await screen.findByRole(
-                        'alert',
-                    )
+                const alert = await uploadAndReadErrorAlert()
 
                 expect(alert)
                     .toHaveTextContent(
@@ -917,13 +958,7 @@ describe(
                         ),
                     )
 
-                renderPage()
-                await openUploadAndSelectFile()
-
-                const alert =
-                    await screen.findByRole(
-                        'alert',
-                    )
+                const alert = await uploadAndReadErrorAlert()
 
                 expect(alert)
                     .toHaveTextContent(
@@ -991,7 +1026,7 @@ describe(
 
         it('загрузка не выполняется, если файл превышает 25 МБ', async () => {
             renderPage()
-            fireEvent.click(await screen.findByRole('button', { name: 'Загрузить документ' }))
+            await openUploadDialog()
             const large = new File(['oversized'], 'oversized.pdf', { type: 'application/pdf' })
             Object.defineProperty(large, 'size', { value: 25 * 1024 * 1024 + 1 })
             fireEvent.change(screen.getByLabelText('Файл'), {

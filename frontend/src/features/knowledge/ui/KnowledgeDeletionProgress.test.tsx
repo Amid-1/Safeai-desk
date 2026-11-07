@@ -1,6 +1,8 @@
 // frontend/src/features/knowledge/ui/KnowledgeDeletionProgress.test.tsx
 import {render, screen} from '@testing-library/react'
 import {describe, expect, it} from 'vitest'
+import type {KnowledgeDeletionState} from '../../../entities/knowledge/api/knowledgeDocumentDeletionApi'
+import {isUnfinishedDeletion} from '../lib/knowledgeDeletionStatus'
 import {KnowledgeDeletionProgress} from './KnowledgeDeletionProgress'
 
 const base = {
@@ -31,5 +33,27 @@ describe('KnowledgeDeletionProgress', () => {
             completedAt: '2026-10-29T12:02:00Z'}}/>)
         expect(screen.getByText('Удаление завершено')).toBeInTheDocument()
         expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+    })
+})
+
+
+describe('isUnfinishedDeletion: защита от ложного DELETED', () => {
+    it.each([
+        ['DELETING', true],
+        ['NEEDS_REVIEW', true],
+        ['BLOCKED_BY_RETENTION', true],
+        ['DELETED', false],
+    ] as const)('%s: состояние незавершённое = %s', (state, expected) => {
+        expect(isUnfinishedDeletion(state)).toBe(expected)
+    })
+
+    it('не считает неизвестный серверный статус завершённым и не роняет интерфейс', () => {
+        // Нарушенный ответ API не должен создавать ложное доказательство удаления.
+        const unknown = 'RECOVERY_UNCONFIRMED' as KnowledgeDeletionState
+        expect(isUnfinishedDeletion(unknown)).toBe(true)
+        render(<KnowledgeDeletionProgress operation={{...base, state: unknown}}/>)
+        expect(screen.getByText('Состояние удаления не распознано')).toBeInTheDocument()
+        expect(screen.getByText(/Завершение не подтверждено/)).toBeInTheDocument()
+        expect(screen.queryByText('Удаление завершено')).not.toBeInTheDocument()
     })
 })

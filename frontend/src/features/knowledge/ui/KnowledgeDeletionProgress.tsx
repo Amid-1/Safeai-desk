@@ -11,6 +11,11 @@ export type KnowledgeErasureOperation = {
     errorCode?: string | null
 }
 
+const UNKNOWN_STATUS = {
+    title: 'Состояние удаления не распознано',
+    description: 'Сервер вернул неизвестный статус операции. Завершение не подтверждено; повторное удаление запрещено до проверки администратором.',
+}
+
 const STATUS: Record<KnowledgeDeletionState, {title: string; description: string}> = {
     DELETING: {
         title: 'Удаление выполняется',
@@ -39,11 +44,15 @@ export function KnowledgeDeletionProgress({
     historyHref?: string
     onHistoryClick?: () => void
 }) {
-    const status = STATUS[operation.state]
+    // Даже при нарушении серверного контракта нельзя показывать ложный DELETED
+    // или падать всем экраном управления документами.
+    const knownState = Object.prototype.hasOwnProperty.call(STATUS, operation.state)
+    const status = knownState ? STATUS[operation.state] : UNKNOWN_STATUS
+    const stateClass = knownState ? operation.state.toLowerCase() : 'unknown'
 
     return (
         <div
-            className={`knowledge-erasure-status knowledge-erasure-status--${operation.state.toLowerCase()}`}
+            className={`knowledge-erasure-status knowledge-erasure-status--${stateClass}`}
             role="status"
             aria-live="polite"
             data-erasure-state={operation.state}

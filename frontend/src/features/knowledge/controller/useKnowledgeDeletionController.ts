@@ -263,12 +263,12 @@ export function useKnowledgeDeletionController(options: {
     async function reconcile(
         document: KnowledgeDocument,
         baseId: string,
-    ): Promise<boolean> {
+    ): Promise<'found' | 'absent' | 'blocked'> {
         try {
             const currentHistory = await listDocumentDeletions(baseId)
 
             if (scope.current !== baseId || !ownerRef.current) {
-                return false
+                return 'blocked'
             }
 
             const existing = currentHistory.find(
@@ -279,7 +279,7 @@ export function useKnowledgeDeletionController(options: {
             setHistoryError(false)
 
             if (!existing) {
-                return false
+                return 'absent'
             }
 
             setOperationTarget({
@@ -298,11 +298,20 @@ export function useKnowledgeDeletionController(options: {
                 document.version,
             )
 
-            return true
+            return 'found'
         } catch {
-            // Неизвестное состояние не считается отсутствием операции.
-            // Исходный idempotency key остаётся для безопасной сверки/повтора.
-            return false
+            // Неподтверждённая история не разрешает новый DELETE, даже
+            // с ранее созданным Idempotency-Key. Ключ не очищаем.
+            if (scope.current === baseId && ownerRef.current) {
+                setHistoryError(true)
+                setCapabilityStatus('error')
+                setValidatedBaseId('')
+                setOperations([])
+                setTarget(null)
+                setError('Не удалось достоверно сверить удаление. '
+                    + 'Новый DELETE запрещён до полной проверки сервера.')
+            }
+            return 'blocked'
         }
     }
 
@@ -396,11 +405,13 @@ export function useKnowledgeDeletionController(options: {
                 if (scope.current !== baseId || !ownerRef.current) return
 
                 // Только неопределённый результат реального DELETE требует сверки.
-                const found = await reconcile(document, baseId)
+                const reconciliation = await reconcile(document, baseId)
 
                 if (scope.current !== baseId || !ownerRef.current) return
 
-                if (!found) {
+                // Известное отсутствие записи допускает безопасный повтор
+                // исходного intent; неизвестный результат блокирует новый DELETE.
+                if (reconciliation === 'absent') {
                     setError(getApiErrorMessage(
                         cause,
                         'Не удалось подтвердить удаление. Проверьте статус, прежде чем повторять запрос.',

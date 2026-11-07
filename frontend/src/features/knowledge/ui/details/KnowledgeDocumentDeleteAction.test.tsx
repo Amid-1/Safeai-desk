@@ -1,5 +1,4 @@
 // frontend/src/features/knowledge/ui/details/KnowledgeDocumentDeleteAction.test.tsx
-// frontend/src/features/knowledge/ui/details/KnowledgeDocumentDeleteAction.test.tsx
 import {fireEvent, render, screen} from '@testing-library/react'
 import {describe, expect, it, vi} from 'vitest'
 import type {KnowledgeDocument} from '../../../../entities/knowledge/api/knowledgeDocumentApi'
@@ -24,8 +23,10 @@ describe('KnowledgeDocumentDeleteAction', () => {
             canDelete={false} unavailableReason={disabled} onDelete={onDelete}/>)
         fireEvent.click(screen.getByRole('button', {name: 'Удалить…'}))
         expect(screen.getByText(disabled)).toBeInTheDocument()
-        expect(screen.getByText(/Функция безвозвратного удаления отключена администратором/))
-            .toBeInTheDocument()
+        expect(screen.getByText(
+            'Для включения безвозвратного удаления требуется предварительная '
+            + 'проверка безопасности и конфигурации сервера.',
+        )).toBeInTheDocument()
         expect(screen.getByRole('dialog')).toBeInTheDocument()
         expect(onDelete).not.toHaveBeenCalled()
         fireEvent.click(screen.getByRole('button', {name: 'Понятно'}))

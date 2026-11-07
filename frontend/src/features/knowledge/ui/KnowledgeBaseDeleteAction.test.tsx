@@ -111,7 +111,7 @@ describe('KnowledgeBaseDeleteAction: initial server inspection', () => {
         fireEvent.click(screen.getByRole('button', {name: 'Удалить базу…'}))
 
         expect(await screen.findByText(
-            'Удаление баз знаний пока отключено в настройках системы.',
+            'Удаление отключено на сервере.',
         )).toBeInTheDocument()
 
         expect(screen.getByText('Ограничение безопасности')).toBeInTheDocument()
@@ -664,10 +664,15 @@ describe('KnowledgeBaseDeleteAction: operation polling lifecycle', () => {
                 await vi.advanceTimersByTimeAsync(12_000)
             })
 
-            expect(screen.getByText(
+            // Alert дополняется предупреждением о неподтверждённом завершении.
+            expect(screen.getByRole('alert')).toHaveTextContent(
                 'Сервер вернул другую операцию удаления. Обратитесь к администратору.',
-            )).toBeInTheDocument()
+            )
+            expect(screen.getByRole('alert')).toHaveTextContent(
+                'Последний полученный статус не считается подтверждением завершения.',
+            )
             expect(screen.getByText('Удаление выполняется')).toBeInTheDocument()
+            expect(screen.queryByText('Удаление завершено')).not.toBeInTheDocument()
         } finally {
             vi.useRealTimers()
         }
@@ -697,49 +702,74 @@ describe('KnowledgeBaseDeleteAction: operation polling lifecycle', () => {
         }
     })
 
-    it('does not apply a late polling response after the component changes base', async () => {
-        vi.useFakeTimers()
+    it.each([true, false])(
+        'does not apply a late polling response after switching bases (capability=%s)',
+        async allowed => {
+            vi.useFakeTimers()
+            capability.mockResolvedValue(allowed)
 
-        const latePoll = deferred<BaseDeletionOperation>()
-        current
-            .mockResolvedValueOnce(OPERATION) // initial inspection
-            .mockImplementationOnce(() => latePoll.promise) // poll old base
-            .mockRejectedValueOnce(notFound()) // initial inspection new base
+            const latePoll = deferred<BaseDeletionOperation>()
+            current
+                .mockResolvedValueOnce(OPERATION) // initial inspection
+                .mockImplementationOnce(() => latePoll.promise) // poll old base
+                .mockRejectedValueOnce(notFound()) // initial inspection new base
 
-        try {
-            const {rerender} = render(
-                <KnowledgeBaseDeleteAction base={BASE} onAccepted={vi.fn()}/>,
-            )
+            try {
+                const {rerender} = render(
+                    <KnowledgeBaseDeleteAction base={BASE} onAccepted={vi.fn()}/>,
+                )
 
-            fireEvent.click(screen.getByRole('button', {name: 'Удалить базу…'}))
-            await flushMicrotasks()
+                fireEvent.click(screen.getByRole('button', {name: 'Удалить базу…'}))
+                await flushMicrotasks()
 
-            await act(async () => {
-                const advance = vi.advanceTimersByTimeAsync(12_000)
-                await Promise.resolve()
-                await advance
-            })
-
-            rerender(
-                <KnowledgeBaseDeleteAction base={OTHER_BASE} onAccepted={vi.fn()}/>,
-            )
-
-            await flushMicrotasks()
-            expect(screen.getByRole('textbox', {name: 'Название базы знаний'}))
-                .toBeInTheDocument()
-
-            await act(async () => {
-                latePoll.resolve({
-                    ...OPERATION,
-                    state: 'DELETED',
-                    completedAt: '2026-10-28T00:10:00Z',
+                await act(async () => {
+                    const advance = vi.advanceTimersByTimeAsync(12_000)
+                    await Promise.resolve()
+                    await advance
                 })
-                await latePoll.promise
-            })
 
-            expect(screen.queryByText('Удаление завершено')).not.toBeInTheDocument()
-        } finally {
-            vi.useRealTimers()
-        }
-    })
+                rerender(
+                    <KnowledgeBaseDeleteAction base={OTHER_BASE} onAccepted={vi.fn()}/>,
+                )
+
+                // Проверяем оба безопасных исхода для новой базы:
+                // при выключенном capability только объяснение запрета,
+                // при включённом — подтверждение только новой базы.
+                await flushMicrotasks()
+                if (allowed) {
+                    expect(screen.getByRole('textbox', {name: 'Название базы знаний'}))
+                        .toHaveAttribute('placeholder', OTHER_BASE.name)
+                } else {
+                    expect(screen.getByRole('dialog', {name: 'Удаление базы недоступно'}))
+                        .toBeInTheDocument()
+                    expect(screen.getByText('Удаление отключено на сервере.'))
+                        .toBeInTheDocument()
+                    expect(screen.queryByRole('textbox', {name: 'Название базы знаний'}))
+                        .not.toBeInTheDocument()
+                }
+                expect(accept).not.toHaveBeenCalled()
+
+                await act(async () => {
+                    latePoll.resolve({
+                        ...OPERATION,
+                        state: 'DELETED',
+                        completedAt: '2026-10-28T00:10:00Z',
+                    })
+                    await latePoll.promise
+                })
+
+                expect(screen.queryByText('Удаление завершено')).not.toBeInTheDocument()
+                if (allowed) {
+                    expect(screen.getByRole('textbox', {name: 'Название базы знаний'}))
+                        .toHaveAttribute('placeholder', OTHER_BASE.name)
+                } else {
+                    expect(screen.getByRole('dialog', {name: 'Удаление базы недоступно'}))
+                        .toBeInTheDocument()
+                }
+                expect(accept).not.toHaveBeenCalled()
+            } finally {
+                vi.useRealTimers()
+            }
+        },
+    )
 })

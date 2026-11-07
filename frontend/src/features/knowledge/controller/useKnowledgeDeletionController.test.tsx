@@ -513,40 +513,39 @@ describe('useKnowledgeDeletionController: intent, idempotency and mutation safet
         )
     })
 
-    it('keeps the same idempotency key and version when reconciliation is inconclusive', async () => {
+    it('fails closed on unverified history after a lost response, preserving the key', async () => {
         capability.mockResolvedValue(true)
         history
-            .mockResolvedValueOnce([]) // initial history
+            .mockResolvedValueOnce([]) // первичная инспекция
             .mockResolvedValueOnce([]) // preflight
             .mockRejectedValueOnce(new Error('history unavailable during reconcile'))
-            .mockResolvedValueOnce([]) // second preflight
-        accept
-            .mockRejectedValueOnce(new Error('HTTP response lost'))
-            .mockResolvedValueOnce(ACCEPTED)
+        accept.mockRejectedValueOnce(new Error('HTTP response lost'))
 
-        const {result} = renderHook(
-            () => useKnowledgeDeletionController(makeConfig()),
-        )
-
+        const setError = vi.fn()
+        const {result} = renderHook(() => useKnowledgeDeletionController(
+            makeConfig(true, BASE, {setError}),
+        ))
         await waitFor(() => expect(result.current.available).toBe(true))
         act(() => result.current.requestDeletion(DOCUMENT))
-
-        await act(async () => {
-            await expect(result.current.confirmDeletion())
-                .rejects.toThrow('HTTP response lost')
-        })
-
-        expect(result.current.target).not.toBeNull()
 
         await act(async () => {
             await result.current.confirmDeletion()
         })
 
-        expect(accept).toHaveBeenCalledTimes(2)
-        expect(accept.mock.calls[0]?.[2]).toBe(accept.mock.calls[1]?.[2])
-        expect(accept.mock.calls[0]?.[3]).toBe(accept.mock.calls[1]?.[3])
+        expect(accept).toHaveBeenCalledTimes(1)
+        expect(result.current.available).toBe(false)
+        expect(result.current.historyError).toBe(true)
+        expect(result.current.target).toBeNull()
+        expect(result.current.visibleOperation).toBeNull()
+        expect(clearKey).not.toHaveBeenCalled()
         expect(getKey).toHaveBeenCalledTimes(1)
-        expect(result.current.visibleOperation?.state).toBe('DELETING')
+        expect(setError).toHaveBeenCalledWith(expect.stringMatching(
+            /Новый DELETE запрещён до полной проверки сервера/,
+        ))
+
+        act(() => result.current.requestDeletion(DOCUMENT))
+        expect(result.current.target).toBeNull()
+        expect(accept).toHaveBeenCalledTimes(1)
     })
 
     it('does not undo accepted deletion when catalog refresh fails', async () => {

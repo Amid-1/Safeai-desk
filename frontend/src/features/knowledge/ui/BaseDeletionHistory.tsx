@@ -2,7 +2,8 @@
 import {useEffect, useState} from 'react'
 import {listBaseDeletions} from '../../../entities/knowledge/api/knowledgeBaseDeletionApi'
 import type {BaseDeletionOperation} from '../../../entities/knowledge/api/knowledgeBaseDeletionApi'
-import {KnowledgeDeletionProgress, isUnfinishedDeletion} from './KnowledgeDeletionProgress'
+import {isUnfinishedDeletion} from '../lib/knowledgeDeletionStatus'
+import {KnowledgeDeletionProgress} from './KnowledgeDeletionProgress'
 import '../styles/KnowledgeDeletionConfirmation.css'
 
 /** История сохраняется и читается независимо от разрешения на новые удаления. */

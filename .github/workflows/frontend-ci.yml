@@ -55,5 +55,8 @@ jobs:
       - name: Аудит production-зависимостей
         run: npm run audit:prod
 
+      - name: Полный аудит зависимостей, включая dev
+        run: npm audit --audit-level=low
+
       - name: Проверка архитектуры, ESLint, тестов и сборки
         run: npm run ci

@@ -16,7 +16,7 @@ import { formatBytes } from './knowledgeDocumentFormat'
 import { KnowledgeDocumentDeleteAction } from './KnowledgeDocumentDeleteAction'
 import type {KnowledgeDocumentDeletion} from '../../../../entities/knowledge/api/knowledgeDocumentDeletionApi'
 import {KnowledgeDeletionProgress} from '../KnowledgeDeletionProgress'
-import {isUnfinishedDeletion} from '../KnowledgeDeletionProgress'
+import {isUnfinishedDeletion} from '../../lib/knowledgeDeletionStatus'
 
 const STATUS_LABEL:
     Record<KnowledgeIngestionStatus, string> = {

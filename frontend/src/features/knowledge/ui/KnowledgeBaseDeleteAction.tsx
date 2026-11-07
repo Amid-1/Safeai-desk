@@ -356,13 +356,13 @@ export function KnowledgeBaseDeleteAction({base, onAccepted}: {
         }
     }
 
-    async function reconcile(baseId: string): Promise<boolean> {
+    async function reconcile(baseId: string): Promise<'found' | 'absent' | 'blocked'> {
         const [history, current] = await Promise.allSettled([
             listBaseDeletions(),
             getBaseDeletion(baseId),
         ])
 
-        if (scope.current !== baseId) return false
+        if (scope.current !== baseId) return 'blocked'
 
         if (
             current.status === 'fulfilled'
@@ -374,7 +374,7 @@ export function KnowledgeBaseDeleteAction({base, onAccepted}: {
             setError(
                 'Сервер вернул операцию другой базы. Повторный DELETE заблокирован.',
             )
-            return false
+            return 'blocked'
         }
 
         if (
@@ -391,7 +391,7 @@ export function KnowledgeBaseDeleteAction({base, onAccepted}: {
             setError(
                 'Не удалось достоверно сверить удаление. Повтор запрещён до восстановления истории.',
             )
-            return false
+            return 'blocked'
         }
 
         const ownHistory = history.value.filter(
@@ -402,7 +402,7 @@ export function KnowledgeBaseDeleteAction({base, onAccepted}: {
             ? current.value
             : ownHistory.find(item => item.state !== 'DELETED') ?? ownHistory[0]
 
-        if (!existing) return false
+        if (!existing) return 'absent'
 
         setOperation(existing)
         setAcceptedDuringDialog(true)
@@ -418,7 +418,7 @@ export function KnowledgeBaseDeleteAction({base, onAccepted}: {
             originalVersion,
         )
 
-        return true
+        return 'found'
     }
 
     async function confirm() {
@@ -495,12 +495,15 @@ export function KnowledgeBaseDeleteAction({base, onAccepted}: {
             } catch (cause) {
                 if (scope.current !== baseId) return
 
-                const found = await reconcile(baseId)
+                const reconciliation = await reconcile(baseId)
 
                 // Пока шла сверка, пользователь мог переключить базу.
                 if (scope.current !== baseId) return
 
-                if (!found) {
+                // Не перезаписываем диагностическое сообщение при blocked.
+                // Только доказанное отсутствие операции допускает повтор
+                // с исходной версией и прежним Idempotency-Key.
+                if (reconciliation === 'absent') {
                     setError(getApiErrorMessage(
                         cause,
                         'Не удалось подтвердить удаление. Проверьте историю перед повтором.',
