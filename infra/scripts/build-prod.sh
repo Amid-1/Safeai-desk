@@ -49,6 +49,7 @@ if [[ -f "$repo_dir/frontend/package-lock.json" ]]; then
         npm ci
         npm run ci
         npm run audit:prod
+        npm audit --audit-level=low
     )
 fi
 [[ -f "$repo_dir/frontend/dist/index.html" ]] || { echo "frontend/dist/index.html is missing" >&2; exit 1; }

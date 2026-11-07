@@ -1,0 +1,50 @@
+# SafeAI-Desk/.github/workflows/ci-policy.yml
+name: Политика CI/CD
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-policy-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  actionlint:
+    name: GitHub Actions / actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Получение исходного кода
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Установка actionlint 1.7.12 с проверкой SHA-256
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          file="$RUNNER_TEMP/actionlint_1.7.12_linux_amd64.tar.gz"
+          curl --fail --location --silent --show-error --retry 3 \
+            --output "$file" \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          printf '%s  %s\n' \
+            '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8' \
+            "$file" | sha256sum --check --status
+          mkdir -p "$RUNNER_TEMP/safeai-actionlint"
+          tar -xzf "$file" -C "$RUNNER_TEMP/safeai-actionlint" actionlint
+          "$RUNNER_TEMP/safeai-actionlint/actionlint" -color
+
+      - name: Проверка release-gate против поддельных и пропущенных статусов
+        run: python3 -m unittest discover -s .github/scripts -p 'test_release_ci.py'
+
+      - name: Проверка защиты Surefire-отчётов
+        run: python3 -m unittest discover -s .github/scripts -p 'test_maven_reports.py'

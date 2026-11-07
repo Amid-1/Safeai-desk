@@ -9,10 +9,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'frontend/**'
-      - 'scripts/verify-build.mjs'
-      - '.github/workflows/frontend-ci.yml'
 
 permissions:
   contents: read

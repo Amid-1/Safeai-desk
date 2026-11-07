@@ -8,9 +8,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'backend/**'
-      - '.github/workflows/backend-ci.yml'
 
 permissions:
   contents: read
@@ -52,8 +49,60 @@ jobs:
       - name: Полная сборка и стандартные тесты Maven
         run: ./mvnw --batch-mode --no-transfer-progress clean verify
 
+      - name: Контроль количества тестов и разрешённых пропусков Surefire
+        working-directory: .
+        run: python3 .github/scripts/check-maven-reports.py standard
+
       - name: Критичные интеграционные тесты PostgreSQL и Redis
         run: >-
           ./mvnw --batch-mode --no-transfer-progress
           -Dtest=AuthPostgresConcurrencyIT,OrganizationSecurityGateConcurrencyIT,RedisFixedWindowRateLimiterIT
           test
+
+  performance:
+    name: Usage PostgreSQL / performance SLA
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Получение исходного кода
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Установка Java 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+
+      - name: Проверка Docker для Testcontainers
+        run: docker info --format '{{.ServerVersion}}'
+
+      - name: Выполнение всех JUnit-тестов с тегом performance
+        run: >-
+          ./mvnw --batch-mode --no-transfer-progress
+          -Dgroups=performance
+          -Dsafeai.usage.performance=true
+          test
+
+      - name: Требование успешных performance-тестов без пропусков
+        working-directory: .
+        run: python3 .github/scripts/check-maven-reports.py performance
+
+      - name: Сохранение SQL EXPLAIN и отчётов при ошибке
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: usage-performance-failure-${{ github.sha }}
+          path: |
+            backend/target/usage-explain/
+            backend/target/surefire-reports/
+          if-no-files-found: warn
+          retention-days: 14

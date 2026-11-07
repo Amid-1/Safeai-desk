@@ -5,21 +5,9 @@ on:
   pull_request:
     branches:
       - main
-    paths:
-      - 'backend/**'
-      - 'frontend/**'
-      - 'infra/**'
-      - 'scripts/verify-build.mjs'
-      - '.github/workflows/docker-ci.yml'
   push:
     branches:
       - main
-    paths:
-      - 'backend/**'
-      - 'frontend/**'
-      - 'infra/**'
-      - 'scripts/verify-build.mjs'
-      - '.github/workflows/docker-ci.yml'
 
 permissions:
   contents: read
@@ -109,6 +97,51 @@ jobs:
             --file infra/postgres/Dockerfile \
             --build-arg SAFEAI_READER_GID=21001 \
             --tag safeai-postgres:ci .
+
+      - name: Запрет root-пользователя в runtime backend и Nginx
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          backend_user="$(docker image inspect -f '{{.Config.User}}' safeai-backend:ci)"
+          nginx_user="$(docker image inspect -f '{{.Config.User}}' safeai-nginx:ci)"
+          [[ "$backend_user" == '10001:10001' ]] || {
+            echo "Backend запускается не от ожидаемого пользователя: $backend_user" >&2
+            exit 1
+          }
+          [[ "$nginx_user" == '101' ]] || {
+            echo "Nginx запускается не от ожидаемого пользователя: $nginx_user" >&2
+            exit 1
+          }
+
+      - name: CRITICAL (включая unfixed) / backend
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: safeai-backend:ci
+          scanners: vuln
+          severity: CRITICAL
+          ignore-unfixed: false
+          exit-code: '1'
+
+      - name: CRITICAL (включая unfixed) / Nginx
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: safeai-nginx:ci
+          scanners: vuln
+          severity: CRITICAL
+          ignore-unfixed: false
+          exit-code: '1'
+
+      - name: CRITICAL (включая unfixed) / PostgreSQL
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: safeai-postgres:ci
+          scanners: vuln
+          severity: CRITICAL
+          ignore-unfixed: false
+          exit-code: '1'
 
       - name: Сканирование backend image
         uses: aquasecurity/trivy-action@v0.36.0

@@ -8,11 +8,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'backend/**'
-      - 'frontend/**'
-      - '.github/workflows/security-ci.yml'
-      - '.github/dependabot.yml'
   schedule:
     - cron: '31 3 * * 1'
   workflow_dispatch:
@@ -78,6 +73,7 @@ jobs:
     permissions:
       contents: read
       security-events: write
+
     steps:
       - name: Получение исходного кода
         uses: actions/checkout@v7
@@ -113,6 +109,24 @@ jobs:
           format: table
           exit-code: '1'
 
+      - name: Блокирующая проверка обнаруженных секретов
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: secret
+          exit-code: '1'
+
+      - name: Блокирующая проверка всех CRITICAL, включая необновляемые
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: CRITICAL
+          ignore-unfixed: false
+          exit-code: '1'
+
   dependency-review:
     name: Проверка новых зависимостей в PR
     if: github.event_name == 'pull_request'
@@ -121,9 +135,17 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+
     steps:
-      - name: Проверка уязвимых зависимостей в PR
-        uses: actions/dependency-review-action@v5
+      - name: Получение исходного кода
+        uses: actions/checkout@v7
         with:
-          fail-on-severity: high
+          persist-credentials: false
+
+      # Проверенный коммит GitHub dependency-review-action v5 на 7 ноября 2026 года.
+      # Для работы необходим включённый Dependency Graph в настройках репозитория.
+      - name: Проверка уязвимых зависимостей в PR
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5
+        with:
+          fail-on-severity: low
           comment-summary-in-pr: always

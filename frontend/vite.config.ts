@@ -54,6 +54,13 @@ export default defineConfig({
                 'html',
             ],
             reportsDirectory: './coverage',
+            // Нижняя граница: текущая база ~71-73%. Новые версии не должны снижать покрытие.
+            thresholds: {
+                statements: 70,
+                branches: 70,
+                functions: 70,
+                lines: 70,
+            },
             include: [
                 'src/**/*.{ts,tsx}',
             ],
