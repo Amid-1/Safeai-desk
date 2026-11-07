@@ -1,0 +1,161 @@
+{
+  "_format": 1,
+  "modules": {
+    "ai": {
+      "line": 0.882597,
+      "line_counts": [
+        2556,
+        340
+      ],
+      "branch": 0.708621,
+      "branch_counts": [
+        822,
+        338
+      ]
+    },
+    "audit": {
+      "line": 0.816484,
+      "line_counts": [
+        1268,
+        285
+      ],
+      "branch": 0.626058,
+      "branch_counts": [
+        370,
+        221
+      ]
+    },
+    "auth": {
+      "line": 0.891333,
+      "line_counts": [
+        1337,
+        163
+      ],
+      "branch": 0.712302,
+      "branch_counts": [
+        359,
+        145
+      ]
+    },
+    "chat": {
+      "line": 0.818895,
+      "line_counts": [
+        2089,
+        462
+      ],
+      "branch": 0.603558,
+      "branch_counts": [
+        475,
+        312
+      ]
+    },
+    "common": {
+      "line": 0.885234,
+      "line_counts": [
+        1211,
+        157
+      ],
+      "branch": 0.710265,
+      "branch_counts": [
+        429,
+        175
+      ]
+    },
+    "identity": {
+      "line": 1.0,
+      "line_counts": [
+        8,
+        0
+      ],
+      "branch": null,
+      "branch_counts": [
+        0,
+        0
+      ]
+    },
+    "knowledge": {
+      "line": 0.749078,
+      "line_counts": [
+        4875,
+        1633
+      ],
+      "branch": 0.6,
+      "branch_counts": [
+        1548,
+        1032
+      ]
+    },
+    "model": {
+      "line": 0.878347,
+      "line_counts": [
+        3018,
+        418
+      ],
+      "branch": 0.62585,
+      "branch_counts": [
+        1104,
+        660
+      ]
+    },
+    "organization": {
+      "line": 0.943867,
+      "line_counts": [
+        454,
+        27
+      ],
+      "branch": 0.757143,
+      "branch_counts": [
+        106,
+        34
+      ]
+    },
+    "ratelimit": {
+      "line": 0.853541,
+      "line_counts": [
+        711,
+        122
+      ],
+      "branch": 0.732308,
+      "branch_counts": [
+        238,
+        87
+      ]
+    },
+    "usage": {
+      "line": 0.86546,
+      "line_counts": [
+        1100,
+        171
+      ],
+      "branch": 0.737745,
+      "branch_counts": [
+        301,
+        107
+      ]
+    },
+    "user": {
+      "line": 0.88343,
+      "line_counts": [
+        917,
+        121
+      ],
+      "branch": 0.769231,
+      "branch_counts": [
+        300,
+        90
+      ]
+    },
+    "_total": {
+      "line": 0.833682,
+      "line_counts": [
+        19544,
+        3899
+      ],
+      "branch": 0.654058,
+      "branch_counts": [
+        6052,
+        3201
+      ]
+    }
+  }
+}
