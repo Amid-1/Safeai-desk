@@ -434,13 +434,24 @@ jobs:
                     -o UserKnownHostsFile="$known_hosts_file" -p "$port")
 
           cleanup_remote() {
-            ssh "${ssh_opts[@]}" "$target" "rm -rf -- '$auth_dir' '$remote_script_path'" >/dev/null 2>&1 || true
+            local cleanup_command
+            printf -v cleanup_command 'rm -rf -- %q %q' "$auth_dir" "$remote_script_path"
+            # Данные предварительно экранированы printf %q на стороне CI.
+            # shellcheck disable=SC2029
+            ssh "${ssh_opts[@]}" "$target" "$cleanup_command" >/dev/null 2>&1 || true
           }
           trap cleanup_remote EXIT
 
-          ssh "${ssh_opts[@]}" "$target" "umask 077; mkdir -p '$auth_dir'"
-          printf '%s' "$GHCR_PULL_TOKEN" | ssh "${ssh_opts[@]}" "$target" \
-            "DOCKER_CONFIG='$auth_dir' docker login ghcr.io --username '$GHCR_USERNAME' --password-stdin"
+          printf -v mkdir_command 'umask 077; mkdir -p -- %q' "$auth_dir"
+          # Локально собранная и экранированная команда должна выполняться на сервере.
+          # shellcheck disable=SC2029
+          ssh "${ssh_opts[@]}" "$target" "$mkdir_command"
+          printf -v login_command \
+            'DOCKER_CONFIG=%q docker login ghcr.io --username %q --password-stdin' \
+            "$auth_dir" "$GHCR_USERNAME"
+          # Секрет передаётся по stdin; локальные параметры экранированы printf %q.
+          # shellcheck disable=SC2029
+          printf '%s' "$GHCR_PULL_TOKEN" | ssh "${ssh_opts[@]}" "$target" "$login_command"
 
           cat > "$RUNNER_TEMP/safeai-deploy-remote.sh" <<'REMOTE'
           #!/usr/bin/env bash
@@ -482,4 +493,6 @@ jobs:
             'SAFEAI_APP_DIR=%q SAFEAI_RELEASE_SHA=%q SAFEAI_BACKEND_IMAGE=%q SAFEAI_NGINX_IMAGE=%q SAFEAI_POSTGRES_IMAGE=%q DOCKER_CONFIG=%q REMOTE_SCRIPT_PATH=%q bash %q' \
             "$PRODUCTION_APP_DIR" "$GITHUB_SHA" "$BACKEND_IMAGE" "$NGINX_IMAGE" \
             "$POSTGRES_IMAGE" "$auth_dir" "$remote_script_path" "$remote_script_path"
+          # Команда собрана выше через printf -v и %q, локальная подстановка ожидаема.
+          # shellcheck disable=SC2029
           ssh "${ssh_opts[@]}" "$target" "$remote_command"
