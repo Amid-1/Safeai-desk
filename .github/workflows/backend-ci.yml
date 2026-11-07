@@ -57,6 +57,16 @@ jobs:
         working-directory: .
         run: python3 .github/scripts/check-backend-test-discovery.py
 
+      - name: Проверка неизменности истории Flyway
+        working-directory: .
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          python3 .github/scripts/check-flyway-migrations.py --base origin/main
+
+      - name: Проверка baseline покрытия каждого backend-модуля
+        working-directory: .
+        run: python3 .github/scripts/check-backend-coverage.py --check
+
       - name: Критичные интеграционные тесты PostgreSQL и Redis
         run: >-
           ./mvnw --batch-mode --no-transfer-progress

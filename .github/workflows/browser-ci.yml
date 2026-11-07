@@ -1,0 +1,113 @@
+# CI for browser UI plus opt-in, real deployed staging integration.
+name: Browser UI и staging E2E
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: safeai-browser-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser-ui:
+    name: Playwright / публичные и защищённые маршруты
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            e2e/package-lock.json
+      - name: Установить зависимости приложения
+        working-directory: frontend
+        run: npm ci
+      - name: Проверить и собрать приложение
+        working-directory: frontend
+        run: npm run build
+      - name: Установить закреплённые зависимости Playwright
+        working-directory: e2e
+        run: npm ci
+      - name: Установить Chromium
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+      - name: Запустить Vite preview
+        working-directory: frontend
+        run: |
+          npm run preview -- --host 127.0.0.1 --port 4173 > "$RUNNER_TEMP/safeai-vite.log" 2>&1 &
+          for i in {1..40}; do
+            if curl --fail --silent --show-error http://127.0.0.1:4173/login >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo 'Vite preview не запустился' >&2
+          exit 1
+      - name: Выполнить browser UI tests
+        working-directory: e2e
+        run: npm test
+      - name: Сохранить отчёт браузера
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-ui-failed-${{ github.sha }}
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+          retention-days: 14
+          if-no-files-found: warn
+
+  staging:
+    name: Playwright / настоящий backend staging
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: acceptance-staging
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - name: Установка тестовых зависимостей
+        working-directory: e2e
+        run: npm ci
+      - name: Установить Chromium
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+      - name: Выполнить сквозные проверки только на утверждённом staging
+        working-directory: e2e
+        env:
+          SAFEAI_E2E_BASE_URL: ${{ vars.SAFEAI_E2E_BASE_URL }}
+          SAFEAI_E2E_USER_EMAIL: ${{ secrets.SAFEAI_E2E_USER_EMAIL }}
+          SAFEAI_E2E_USER_PASSWORD: ${{ secrets.SAFEAI_E2E_USER_PASSWORD }}
+          SAFEAI_E2E_APPROVED: ${{ vars.SAFEAI_E2E_APPROVED }}
+        run: |
+          test "$SAFEAI_E2E_APPROVED" = true
+          case "$SAFEAI_E2E_BASE_URL" in https://*) ;; *) exit 1 ;; esac
+          npm run test:staging
+      - name: Сохранить отчёт браузера
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-e2e-failed-${{ github.sha }}
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+          retention-days: 14
+          if-no-files-found: warn
