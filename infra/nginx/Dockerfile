@@ -18,6 +18,8 @@ RUN --mount=type=cache,target=/root/.npm \
 # skipping the production bundle check.
 COPY scripts/verify-build.mjs /workspace/scripts/verify-build.mjs
 
+COPY .github/workflows/browser-ci.yml /workspace/.github/workflows/browser-ci.yml
+
 COPY frontend/ ./
 
 RUN npm run check
