@@ -30,6 +30,14 @@ if [[ -n "$(git -C "$repo_dir" status --porcelain --untracked-files=all)" ]]; th
     exit 1
 fi
 
+# Политика репозитория имеет приоритет над произвольным POSTGRES_BASE_IMAGE.
+# Так CI и Release собираются из одного и того же base digest.
+expected_postgres_base="$(cat "$repo_dir/infra/postgres/base-image.txt")"
+[[ "$POSTGRES_BASE_IMAGE" == "$expected_postgres_base" ]] || {
+    echo "BLOCKED: POSTGRES_BASE_IMAGE не совпадает с infra/postgres/base-image.txt" >&2
+    exit 1
+}
+
 vcs_ref="$(git -C "$repo_dir" rev-parse HEAD)"
 build_date="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
@@ -57,7 +65,7 @@ fi
 
 docker build \
     --file "$repo_dir/infra/postgres/Dockerfile" \
-    --build-arg "POSTGRES_BASE_IMAGE=$POSTGRES_BASE_IMAGE" \
+    --build-arg "UBUNTU_IMAGE=$POSTGRES_BASE_IMAGE" \
     --build-arg "SAFEAI_READER_GID=$SAFEAI_SECRET_GID" \
     --build-arg "APP_VERSION=$APP_VERSION" \
     --build-arg "VCS_REF=$vcs_ref" \

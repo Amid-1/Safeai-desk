@@ -91,12 +91,15 @@ jobs:
       - name: Сборка frontend/Nginx image
         run: docker build --pull --file infra/nginx/Dockerfile --tag safeai-nginx:ci .
 
-      - name: Сборка PostgreSQL Noble на нативном linux/amd64
+      - name: Сборка PostgreSQL Noble из основного Dockerfile (native amd64)
         shell: bash
         run: |
           set -Eeuo pipefail
+          base_image="$(cat infra/postgres/base-image.txt)"
+          [[ "$base_image" == "ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852" ]] || { echo 'BLOCKED: unexpected PostgreSQL base digest' >&2; exit 1; }
           docker buildx build --platform linux/amd64 --pull --load \
-            --file infra/postgres/noble-candidate/Dockerfile \
+            --file infra/postgres/Dockerfile \
+            --build-arg "UBUNTU_IMAGE=$base_image" \
             --build-arg SAFEAI_READER_GID=21001 \
             --tag safeai-postgres:ci .
           [[ "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' safeai-postgres:ci)" == linux/amd64 ]]
@@ -104,6 +107,10 @@ jobs:
       - name: Проверка PostgreSQL, pgvector, ролей и постоянства тестовых данных
         shell: bash
         run: bash infra/scripts/test-postgres-bootstrap.sh safeai-postgres:ci
+
+      - name: SQL/XML и pgvector HNSW на отдельной временной БД
+        shell: bash
+        run: bash infra/postgres/noble-candidate/xml-hnsw-smoke.sh safeai-postgres:ci
 
       - name: JSON-отчёт Trivy для каждого Docker image
         shell: bash

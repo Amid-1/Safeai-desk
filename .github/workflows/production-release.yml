@@ -59,7 +59,6 @@ jobs:
       packages: write
       id-token: write
       attestations: write
-      artifact-metadata: write
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 150
@@ -118,7 +117,12 @@ jobs:
           java_runtime_image="$(pin_image eclipse-temurin:21-jre)"
           node_build_image="$(pin_image node:24-alpine)"
           nginx_base_image="$(pin_image nginxinc/nginx-unprivileged:stable-alpine)"
-          postgres_base_image="$(pin_image pgvector/pgvector:pg16)"
+          postgres_base_image="$(cat infra/postgres/base-image.txt)"
+          [[ "$postgres_base_image" =~ ^ubuntu:24[.]04@sha256:[0-9a-f]{64}$ ]] || {
+            echo "Expected digest-pinned Ubuntu Noble PostgreSQL base image" >&2
+            exit 1
+          }
+          docker pull "$postgres_base_image" >/dev/null
 
           build_env="$(mktemp)"
           trap 'rm -f "$build_env"' EXIT
@@ -142,6 +146,7 @@ jobs:
       - name: Сканирование backend image
         uses: aquasecurity/trivy-action@v0.36.0
         with:
+          version: v0.76.2
           scan-type: image
           image-ref: ghcr.io/${{ steps.build.outputs.owner_lc }}/safeai-backend:${{ github.sha }}
           scanners: vuln
@@ -152,6 +157,7 @@ jobs:
       - name: Сканирование frontend/Nginx image
         uses: aquasecurity/trivy-action@v0.36.0
         with:
+          version: v0.76.2
           scan-type: image
           image-ref: ghcr.io/${{ steps.build.outputs.owner_lc }}/safeai-nginx:${{ github.sha }}
           scanners: vuln
@@ -162,6 +168,7 @@ jobs:
       - name: Сканирование PostgreSQL image
         uses: aquasecurity/trivy-action@v0.36.0
         with:
+          version: v0.76.2
           scan-type: image
           image-ref: ghcr.io/${{ steps.build.outputs.owner_lc }}/safeai-postgres:${{ github.sha }}
           scanners: vuln
@@ -172,6 +179,7 @@ jobs:
       - name: CRITICAL (включая unfixed) / backend
         uses: aquasecurity/trivy-action@v0.36.0
         with:
+          version: v0.76.2
           scan-type: image
           image-ref: ghcr.io/${{ steps.build.outputs.owner_lc }}/safeai-backend:${{ github.sha }}
           scanners: vuln
@@ -182,6 +190,7 @@ jobs:
       - name: CRITICAL (включая unfixed) / Nginx
         uses: aquasecurity/trivy-action@v0.36.0
         with:
+          version: v0.76.2
           scan-type: image
           image-ref: ghcr.io/${{ steps.build.outputs.owner_lc }}/safeai-nginx:${{ github.sha }}
           scanners: vuln
@@ -192,6 +201,7 @@ jobs:
       - name: CRITICAL (включая unfixed) / PostgreSQL
         uses: aquasecurity/trivy-action@v0.36.0
         with:
+          version: v0.76.2
           scan-type: image
           image-ref: ghcr.io/${{ steps.build.outputs.owner_lc }}/safeai-postgres:${{ github.sha }}
           scanners: vuln
@@ -202,6 +212,7 @@ jobs:
       - name: Генерация SBOM backend
         uses: aquasecurity/trivy-action@v0.36.0
         with:
+          version: v0.76.2
           scan-type: image
           image-ref: ghcr.io/${{ steps.build.outputs.owner_lc }}/safeai-backend:${{ github.sha }}
           scanners: vuln
@@ -212,6 +223,7 @@ jobs:
       - name: Генерация SBOM frontend
         uses: aquasecurity/trivy-action@v0.36.0
         with:
+          version: v0.76.2
           scan-type: image
           image-ref: ghcr.io/${{ steps.build.outputs.owner_lc }}/safeai-nginx:${{ github.sha }}
           scanners: vuln
@@ -222,6 +234,7 @@ jobs:
       - name: Генерация SBOM PostgreSQL
         uses: aquasecurity/trivy-action@v0.36.0
         with:
+          version: v0.76.2
           scan-type: image
           image-ref: ghcr.io/${{ steps.build.outputs.owner_lc }}/safeai-postgres:${{ github.sha }}
           scanners: vuln
@@ -388,6 +401,26 @@ jobs:
             echo "Отказ: main изменился после публикации образов: $head_sha" >&2
             exit 1
           }
+
+      - name: Обязательное подтверждение восстановления PostgreSQL по digest
+        shell: bash
+        env:
+          APPROVED_IMAGE: ${{ vars.SAFEAI_NOBLE_RESTORE_APPROVED_IMAGE }}
+          POSTGRES_IMAGE: ${{ needs.publish.outputs.postgres_image }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$POSTGRES_IMAGE" =~ ^ghcr[.]io/[a-z0-9.-]+/safeai-postgres@sha256:[0-9a-f]{64}$ ]] || {
+            echo 'BLOCKED: invalid immutable PostgreSQL image' >&2
+            exit 1
+          }
+          [[ -n "${APPROVED_IMAGE:-}" && "$APPROVED_IMAGE" == "$POSTGRES_IMAGE" ]] || {
+            echo 'BLOCKED: нельзя подключать Noble к существующему production volume' >&2
+            echo 'Сначала: backup -> restore на изолированной БД -> проверка collation/Flyway/indexes.' >&2
+            echo 'После успешной проверки установить environment variable ' >&2
+            echo 'SAFEAI_NOBLE_RESTORE_APPROVED_IMAGE равной ТОЧНОМУ image@sha256 digest.' >&2
+            exit 1
+          }
+          echo 'Approved immutable PostgreSQL image for controlled deploy.'
 
       - name: Подготовка SSH
         shell: bash

@@ -43,6 +43,31 @@ jobs:
           tar -xzf "$file" -C "$RUNNER_TEMP/safeai-actionlint" actionlint
           "$RUNNER_TEMP/safeai-actionlint/actionlint" -color
 
+      - name: Проверка синтаксиса Bash и Python без выполнения скриптов
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          while IFS= read -r -d '' file; do
+            bash -n "$file"
+          done < <(find infra/scripts infra/postgres/init -type f -name '*.sh' -print0)
+          python3 - <<'PY'
+          import ast
+          from pathlib import Path
+          roots = [Path('.github/scripts'), Path('infra/scripts')]
+          paths = [p for root in roots for p in root.rglob('*.py')]
+          if not paths:
+              raise SystemExit('Нет Python файлов для проверки')
+          for path in paths:
+              ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
+          print(f'PYTHON SYNTAX OK: {len(paths)} файлов')
+          PY
+
+      - name: Проверка инфраструктурного security policy
+        run: python3 .github/scripts/check-infra-security-policy.py
+
+      - name: Отрицательные тесты инфраструктурного security policy
+        run: python3 -m unittest discover -s .github/scripts -p 'test_infra_security_policy.py' -v
+
       - name: Проверка release-gate против поддельных и пропущенных статусов
         run: python3 -m unittest discover -s .github/scripts -p 'test_release_ci.py'
 
