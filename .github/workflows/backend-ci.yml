@@ -67,6 +67,10 @@ jobs:
         working-directory: .
         run: python3 .github/scripts/check-backend-coverage.py --check
 
+      - name: Регрессионные тесты защитных CI-gates
+        working-directory: .
+        run: python3 -m unittest discover -s .github/scripts -p 'test_validation_gates.py' -v
+
       - name: Критичные интеграционные тесты PostgreSQL и Redis
         run: >-
           ./mvnw --batch-mode --no-transfer-progress

@@ -65,6 +65,7 @@
         <jsoup.version>1.23.2</jsoup.version>
         <logstash-logback-encoder.version>9.0</logstash-logback-encoder.version>
         <maven-failsafe-plugin.version>3.5.6</maven-failsafe-plugin.version>
+        <jacoco.version>0.8.16</jacoco.version>
 
         <!--
             snappy-java 1.1.10.11: up-to-date patched release for Snappy
@@ -478,6 +479,24 @@
                     </argLine>
                 </configuration>
             </plugin>
+
+                <!-- JaCoCo: JaCoCo agent + XML / HTML for each clean verify. -->
+                <plugin>
+                    <groupId>org.jacoco</groupId>
+                    <artifactId>jacoco-maven-plugin</artifactId>
+                    <version>${jacoco.version}</version>
+                    <executions>
+                        <execution>
+                            <id>prepare-jacoco-agent</id>
+                            <goals><goal>prepare-agent</goal></goals>
+                        </execution>
+                        <execution>
+                            <id>jacoco-coverage-report</id>
+                            <phase>verify</phase>
+                            <goals><goal>report</goal></goals>
+                        </execution>
+                    </executions>
+                </plugin>
 
             <!-- Build environment validation -->
             <plugin>

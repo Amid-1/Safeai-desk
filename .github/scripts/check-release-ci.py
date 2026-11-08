@@ -15,6 +15,7 @@ REQUIRED = {
     "Trivy / зависимости и секреты",
     "qodana",
     "GitHub Actions / actionlint",
+    "Playwright / публичные и защищённые маршруты",
 }
 
 

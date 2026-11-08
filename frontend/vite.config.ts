@@ -38,7 +38,9 @@ export default defineConfig({
 
     test: {
         // Node's node:test suites in scripts/ are run separately by npm scripts.
-        exclude: [...configDefaults.exclude, 'scripts/**/*.test.cjs'],
+        // Playwright specs run under the separate mandatory browser-ci workflow.
+        // Keep Vitest's default exclusions and all existing unit/component tests.
+        exclude: [...configDefaults.exclude, 'scripts/**/*.test.cjs', 'e2e/**'],
         environment: 'jsdom',
         globals: true,
         setupFiles: ['./src/test/setup.ts'],

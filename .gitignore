@@ -1,28 +1,28 @@
 # SafeAI-Desk/.gitignore
+# Policy: ignore local data and generated artifacts, NOT source code, tests,
+# migrations, lockfiles, CI workflows, or configuration templates.
 
-### Build ###
+### Build outputs (Java, Gradle, frontend) ###
 HELP.md
 target/
 build/
 out/
-backend/target/
-
+dist/
 *.class
+*.tsbuildinfo
+.gradle/
 
-### Maven / Gradle wrappers ###
-# Wrapper JARs are intentionally versioned.
+### Maven / Gradle wrapper JARs ARE source-controlled ###
 !.mvn/wrapper/maven-wrapper.jar
 !**/.mvn/wrapper/maven-wrapper.jar
 !gradle/wrapper/gradle-wrapper.jar
 !**/gradle/wrapper/gradle-wrapper.jar
 
-### IntelliJ IDEA ###
+### IDE / editors ###
 .idea/
 *.iws
 *.iml
 *.ipr
-
-### STS / Eclipse ###
 .apt_generated/
 .classpath
 .factorypath
@@ -30,110 +30,128 @@ backend/target/
 .settings/
 .springBeans
 .sts4-cache/
-
-### NetBeans ###
 nbproject/private/
 nbbuild/
-dist/
 nbdist/
 .nb-gradle/
-
-### VS Code ###
 .vscode/
-
-### Run configurations ###
 .run/
 
-### macOS / Windows ###
+### OS / temporary files ###
 .DS_Store
 Thumbs.db
-
-### Temporary files ###
 *~
 *.swp
 *.swo
+*.tmp
+*.temp
 
-### Allure ###
-.allure/
-
-### Runtime logs ###
+### Runtime logs and reports ###
 logs/
-**/logs/
 *.log
 *.log.*
 **/archived/
+.allure/
+allure-results/
+allure-report/
 
-### Local/runtime data ###
+### Python tooling (all directories, including .github/scripts) ###
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.venv/
+venv/
+.pyre/
+.coverage
+.coverage.*
+htmlcov/
+
+### Node / package managers / coverage ###
+# Covers frontend/, root e2e/, future packages and workspaces.
+node_modules/
+.npm/
+.pnpm-store/
+.yarn/cache/
+.yarn/unplugged/
+coverage/
+.nyc_output/
+.vite/
+
+### Playwright / browser tests: generated ONLY, not *.spec.* ###
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+
+### Local databases, dumps, backups and runtime object storage ###
+/backups/
+*.dump
+*.backup
+*.sql.gz
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.db
+*.db-journal
 .local-test-data/
 backend/var/
-backend/.local-test-data/
+backend/var.knowledge-objects/
 docker-compose/docker-logs/
 
-### Environment files ###
+### Secrets and machine-specific configuration ###
 .env
 .env.*
 **/.env
 **/.env.*
-
-# Safe templates are versioned.
+# Keep safe, intentionally public templates.
 !**/.env.example
 !**/.env.*.example
-
-### Local secrets / RSA ###
+!**/.env.template
+!**/.env.*.template
 .local-secrets/
 **/.local-secrets/
-
-# Never commit a real JWT key ring.
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_ed25519
 jwt-keys.yml
 **/jwt-keys.yml
-
-# Version the template only.
 !**/jwt-keys.yml.example
 
-### Production deployment secrets/config ###
-# Real file-backed secrets must live outside the repository.
+# File-backed deployment secrets and host-only configs.
 infra/secrets/*
 !infra/secrets/*.example
 !infra/secrets/.gitkeep
-
-# Real production pricing is host-managed:
-#   /etc/safeai/config/pricing.yml
-# If a local copy is created under infra/config, do not commit it.
 infra/config/pricing.yml
 !infra/config/pricing.yml.example
-
-# Host-specific enabled Nginx config should be installed outside the repo.
 infra/host-nginx/safeai.conf
 !infra/host-nginx/safeai.conf.example
 
-### Local helper files ###
+# Local account notes are not production documentation.
+/docs/local/
+
+### Personal helpers: keep locally, not in production code changes ###
+/README-APPLY-RU.md
+/scripts/fix_safeai_*.py
 commit-message.txt
 
-### Application-specific ###
+### Special project rules ###
 **/src/main/resources/twitter4j.properties
-
-### Local/unmanaged libraries ###
-# Игнорируем сторонние локальные библиотеки в остальных частях проекта.
 lib/
-
-# Не игнорируем исходный код Frontend в каталогах lib.
+# Frontend source lib/ directories ARE part of production code.
 !frontend/src/**/lib/
 !frontend/src/**/lib/**
-
 .com/
 .company/
 .udemy/
 
 ### Documentation ###
 !docs/.gitkeep
-
-### Frontend ###
-frontend/node_modules/
-frontend/dist/
-frontend/.vite/
-frontend/.env
-frontend/.env.local
-frontend/.env.*.local
-
-# Frontend test coverage
-frontend/coverage/
