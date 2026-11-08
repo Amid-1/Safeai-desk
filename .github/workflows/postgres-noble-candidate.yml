@@ -1,0 +1,74 @@
+name: SafeAI PostgreSQL Noble candidate (native amd64)
+
+# Parallel validation only. Production-release remains unchanged and fail-closed.
+on:
+  push:
+    branches:
+      - fix/knowledge-upload-confirmation-20261025
+    paths:
+      - .github/workflows/postgres-noble-candidate.yml
+      - infra/postgres/noble-candidate/**
+      - infra/postgres/init/**
+      - infra/scripts/test-postgres-bootstrap.sh
+  pull_request:
+    paths:
+      - .github/workflows/postgres-noble-candidate.yml
+      - infra/postgres/noble-candidate/**
+      - infra/postgres/init/**
+      - infra/scripts/test-postgres-bootstrap.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: noble-postgres-candidate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-amd64:
+    name: Native amd64 | bootstrap, XML, HNSW, Trivy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Require hardened bootstrap persistence regression
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -Fq 'named volume survives restart' infra/scripts/test-postgres-bootstrap.sh
+
+      - name: Build Noble candidate (linux/amd64, no production volumes)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker buildx build --platform linux/amd64 --pull --load \
+            --file infra/postgres/noble-candidate/Dockerfile \
+            --tag safeai-postgres:noble-ci-amd64 .
+          [[ "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' safeai-postgres:noble-ci-amd64)" == linux/amd64 ]]
+          [[ "$(docker info --format '{{.Architecture}}')" == x86_64 || "$(docker info --format '{{.Architecture}}')" == amd64 ]]
+
+      - name: Bootstrap roles, pgvector and volume persistence on disposable DB
+        shell: bash
+        run: bash infra/scripts/test-postgres-bootstrap.sh safeai-postgres:noble-ci-amd64
+
+      - name: Verify SQL/XML and HNSW on disposable tmpfs DB
+        shell: bash
+        run: bash infra/postgres/noble-candidate/xml-hnsw-smoke.sh safeai-postgres:noble-ci-amd64
+
+      - name: Strict vulnerability gates (CRITICAL including unfixed; fixable HIGH/CRITICAL)
+        shell: bash
+        run: bash infra/postgres/noble-candidate/trivy-check.sh safeai-postgres:noble-ci-amd64
+
+      - name: Preserve Trivy reports for audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safeai-noble-amd64-trivy-${{ github.sha }}
+          path: infra/postgres/noble-candidate/reports/*.log
+          if-no-files-found: warn
+          retention-days: 30

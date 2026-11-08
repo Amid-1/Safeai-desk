@@ -143,4 +143,30 @@ app_user="$(docker run --rm \
     exit 1
 }
 echo "PASS: runtime user authenticates over TCP"
+# Работающее хранилище обязательно должно пережить restart с тем же volume.
+assert_sql "PostgreSQL major 16" \
+    "SELECT current_setting('server_version_num')::int / 10000 = 16"
+assert_sql "pgvector version 0.8.7" \
+    "SELECT extversion = '0.8.7' FROM pg_extension WHERE extname = 'vector'"
+
+docker exec "$postgres_container" psql -v ON_ERROR_STOP=1 \
+    -U safeai_bootstrap_it -d safeai_contract \
+    -c 'CREATE TABLE safeai_ci_persistence (value text PRIMARY KEY)' \
+    -c "INSERT INTO safeai_ci_persistence VALUES ('volume-preserved')" >/dev/null
+
+docker restart "$postgres_container" >/dev/null
+ready=false
+for attempt in $(seq 1 60); do
+    if docker exec "$postgres_container" \
+        pg_isready -h 127.0.0.1 -U safeai_bootstrap_it \
+        -d safeai_contract >/dev/null 2>&1; then
+        ready=true
+        break
+    fi
+    sleep 1
+done
+[[ "$ready" == true ]] || { echo 'FAIL: PostgreSQL restart' >&2; exit 1; }
+assert_sql "named volume survives restart" \
+    "SELECT EXISTS(SELECT 1 FROM safeai_ci_persistence WHERE value='volume-preserved')"
+
 echo "PASS: isolated PostgreSQL bootstrap integration test complete"
