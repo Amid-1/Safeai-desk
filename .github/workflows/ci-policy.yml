@@ -77,6 +77,11 @@ jobs:
       - name: Отрицательные тесты подписанного release manifest
         run: python3 -m unittest discover -s .github/scripts -p 'test_production_manifest.py' -v
 
+      - name: Негативные тесты frontend coverage gate
+        run: |
+          python3 -m unittest discover -s .github/scripts \
+            -p 'test_frontend_coverage_gate.py' -v
+
       - name: Контроль встроенного Bash Production deploy
         run: |
           python3 .github/scripts/check-production-deploy-embedded-bash.py

@@ -98,7 +98,9 @@ def backend_stats(xml_path: Path, baseline_path: Path, reports_dir: Path) -> dic
             )}
 
 
-def frontend_stats(summary_path: Path) -> dict:
+def frontend_stats(
+    summary_path: Path, baseline_path: Path | None = None
+) -> dict:
     if not summary_path.is_file():
         raise ValueError("Vitest coverage-summary.json отсутствует; npm run test:coverage не выполнен")
     data = json.loads(summary_path.read_text(encoding="utf-8"))
@@ -138,12 +140,29 @@ def frontend_stats(summary_path: Path) -> dict:
             for name, c in sorted(grouped.items())]
     total_line = metric(data["total"], "lines")
     total_branch = metric(data["total"], "branches")
+    baseline_total = {"line": None, "branch": None}
+    if baseline_path is not None:
+        baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+        modules = baseline.get("modules")
+        if baseline.get("_format") != 1 or not isinstance(modules, dict):
+            raise ValueError("Invalid frontend coverage baseline for dashboard")
+        names = {item["name"] for item in rows}
+        if set(modules) != names | {"_total"}:
+            raise ValueError("Frontend baseline group inventory does not match Vitest")
+        for item in rows:
+            saved = modules[item["name"]]
+            item["baseline_line"] = saved["line"]
+            item["baseline_branch"] = saved["branch"]
+        baseline_total = modules["_total"]
+
     return {
         "title": "React / TypeScript / Vitest",
         "rows": rows,
         "overall": {
             "line": ratio(total_line[0], total_line[1] - total_line[0]),
             "branch": ratio(total_branch[0], total_branch[1] - total_branch[0]),
+            "baseline_line": baseline_total["line"],
+            "baseline_branch": baseline_total["branch"],
         },
         "footnote": (
             "Группы построены по путям исходников. "
@@ -163,13 +182,17 @@ def markdown(data: dict) -> str:
             f"ошибок: {t['failed']}, пропущено: {t['skipped']}",
             "",
         ])
-    lines += ["| Модуль / группа | Строки | Диаграмма | Ветви | Диаграмма | Baseline (строки) |",
-              "|---|---:|---|---:|---|---:|"]
+    lines += [
+        "| Модуль / группа | Строки | Диаграмма | Ветви | "
+        "Диаграмма | Baseline (строки) | Baseline (ветви) |",
+        "|---|---:|---|---:|---|---:|---:|",
+    ]
     for r in data["rows"]:
         lines.append(
             f"| `{r['name']}` | {pct(r['line'])} | {bar(r['line'])} | "
             f"{pct(r['branch'])} | {bar(r['branch'])} | "
-            f"{pct(r.get('baseline_line'))} |"
+            f"{pct(r.get('baseline_line'))} | "
+            f"{pct(r.get('baseline_branch'))} |"
         )
     lines.extend([
         "", data["footnote"], "",
@@ -194,9 +217,14 @@ def html_page(data: dict) -> str:
         if r.get("baseline_line") is not None and r["line"] is not None:
             value = (r["line"] - r["baseline_line"]) * 100
             delta = f'{value:+.1f} п.п.'
+        branch_delta = ""
+        if r.get("baseline_branch") is not None and r["branch"] is not None:
+            value = (r["branch"] - r["baseline_branch"]) * 100
+            branch_delta = f"{value:+.1f} п.п."
         rows.append("<tr><th scope=\"row\">" + html.escape(r["name"]) + "</th><td>" +
                     visual(r["line"], "blue") + "</td><td>" + visual(r["branch"], "purple") +
-                    "</td><td>" + html.escape(delta) + "</td></tr>")
+                    "</td><td>" + html.escape(delta) + "</td><td>" +
+                    html.escape(branch_delta) + "</td></tr>")
     o = data["overall"]
     title = html.escape(data["title"])
     note = html.escape(data["footnote"])
@@ -272,7 +300,7 @@ def html_page(data: dict) -> str:
   <table>
     <thead><tr>
       <th>Модуль / группа</th><th>Покрытие строк</th>
-      <th>Покрытие ветвей</th><th>Δ к baseline</th>
+      <th>Покрытие ветвей</th><th>Δ строк</th><th>Δ ветвей</th>
     </tr></thead>
     <tbody>{''.join(rows)}</tbody>
   </table>
@@ -299,7 +327,10 @@ def main() -> int:
                              root / "backend/target/surefire-reports")
         out = root / "backend/target/quality-dashboard"
     else:
-        data = frontend_stats(root / "frontend/coverage/coverage-summary.json")
+        data = frontend_stats(
+            root / "frontend/coverage/coverage-summary.json",
+            root / "frontend/coverage-baseline.json",
+        )
         out = root / "frontend/coverage"
     out.mkdir(parents=True, exist_ok=True)
     (out / "dashboard.html").write_text(html_page(data), encoding="utf-8")

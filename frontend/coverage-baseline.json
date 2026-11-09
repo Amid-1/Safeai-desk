@@ -1,0 +1,180 @@
+{
+  "_format": 1,
+  "_source": {
+    "commit": "e2d4614ab18bbb97ee3664040e0a8c87158367b8",
+    "github_workflow_run_id": 42668287147,
+    "github_artifact_id": 13697048461,
+    "github_ci_checkout_sha": "1c73f33e13624d1452c2bc6303badc968cac9ba0",
+    "coverage_summary_sha256": "27cd5221baf6ee77b1d885ca1f5c0990ceba2e2be395688c33e93ff513140729"
+  },
+  "modules": {
+    "admin": {
+      "line": null,
+      "line_counts": [
+        0,
+        0
+      ],
+      "branch": null,
+      "branch_counts": [
+        0,
+        0
+      ]
+    },
+    "admin-organizations": {
+      "line": 0.14285714285714285,
+      "line_counts": [
+        41,
+        246
+      ],
+      "branch": 0.4774774774774775,
+      "branch_counts": [
+        106,
+        116
+      ]
+    },
+    "admin-users": {
+      "line": 0.6953551912568307,
+      "line_counts": [
+        509,
+        223
+      ],
+      "branch": 0.7337057728119181,
+      "branch_counts": [
+        394,
+        143
+      ]
+    },
+    "app": {
+      "line": 0.7888888888888889,
+      "line_counts": [
+        71,
+        19
+      ],
+      "branch": 0.8181818181818182,
+      "branch_counts": [
+        63,
+        14
+      ]
+    },
+    "audit": {
+      "line": 0.6898305084745763,
+      "line_counts": [
+        407,
+        183
+      ],
+      "branch": 0.7040169133192389,
+      "branch_counts": [
+        333,
+        140
+      ]
+    },
+    "auth": {
+      "line": 0.8484848484848485,
+      "line_counts": [
+        168,
+        30
+      ],
+      "branch": 0.7795275590551181,
+      "branch_counts": [
+        99,
+        28
+      ]
+    },
+    "chat": {
+      "line": 0.7276688453159041,
+      "line_counts": [
+        668,
+        250
+      ],
+      "branch": 0.5685714285714286,
+      "branch_counts": [
+        398,
+        302
+      ]
+    },
+    "entities": {
+      "line": 0.7857142857142857,
+      "line_counts": [
+        418,
+        114
+      ],
+      "branch": 0.7905544147843943,
+      "branch_counts": [
+        385,
+        102
+      ]
+    },
+    "knowledge": {
+      "line": 0.7844897959183673,
+      "line_counts": [
+        961,
+        264
+      ],
+      "branch": 0.7518382352941176,
+      "branch_counts": [
+        818,
+        270
+      ]
+    },
+    "models": {
+      "line": 0.8177905308464849,
+      "line_counts": [
+        1140,
+        254
+      ],
+      "branch": 0.7652830188679245,
+      "branch_counts": [
+        1014,
+        311
+      ]
+    },
+    "pages": {
+      "line": 0.6190476190476191,
+      "line_counts": [
+        13,
+        8
+      ],
+      "branch": 0.5,
+      "branch_counts": [
+        3,
+        3
+      ]
+    },
+    "shared": {
+      "line": 0.8193798449612403,
+      "line_counts": [
+        1057,
+        233
+      ],
+      "branch": 0.788,
+      "branch_counts": [
+        788,
+        212
+      ]
+    },
+    "usage": {
+      "line": 0.5508571428571428,
+      "line_counts": [
+        482,
+        393
+      ],
+      "branch": 0.5797705943691345,
+      "branch_counts": [
+        556,
+        403
+      ]
+    },
+    "_total": {
+      "line": 0.7280421982335623,
+      "line_counts": [
+        5935,
+        2217
+      ],
+      "branch": 0.7080417083273818,
+      "branch_counts": [
+        4957,
+        2044
+      ]
+    }
+  }
+}
