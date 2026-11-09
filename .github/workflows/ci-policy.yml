@@ -73,3 +73,6 @@ jobs:
 
       - name: Проверка защиты Surefire-отчётов
         run: python3 -m unittest discover -s .github/scripts -p 'test_maven_reports.py'
+
+      - name: Отрицательные тесты подписанного release manifest
+        run: python3 -m unittest discover -s .github/scripts -p 'test_production_manifest.py' -v

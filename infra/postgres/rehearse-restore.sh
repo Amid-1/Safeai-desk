@@ -5,7 +5,7 @@ umask 077
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_dir="$(cd -- "$script_dir/../.." && pwd)"
-image='' archive='' identity='' report_dir='' source_counts=''
+image='' archive='' identity='' report_dir='' source_counts='' source_db_settings=''
 usage() {
     cat <<'HELP'
 Usage:
@@ -14,7 +14,8 @@ Usage:
     --backup /private/path/safeai-....dump.age \
     --identity /private/path/age-identity.txt \
     --report-dir /private/path/restore-report \
-    [--source-counts /private/path/source-row-counts.tsv]
+    [--source-counts /private/path/source-row-counts.tsv] \
+    [--source-db-settings /private/path/source-db-settings.tsv]
 
 Isolation: --network none, NEW temporary volume, no published ports,
 no production env/secrets, delete test container/volume on exit.
@@ -24,12 +25,13 @@ HELP
 }
 while (($#)); do
     case "$1" in
-        --image|--backup|--identity|--report-dir|--source-counts)
+        --image|--backup|--identity|--report-dir|--source-counts|--source-db-settings)
             (($# >= 2)) || { usage >&2; exit 2; }
             case "$1" in
                 --image) image="$2" ;; --backup) archive="$2" ;;
                 --identity) identity="$2" ;; --report-dir) report_dir="$2" ;;
                 --source-counts) source_counts="$2" ;;
+                --source-db-settings) source_db_settings="$2" ;;
             esac
             shift 2 ;;
         -h|--help) usage; exit 0 ;;
@@ -50,6 +52,10 @@ done
 if [[ -n "$source_counts" ]]; then
     [[ -f "$source_counts" && ! -L "$source_counts" ]] || {
         echo 'ERROR: source-counts must be a regular file' >&2; exit 2; }
+fi
+if [[ -n "$source_db_settings" ]]; then
+    [[ -f "$source_db_settings" && ! -L "$source_db_settings" ]] || {
+        echo 'ERROR: source DB settings must be a regular file' >&2; exit 2; }
 fi
 for cmd in docker age python3 diff; do
     command -v "$cmd" >/dev/null 2>&1 || { echo "Missing command: $cmd" >&2; exit 2; }
@@ -197,6 +203,36 @@ check_num 'Flyway history table present' \
 check_num 'Failed Flyway migrations' \
     'SELECT COUNT(*) FROM public.flyway_schema_history WHERE NOT success' 0
 
+# Compare the default database locale with settings captured from the SOURCE.
+# Logical pg_restore rebuilds indexes, but a changed locale is still a hard stop.
+if [[ -n "$source_db_settings" ]]; then
+    docker exec "$container" psql -X -A -t -F $'\t' -v ON_ERROR_STOP=1 \
+        -U postgres -d safeai_rehearsal \
+        < "$repo_dir/infra/postgres/source-db-settings.sql" \
+        > "$report_dir/restored-db-settings.tsv"
+    python3 - "$source_db_settings" "$report_dir/restored-db-settings.tsv" <<'PYLOCALE'
+import csv
+from pathlib import Path
+import sys
+
+def parse(path):
+    with Path(path).open(encoding='utf-8', newline='') as handle:
+        rows = list(csv.reader(handle, delimiter='\t'))
+    if len(rows) != 1 or len(rows[0]) != 6:
+        raise SystemExit('BLOCKED: invalid source/restored DB settings manifest')
+    return rows[0]
+
+source, restored = map(parse, sys.argv[1:])
+if source[:5] != restored[:5]:
+    raise SystemExit('BLOCKED: source/restored DB encoding or locale mismatch')
+print('PASS: encoding, collation, ctype, provider and ICU locale match')
+if source[5] != restored[5]:
+    print('REVIEW REQUIRED: source collation library version differs')
+PYLOCALE
+else
+    echo 'NOT VERIFIED: original database encoding/locale not supplied.'
+fi
+
 # Exact coverage of the committed Flyway versions. No migrations run on the restored copy.
 expected_versions="$report_dir/expected-flyway-versions.txt"
 applied_versions="$report_dir/applied-flyway-versions.txt"
@@ -254,6 +290,7 @@ print(sha.hexdigest())
 PY
 )
 source_row_count_comparison=$([[ -n "$source_counts" ]] && echo passed || echo NOT_DONE)
+source_locale_comparison=$([[ -n "$source_db_settings" ]] && echo passed || echo NOT_DONE)
 Production release approval=NOT_GRANTED
 Remaining requirements: source manifest at SAME snapshot, Flyway validate with application,
 SQL/XML/RAG business checks, DBA collation review, backup retention and WORM restore gate.

@@ -20,6 +20,7 @@ REQUIRED = [
     'infra/docker-compose.yml',
     '.github/workflows/docker-ci.yml',
     '.github/workflows/production-release.yml',
+    '.github/workflows/production-deploy.yml',
     '.github/workflows/security-ci.yml',
     '.github/workflows/ci-policy.yml',
 ]
@@ -70,7 +71,7 @@ class InfraPolicyTests(unittest.TestCase):
             policy.assert_policy(self.repo)
 
     def test_missing_restore_approval_fails(self):
-        self.alter('.github/workflows/production-release.yml',
+        self.alter('.github/workflows/production-deploy.yml',
                    '"$APPROVED_IMAGE" == "$POSTGRES_IMAGE"',
                    '"$APPROVED_IMAGE" != "$POSTGRES_IMAGE"')
         with self.assertRaises(AssertionError):

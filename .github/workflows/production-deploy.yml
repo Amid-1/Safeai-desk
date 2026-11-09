@@ -1,0 +1,239 @@
+# SafeAI-Desk: standalone deploy of a previously signed publish run.
+name: Production deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_run_id:
+        description: ID успешного Production release на текущем HEAD main
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: safeai-production-release
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Production deploy
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+
+    steps:
+      - name: Получение исходного кода
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Проверка HEAD main непосредственно перед деплоем
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          head_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          [[ "$head_sha" == "$GITHUB_SHA" ]] || {
+            echo "Отказ: main изменился после публикации образов: $head_sha" >&2
+            exit 1
+          }
+
+      - name: Получение релизного манифеста из успешного publish run
+        id: published
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_RUN_ID: ${{ inputs.publish_run_id }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$RELEASE_RUN_ID" =~ ^[1-9][0-9]{0,19}$ ]] || {
+            echo 'Invalid published run ID' >&2
+            exit 1
+          }
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RELEASE_RUN_ID" \
+            > "$RUNNER_TEMP/safeai-publish-run.json"
+          mkdir -p "$RUNNER_TEMP/published"
+          gh run download "$RELEASE_RUN_ID" \
+            -R "$GITHUB_REPOSITORY" \
+            -n "safeai-published-images-$GITHUB_SHA" \
+            -D "$RUNNER_TEMP/published"
+          python3 .github/scripts/verify-production-manifest.py \
+            --run-json "$RUNNER_TEMP/safeai-publish-run.json" \
+            --manifest-json "$RUNNER_TEMP/published/safeai-published-images.json" \
+            --sha "$GITHUB_SHA" \
+            --run-id "$RELEASE_RUN_ID" \
+            --repository "$GITHUB_REPOSITORY"
+
+      - name: Проверка криптографических attestations опубликованных образов
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BACKEND_IMAGE: ${{ steps.published.outputs.backend_image }}
+          NGINX_IMAGE: ${{ steps.published.outputs.nginx_image }}
+          POSTGRES_IMAGE: ${{ steps.published.outputs.postgres_image }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for img in "$BACKEND_IMAGE" "$NGINX_IMAGE" "$POSTGRES_IMAGE"; do
+            gh attestation verify "oci://$img" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/production-release.yml" \
+              --source-ref refs/heads/main \
+              --source-digest "$GITHUB_SHA"
+          done
+
+      - name: Обязательное подтверждение восстановления PostgreSQL по digest
+        shell: bash
+        env:
+          APPROVED_IMAGE: ${{ vars.SAFEAI_NOBLE_RESTORE_APPROVED_IMAGE }}
+          POSTGRES_IMAGE: ${{ steps.published.outputs.postgres_image }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$POSTGRES_IMAGE" =~ ^ghcr[.]io/[a-z0-9.-]+/safeai-postgres@sha256:[0-9a-f]{64}$ ]] || {
+            echo 'BLOCKED: invalid immutable PostgreSQL image' >&2
+            exit 1
+          }
+          [[ -n "${APPROVED_IMAGE:-}" && "$APPROVED_IMAGE" == "$POSTGRES_IMAGE" ]] || {
+            echo 'BLOCKED: нельзя подключать Noble к существующему production volume' >&2
+            echo 'Сначала: backup -> restore на изолированной БД -> проверка collation/Flyway/indexes.' >&2
+            echo 'После успешной проверки установить environment variable ' >&2
+            echo 'SAFEAI_NOBLE_RESTORE_APPROVED_IMAGE равной ТОЧНОМУ image@sha256 digest.' >&2
+            exit 1
+          }
+          echo 'Approved immutable PostgreSQL image for controlled deploy.'
+
+      - name: Подготовка SSH
+        shell: bash
+        env:
+          PRODUCTION_SSH_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+          PRODUCTION_KNOWN_HOSTS: ${{ secrets.PRODUCTION_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -d -m 700 "$RUNNER_TEMP/safeai-ssh"
+          printf '%s\n' "$PRODUCTION_SSH_KEY" > "$RUNNER_TEMP/safeai-ssh/id_key"
+          printf '%s\n' "$PRODUCTION_KNOWN_HOSTS" > "$RUNNER_TEMP/safeai-ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/safeai-ssh/id_key" "$RUNNER_TEMP/safeai-ssh/known_hosts"
+
+      - name: Публикация и запуск production deploy
+        shell: bash
+        env:
+          PRODUCTION_HOST: ${{ secrets.PRODUCTION_HOST }}
+          PRODUCTION_USER: ${{ secrets.PRODUCTION_USER }}
+          PRODUCTION_SSH_PORT: ${{ secrets.PRODUCTION_SSH_PORT }}
+          PRODUCTION_APP_DIR: ${{ secrets.PRODUCTION_APP_DIR }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
+          BACKEND_IMAGE: ${{ steps.published.outputs.backend_image }}
+          NGINX_IMAGE: ${{ steps.published.outputs.nginx_image }}
+          POSTGRES_IMAGE: ${{ steps.published.outputs.postgres_image }}
+        run: |
+          set -Eeuo pipefail
+          : "${PRODUCTION_HOST:?Missing production environment secret PRODUCTION_HOST}"
+          : "${PRODUCTION_USER:?Missing production environment secret PRODUCTION_USER}"
+          : "${PRODUCTION_APP_DIR:?Missing production environment secret PRODUCTION_APP_DIR}"
+          : "${GHCR_USERNAME:?Missing production environment secret GHCR_USERNAME}"
+          : "${GHCR_PULL_TOKEN:?Missing production environment secret GHCR_PULL_TOKEN}"
+          : "${BACKEND_IMAGE:?Missing backend image digest}"
+          : "${NGINX_IMAGE:?Missing nginx image digest}"
+          : "${POSTGRES_IMAGE:?Missing PostgreSQL image digest}"
+
+          port="${PRODUCTION_SSH_PORT:-22}"
+          target="${PRODUCTION_USER}@${PRODUCTION_HOST}"
+          auth_dir="/tmp/safeai-ghcr-auth-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          remote_script_path="/tmp/safeai-deploy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.sh"
+          key_file="$RUNNER_TEMP/safeai-ssh/id_key"
+          known_hosts_file="$RUNNER_TEMP/safeai-ssh/known_hosts"
+          ssh_opts=(-i "$key_file" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes
+                    -o UserKnownHostsFile="$known_hosts_file" -p "$port")
+
+          cleanup_remote() {
+            local cleanup_command
+            printf -v cleanup_command 'rm -rf -- %q %q' "$auth_dir" "$remote_script_path"
+            # Данные предварительно экранированы printf %q на стороне CI.
+            # shellcheck disable=SC2029
+            ssh "${ssh_opts[@]}" "$target" "$cleanup_command" >/dev/null 2>&1 || true
+          }
+          trap cleanup_remote EXIT
+
+          printf -v mkdir_command 'umask 077; mkdir -p -- %q' "$auth_dir"
+          # Локально собранная и экранированная команда должна выполняться на сервере.
+          # shellcheck disable=SC2029
+          ssh "${ssh_opts[@]}" "$target" "$mkdir_command"
+          printf -v login_command \
+            'DOCKER_CONFIG=%q docker login ghcr.io --username %q --password-stdin' \
+            "$auth_dir" "$GHCR_USERNAME"
+          # Секрет передаётся по stdin; локальные параметры экранированы printf %q.
+          # shellcheck disable=SC2029
+          printf '%s' "$GHCR_PULL_TOKEN" | ssh "${ssh_opts[@]}" "$target" "$login_command"
+
+          cat > "$RUNNER_TEMP/safeai-deploy-remote.sh" <<'REMOTE'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+
+          cleanup() {
+            DOCKER_CONFIG="$DOCKER_CONFIG" docker logout ghcr.io >/dev/null 2>&1 || true
+            rm -rf -- "$DOCKER_CONFIG"
+            rm -f -- "$REMOTE_SCRIPT_PATH"
+          }
+          trap cleanup EXIT
+
+          cd "$SAFEAI_APP_DIR"
+          [[ -d .git ]] || { echo "PRODUCTION_APP_DIR is not a Git checkout" >&2; exit 1; }
+          [[ -f backend/.env.prod && ! -L backend/.env.prod ]] || {
+            echo "Missing or unsafe backend/.env.prod on production host" >&2
+            exit 1
+          }
+          [[ -z "$(git status --porcelain --untracked-files=no)" ]] || {
+            echo "Production checkout has tracked local modifications; refusing deploy" >&2
+            exit 1
+          }
+
+          compose_file=infra/docker-compose.yml
+          pg_container="$(docker compose --env-file backend/.env.prod             -f "$compose_file" ps -aq postgres)"
+          if [[ -n "$pg_container" ]]; then
+            current_pg_image="$(docker inspect --format '{{.Config.Image}}' "$pg_container")"
+            [[ "$current_pg_image" == "$SAFEAI_POSTGRES_IMAGE" ]] || {
+              echo 'BLOCKED: PGDATA cutover is not completed; existing PostgreSQL image differs.' >&2
+              exit 1
+            }
+          elif docker volume inspect safeai_postgres_data >/dev/null 2>&1; then
+            echo 'BLOCKED: PostgreSQL volume exists without a known container.' >&2
+            exit 1
+          fi
+
+          git fetch --prune origin main
+          git cat-file -e "${SAFEAI_RELEASE_SHA}^{commit}"
+          git checkout --detach "$SAFEAI_RELEASE_SHA"
+
+          python3 infra/scripts/update-prod-images.py backend/.env.prod \
+            "$SAFEAI_BACKEND_IMAGE" "$SAFEAI_NGINX_IMAGE" "$SAFEAI_POSTGRES_IMAGE"
+          bash infra/scripts/deploy-prod.sh backend/.env.prod
+          REMOTE
+
+          chmod 700 "$RUNNER_TEMP/safeai-deploy-remote.sh"
+          scp -i "$key_file" -P "$port" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$known_hosts_file" \
+            "$RUNNER_TEMP/safeai-deploy-remote.sh" "$target:$remote_script_path"
+
+          remote_fmt='SAFEAI_APP_DIR=%q SAFEAI_RELEASE_SHA=%q '
+          remote_fmt+='SAFEAI_BACKEND_IMAGE=%q SAFEAI_NGINX_IMAGE=%q '
+          remote_fmt+='SAFEAI_POSTGRES_IMAGE=%q DOCKER_CONFIG=%q '
+          remote_fmt+='REMOTE_SCRIPT_PATH=%q bash %q'
+          # The format consists only of literal text above.
+          # shellcheck disable=SC2059
+          printf -v remote_command "$remote_fmt" \
+
+            "$PRODUCTION_APP_DIR" "$GITHUB_SHA" "$BACKEND_IMAGE" "$NGINX_IMAGE" \
+            "$POSTGRES_IMAGE" "$auth_dir" "$remote_script_path" "$remote_script_path"
+          # Команда собрана выше через printf -v и %q, локальная подстановка ожидаема.
+          # shellcheck disable=SC2029
+          ssh "${ssh_opts[@]}" "$target" "$remote_command"

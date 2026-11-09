@@ -30,6 +30,22 @@ postgres_secret_gid="$(
     exit 1
 }
 
+# Do not switch an existing physical PGDATA to a different runtime image.
+# A logical restore on an isolated volume is NOT proof of in-place PGDATA safety.
+current_pg="$(docker compose --env-file "$env_file" -f "$compose_file" ps -aq postgres)"
+if [[ -n "$current_pg" ]]; then
+    current_image="$(docker inspect --format '{{.Config.Image}}' "$current_pg")"
+    [[ "$current_image" == "$POSTGRES_IMAGE" ]] || {
+        echo 'BLOCKED: PostgreSQL image changed over an existing container.' >&2
+        echo 'First complete a reviewed logical cutover to a NEW volume.' >&2
+        exit 1
+    }
+elif docker volume inspect safeai_postgres_data >/dev/null 2>&1; then
+    echo 'BLOCKED: unknown existing PostgreSQL volume without container.' >&2
+    echo 'Require a separate reviewed migration/cutover procedure.' >&2
+    exit 1
+fi
+
 docker compose \
     --env-file "$env_file" \
     -f "$compose_file" \
