@@ -56,3 +56,16 @@ jobs:
 
       - name: Проверка архитектуры, ESLint, тестов и сборки
         run: npm run ci
+
+      - name: Диаграммы Vitest по группам TypeScript/React
+        working-directory: .
+        run: python3 .github/scripts/quality-report.py --frontend
+
+      - name: Сохранение HTML отчёта по покрытию frontend
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safeai-frontend-coverage-${{ github.sha }}
+          path: frontend/coverage/
+          if-no-files-found: warn
+          retention-days: 30

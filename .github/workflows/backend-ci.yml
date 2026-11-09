@@ -40,6 +40,14 @@ jobs:
           cache: maven
           cache-dependency-path: backend/pom.xml
 
+      - name: Java code style (без новых нарушений)
+        working-directory: .
+        run: python3 .github/scripts/check-java-style.py
+
+      - name: Регрессионные тесты quality dashboard
+        working-directory: .
+        run: python3 -m unittest discover -s .github/scripts -p 'test_quality_dashboard.py' -v
+
       - name: Проверка Java, Maven Wrapper и Docker
         run: |
           java -version
@@ -67,6 +75,10 @@ jobs:
         working-directory: .
         run: python3 .github/scripts/check-backend-coverage.py --check
 
+      - name: Диаграммы JaCoCo и статистика JUnit в GitHub Actions Summary
+        working-directory: .
+        run: python3 .github/scripts/quality-report.py --backend
+
       - name: Регрессионные тесты защитных CI-gates
         working-directory: .
         run: python3 -m unittest discover -s .github/scripts -p 'test_validation_gates.py' -v
@@ -76,6 +88,17 @@ jobs:
           ./mvnw --batch-mode --no-transfer-progress
           -Dtest=AuthPostgresConcurrencyIT,OrganizationSecurityGateConcurrencyIT,RedisFixedWindowRateLimiterIT
           test
+
+      - name: Сохранение HTML отчёта по покрытию Java
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safeai-java-coverage-${{ github.sha }}
+          path: |
+            backend/target/quality-dashboard/
+            backend/target/site/jacoco/
+          if-no-files-found: warn
+          retention-days: 30
 
   performance:
     name: Usage PostgreSQL / performance SLA
