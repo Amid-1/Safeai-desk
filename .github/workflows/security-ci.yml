@@ -80,6 +80,26 @@ jobs:
         with:
           persist-credentials: false
 
+      # Maven Central rate-limits Trivy when transitive POMs are absent.
+      # Prime ~/.m2 and restore it across CI runs. Scan still fails closed.
+      - name: Java 21 и кеш Maven для Trivy
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+
+      - name: Предварительное разрешение Maven-зависимостей
+        shell: bash
+        working-directory: backend
+        run: |
+          set -Eeuo pipefail
+          ./mvnw --batch-mode --no-transfer-progress dependency:go-offline
+          ./mvnw --batch-mode --no-transfer-progress --offline dependency:tree \
+            -DoutputFile="$RUNNER_TEMP/safeai-maven-dependency-tree.txt"
+          test -s "$RUNNER_TEMP/safeai-maven-dependency-tree.txt"
+
       - name: Формирование SARIF отчёта Trivy
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -95,7 +115,7 @@ jobs:
 
       - name: Загрузка отчёта Trivy в GitHub Code Scanning
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
+        if: ${{ always() && hashFiles('trivy-results.sarif') != '' }}
         with:
           sarif_file: trivy-results.sarif
 
