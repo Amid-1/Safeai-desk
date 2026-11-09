@@ -198,7 +198,12 @@ jobs:
           }
 
           compose_file=infra/docker-compose.yml
-          pg_container="$(docker compose --env-file backend/.env.prod             -f "$compose_file" ps -aq postgres)"
+          pg_container="$(
+            docker compose \
+              --env-file backend/.env.prod \
+              -f "$compose_file" \
+              ps -aq postgres
+          )"
           if [[ -n "$pg_container" ]]; then
             current_pg_image="$(docker inspect --format '{{.Config.Image}}' "$pg_container")"
             [[ "$current_pg_image" == "$SAFEAI_POSTGRES_IMAGE" ]] || {
@@ -231,7 +236,6 @@ jobs:
           # The format consists only of literal text above.
           # shellcheck disable=SC2059
           printf -v remote_command "$remote_fmt" \
-
             "$PRODUCTION_APP_DIR" "$GITHUB_SHA" "$BACKEND_IMAGE" "$NGINX_IMAGE" \
             "$POSTGRES_IMAGE" "$auth_dir" "$remote_script_path" "$remote_script_path"
           # Команда собрана выше через printf -v и %q, локальная подстановка ожидаема.
