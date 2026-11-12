@@ -220,6 +220,22 @@ describe('http API client', () => {
         ).toBe('csrf-token')
     })
 
+    it('prefers the production CSRF cookie over a legacy cookie', async () => {
+        const cookie = vi.spyOn(document, 'cookie', 'get')
+            .mockReturnValue('XSRF-TOKEN=legacy; __Host-XSRF-TOKEN=production')
+        const fetchMock = createFetchMock(async () => new Response(null, { status: 204 }))
+        vi.stubGlobal('fetch', fetchMock)
+
+        try {
+            await apiRequest('/api/users', { method: 'POST' })
+            expect(fetchMock).toHaveBeenCalledTimes(1)
+            expect(new Headers(requireRequestInit(fetchMock).headers).get('X-XSRF-TOKEN'))
+                .toBe('production')
+        } finally {
+            cookie.mockRestore()
+        }
+    })
+
     it('при отсутствии cookie вызывает CSRF bootstrap', async () => {
         const fetchMock = createFetchMock(
             async (input: RequestInfo | URL) => {

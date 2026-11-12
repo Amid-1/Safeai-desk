@@ -1,0 +1,13 @@
+{
+  "name": "safeai-desk-browser-acceptance",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test --grep-invert @staging",
+    "test:staging": "playwright test --grep @staging",
+    "test:all": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1"
+  }
+}

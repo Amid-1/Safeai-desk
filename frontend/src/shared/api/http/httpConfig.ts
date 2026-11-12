@@ -3,8 +3,6 @@
 // frontend/src/shared/api/http/httpConfig.ts
 // ============================================================
 
-
-
 export const API_TIMEOUTS = {
     default: 30_000,
     // Upload can include object-storage I/O; do not cut off a committed POST early.
@@ -20,6 +18,7 @@ export const API_TIMEOUTS = {
 } as const
 
 export const CSRF_COOKIE_NAME = 'XSRF-TOKEN'
+export const HOST_CSRF_COOKIE_NAME = '__Host-XSRF-TOKEN'
 
 export const CSRF_HEADER_NAME = 'X-XSRF-TOKEN'
 

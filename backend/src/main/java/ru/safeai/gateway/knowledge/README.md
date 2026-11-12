@@ -1,23 +1,9 @@
 <!-- SafeAI-Desk/backend/src/main/java/ru/safeai/gateway/knowledge/README.md -->
-# Knowledge — архитектура, API, реализация и production-readiness (V84)
+# Knowledge — архитектура, API и эксплуатация
 
-> **Срез:** 31 октября 2026 года. **Источник:** два приложенных ZIP со всем пакетом `knowledge` и его тестами, скриншоты
-> IntelliJ IDEA и предоставленные определения Flyway V78–V84 / результаты Maven. Это **анализ исходного кода**, а не
-> независимое подтверждение production deployment.
->
-> **Главное:** подсистема ingestion, extraction, embeddings, hybrid retrieval, RAG, Answer Passport, evaluation, S3
-> reconciliation, GC и подготовка erasure **реализованы в коде**. Физическое удаление документов и баз знаний, а также
-> operator recovery по умолчанию **выключены** и не должны включаться до отдельной приёмки.
->
-> **Верификация на дату среза:** переданный прогон Maven V84 сообщил **2455 tests, 0 failures, 1 error, 3 skipped**
-> (`KnowledgeDeletionOperatorSafetyIntegrationTest`); затем было подготовлено исправление теста, но повторный полный
-> `BUILD SUCCESS` не предоставлен. Конфигурация Prometheus (7 + 6 + 3 rules и erasure rule tests) прошла отдельные
-> проверки; staging/production E2E не подтверждены.
->
-> **Расхождение инвентаризации:** предоставленный ZIP production-пакета содержит **164 `.java`** (плюс прежний
-> `Knowledge_README.md`), ZIP тестов — **84 `.java`** (плюс прежний `README.md`). Пакет `knowledge/service` в ZIP
-> содержит **25 `.java`**, а не заявленные ранее 26. Скриншоты не являются машинной выгрузкой полного checkout;
-> возможные дополнительные локальные файлы нужно сверять через `find`/`git status` до признания дерева исчерпывающим.
+Модуль управляет доступом к базам знаний, версиями файлов и их индексацией. Он выполняет гибридный поиск,
+подготавливает контекст для Chat, проверяет ссылки ответа и сохраняет паспорт ответа. Текущий контракт
+схемы включает Flyway V85. Приём и исполнение физического удаления документов и баз включаются отдельно.
 
 ## Содержание
 
@@ -33,7 +19,7 @@
 10. [Ingestion и extraction](#10-ingestion-и-extraction)
 11. [Embeddings, индексы, retrieval](#11-embeddings-индексы-retrieval)
 12. [RAG, цитаты, Answer Passport, evaluation](#12-rag-цитаты-answer-passport-evaluation)
-13. [Безвозвратное удаление V78–V84](#13-безвозвратное-удаление-v78v84)
+13. [Безвозвратное удаление V78–V85](#13-безвозвратное-удаление-v78v85)
 14. [Flyway и модель данных](#14-flyway-и-модель-данных)
 15. [Конфигурация и защитные флаги](#15-конфигурация-и-защитные-флаги)
 16. [Метрики, алерты и runbooks](#16-метрики-алерты-и-runbooks)
@@ -42,7 +28,7 @@
 19. [План доведения до production](#19-план-доведения-до-production)
 20. [Предложения по новым возможностям](#20-предложения-по-новым-возможностям)
 21. [Инвентаризация и справочник классов](#21-инвентаризация-и-подробный-справочник-всех-java-файлов)
-22. [Поддержка документации и границы проверки](#22-поддержка-документации-и-границы-проверки)
+22. [Связанные документы](#22-связанные-документы)
 
 ---
 
@@ -66,40 +52,35 @@ I/O и DB-транзакций, lease/fencing для фоновой работы
 ## 2. Статус возможностей
 
 - **Подсистема:** Базы знаний
-  - **Что подтверждено архивами:** CRUD, visibility, membership, role-aware search, ACL
+  - **Реализовано:** CRUD, visibility, membership, role-aware search, ACL
   - **Что не следует считать доказанным:** Полная UX- и нагрузочная приёмка
 - **Подсистема:** Документы
-  - **Что подтверждено архивами:** Upload, uploadVersion, download, validation, SHA-256, версионирование
+  - **Реализовано:** Upload, uploadVersion, download, validation, SHA-256, версионирование
   - **Что не следует считать доказанным:** Безопасность каждого возможного входного файла без sandbox
 - **Подсистема:** Object Storage
-  - **Что подтверждено архивами:** Local/S3 (MinIO SDK), upload intents, reconciliation, проверяемый version purge
+  - **Реализовано:** Local/S3 (MinIO SDK), upload intents, reconciliation, проверяемый version purge
   - **Что не следует считать доказанным:** Поддержка каждого S3-провайдера и каждой политики Object Lock
 - **Подсистема:** Ingestion
-  - **Что подтверждено архивами:** Scheduler, bounded workers, heartbeat, leases, processing, retries
+  - **Реализовано:** Scheduler, bounded workers, heartbeat, leases, processing, retries
   - **Что не следует считать доказанным:** HA/latency в реальном кластере и отсутствие повторных provider charges
 - **Подсистема:** Extraction
-  - **Что подтверждено архивами:** PDF/Office/HTML/CSV/JSON/XML/Markdown/plain text, optional OCR
+  - **Реализовано:** PDF/Office/HTML/CSV/JSON/XML/Markdown/plain text, optional OCR
   - **Что не следует считать доказанным:** Многопользовательская нагрузка с malicious/zip-bomb файлами
 - **Подсистема:** Embedding
-  - **Что подтверждено архивами:** Hashing/test и OpenAI, фиксированная размерность 384
+  - **Реализовано:** Hashing/test и OpenAI, фиксированная размерность 384
   - **Что не следует считать доказанным:** Любая новая модель/размерность без миграции
 - **Подсистема:** Retrieval
-  - **Что подтверждено архивами:** pgvector + русский lexical, RRF, tenant/ACL и evidence
+  - **Реализовано:** pgvector + русский lexical, RRF, tenant/ACL и evidence
   - **Что не следует считать доказанным:** P95/P99 latency и релевантность на большом корпусе
 - **Подсистема:** RAG
-  - **Что подтверждено архивами:** Citation contract, receipt, Answer Passport, evaluation
+  - **Реализовано:** Citation contract, receipt, Answer Passport, evaluation
   - **Что не следует считать доказанным:** Фактическая истинность каждого утверждения LLM
-- **Подсистема:** Erasure V78–V84
-  - **Что подтверждено архивами:** Durable операции, fencing, V80 immutable provenance, terminal audit, metrics
+- **Подсистема:** Erasure V78–V85
+  - **Реализовано:** Durable операции, fencing, V80 immutable provenance, terminal audit, metrics
   - **Что не следует считать доказанным:** Физическое удаление в production и очистка backup/external provider
 - **Подсистема:** Monitoring
-  - **Что подтверждено архивами:** Micrometer, Review metrics, V84 erasure metrics, Prometheus rules
+  - **Реализовано:** Micrometer, Review metrics, V84 erasure metrics, Prometheus rules
   - **Что не следует считать доказанным:** Проверенная маршрутизация Alertmanager/pager и runbook drill
-
-
-Статус не заменяет проверку активных Spring-профилей, актуальных Flyway checksum, CI и staging. В архиве с тестами есть
-исправленный операторский сценарий (отдельная операция `DELETING` для Object Lock), однако **результат повторного
-запуска Maven отсутствует**.
 
 ## 3. Архитектура и схемы
 
@@ -177,17 +158,12 @@ V84 не делает сетевых обращений к S3.
 ---
 ## 4. Полная структура исходников
 
-Ниже полный **относительный список файлов `.java`** из production ZIP 31.10.2026. Имена и подкаталоги сохранены из
-архива, а не сгенерированы из ранней версии GitHub. Служебные macOS `__MACOSX`, `.DS_Store` исключены. Ранее
-существовавший файл `Knowledge_README.md` присутствовал в этом ZIP и датирован 17.10; новый настоящий README подготовлен
-для канонического пути `knowledge/README.md`.
-
 ```text
 knowledge/
-├── chunking
+├── chunking/
 │   ├── KnowledgeChunkCandidate.java
 │   └── KnowledgeChunker.java
-├── config
+├── config/
 │   ├── KnowledgeEmbeddingConfigurationInvariantVerifier.java
 │   ├── KnowledgeEmbeddingProperties.java
 │   ├── KnowledgeErasureReleaseInvariantVerifier.java
@@ -197,7 +173,7 @@ knowledge/
 │   ├── KnowledgeProcessingConfiguration.java
 │   ├── KnowledgeRagProperties.java
 │   └── KnowledgeRetrievalProperties.java
-├── controller
+├── controller/
 │   ├── AnswerPassportController.java
 │   ├── KnowledgeBaseController.java
 │   ├── KnowledgeBaseDeletionController.java
@@ -209,7 +185,7 @@ knowledge/
 │   ├── KnowledgeDocumentDeletionReadController.java
 │   ├── KnowledgeEvaluationController.java
 │   └── KnowledgeRetrievalController.java
-├── dto
+├── dto/
 │   ├── AnswerCitationResponse.java
 │   ├── AnswerPassportResponse.java
 │   ├── CreateKnowledgeBaseMemberRequest.java
@@ -238,24 +214,24 @@ knowledge/
 │   ├── UpdateKnowledgeBaseMemberRequest.java
 │   ├── UpdateKnowledgeBaseRequest.java
 │   └── UpdateKnowledgeDocumentRequest.java
-├── embedding
+├── embedding/
 │   ├── HashingKnowledgeEmbeddingProvider.java
 │   ├── KnowledgeEmbeddingException.java
 │   ├── KnowledgeEmbeddingProductionInvariantVerifier.java
 │   ├── KnowledgeEmbeddingProvider.java
 │   ├── OpenAiKnowledgeEmbeddingProvider.java
 │   └── PgVectorSupport.java
-├── entity
+├── entity/
 │   ├── KnowledgeBaseEntity.java
 │   ├── KnowledgeBaseMembershipEntity.java
 │   ├── KnowledgeDocumentEntity.java
 │   ├── KnowledgeDocumentVersionEntity.java
 │   └── KnowledgeIngestionJobEntity.java
-├── evaluation
+├── evaluation/
 │   └── KnowledgeRetrievalMetrics.java
-├── exception
+├── exception/
 │   └── KnowledgeStorageUnavailableException.java
-├── extraction
+├── extraction/
 │   ├── CsvKnowledgeExtractor.java
 │   ├── DocxKnowledgeExtractor.java
 │   ├── ExtractedDocument.java
@@ -272,10 +248,10 @@ knowledge/
 │   ├── PptxKnowledgeExtractor.java
 │   ├── XlsxKnowledgeExtractor.java
 │   └── XmlKnowledgeExtractor.java
-├── generation
+├── generation/
 │   ├── KnowledgeGenerationGc.java
 │   └── KnowledgeGenerationGcScheduler.java
-├── ingestion
+├── ingestion/
 │   ├── EmbeddedKnowledgeChunk.java
 │   ├── ExpiredKnowledgeIngestionJob.java
 │   ├── KnowledgeChunkPersistenceService.java
@@ -287,19 +263,19 @@ knowledge/
 │   ├── KnowledgeIngestionQueueRepository.java
 │   ├── KnowledgeIngestionScheduler.java
 │   └── StaleIngestionOwnershipException.java
-├── model
+├── model/
 │   ├── KnowledgeBaseAccessLevel.java
 │   ├── KnowledgeBaseVisibility.java
 │   ├── KnowledgeDocumentLifecycleState.java
 │   ├── KnowledgeHealthState.java
 │   └── KnowledgeIngestionStatus.java
-├── ocr
+├── ocr/
 │   ├── DisabledKnowledgeOcrProvider.java
 │   ├── HttpKnowledgeOcrProvider.java
 │   ├── KnowledgeOcrProvider.java
 │   ├── OcrDocument.java
 │   └── OcrPage.java
-├── rag
+├── rag/
 │   ├── AnswerPassportService.java
 │   ├── KnowledgeChatContext.java
 │   ├── KnowledgeCitationValidator.java
@@ -316,7 +292,7 @@ knowledge/
 │   ├── RagCitation.java
 │   ├── RagCompletion.java
 │   └── RagPreparation.java
-├── repository
+├── repository/
 │   ├── KnowledgeBaseMembershipRepository.java
 │   ├── KnowledgeBaseRepository.java
 │   ├── KnowledgeDocumentDeletionRepository.java
@@ -325,11 +301,11 @@ knowledge/
 │   ├── KnowledgeDocumentVersionRepository.java
 │   ├── KnowledgeIngestionJobRepository.java
 │   └── KnowledgeMemberDirectoryRepository.java
-├── retrieval
+├── retrieval/
 │   ├── KnowledgeRetrievalExecution.java
 │   ├── KnowledgeRetrievalHit.java
 │   └── KnowledgeRetrievalRepository.java
-├── service
+├── service/
 │   ├── KnowledgeAccessService.java
 │   ├── KnowledgeBaseDeletionExecutor.java
 │   ├── KnowledgeBaseDeletionService.java
@@ -356,8 +332,8 @@ knowledge/
 │   ├── KnowledgeStructuredTextValidator.java
 │   ├── KnowledgeUploadFileSupport.java
 │   └── KnowledgeValidationErrors.java
-├── storage
-│   ├── reconciliation
+├── storage/
+│   ├── reconciliation/
 │   │   ├── KnowledgeStorageReconciliationConfiguration.java
 │   │   ├── KnowledgeStorageReconciliationProperties.java
 │   │   ├── KnowledgeStorageReconciliationScheduler.java
@@ -374,60 +350,52 @@ knowledge/
 │   ├── S3ObjectStorage.java
 │   ├── StoredObject.java
 │   └── VerifiedObjectLockException.java
-└── Knowledge_README.md
+└── README.md
 ```
-
-**По содержимому архива:** 164 Java-файла; `service/` — 25, `controller/` — 11, `dto/` — 28. Количество `.java` в
-текущем checkout **нельзя** установить по скриншотам без `find` (возможны unstaged новые классы). Если локально их 26,
-приложить имя и сверить назначение, а не удалять или переименовывать файл ради соответствия README.
 
 ## 5. Полная структура тестов
 
-Тестовый ZIP содержит 84 Java-файла в `src/test/java/ru/safeai/gateway/knowledge`, включая вспомогательный
-`KnowledgeDeletionWorkerProcessMain`. Он не относится к production API. Отдельный `README.md` из test ZIP устарел: в нём
-ещё назван ingestion worker «будущим» и перечислен старый набор controllers.
-
 ```text
-backend/src/test/java/ru/safeai/gateway/knowledge/
-├── chunking
+knowledge/
+├── chunking/
 │   ├── KnowledgeChunkerRegressionTest.java
 │   ├── KnowledgeChunkerTest.java
 │   └── KnowledgeStructureAwareChunkerTest.java
-├── config
+├── config/
 │   ├── KnowledgeConfigurationBoundariesTest.java
 │   ├── KnowledgeErasureReleaseInvariantVerifierTest.java
 │   ├── KnowledgeIngestionPropertiesConcurrencyTest.java
 │   ├── KnowledgeOcrSafetyMarginTest.java
 │   └── KnowledgeSecretPropertiesTest.java
-├── controller
+├── controller/
 │   ├── KnowledgeControllerSecurityTest.java
 │   ├── KnowledgeDocumentControllerTest.java
 │   ├── KnowledgeDocumentDeletionCapabilityControllerTest.java
 │   └── KnowledgeDtoValidationTest.java
-├── dto
+├── dto/
 │   ├── KnowledgeBaseAccessResponseTest.java
 │   └── KnowledgeDocumentResponseJsonTest.java
-├── embedding
+├── embedding/
 │   ├── KnowledgeEmbeddingBoundaryTest.java
 │   ├── KnowledgeEmbeddingProductionConditionTest.java
 │   ├── KnowledgeEmbeddingProductionInvariantVerifierTest.java
 │   ├── OpenAiKnowledgeEmbeddingProvenanceRegressionTest.java
 │   ├── OpenAiKnowledgeEmbeddingProviderRegressionTest.java
 │   └── OpenAiKnowledgeEmbeddingProviderTest.java
-├── evaluation
+├── evaluation/
 │   ├── KnowledgeRetrievalMetricsRegressionTest.java
 │   └── KnowledgeRetrievalMetricsTest.java
-├── extraction
+├── extraction/
 │   ├── KnowledgeDocumentExtractorContractTest.java
 │   ├── KnowledgeExtractionServiceRegressionTest.java
 │   └── PdfKnowledgeExtractorOcrTest.java
-├── generation
+├── generation/
 │   └── KnowledgeGenerationGcTest.java
-├── ingestion
+├── ingestion/
 │   ├── KnowledgeIngestionProcessorRegressionTest.java
 │   ├── KnowledgeIngestionQueueIntegrationTest.java
 │   └── KnowledgeIngestionSafeLoggingTest.java
-├── integration
+├── integration/
 │   ├── KnowledgeAccessControlIntegrationTest.java
 │   ├── KnowledgeBaseConcurrencyIntegrationTest.java
 │   ├── KnowledgeBaseDeletionEndToEndIntegrationTest.java
@@ -450,9 +418,9 @@ backend/src/test/java/ru/safeai/gateway/knowledge/
 │   ├── KnowledgePersistenceIntegrationTest.java
 │   ├── KnowledgeRagErasureGuardIntegrationTest.java
 │   └── KnowledgeS3EndToEndIntegrationTest.java
-├── ocr
+├── ocr/
 │   └── KnowledgeOcrBoundaryRegressionTest.java
-├── rag
+├── rag/
 │   ├── AnswerPassportServiceBoundaryTest.java
 │   ├── KnowledgeCitationHomoglyphAndMalformedTest.java
 │   ├── KnowledgeCitationValidatorRegressionTest.java
@@ -465,9 +433,9 @@ backend/src/test/java/ru/safeai/gateway/knowledge/
 │   ├── KnowledgeRagServiceRegressionTest.java
 │   ├── KnowledgeRagV85SchemaIntegrationTest.java
 │   └── RagPreparationContractRegressionTest.java
-├── retrieval
+├── retrieval/
 │   └── KnowledgeRetrievalRepositoryIntegrationTest.java
-├── service
+├── service/
 │   ├── KnowledgeBaseDeletionServiceSafetyTest.java
 │   ├── KnowledgeBaseNameNormalizerTest.java
 │   ├── KnowledgeBaseSearchPatternTest.java
@@ -480,8 +448,8 @@ backend/src/test/java/ru/safeai/gateway/knowledge/
 │   ├── KnowledgeOoxmlUploadLimitRegressionTest.java
 │   ├── KnowledgeOperationsServiceRegressionTest.java
 │   └── KnowledgeRealFixtureContractTest.java
-├── storage
-│   ├── reconciliation
+├── storage/
+│   ├── reconciliation/
 │   │   ├── KnowledgeStorageReconciliationSchedulerTest.java
 │   │   └── KnowledgeStorageReviewMetricsTest.java
 │   ├── KnowledgeDocumentErasureRealMinioIntegrationTest.java
@@ -496,14 +464,14 @@ backend/src/test/java/ru/safeai/gateway/knowledge/
 │   ├── S3ObjectStorageIntegrationTest.java
 │   ├── S3VerifiedKnowledgeObjectPurgeIntegrationTest.java
 │   └── VerifiedKnowledgeObjectPurgeTest.java
-├── testsupport
+├── testsupport/
 │   ├── KnowledgeErasureTestJournal.java
 │   └── KnowledgeRegressionFixtures.java
 └── README.md
 ```
 
-Полнота Java-тестов **в архиве** не равнозначна полной тестовой матрице всего монолита: есть межмодульные integration,
-Flyway/HTTP/architecture tests за пределами пакета `knowledge`.
+Команды запуска и сценарии приёмки — в
+[README тестов](../../../../../../test/java/ru/safeai/gateway/knowledge/README.md).
 
 ## 6. REST API и модель доступа
 
@@ -653,7 +621,6 @@ Flyway/HTTP/architecture tests за пределами пакета `knowledge`.
   - **Маршрут:** `/api/knowledge-bases/{baseId}/base-deletions/{operationId}/resume`
   - **Реализация / смысл:** Reviewed base resume
   - **Авторизация и нюансы:** current DB ADMIN + all five flags
-
 
 Маршруты приведены по комбинации `@RequestMapping` и методных mapping. Для точных media types, headers, validation и
 имен полей JSON ориентируйтесь на контроллеры/DTO и OpenAPI/HTTP contract tests. **`DELETE /.../members/{userId}` не
@@ -829,7 +796,7 @@ Chat, Audit и Knowledge транзакционно разделяют raw retri
 receipt может быть законным durable evidence, но для него нужны lifecycle, retention и аудит orphan records. Не делать
 несанкционированный cascade delete из-за отсутствия final Chat answer.
 
-## 13. Безвозвратное удаление V78–V84
+## 13. Безвозвратное удаление V78–V85
 
 ### 13.1. Основные сущности и состояния
 
@@ -890,7 +857,6 @@ worker.
 - **Компонент:** `KnowledgeDeletionOperatorController`
   - **Функция / граница:** ADMIN read-only diagnostics и controlled resume
 
-
 ### 13.3. Feature flags — все по умолчанию выключены
 
 ```yaml
@@ -920,14 +886,19 @@ provider-side snapshots, immutable audit, V80 identities и историческ
 собственным retention/legal policies. Перед активацией DELETE разработать прозрачный договорной scope удаления, disaster
 recovery и purge-proof evidence.
 
-### 13.5. Проверка регрессии V84
+### 13.5. Удаление одновременно с RAG
 
-Предоставленный полный Maven-прогон показал 2455 тестов, 0 failures, **1 error**, 3 skipped:
-`KnowledgeDeletionOperatorSafetyIntegrationTest.immutableRetentionBlockCannotBeResumed`. Причина — старый fixture
-предварительно перевёл документ в `NEEDS_REVIEW`, после чего тест попытался установить `BLOCKED_BY_RETENTION` без нового
-`DELETING`. V84 правильно отказал. В предоставленном тестовом архиве уже имеется `deletingFixture()` и отдельный
-отрицательный тест `needsReviewCannotJumpDirectlyToVerifiedRetentionBlock`. **Это исправление теста, а не ослабление
-V84.** Повторный `./mvnw clean verify` требуется подтвердить по консольному результату.
+V85 добавляет разрешение на выполнение для конкретного хода Chat и аренду физической попытки.
+Разрешение привязывает организацию, базу и версии источников, в том числе когда поиск не дал результатов.
+Перед попыткой и непосредственно перед сетевой отправкой повторно проверяются условия допуска.
+Финализация также проверяет разрешение и актуальность источников.
+
+При принятии удаления новые попытки с отозванным разрешением блокируются. Физическое удаление ждёт
+завершения активной аренды или её обработки по правилам восстановления. Уже отправленный запрос может
+продолжать выполняться у провайдера. Его данные и срок их хранения проверяются отдельно при приёмке.
+
+`KnowledgeRagV85SchemaIntegrationTest` проверяет таблицы, колонки и активность триггеров.
+`KnowledgeRagErasureGuardIntegrationTest` проверяет гонки удаления с RAG, привязку к ходу и отзыв повторных попыток.
 
 ### 13.6. Почему удаление недоступно и как оно должно работать: объяснение для разработчика и администратора
 
@@ -1021,7 +992,7 @@ SQL-командой нельзя: это обошло бы проверки е�
 
 #### 13.6.4. Почему нельзя включить всё сразу в production
 
-Миграции V78–V84 последовательно добавили долговечное намерение, неизменяемую provenance, защищённый исполнитель,
+Миграции V78–V85 последовательно добавили долговечное намерение, неизменяемую provenance, защищённый исполнитель,
 координацию удаления баз, восстановление после проблем и обязательный транзакционный аудит. **Реализация в исходниках
 не равнозначна production-приёмке.** До разрешения функции необходимо отдельно подтвердить:
 
@@ -1033,8 +1004,6 @@ SQL-командой нельзя: это обошло бы проверки е�
 - объём сохраняемых backups, snapshots, audit и других доказательств, а также политику их хранения.
 
 Проверки физического удаления проводят **только на отдельной тестовой БД и отдельном хранилище**, не на рабочих данных.
-В зафиксированном в этом README прогоне V84 был `1 error` среди 2455 тестов; исправление тестового сценария описано
-в §13.5, но без повторного полного успешного отчёта готовность не считается доказанной.
 
 #### 13.6.5. Что такое Object Lock и почему текущий запрет — не обязательно он
 
@@ -1105,11 +1074,9 @@ S3 Object Lock и legal hold могут запрещать удаление от
 | V82 | Knowledge Base erasure foundation/identity/operation |
 | V83 | Operator recovery audit types |
 | V84 | Транзакционный audit outbox для terminal/attention переходов |
+| V85 | Разрешения и аренда физических RAG-попыток, ограничения удаления и финализации |
 
-Это функциональная выборка, не полный список всех Flyway миграций системы. Канонический SQL —
-`backend/src/main/resources/db/migration/V*.sql`. В двух Knowledge ZIP **нет полного каталога Flyway SQL**, поэтому
-описание V38–V76 и V82 приведено по приложенной документации/контрактам Java, а не проверено построчно с SQL. Для
-V78–V81/V84 определения были дополнительно предоставлены в разговоре.
+Полные определения хранятся в `backend/src/main/resources/db/migration`.
 
 ### 14.2. Таблицы (логическая группировка)
 
@@ -1137,7 +1104,7 @@ erDiagram
   KNOWLEDGE_DOCUMENT_VERSION_IDENTITIES_V80 ||--o{ KNOWLEDGE_CHUNK_IDENTITIES_V80 : provenance
 ```
 
-**Не переписывать уже применённые Flyway V1–V84** для исправления обнаруженных недостатков. Если потребуется изменить
+**Не переписывать уже применённые Flyway V1–V85** для исправления обнаруженных недостатков. Если потребуется изменить
 DB-инвариант, создать следующую append-only миграцию (после теста `flyway validate` и populated DB upgrade). Никогда не
 делать `flyway clean` на пользовательской или production БД.
 
@@ -1158,7 +1125,9 @@ DB-инвариант, создать следующую append-only мигра�
 | `safeai.knowledge.generation.gc.*` | generation retention, keep-latest, batch/interval |
 | `safeai.knowledge.deletion.*` | document accept/executor/recovery + poll-delay |
 | `safeai.knowledge.base-deletion.*` | base accept/executor + poll-delay |
-| `safeai.knowledge.erasure.observability.poll-delay` | V84 metrics freshness |
+| `safeai.knowledge.erasure.observability.poll-delay` | Интервал обновления метрик удаления |
+| `safeai.knowledge.execution-lease.ttl` | Срок аренды физической попытки RAG |
+| `safeai.knowledge.execution-lease.permit-ttl` | Срок разрешения на выполнение хода RAG |
 
 `KnowledgeIngestionProperties` задаёт по умолчанию `pollDelay=2s`, `processingLease=3m`, `extractionTimeout=60s`,
 `batchSize=4`, `workerThreads=1` (разрешено 1–8), `extractionThreads=2`, `maxAttempts=5`, `chunkSizeChars=1200`,
@@ -1197,7 +1166,7 @@ resume, failure/outbox dead-letter, stale metrics, repeated lease loss.
 
 ## 17. Тестирование и критерии приёмки
 
-### 17.1. Что покрывает приложенный тестовый архив
+### 17.1. Что покрывает тестовый набор
 
 - Chunker и structure-aware chunking.
 - Валидация конфигураций, секретов, MIME и DTO.
@@ -1209,23 +1178,22 @@ resume, failure/outbox dead-letter, stale metrics, repeated lease loss.
 - Embedding provider boundaries и regression.
 - Retrieval repository и RAG context/citation/Passport.
 
-### 17.2. Запуск без вмешательства в production
+### 17.2. Запуск
+
+Из корня репозитория с Java 21 и запущенным Docker:
 
 ```bash
-cd ~/Workspace/Projects/Products/SafeAI-Desk/backend
-TEST_CLASSES=KnowledgeDeletionOperatorSafetyIntegrationTest,KnowledgeErasureTerminalAuditIntegrationTest
-TEST_CLASSES="${TEST_CLASSES},KnowledgeErasureObservabilityTest"
-./mvnw clean "-Dtest=${TEST_CLASSES}" test
+cd backend
+./mvnw test '-Dtest=ru.safeai.gateway.knowledge.**.*Test'
 ./mvnw clean verify
 ```
 
-Для общего frontend `cd ../frontend && npm ci && npm run ci`. Все интеграционные/деструктивные сценарии должны
-выполняться на disposable Testcontainers PostgreSQL и отдельном тестовом S3/MinIO. Не направлять Testcontainers на
-production storage bucket или настоящую `backend/.env.prod`.
+Интеграции используют тестовый PostgreSQL с pgvector и тестовое хранилище MinIO.
+Для приёмки выбранного S3-провайдера нужен отдельный стенд.
 
 ### 17.3. Release gates
 
-1. Flyway V1–V84 на **пустой** disposable PostgreSQL и upgrade с **заполненной** копии БД; checksums прежних миграций
+1. Flyway V1–V85 на **пустой** disposable PostgreSQL и upgrade с **заполненной** копии БД; checksums прежних миграций
 неизменны.
 2. Maven `verify` = 0 failures / 0 errors; проверить skipped tests с объяснением.
 3. Frontend CI, contract/API tests, OpenAPI и access/feature flag checks.
@@ -1239,6 +1207,16 @@ minimum evidence.
 реалистичном корпусе.
 8. Alertmanager delivery + runbook dry-run; резервные копии и тестовый restore.
 9. Отдельное решение о включении каждого destructive flag и самостоятельный rollback/incident stop plan.
+
+Документ и база знаний имеют отдельные флаги приёма и исполнения удаления. Проверить оба контура,
+журнал удаления с Object Lock, восстановление резервной копии и поведение при параллельном RAG.
+Проверки V85 должны подтверждать отказ для удаляемого источника и отсутствие новой физической
+попытки после отзыва разрешения. Состояние после уже начатой попытки проверяется отдельно.
+
+Для приёмки RAG подготовить синтетический корпус с ожидаемыми ответами и версиями источников.
+Проверить обычный PDF, скан с включённым OCR, новую версию, вопрос без ответа, закрытую базу
+и пользователя другой организации. Для PDF/OOXML измерить время и пик памяти при предельных
+размерах файлов и параллельных загрузках.
 
 ### 17.4. Расширенная матрица тестирования из исходного аудита
 
@@ -1256,7 +1234,6 @@ minimum evidence.
 - **Load:** 100 MB файлы, OCR latency, тысячи chunks, Hikari pool exhaustion.
 - **Observability:** запрет raw document и токенов в exception logs.
 
-
 ### 17.5. Эксплуатационный чеклист из исходного аудита
 
 - `safeai.knowledge.storage.type=s3` в production; endpoint только HTTPS.
@@ -1270,7 +1247,6 @@ minimum evidence.
 - Проверять применённые миграции Knowledge и фактические индексы отдельно.
 - Alertmanager, retention и внешний OCR требуют deployment-конфигурации.
 
-
 ## 18. Технический аудит: сильные стороны и риски
 
 ### 18.1. Что сделано удачно
@@ -1282,7 +1258,7 @@ minimum evidence.
 | Concurrency | SKIP LOCKED/lease, bounded workers + heartbeat + fenced publication |
 | Provider abstraction | ObjectStorage, OCR/embedding interfaces и fail-closed verified purge |
 | RAG evidence | immutable references, query digest, retrieval run, citations, Answer Passport |
-| Erasure | V78–V84 layered guards, независимая provenance, storage inventory, audited terminal transition |
+| Erasure | V78–V85 layered guards, независимая provenance, storage inventory, audited terminal transition |
 | Monitoring | фиксированные low-cardinality metrics, stale/failure visibility |
 | Test discipline | отдельные тесты crash, Object Lock, concurrent deletion, role revocation и rollback |
 
@@ -1292,10 +1268,6 @@ minimum evidence.
 **P2** — следующий hardening; **P3** — roadmap. Это технические приоритеты по прочитанному коду, не автоматически
 найденные CVE.
 
-- **Приоритет:** P0
-  - **Факт, риск / неготовность:** Повторный полный Maven V84 `BUILD SUCCESS` не представлен, предыдущий был 2455/1
-    error
-  - **Действие / критерий готовности:** Перезапустить clean verify, зафиксировать отчет, не коммитить ложный green
 - **Приоритет:** P0
   - **Факт, риск / неготовность:** Erasure Object Lock/version consistency не подтверждён для production S3
   - **Действие / критерий готовности:** E2E matrix, failure injection, two-node failover, immutable evidence, флаги OFF
@@ -1350,7 +1322,6 @@ minimum evidence.
   - **Факт, риск / неготовность:** Для operator resume CLI/REST diagnostics не предоставлен согласованный UI/runbook
   - **Действие / критерий готовности:** Admin review dashboard c reason code, action history, second-person approval for
     high-risk
-
 
 ### 18.3. Что НЕ следует считать текущими дефектами без новой проверки
 
@@ -1620,7 +1591,6 @@ isolation; контракт должен быть явным и протести
 
 </details>
 
-
 ## 19. План доведения до production
 
 - **Этап:** 0. Документация, source freeze
@@ -1659,7 +1629,6 @@ isolation; контракт должен быть явным и протести
 - **Этап:** 9. Controlled production rollout
   - **Результат (definition of done):** Gradual enablement + kill switch + monitoring, signed policy/legal approval
   - **Приоритет:** Только после gates
-
 
 Выполнение пунктов 1–7 **не включает автоматически** флаги удаления. Нельзя подменять consent/retention checks согласием
 оператора. Rollback Java-флага не должен предполагать обратную миграцию Flyway либо восстановление уже физически
@@ -1703,36 +1672,32 @@ isolation; контракт должен быть явным и протести
   - **Польза:** SharePoint/Drive/wiki/URL с controlled sync
   - **Зависимости/ограничения:** ACL mapping, SSRF/egress policy, DLP, deletion semantics
 
-
 ## 21. Инвентаризация и подробный справочник всех Java-файлов
 
-Справочник §21.2 сохранён и расширен из старого README: **144 прежних класса** с методами и
-**20 новых классов** с объявленными методами. Это дополняет полные деревья §4 и §5.
+Деревья §4 и §5 отражают исходники и тесты. Справочник ниже описывает назначение классов и ключевые методы.
 
-По пакетам исходников (ZIP, не обязательно весь локальный checkout):
-
-| Путь внутри `knowledge` | Java-файлы | Роль пакета |
-|---|---:|---|
-| `chunking/` | 2 | Контракты chunks и chunker |
-| `config/` | 8 | Properties, invariant validation, Spring wiring |
-| `controller/` | 11 | HTTP/API boundary |
-| `dto/` | 28 | Входные и выходные REST DTO |
-| `embedding/` | 6 | Провайдеры векторов, pgvector converters |
-| `entity/` | 5 | JPA entities |
-| `evaluation/` | 1 | Метрики качества retrieval |
-| `exception/` | 1 | Ошибки storage |
-| `extraction/` | 16 | Parser, bounded extraction, document sections |
-| `generation/` | 2 | Index generation GC |
-| `ingestion/` | 11 | Scheduler, queue, lease, processor, chunk persistence |
-| `model/` | 5 | Enums: visibility, access, status, lifecycle |
-| `ocr/` | 5 | OCR providers and DTO |
-| `rag/` | 13 | RAG context, receipts, passport, citations |
-| `repository/` | 8 | JPA/JDBC metadata repos |
-| `retrieval/` | 3 | Hybrid retrieval records and repository |
-| `service/` | 25 | Оркестрация ACL, CRUD, erasure, retrieval, metrics |
-| `storage/` | 9 | Local/S3 provider, upload intents, reconciliation |
-| `storage/reconciliation/` | 5 | Долговечный журнал upload intents, очереди review и metering |
-| **Всего** | **164** | Основные Java-файлы архива |
+| Пакет | Java-файлы |
+|---|---:|
+| `chunking/` | 2 |
+| `config/` | 9 |
+| `controller/` | 11 |
+| `dto/` | 28 |
+| `embedding/` | 6 |
+| `entity/` | 5 |
+| `evaluation/` | 1 |
+| `exception/` | 1 |
+| `extraction/` | 16 |
+| `generation/` | 2 |
+| `ingestion/` | 11 |
+| `model/` | 5 |
+| `ocr/` | 5 |
+| `rag/` | 16 |
+| `repository/` | 8 |
+| `retrieval/` | 3 |
+| `service/` | 26 |
+| `storage/` | 11 |
+| `storage/reconciliation/` | 5 |
+| **Всего** | **171** |
 
 ### 21.1. Каталог файлов и краткие источниковые описания
 
@@ -2030,11 +1995,7 @@ isolation; контракт должен быть явным и протести
 
 ### 21.2. Подробный справочник классов и методов (объединённая редакция)
 
-Справочник ниже возвращён из README от 17 октября и сверён по текущим Java-файлам
-в приложенном production-архиве V84. **Сохранены все 144 старых описания**; добавлены
-**20 новых классов**. У старых методов удалены номера строк первоначального среза:
-они изменились после обновлений. Перечисление новых методов основано на объявлениях
-в переданных `.java`, а не на предположениях о runtime.
+Для просмотра сигнатур и подробностей реализации используйте связанный Java-файл.
 
 #### 21.2.1. `chunking` — 2 файлов
 
@@ -4501,30 +4462,10 @@ Upload journal и операционный мониторинг.
 
 - `countNeedsReview()`: Считает backlog NEEDS_REVIEW для безопасного мониторинга без выдачи содержимого.
 
-## 22. Поддержка документации и границы проверки
+## 22. Связанные документы
 
-**Единственный канонический путь нового файла:** `backend/src/main/java/ru/safeai/gateway/knowledge/README.md`. В
-исходном production ZIP присутствовал старый `Knowledge_README.md`, а в test ZIP — собственный `README.md`. Не следует
-автоматически перезаписывать тестовую документацию данным файлом; старые документы нужно либо отдельно синхронизировать,
-либо после ревью явно обозначить deprecated (и обновить ссылки).
+- [Тесты Knowledge](../../../../../../test/java/ru/safeai/gateway/knowledge/README.md)
+- [Модуль Chat](../chat/README.md)
 
-**Инвентаризация локального checkout (Mac):**
-
-```bash
-cd ~/Workspace/Projects/Products/SafeAI-Desk
-find backend/src/main/java/ru/safeai/gateway/knowledge -type f -name '*.java' | sort
-find backend/src/test/java/ru/safeai/gateway/knowledge -type f -name '*.java' | sort
-find backend/src/main/java/ru/safeai/gateway/knowledge/service -maxdepth 1 -name '*.java' | wc -l
-git status --short
-git diff --check
-```
-
-Если обнаружены файлы, которых нет в ZIP (в частности, 26-й в `service/`), перечень нужно дополнять **после сверки
-локального исходника**, а не ссылаться на GitHub `main` как на точную копию незакоммиченной ветки.
-
-**Что проверено в этом обзоре:** наличие всех классов в двух ZIP, соответствие скриншотам основных пакетов, объявления
-endpoint и флагов, модули ingestion/extraction/retrieval/RAG/storage, реализация S3 version purge, Java erasure
-services/V84 metrics, предоставленные части SQL V78–V84, результаты Maven/Prometheus из сообщений. **Что не проверялось
-выполнением:** Maven, Java compilation, миграции populated DB, работоспособность S3, фронтенд, CI/CD, фактический
-deployed code и юридический scope erasure. Упомянутые предложения остаются задачами и не должны обозначаться как
-«сделано» в commit message.
+При добавлении пакета или класса обновляйте соответствующее дерево и сценарии проверки.
+Результаты CI и стендовых прогонов фиксируются отдельно от описания функционала.

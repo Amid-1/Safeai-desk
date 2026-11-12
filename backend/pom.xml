@@ -54,8 +54,11 @@
         <testcontainers.version>2.0.5</testcontainers.version>
         <archunit.version>1.5.1</archunit.version>
         <minio.version>8.6.0</minio.version>
-        <!-- CVE-2026-102554: явное выравнивание Guava для MinIO. -->
-        <guava.version>33.7.2-jre</guava.version>
+        <!-- Align MinIO's transitive Guava and include the CVE-2026-118042 fix. -->
+        <guava.version>33.8.0-jre</guava.version>
+        <!-- Override Spring Boot's managed versions for the published advisories. -->
+        <commons-codec.version>1.23.0</commons-codec.version>
+        <hibernate-validator.version>9.1.6.Final</hibernate-validator.version>
         <okhttp.version>5.1.0</okhttp.version>
         <bouncycastle.version>1.86</bouncycastle.version>
         <commons-compress.version>1.28.0</commons-compress.version>
@@ -112,8 +115,7 @@
                 <scope>import</scope>
             </dependency>
 
-            <!-- CVE-2026-102554: MinIO транзитивно запрашивает Guava 33.4.8-jre.
-                 Переопределяем версию без изменения версии MinIO API. -->
+            <!-- Keep MinIO on the patched Guava version without changing the MinIO API. -->
             <dependency>
                 <groupId>com.google.guava</groupId>
                 <artifactId>guava</artifactId>

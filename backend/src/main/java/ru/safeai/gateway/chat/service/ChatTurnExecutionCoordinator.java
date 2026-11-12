@@ -156,12 +156,6 @@ final class ChatTurnExecutionCoordinator {
                             preparedAiRequest
                     );
 
-            /*
-             * RAG prepare materializes the authorized context. A second DB check
-             * below rejects sources already marked for deletion before provider
-             * dispatch. Full in-flight revocation still needs durable leases.
-             */
-
             // V67/V72: only a successfully committed physical STARTED attempt
             // may set provider_call_started_at. Never pre-mark an HTTP call.
 
@@ -175,6 +169,18 @@ final class ChatTurnExecutionCoordinator {
             // Повторно проверяем Knowledge после materialization и перед физическим вызовом.
             // Ошибка чтения БД также запрещает отправку ранее подготовленного содержимого.
             ensureKnowledgeAvailableBeforeProvider(ragPreparation, context, currentUser);
+
+            try {
+                securityStateService.assertStillActive(
+                        context.chatId(), context.turnId(), context.clientRequestId(), currentUser
+                );
+            } catch (RuntimeException exception) {
+                persistPreProviderFailureQuietly(
+                        context, "CHAT_ACCESS_RECHECK_FAILED", "CHAT_ACCESS_RECHECK_FAILED",
+                        currentUser, exception
+                );
+                throw exception;
+            }
 
             AiChatResponse providerResponse =
                     invokeProvider(

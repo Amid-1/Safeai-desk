@@ -14,7 +14,12 @@ public class ChatSecurityStateRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    public boolean isActive(UUID userId, UUID organizationId) {
+    public boolean isActive(
+            UUID userId,
+            UUID organizationId,
+            long tokenVersion,
+            long organizationAuthVersion
+    ) {
         Boolean active = jdbcTemplate.queryForObject(
                 """
                 select exists (
@@ -25,11 +30,15 @@ public class ChatSecurityStateRepository {
                       and u.organization_id = ?
                       and u.enabled = true
                       and o.enabled = true
+                      and u.token_version = ?
+                      and o.auth_version = ?
                 )
                 """,
                 Boolean.class,
                 userId,
-                organizationId
+                organizationId,
+                tokenVersion,
+                organizationAuthVersion
         );
         return Boolean.TRUE.equals(active);
     }
