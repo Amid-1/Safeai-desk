@@ -165,19 +165,19 @@ class LoginRateLimitServiceTest {
         assertThat(exception.getRetryAfterSeconds())
                 .isEqualTo(600);
 
-        ArgumentCaptor<RateLimitExceededEvent> captor =
+        ArgumentCaptor<LoginRateLimitExceededEvent> captor =
                 ArgumentCaptor.forClass(
-                        RateLimitExceededEvent.class
+                        LoginRateLimitExceededEvent.class
                 );
 
         verify(eventPublisher)
                 .publishEvent(captor.capture());
 
-        RateLimitExceededEvent event =
+        LoginRateLimitExceededEvent event =
                 captor.getValue();
 
-        assertThat(event.actorUserId())
-                .isNull();
+        assertThat(event.toString()).doesNotContain(EMAIL, IP);
+        assertThat(event.auditDetails()).doesNotContainKey("email");
 
         assertThat(event.targetOrganizationId())
                 .isEqualTo(AUDIT_ORGANIZATION_ID);
@@ -188,7 +188,7 @@ class LoginRateLimitServiceTest {
         assertThat(event.limit())
                 .isEqualTo(10);
 
-        assertThat(event.details())
+        assertThat(event.auditDetails())
                 .containsEntry(
                         "dimension",
                         "EMAIL"
@@ -282,15 +282,15 @@ class LoginRateLimitServiceTest {
                 RateLimitExceededException.class
         );
 
-        ArgumentCaptor<RateLimitExceededEvent> captor =
+        ArgumentCaptor<LoginRateLimitExceededEvent> captor =
                 ArgumentCaptor.forClass(
-                        RateLimitExceededEvent.class
+                        LoginRateLimitExceededEvent.class
                 );
 
         verify(eventPublisher)
                 .publishEvent(captor.capture());
 
-        RateLimitExceededEvent event =
+        LoginRateLimitExceededEvent event =
                 captor.getValue();
 
         assertThat(event.type())
@@ -301,7 +301,7 @@ class LoginRateLimitServiceTest {
         assertThat(event.limit())
                 .isNull();
 
-        assertThat(event.details())
+        assertThat(event.auditDetails())
                 .containsEntry(
                         "emailLimit",
                         10
@@ -424,59 +424,24 @@ class LoginRateLimitServiceTest {
     }
 
     @Test
-    void successfulLoginClearsEmailAndDecrementsIpExactlyOnce() {
+    void successfulLoginCompensatesTheOriginalReceipt() {
         stubTimer();
-        stubKeys();
+        LoginRateLimitService.Attempt attempt = new LoginRateLimitService.Attempt(EMAIL_KEY, IP_KEY, UUID.randomUUID());
 
-        service.onLoginSuccess(
-                " Admin@Test.COM ",
-                IP
-        );
+        service.onLoginSuccess(attempt);
 
-        verify(rateLimiter)
-                .resetFirstAndDecrementSecond(
-                        EMAIL_KEY,
-                        IP_KEY,
-                        EMAIL_MARKER,
-                        IP_MARKER
-                );
-
-        verify(metrics).finishRedisOperation(
-                timerSample,
-                "login",
-                "login_success_cleanup",
-                "success"
-        );
+        verify(rateLimiter).compensateLogin(attempt);
+        verify(metrics).finishRedisOperation(timerSample, "login", "login_success_cleanup", "success");
     }
 
     @Test
     void successfulLoginCleanupIsBestEffort() {
-        stubKeys();
+        LoginRateLimitService.Attempt attempt = new LoginRateLimitService.Attempt(EMAIL_KEY, IP_KEY, UUID.randomUUID());
+        doThrow(new RuntimeException("Redis unavailable")).when(rateLimiter).compensateLogin(attempt);
 
-        doThrow(
-                new RuntimeException(
-                        "Redis unavailable"
-                )
-        )
-                .when(rateLimiter)
-                .resetFirstAndDecrementSecond(
-                        EMAIL_KEY,
-                        IP_KEY,
-                        EMAIL_MARKER,
-                        IP_MARKER
-                );
+        assertThatCode(() -> service.onLoginSuccess(attempt)).doesNotThrowAnyException();
 
-        assertThatCode(() ->
-                service.onLoginSuccess(
-                        EMAIL,
-                        IP
-                )
-        ).doesNotThrowAnyException();
-
-        verify(metrics)
-                .recordUnavailable(
-                        "login"
-                );
+        verify(metrics).recordUnavailable("login");
     }
 
     @Test
@@ -528,15 +493,8 @@ class LoginRateLimitServiceTest {
                         metrics
                 );
 
-        disabledService.checkAllowed(
-                EMAIL,
-                IP
-        );
-
-        disabledService.onLoginSuccess(
-                EMAIL,
-                IP
-        );
+        assertThat(disabledService.checkAllowed(EMAIL, IP)).isNull();
+        disabledService.onLoginSuccess(null);
 
         verifyNoInteractions(
                 rateLimiter,
@@ -571,7 +529,7 @@ class LoginRateLimitServiceTest {
                 600,
                 600,
                 false,
-                false
+                false, UUID.randomUUID()
         );
     }
 
@@ -596,12 +554,12 @@ class LoginRateLimitServiceTest {
     private void stubFingerprints() {
         when(keyFactory.emailFingerprint(EMAIL))
                 .thenReturn(
-                        "email-fingerprint"
+                        "a".repeat(64)
                 );
 
         when(keyFactory.ipFingerprint(IP))
                 .thenReturn(
-                        "ip-fingerprint"
+                        "b".repeat(64)
                 );
     }
 }

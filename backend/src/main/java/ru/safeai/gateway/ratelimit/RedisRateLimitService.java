@@ -288,7 +288,6 @@ public class RedisRateLimitService {
                         organizationMarker
                 );
             } catch (RuntimeException markerException) {
-                exception.addSuppressed(markerException);
                 metrics.recordUnavailable(
                         RATE_LIMIT_TYPE
                 );
@@ -301,12 +300,12 @@ public class RedisRateLimitService {
             log.warn(
                     "Failed to publish AI rate-limit event: "
                             + "userId={}, organizationId={}, "
-                            + "dimension={}, decision={}",
+                            + "dimension={}, decision={}, failureType={}",
                     user.getId(),
                     user.getOrganizationId(),
                     notificationDimension,
                     result.decision(),
-                    exception
+                    exception.getClass().getName()
             );
         }
     }

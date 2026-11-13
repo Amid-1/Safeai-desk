@@ -213,7 +213,7 @@ POST /api/auth/login
   → AuthService.login
       → нормализация email; пароль без новой complexity policy
       → ClientIpResolver
-      → LoginRateLimitService.checkAllowed (fail-closed)
+      → LoginRateLimitService.checkAllowed → запись принятой попытки (fail-closed)
       → AuthenticationManager / DaoAuthenticationProvider
           → CustomUserDetailsService → UserRepository
           → PasswordEncoder BCrypt / DelegatingPasswordEncoder
@@ -231,6 +231,12 @@ POST /api/auth/login
       → Set-Cookie access + refresh
       → 200 CurrentUserResponse
 ```
+
+После коммита сессии и выпуска JWT Auth передаёт исходную попытку в
+`LoginRateLimitService.onLoginSuccess`. Redis компенсирует её однократно
+и только в ещё действующих исходных окнах email и IP.
+
+[Контракт RateLimit](../ratelimit/README.md).
 
 **Почему есть вторая проверка пользователя под блокировкой:** между успешной проверкой пароля и созданием сессии
 администратор мог отключить пользователя, организацию или изменить пароль/роль. Код сверяет уже прочитанный

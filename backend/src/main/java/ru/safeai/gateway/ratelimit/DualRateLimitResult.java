@@ -1,6 +1,7 @@
 package ru.safeai.gateway.ratelimit;
 
 import java.util.Objects;
+import java.util.UUID;
 
 public record DualRateLimitResult(
         RateLimitDecision decision,
@@ -9,7 +10,8 @@ public record DualRateLimitResult(
         long firstTtlSeconds,
         long secondTtlSeconds,
         boolean firstExceededNotification,
-        boolean secondExceededNotification
+        boolean secondExceededNotification,
+        UUID operationId
 ) {
     public DualRateLimitResult {
         Objects.requireNonNull(
@@ -43,6 +45,15 @@ public record DualRateLimitResult(
                     "secondExceededNotification не соответствует decision"
             );
         }
+    }
+
+    public DualRateLimitResult(
+            RateLimitDecision decision, long firstCount, long secondCount,
+            long firstTtlSeconds, long secondTtlSeconds,
+            boolean firstExceededNotification, boolean secondExceededNotification
+    ) {
+        this(decision, firstCount, secondCount, firstTtlSeconds, secondTtlSeconds,
+                firstExceededNotification, secondExceededNotification, null);
     }
 
     /**

@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.ActiveProfiles;
 import ru.safeai.gateway.usage.dto.UsageDataQualityResponse;
 import ru.safeai.gateway.usage.dto.UsageModelSummaryResponse;
@@ -14,6 +15,7 @@ import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @Tag("integration")
 @SpringBootTest(
@@ -36,6 +38,15 @@ class UsageCoverageIntegrationTest
 
     @Autowired
     private UsageQueryRepository repository;
+
+    @Test
+    void postgresReservesTheUnattributedModelLabelForMissingModels() {
+        assertThatThrownBy(() -> insertCompletedAssistant(
+                SESSION_A_ID, ORGANIZATION_A_ID, UNATTRIBUTED_MODEL, "COMPLETED",
+                10, 20, "AVAILABLE", BigDecimal.ZERO, "FREE", CREATED_AT))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("chk_chat_messages_reserved_usage_model");
+    }
 
     @Test
     void availableUsageContributesToConfirmedTokenTotals() {

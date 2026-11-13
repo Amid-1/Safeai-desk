@@ -6,14 +6,27 @@ import org.postgresql.util.ServerErrorMessage;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.SqlParameterValue;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.support.TransactionTemplate;
 import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.details.SecurityRefreshReuseAuditDetails;
+import ru.safeai.gateway.audit.model.AuditActor;
 import ru.safeai.gateway.audit.testsupport.AbstractAuditPostgresIntegrationTest;
 
+import ru.safeai.gateway.ratelimit.DualRateLimitResult;
+import ru.safeai.gateway.ratelimit.LoginRateLimitProperties;
+import ru.safeai.gateway.ratelimit.LoginRateLimitService;
+import ru.safeai.gateway.ratelimit.RateLimitDecision;
+import ru.safeai.gateway.ratelimit.RateLimitKeyFactory;
+import ru.safeai.gateway.ratelimit.RateLimitMetrics;
+import ru.safeai.gateway.ratelimit.RedisFixedWindowRateLimiter;
+import ru.safeai.gateway.ratelimit.exception.RateLimitExceededException;
+
 import java.sql.Types;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -22,6 +35,8 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Интеграционные проверки обязательного транзакционного аудита и его доставки.
@@ -47,6 +62,77 @@ class AuditOutboxIntegrationTest extends AbstractAuditPostgresIntegrationTest {
     /** Исключает автоматическую доставку во время проверок ручного запуска. */
     @MockitoBean
     private AuditOutboxScheduler auditOutboxScheduler;
+
+    @Autowired
+    private ApplicationEventPublisher events;
+
+    @Autowired
+    private RateLimitKeyFactory rateLimitKeys;
+
+    @Test
+    void loginRejectionPersistsOnlyFingerprintsThroughOutboxAndDelivery() {
+        UUID organizationId = UUID.randomUUID();
+        insertOrganization(organizationId, "Rate limit audit " + organizationId, true);
+        String email = "private-login@example.test";
+        String ip = "192.0.2.15";
+        String emailKey = rateLimitKeys.loginEmail(email);
+        String ipKey = rateLimitKeys.loginIp(ip);
+        Duration window = Duration.ofMinutes(10);
+        RedisFixedWindowRateLimiter redis = mock(RedisFixedWindowRateLimiter.class);
+        when(redis.incrementBothAndCheck(emailKey, rateLimitKeys.exceededMarker(emailKey), 1,
+                ipKey, rateLimitKeys.exceededMarker(ipKey), 10, window))
+                .thenReturn(new DualRateLimitResult(RateLimitDecision.FIRST_EXCEEDED,
+                        2, 2, 600, 600, true, false, UUID.randomUUID()));
+        LoginRateLimitService login = new LoginRateLimitService(redis,
+                new LoginRateLimitProperties(true, 1, 10, window, organizationId),
+                rateLimitKeys, events, mock(RateLimitMetrics.class));
+
+        assertThatThrownBy(() -> login.checkAllowed(email, ip))
+                .isInstanceOf(RateLimitExceededException.class);
+
+        UUID eventId = auditOutboxIdForOrganization(organizationId);
+        Map<String, Object> outbox = jdbcTemplate.queryForMap("""
+                SELECT actor_email, event_type, details::text AS details
+                  FROM public.audit_outbox WHERE id = ?
+                """, eventId);
+        assertThat(outbox.get("event_type")).isEqualTo(AuditEventType.RATE_LIMIT_EXCEEDED.name());
+        assertThat(outbox.get("actor_email")).isNull();
+        assertThat((String) outbox.get("details"))
+                .contains(rateLimitKeys.emailFingerprint(email), rateLimitKeys.ipFingerprint(ip))
+                .doesNotContain(email, ip);
+
+        assertThat(auditOutboxProcessor.processBatch().processed()).isEqualTo(1);
+        Map<String, Object> delivered = jdbcTemplate.queryForMap("""
+                SELECT actor_email, event_type, details::text AS details
+                  FROM public.audit_events WHERE id = ?
+                """, eventId);
+        assertThat(delivered).isEqualTo(outbox);
+    }
+
+    @Test
+    void typedRefreshReuseEvidenceSurvivesRequiredWriteAndDelivery() {
+        UUID organizationId = UUID.randomUUID();
+        insertOrganization(organizationId, "Refresh reuse audit " + organizationId, true);
+        String ip = "192.0.2.18";
+        String userAgent = "Synthetic-Private-User-Agent";
+        var details = new SecurityRefreshReuseAuditDetails(UUID.randomUUID(), ip, userAgent, null);
+
+        new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                auditEventService.record(AuditActor.system(), organizationId,
+                        AuditEventType.SECURITY_REFRESH_REUSE_DETECTED, details));
+
+        UUID eventId = auditOutboxIdForOrganization(organizationId);
+        String persisted = queryString("""
+                SELECT details::text FROM public.audit_outbox WHERE id = ?
+                """, eventId);
+        assertThat(persisted).contains(ip, details.toMap().get("userAgentSha256").toString())
+                .doesNotContain(userAgent, "[OMITTED_UNAPPROVED_TEXT]");
+
+        assertThat(auditOutboxProcessor.processBatch().processed()).isEqualTo(1);
+        assertThat(queryString("""
+                SELECT details::text FROM public.audit_events WHERE id = ?
+                """, eventId)).isEqualTo(persisted);
+    }
 
     @Test
     void businessTransactionRollbackLeavesNoAuditIntentOrEvent() {

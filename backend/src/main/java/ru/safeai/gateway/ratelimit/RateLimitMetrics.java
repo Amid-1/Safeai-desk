@@ -121,7 +121,7 @@ public class RateLimitMetrics {
                 System.Logger.Level.WARNING,
                 "Rate-limit metrics failure: operation={0}, error={1}",
                 operation,
-                exception.toString()
+                exception.getClass().getName()
         );
     }
 }
