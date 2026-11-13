@@ -3,7 +3,7 @@
 // frontend/src/features/chat/controller/operations/chatDirectoryActions.ts
 // Операции контроллера чата. Исходные сценарии сохранены.
 // ============================================================
-import { archiveChat, createChat, getChatById, getChats, updateChatTitle } from '../../api/chatApi'
+import { archiveChat, assignAutomaticChatTitle, createChat, getChatById, getChats, updateChatTitle } from '../../api/chatApi'
 import type { Chat } from '../../api/chatApi'
 import { getApiErrorMessage } from '../../../../shared/api/http'
 import { mergeChats } from '../../lib/chatPage.helpers'
@@ -86,15 +86,23 @@ export function createDirectoryActions(deps: Pick<ChatControllerDependencies,
         }
     }
 
-    async function renameChatById(chatId: string, title: string): Promise<void> {
-        const updated = await updateChatTitle(chatId, title)
-        setChats((items) => items.map((item) =>
-            item.id === chatId ? updated : item,
+    // Один путь синхронизации заголовка. Остальные поля чата не перетираем:
+    // ответ API на изменение метаданных не является полной историей сообщений.
+    function applyServerTitle(chatId: string, title: string, updatedAt: string, onlyDefault = false) {
+        const shouldUpdate = (item: Chat) =>
+            item.id === chatId && (!onlyDefault || item.title === 'Новый чат')
+        setChats(items => items.map(item =>
+            shouldUpdate(item) ? { ...item, title, updatedAt } : item,
         ))
-        setActiveChat((current) => current?.id === chatId
-            ? { ...current, ...updated }
+        setActiveChat(current => current && shouldUpdate(current)
+            ? { ...current, title, updatedAt }
             : current,
         )
+    }
+
+    async function renameChatById(chatId: string, title: string): Promise<void> {
+        const updated = await updateChatTitle(chatId, title)
+        applyServerTitle(chatId, updated.title, updated.updatedAt)
     }
 
     async function handleRenameChat(title: string): Promise<void> {
@@ -118,22 +126,22 @@ export function createDirectoryActions(deps: Pick<ChatControllerDependencies,
         }
     }
 
-    async function refreshChatTitle(chatId: string): Promise<void> {
-        // Источник названия чата — backend; клиент не должен придумывать его сам.
+    async function ensureAutomaticChatTitle(chatId: string, content: string): Promise<void> {
+        // Мутация только метаданных; сбой не инициирует повтор AI-вызова.
         try {
-            const serverChat = await getChatById(chatId)
-            setChats((items) => items.map((item) =>
-                item.id === chatId
-                    ? { ...item, title: serverChat.title, updatedAt: serverChat.updatedAt }
-                    : item,
-            ))
-            setActiveChat((current) => current?.id === chatId
-                ? { ...current, title: serverChat.title, updatedAt: serverChat.updatedAt }
-                : current,
-            )
+            const updated = await assignAutomaticChatTitle(chatId, content)
+            applyServerTitle(chatId, updated.title, updated.updatedAt, true)
         } catch {
-            // Сообщение уже сохранено сервером. Следующая загрузка исправит
-            // заголовок; повторная отправка сообщения ради UI запрещена.
+            // При следующей загрузке backend снова станет источником истины.
+        }
+    }
+
+    async function refreshChatTitle(chatId: string): Promise<void> {
+        try {
+            const updated = await getChatById(chatId)
+            applyServerTitle(chatId, updated.title, updated.updatedAt)
+        } catch {
+            // Отказ чтения заголовка не меняет статус отправленного сообщения.
         }
     }
 
@@ -239,5 +247,5 @@ export function createDirectoryActions(deps: Pick<ChatControllerDependencies,
         }
     }
 
-    return { loadMoreChats, handleRenameChat, handleRenameFromHistory, refreshChatTitle, handleCreateChat, handleArchiveChat }
+    return { loadMoreChats, handleRenameChat, handleRenameFromHistory, refreshChatTitle, ensureAutomaticChatTitle, handleCreateChat, handleArchiveChat }
 }

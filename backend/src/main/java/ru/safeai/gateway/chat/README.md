@@ -84,6 +84,7 @@ chat/
 │   ├── ChatController.java
 │   └── ChatTitleController.java
 ├── dto/
+│   ├── AutomaticChatTitleRequest.java
 │   ├── ChatCapabilitiesResponse.java
 │   ├── ChatDetailsResponse.java
 │   ├── ChatErrorResponse.java

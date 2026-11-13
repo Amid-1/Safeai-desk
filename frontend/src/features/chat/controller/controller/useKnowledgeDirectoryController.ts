@@ -1,13 +1,13 @@
 // frontend/src/features/knowledge/controller/useKnowledgeDirectoryController.ts
 // Состояние каталога баз знаний, фильтрация, пагинация и операции изменения.
 import { useCallback, useEffect, useState } from 'react'
-import { createKnowledgeBase, getKnowledgeBase, getKnowledgeBases, searchKnowledgeBases, updateKnowledgeBase } from '../../../entities/knowledge/api/knowledgeApi'
-import type { KnowledgeBase } from '../../../entities/knowledge/api/knowledgeApi'
-import { getApiErrorMessage } from '../../../shared/api/http'
-import { useAuth } from '../../auth/state/useAuth'
-import type { KnowledgeBaseFormValue, ActivityFilter, VisibilityFilter } from '../model/knowledgeDirectoryTypes'
-import { useAutoClearMessage } from '../../../shared/lib/hooks/useAutoClearMessage'
-import type { PageResponse } from '../../../shared/lib/page'
+import { createKnowledgeBase, getKnowledgeBase, getKnowledgeBases, searchKnowledgeBases, updateKnowledgeBase } from '../../../../entities/knowledge/api/knowledgeApi'
+import type { KnowledgeBase } from '../../../../entities/knowledge/api/knowledgeApi'
+import { getApiErrorMessage } from '../../../../shared/api/http'
+import { useAuth } from '../../../auth/state/useAuth'
+import type { KnowledgeBaseFormValue, ActivityFilter, VisibilityFilter } from '../../../knowledge/model/knowledgeDirectoryTypes'
+import { useAutoClearMessage } from '../../../../shared/lib/hooks/useAutoClearMessage'
+import type { PageResponse } from '../../../../shared/lib/page'
 
 const PAGE_SIZE = 12
 const SEARCH_DELAY_MS = 300

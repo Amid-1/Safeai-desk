@@ -7,25 +7,25 @@ import {
 import {
     getKnowledgeBase,
     getKnowledgeBaseAccess,
-} from '../../../entities/knowledge/api/knowledgeApi'
+} from '../../../../entities/knowledge/api/knowledgeApi'
 import type {
     KnowledgeBase,
     KnowledgeBaseAccess,
-} from '../../../entities/knowledge/api/knowledgeApi'
+} from '../../../../entities/knowledge/api/knowledgeApi'
 import {
     getKnowledgeDocuments,
     getKnowledgeHealth,
-} from '../../../entities/knowledge/api/knowledgeDocumentApi'
+} from '../../../../entities/knowledge/api/knowledgeDocumentApi'
 import type {
     KnowledgeDocument,
     KnowledgeHealth,
-} from '../../../entities/knowledge/api/knowledgeDocumentApi'
+} from '../../../../entities/knowledge/api/knowledgeDocumentApi'
 import {
     getApiErrorMessage,
-} from '../../../shared/api/http'
+} from '../../../../shared/api/http'
 import type {
     PageResponse,
-} from '../../../shared/lib/page'
+} from '../../../../shared/lib/page'
 
 export const KNOWLEDGE_DOCUMENT_PAGE_SIZE = 50
 

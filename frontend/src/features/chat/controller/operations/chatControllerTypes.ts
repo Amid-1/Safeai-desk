@@ -79,6 +79,7 @@ export type ChatControllerDependencies = {
         expectedOpenSequence?: number,
     ) => Promise<void>
     refreshChatTitle: (chatId: string) => Promise<void>
+    ensureAutomaticChatTitle: (chatId: string, content: string) => Promise<void>
     applySendSuccess: (pending: PendingTurn, result: SendMessageResponse) => void
     applyTurnSuccess: (pending: PendingTurn, turn: ChatTurnStatus) => void
     applyReloadedSuccess: (pending: PendingTurn, details: ChatDetails) => void

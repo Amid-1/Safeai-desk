@@ -6,14 +6,14 @@ import {
 import {
     uploadKnowledgeDocument,
     uploadKnowledgeDocumentVersion,
-} from '../../../entities/knowledge/api/knowledgeDocumentApi'
+} from '../../../../entities/knowledge/api/knowledgeDocumentApi'
 import type {
     KnowledgeDocument,
-} from '../../../entities/knowledge/api/knowledgeDocumentApi'
+} from '../../../../entities/knowledge/api/knowledgeDocumentApi'
 import {
     ApiError,
     getApiErrorPresentation,
-} from '../../../shared/api/http'
+} from '../../../../shared/api/http'
 
 export const MAX_KNOWLEDGE_FILE_SIZE =
     25 * 1024 * 1024

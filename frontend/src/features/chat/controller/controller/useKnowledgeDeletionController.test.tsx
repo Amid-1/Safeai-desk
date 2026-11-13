@@ -6,14 +6,14 @@ import {
     acceptDocumentDeletion,
     deletionCapability,
     listDocumentDeletions,
-} from '../../../entities/knowledge/api/knowledgeDocumentDeletionApi'
-import type {KnowledgeDocument} from '../../../entities/knowledge/api/knowledgeDocumentApi'
-import type {KnowledgeDocumentDeletion} from '../../../entities/knowledge/api/knowledgeDocumentDeletionApi'
+} from '../../../../entities/knowledge/api/knowledgeDocumentDeletionApi'
+import type {KnowledgeDocument} from '../../../../entities/knowledge/api/knowledgeDocumentApi'
+import type {KnowledgeDocumentDeletion} from '../../../../entities/knowledge/api/knowledgeDocumentDeletionApi'
 import {
     clearKnowledgeDeletionRequestKey,
     getKnowledgeDeletionRequestKey,
-} from '../lib/knowledgeDeletionRequestKey'
-import {deferred, flushMicrotasks} from '../test/knowledgeDeletionTestUtils'
+} from '../../../knowledge/lib/knowledgeDeletionRequestKey'
+import {deferred, flushMicrotasks} from '../../../knowledge/test/knowledgeDeletionTestUtils'
 import {useKnowledgeDeletionController} from './useKnowledgeDeletionController'
 
 vi.mock('../../../entities/knowledge/api/knowledgeDocumentDeletionApi', () => ({

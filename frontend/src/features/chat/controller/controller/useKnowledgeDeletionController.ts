@@ -1,17 +1,17 @@
 // frontend/src/features/knowledge/controller/useKnowledgeDeletionController.ts
 import {useEffect, useLayoutEffect, useRef, useState} from 'react'
-import type {KnowledgeDocument} from '../../../entities/knowledge/api/knowledgeDocumentApi'
+import type {KnowledgeDocument} from '../../../../entities/knowledge/api/knowledgeDocumentApi'
 import {
     acceptDocumentDeletion,
     deletionCapability,
     listDocumentDeletions,
-} from '../../../entities/knowledge/api/knowledgeDocumentDeletionApi'
-import type {KnowledgeDocumentDeletion} from '../../../entities/knowledge/api/knowledgeDocumentDeletionApi'
-import {getApiErrorMessage} from '../../../shared/api/http'
+} from '../../../../entities/knowledge/api/knowledgeDocumentDeletionApi'
+import type {KnowledgeDocumentDeletion} from '../../../../entities/knowledge/api/knowledgeDocumentDeletionApi'
+import {getApiErrorMessage} from '../../../../shared/api/http'
 import {
     clearKnowledgeDeletionRequestKey,
     getKnowledgeDeletionRequestKey,
-} from '../lib/knowledgeDeletionRequestKey'
+} from '../../../knowledge/lib/knowledgeDeletionRequestKey'
 
 const HISTORY_POLL_INTERVAL_MS = 12_000
 

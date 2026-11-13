@@ -10,7 +10,7 @@ export type { ChatTurnState } from './chat/chatEnums'
 
 export {
     getChatCapabilities, getChats, getChatById, getChatMessages, createChat,
-    updateChatTitle, archiveChat, sendMessage, getChatTurnStatus, getAnswerPassport,
+    updateChatTitle, assignAutomaticChatTitle, archiveChat, sendMessage, getChatTurnStatus, getAnswerPassport,
 } from './chat/chatClient'
 
 export {

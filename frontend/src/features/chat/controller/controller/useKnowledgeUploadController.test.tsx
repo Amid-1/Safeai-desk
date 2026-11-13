@@ -2,8 +2,8 @@
 // Двойная отправка, версия документа и безопасный сброс состояния загрузки.
 import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { uploadKnowledgeDocument, uploadKnowledgeDocumentVersion } from '../../../entities/knowledge/api/knowledgeDocumentApi'
-import { ApiError } from '../../../shared/api/http'
+import { uploadKnowledgeDocument, uploadKnowledgeDocumentVersion } from '../../../../entities/knowledge/api/knowledgeDocumentApi'
+import { ApiError } from '../../../../shared/api/http'
 import { useKnowledgeUploadController } from './useKnowledgeUploadController'
 
 vi.mock('../../../entities/knowledge/api/knowledgeDocumentApi', () => ({

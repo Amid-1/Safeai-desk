@@ -5,13 +5,15 @@
 // ============================================================
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatDetails } from '../../api/chatApi'
-import { archiveChat, createChat, getChats, updateChatTitle } from '../../api/chatApi'
+import { archiveChat, assignAutomaticChatTitle, createChat, getChats, updateChatTitle } from '../../api/chatApi'
 import { chat, IDS, slice } from '../../../../test/fixtures/chatApiFixtures'
+import { applyReactStateUpdate } from '../../../../test/fixtures/applyReactStateUpdate'
+import { createPendingTurn } from '../../lib/chatPage.helpers'
 import { createDirectoryActions } from './chatDirectoryActions'
 
 vi.mock('../../api/chatApi', async importOriginal => ({
     ...await importOriginal<typeof import('../../api/chatApi')>(),
-    archiveChat: vi.fn(), createChat: vi.fn(),
+    archiveChat: vi.fn(), assignAutomaticChatTitle: vi.fn(), createChat: vi.fn(),
     getChats: vi.fn(), updateChatTitle: vi.fn(), getChatById: vi.fn(),
 }))
 
@@ -19,6 +21,7 @@ const chatsMock = vi.mocked(getChats)
 const createMock = vi.mocked(createChat)
 const archiveMock = vi.mocked(archiveChat)
 const updateTitleMock = vi.mocked(updateChatTitle)
+const autoTitleMock = vi.mocked(assignAutomaticChatTitle)
 
 function mount(overrides: Partial<Parameters<typeof createDirectoryActions>[0]> = {}) {
     let chats = [chat({ title: 'Рабочий чат' })]
@@ -27,10 +30,10 @@ function mount(overrides: Partial<Parameters<typeof createDirectoryActions>[0]> 
     let creating = false
     const openChat = vi.fn(async () => undefined)
     const setChats = (next: typeof chats | ((previous: typeof chats) => typeof chats)) => {
-        chats = typeof next === 'function' ? next(chats) : next
+        chats = applyReactStateUpdate(chats, next)
     }
     const setActiveChat = (next: ChatDetails | null | ((previous: ChatDetails | null) => ChatDetails | null)) => {
-        activeChat = typeof next === 'function' ? next(activeChat) : next
+        activeChat = applyReactStateUpdate(activeChat, next)
     }
     const deps: Parameters<typeof createDirectoryActions>[0] = {
         chats, activeChat, pendingTurns: {}, moreChatsLoading: false,
@@ -47,9 +50,9 @@ function mount(overrides: Partial<Parameters<typeof createDirectoryActions>[0]> 
         setChats,
         setActiveChat,
         setDrafts: vi.fn(),
-        setListError(next) { listError = typeof next === 'function' ? next(listError) : next },
+        setListError(next) { listError = applyReactStateUpdate(listError, next) },
         setMoreChatsLoading: vi.fn(),
-        setChatCreating(next) { creating = typeof next === 'function' ? next(creating) : next },
+        setChatCreating(next) { creating = applyReactStateUpdate(creating, next) },
         setChatToArchive: vi.fn(),
         setRenamingChatId: vi.fn(),
         setArchivingChatId: vi.fn(),
@@ -74,6 +77,7 @@ beforeEach(() => {
     createMock.mockResolvedValue(chat({ title: 'Новый чат' }))
     archiveMock.mockResolvedValue(undefined)
     updateTitleMock.mockResolvedValue(chat({ title: 'Переименован' }))
+    autoTitleMock.mockResolvedValue(chat({ title: 'Составить план задач' }))
 })
 
 describe('Каталог чатов', () => {
@@ -121,13 +125,20 @@ describe('Каталог чатов', () => {
         expect(h.chats[0]?.title).toBe('Переименован')
     })
 
+    it('назначает название через backend, не подменяя его локальным заголовком', async () => {
+        const h = mount({ activeChat: { ...chat({ title: 'Новый чат' }), messages: [] } })
+        await h.ensureAutomaticChatTitle(IDS.chat, 'Составить план задач')
+        expect(autoTitleMock).toHaveBeenCalledWith(IDS.chat, 'Составить план задач')
+        expect(h.chats[0]?.title).toBe('Рабочий чат')
+        expect(h.activeChat?.title).toBe('Составить план задач')
+    })
+
     it('запрещает архивацию во время исходной pending-операции', async () => {
-        const h = mount({ pendingTurnsRef: { current: { [IDS.chat]: {
-            chatId: IDS.chat, clientRequestId: IDS.request,
-            optimisticMessageId: `pending-${IDS.request}`,
-            content: 'hello', status: 'SENDING', error: null,
-            retryAfterUntil: null, knowledgeBaseId: null, knowledgeMode: 'GENERAL',
-        } } } })
+        const h = mount({
+            pendingTurnsRef: {
+                current: { [IDS.chat]: createPendingTurn(IDS.chat, 'hello', IDS.request) },
+            },
+        })
         await h.handleArchiveChat(chat())
         expect(archiveMock).not.toHaveBeenCalled()
     })
@@ -138,5 +149,20 @@ describe('Каталог чатов', () => {
         expect(archiveMock).toHaveBeenCalledWith(IDS.chat)
         expect(h.chats).toHaveLength(0)
         expect(h.activeChat).toBeNull()
+    })
+
+    it('при автоназвании не перезаписывает ранее заданный заголовок', async () => {
+        const h = mount()
+        await h.ensureAutomaticChatTitle(IDS.chat, 'Тема нового разговора')
+        expect(autoTitleMock).toHaveBeenCalledWith(IDS.chat, 'Тема нового разговора')
+        expect(h.chats[0]?.title).toBe('Рабочий чат')
+        expect(h.activeChat?.title).toBe('Рабочий чат')
+    })
+
+    it('ошибка назначения автоназвания не прерывает пользовательскую операцию', async () => {
+        autoTitleMock.mockRejectedValueOnce(new Error('metadata unavailable'))
+        const h = mount()
+        await expect(h.ensureAutomaticChatTitle(IDS.chat, 'Тема')).resolves.toBeUndefined()
+        expect(h.chats[0]?.title).toBe('Рабочий чат')
     })
 })

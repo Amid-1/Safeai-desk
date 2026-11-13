@@ -9,7 +9,7 @@ import { KnowledgeUploadDialog } from './details/KnowledgeUploadDialog'
 import { KnowledgeVersionsDialog } from './details/KnowledgeVersionsDialog'
 import { KnowledgeDeleteDialog } from './details/KnowledgeDeleteDialog'
 import { KnowledgeErasureDialog } from './KnowledgeErasureDialog'
-import { useKnowledgeDetailsPageController } from '../controller/useKnowledgeDetailsPageController'
+import { useKnowledgeDetailsPageController } from '../../chat/controller/controller/useKnowledgeDetailsPageController'
 
 export function KnowledgeDetailsWorkspace() {
     const navigate = useNavigate()

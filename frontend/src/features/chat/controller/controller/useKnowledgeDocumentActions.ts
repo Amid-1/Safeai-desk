@@ -7,14 +7,14 @@ import {
     fetchKnowledgeDocumentBlob,
     reindexKnowledgeDocument,
     updateKnowledgeDocument,
-} from '../../../entities/knowledge/api/knowledgeDocumentApi'
+} from '../../../../entities/knowledge/api/knowledgeDocumentApi'
 import type {
     KnowledgeDocument,
-} from '../../../entities/knowledge/api/knowledgeDocumentApi'
+} from '../../../../entities/knowledge/api/knowledgeDocumentApi'
 import {
     getApiErrorMessage,
-} from '../../../shared/api/http'
-import { downloadKnowledgeBlob, previewOrDownloadKnowledgeBlob } from '../lib/knowledgeFileTransfer'
+} from '../../../../shared/api/http'
+import { downloadKnowledgeBlob, previewOrDownloadKnowledgeBlob } from '../../../knowledge/lib/knowledgeFileTransfer'
 
 type UseKnowledgeDocumentActionsOptions = {
     knowledgeBaseId: string

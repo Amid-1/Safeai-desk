@@ -2882,6 +2882,7 @@ chat/
 │   ├── ChatController
 │   └── ChatTitleController
 ├── dto/
+│   ├── AutomaticChatTitleRequest
 │   ├── ChatCapabilitiesResponse
 │   ├── ChatDetailsResponse
 │   ├── ChatErrorResponse
