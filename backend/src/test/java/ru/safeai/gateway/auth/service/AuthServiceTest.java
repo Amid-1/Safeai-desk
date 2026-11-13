@@ -39,7 +39,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
@@ -260,6 +260,10 @@ class AuthServiceTest {
                 "access-token"
         );
 
+        LoginRateLimitService.Attempt attempt =
+                new LoginRateLimitService.Attempt("email-key", "ip-key", UUID.randomUUID());
+        when(loginRateLimitService.checkAllowed(EMAIL, IP_ADDRESS)).thenReturn(attempt);
+
         CurrentUserResponse result =
                 authService.login(
                         loginRequest,
@@ -328,10 +332,7 @@ class AuthServiceTest {
 
         order.verify(
                 loginRateLimitService
-        ).onLoginSuccess(
-                EMAIL,
-                IP_ADDRESS
-        );
+        ).onLoginSuccess(attempt);
 
         order.verify(
                 csrfTokenRepository
@@ -416,10 +417,7 @@ class AuthServiceTest {
         verify(
                 loginRateLimitService,
                 never()
-        ).onLoginSuccess(
-                anyString(),
-                anyString()
-        );
+        ).onLoginSuccess(nullable(LoginRateLimitService.Attempt.class));
 
         verifyNoInteractions(
                 loginSessionTransactionService,
@@ -478,10 +476,7 @@ class AuthServiceTest {
         verify(
                 loginRateLimitService,
                 never()
-        ).onLoginSuccess(
-                anyString(),
-                anyString()
-        );
+        ).onLoginSuccess(nullable(LoginRateLimitService.Attempt.class));
     }
 
     @Test
@@ -580,10 +575,7 @@ class AuthServiceTest {
 
         verify(
                 loginRateLimitService
-        ).onLoginSuccess(
-                EMAIL,
-                IP_ADDRESS
-        );
+        ).onLoginSuccess(null);
     }
 
     @Test
@@ -653,10 +645,7 @@ class AuthServiceTest {
         verify(
                 loginRateLimitService,
                 never()
-        ).onLoginSuccess(
-                anyString(),
-                anyString()
-        );
+        ).onLoginSuccess(nullable(LoginRateLimitService.Attempt.class));
 
         verifyNoInteractions(
                 jwtService,
@@ -723,10 +712,7 @@ class AuthServiceTest {
         verify(
                 loginRateLimitService,
                 never()
-        ).onLoginSuccess(
-                anyString(),
-                anyString()
-        );
+        ).onLoginSuccess(nullable(LoginRateLimitService.Attempt.class));
     }
 
     @Test
@@ -787,10 +773,7 @@ class AuthServiceTest {
         verify(
                 loginRateLimitService,
                 never()
-        ).onLoginSuccess(
-                anyString(),
-                anyString()
-        );
+        ).onLoginSuccess(nullable(LoginRateLimitService.Attempt.class));
     }
 
     @Test

@@ -1,0 +1,115 @@
+# CI for browser UI plus opt-in, real deployed staging integration.
+name: Browser UI и staging E2E
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: safeai-browser-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser-ui:
+    name: Playwright / публичные и защищённые маршруты
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Установить зависимости приложения
+        working-directory: frontend
+        run: npm ci
+      - name: Проверить и собрать приложение
+        working-directory: frontend
+        run: npm run build
+      - name: Установить Chromium
+        working-directory: frontend
+        run: npx --no-install playwright install --with-deps chromium
+      - name: Запустить Vite preview
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          npm run preview -- --host 127.0.0.1 --port 4173 > "$RUNNER_TEMP/safeai-vite.log" 2>&1 &
+          for attempt in {1..40}; do
+            if curl --fail --silent --show-error http://127.0.0.1:4173/login >/dev/null; then
+              echo "Vite preview ready after ${attempt}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/safeai-vite.log" >&2 || true
+          echo 'Vite preview не запустился' >&2
+          exit 1
+      - name: Выполнить browser UI tests
+        working-directory: frontend
+        run: npx --no-install playwright test --config=e2e/playwright.config.cjs --grep-invert @staging
+      - name: Сохранить отчёт браузера
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-ui-failed-${{ github.sha }}
+          path: |
+            frontend/e2e/playwright-report/
+            frontend/e2e/test-results/
+          retention-days: 14
+          if-no-files-found: warn
+
+  staging:
+    name: Playwright / настоящий backend staging
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    environment: acceptance-staging
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Установка зависимостей приложения и Playwright
+        working-directory: frontend
+        run: npm ci
+      - name: Установить Chromium
+        working-directory: frontend
+        run: npx --no-install playwright install --with-deps chromium
+      - name: Выполнить сквозные проверки только на утверждённом staging
+        working-directory: frontend
+        env:
+          SAFEAI_E2E_BASE_URL: ${{ vars.SAFEAI_E2E_BASE_URL }}
+          SAFEAI_E2E_USER_EMAIL: ${{ secrets.SAFEAI_E2E_USER_EMAIL }}
+          SAFEAI_E2E_USER_PASSWORD: ${{ secrets.SAFEAI_E2E_USER_PASSWORD }}
+          SAFEAI_E2E_APPROVED: ${{ vars.SAFEAI_E2E_APPROVED }}
+        run: |
+          set -Eeuo pipefail
+          test "$SAFEAI_E2E_APPROVED" = true
+          test -n "$SAFEAI_E2E_USER_EMAIL"
+          test -n "$SAFEAI_E2E_USER_PASSWORD"
+          case "$SAFEAI_E2E_BASE_URL" in https://*) ;; *) echo "Staging URL must use HTTPS" >&2; exit 1 ;; esac
+          npx --no-install playwright test --config=e2e/playwright.config.cjs --grep @staging
+      - name: Сохранить отчёт браузера
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-e2e-failed-${{ github.sha }}
+          path: |
+            frontend/e2e/playwright-report/
+            frontend/e2e/test-results/
+          retention-days: 14
+          if-no-files-found: warn

@@ -1,3 +1,4 @@
+#SafeAI-Desk/github/workflows/frontend-ci.yml
 name: Проверка фронтенда
 
 on:
@@ -8,13 +9,13 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'frontend/**'
-      - 'scripts/verify-build.mjs'
-      - '.github/workflows/frontend-ci.yml'
 
 permissions:
   contents: read
+
+concurrency:
+  group: frontend-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   frontend:
@@ -47,5 +48,28 @@ jobs:
       - name: Установка зависимостей
         run: npm ci
 
+      - name: Аудит production-зависимостей
+        run: npm run audit:prod
+
+      - name: Полный аудит зависимостей, включая dev
+        run: npm audit --audit-level=low
+
       - name: Проверка архитектуры, ESLint, тестов и сборки
         run: npm run ci
+
+      - name: Диаграммы Vitest по группам TypeScript/React
+        working-directory: .
+        run: python3 .github/scripts/quality-report.py --frontend
+
+      - name: Обязательный baseline покрытия строк и ветвлений frontend
+        working-directory: .
+        run: python3 .github/scripts/check-frontend-coverage.py --check
+
+      - name: Сохранение HTML отчёта по покрытию frontend
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safeai-frontend-coverage-${{ github.sha }}
+          path: frontend/coverage/
+          if-no-files-found: warn
+          retention-days: 30

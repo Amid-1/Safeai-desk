@@ -34,17 +34,31 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
-        <!-- Security updates for entire families managed by Spring Boot 4.1.1. -->
-        <jackson-2-bom.version>2.21.7</jackson-2-bom.version>
-        <jackson-bom.version>3.1.7</jackson-bom.version>
-        <tomcat.version>11.0.26</tomcat.version>
+        <!-- CVE-2026-110879 (Jackson 2.x/3.x) and Tomcat 11.x security fixes. -->
+        <jackson-2-bom.version>2.21.8</jackson-2-bom.version>
+        <jackson-bom.version>3.1.8</jackson-bom.version>
+        <tomcat.version>11.0.27</tomcat.version>
         <netty.version>4.2.18.Final</netty.version>
         <logback.version>1.6.5</logback.version>
         <slf4j.version>2.0.19</slf4j.version>
 
+        <!-- ASM 9.11.1 fixes the October 2026 class-file processing advisories,
+             including CVE-2026-110260 and the 9.11 regression CVE-2026-112046. -->
+        <asm.version>9.11.1</asm.version>
+        <!-- Use a maintained org.json implementation in the test runtime, not
+             the unmaintained Vaadin android-json fork (CVE-2026-110974). -->
+        <json-java.version>20260814</json-java.version>
+        <!-- JsonPath 3 supports the already managed Jackson 3 test stack. -->
+        <json-path.version>3.0.0</json-path.version>
+
         <testcontainers.version>2.0.5</testcontainers.version>
         <archunit.version>1.5.1</archunit.version>
         <minio.version>8.6.0</minio.version>
+        <!-- Align MinIO's transitive Guava and include the CVE-2026-118042 fix. -->
+        <guava.version>33.8.0-jre</guava.version>
+        <!-- Override Spring Boot's managed versions for the published advisories. -->
+        <commons-codec.version>1.23.0</commons-codec.version>
+        <hibernate-validator.version>9.1.6.Final</hibernate-validator.version>
         <okhttp.version>5.1.0</okhttp.version>
         <bouncycastle.version>1.86</bouncycastle.version>
         <commons-compress.version>1.28.0</commons-compress.version>
@@ -54,6 +68,7 @@
         <jsoup.version>1.23.2</jsoup.version>
         <logstash-logback-encoder.version>9.0</logstash-logback-encoder.version>
         <maven-failsafe-plugin.version>3.5.6</maven-failsafe-plugin.version>
+        <jacoco.version>0.8.16</jacoco.version>
 
         <!--
             snappy-java 1.1.10.11: up-to-date patched release for Snappy
@@ -88,6 +103,23 @@
                 <version>${testcontainers.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+
+            <!-- Keep the entire ASM family aligned; prevents older transitive
+                 ASM implementations from reintroducing 2026 DoS vulnerabilities. -->
+            <dependency>
+                <groupId>org.ow2.asm</groupId>
+                <artifactId>asm-bom</artifactId>
+                <version>${asm.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Keep MinIO on the patched Guava version without changing the MinIO API. -->
+            <dependency>
+                <groupId>com.google.guava</groupId>
+                <artifactId>guava</artifactId>
+                <version>${guava.version}</version>
             </dependency>
 
             <!-- Security override for transitive Testcontainers/docker-java dependency. -->
@@ -289,10 +321,49 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- JUnit, AssertJ, Mockito and Spring test utilities -->
+        <!-- JUnit, AssertJ, Mockito and Spring test utilities. The upstream
+             test starter includes vulnerable json-smart directly; its JsonPath
+             dependency also references json-smart. Both paths are removed here. -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.vaadin.external.google</groupId>
+                    <artifactId>android-json</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>net.minidev</groupId>
+                    <artifactId>json-smart</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.jayway.jsonpath</groupId>
+                    <artifactId>json-path</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <!-- Retain JsonPath assertions, but never load its vulnerable default
+             parser. A global JUnit extension configures Jackson 3 providers. -->
+        <dependency>
+            <groupId>com.jayway.jsonpath</groupId>
+            <artifactId>json-path</artifactId>
+            <version>${json-path.version}</version>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>net.minidev</groupId>
+                    <artifactId>json-smart</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <!-- Supported org.json implementation for JSONassert and other tests. -->
+        <dependency>
+            <groupId>org.json</groupId>
+            <artifactId>json</artifactId>
+            <version>${json-java.version}</version>
             <scope>test</scope>
         </dependency>
 
@@ -390,6 +461,19 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
+                    <!-- Все обычные тесты и локальные *IT выполняются при clean verify. -->
+                    <failIfNoTests>true</failIfNoTests>
+                    <includes>
+                        <include>**/Test*.java</include>
+                        <include>**/*Test.java</include>
+                        <include>**/*Tests.java</include>
+                        <include>**/*TestCase.java</include>
+                        <include>**/*IT.java</include>
+                    </includes>
+                    <!-- Только внешние тестовые Redis Cluster/Sentinel: отдельный Environment. -->
+                    <excludes>
+                        <exclude>**/ratelimit/external/*IT.java</exclude>
+                    </excludes>
                     <argLine>
                         @{argLine}
                         ${test.jvm.args}
@@ -397,6 +481,24 @@
                     </argLine>
                 </configuration>
             </plugin>
+
+                <!-- JaCoCo: JaCoCo agent + XML / HTML for each clean verify. -->
+                <plugin>
+                    <groupId>org.jacoco</groupId>
+                    <artifactId>jacoco-maven-plugin</artifactId>
+                    <version>${jacoco.version}</version>
+                    <executions>
+                        <execution>
+                            <id>prepare-jacoco-agent</id>
+                            <goals><goal>prepare-agent</goal></goals>
+                        </execution>
+                        <execution>
+                            <id>jacoco-coverage-report</id>
+                            <phase>verify</phase>
+                            <goals><goal>report</goal></goals>
+                        </execution>
+                    </executions>
+                </plugin>
 
             <!-- Build environment validation -->
             <plugin>
@@ -446,8 +548,10 @@
                                 ${test.jvm.args}
                                 -javaagent:"${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar"
                             </argLine>
+                            <!-- Failover запрещён в обычном CI: только защищённый workflow. -->
+                            <failIfNoTests>true</failIfNoTests>
                             <includes>
-                                <include>**/*IT.java</include>
+                                <include>**/ratelimit/external/*IT.java</include>
                             </includes>
                         </configuration>
                     </plugin>

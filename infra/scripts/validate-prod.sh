@@ -33,7 +33,7 @@ env_file="$(cd -- "$(dirname -- "$env_file")" && pwd)/$(basename -- "$env_file")
 export SAFEAI_RUNTIME_ENV_FILE="$env_file"
 
 required_variables=(
-    SAFEAI_BACKEND_IMAGE SAFEAI_NGINX_IMAGE POSTGRES_IMAGE REDIS_IMAGE
+    SAFEAI_BACKEND_IMAGE SAFEAI_NGINX_IMAGE SAFEAI_PROMETHEUS_IMAGE POSTGRES_IMAGE REDIS_IMAGE
     SAFEAI_PUBLIC_BIND SAFEAI_SECRETS_DIR SAFEAI_CONFIG_DIR SAFEAI_SECRET_GID
     POSTGRES_DB POSTGRES_BOOTSTRAP_USER SAFEAI_DB_MIGRATOR_USER SAFEAI_DB_APP_USER
     SAFEAI_AI_PROVIDER SAFEAI_KNOWLEDGE_EMBEDDING_PROVIDER
@@ -68,7 +68,7 @@ placeholder_name="$(awk -F= '/^[[:space:]]*[A-Za-z_][A-Za-z_0-9]*=/ && $0 ~ /REP
 [[ "${SAFEAI_SECURITY_PASSWORD_ALLOW_LEGACY_UNPREFIXED_BCRYPT:-}" == false || "${SAFEAI_SECURITY_PASSWORD_ALLOW_LEGACY_UNPREFIXED_BCRYPT:-}" == true ]] || fail "Legacy password compatibility must be declared explicitly"
 
 # These four image references are deployed directly; require cryptographic digests.
-for name in SAFEAI_BACKEND_IMAGE SAFEAI_NGINX_IMAGE POSTGRES_IMAGE REDIS_IMAGE; do
+for name in SAFEAI_BACKEND_IMAGE SAFEAI_NGINX_IMAGE SAFEAI_PROMETHEUS_IMAGE POSTGRES_IMAGE REDIS_IMAGE; do
     [[ "${!name}" =~ @sha256:[0-9a-fA-F]{64}$ ]] || fail "$name must be pinned to a 64-hex SHA256 digest"
 done
 
@@ -121,24 +121,9 @@ case "${SAFEAI_KNOWLEDGE_EMBEDDING_PROVIDER:-}" in
     *) fail "Production knowledge embedding provider must be openai in this deployment" ;;
 esac
 
-# The rules directory is mounted into the Prometheus container by Compose.
-rules="$infra_dir/prometheus/rules/safeai-audit-outbox.yml"
-conf="$infra_dir/prometheus/prometheus.yml"
-[[ -s "$rules" && -s "$conf" ]] || fail "Prometheus audit rules/config missing"
-grep -Fq 'SafeAiAuditDeadLettersPresent' "$rules" || fail "Critical dead-letter alert missing"
-grep -Fq '/etc/prometheus/rules/*.yml' "$conf" || fail "Rule loader is not configured"
-grep -Fq 'backend:9091' "$conf" || fail "Backend management scrape target missing"
-
-# Syntax lint is mandatory at release time, not dependent on external internet.
-# In deployments without a host promtool, run the documented container check
-# with the pinned Prometheus image BEFORE deploying changes.
-if command -v promtool >/dev/null 2>&1; then
-    # The host does not mount /etc/prometheus/rules from the container;
-    # config lint must run inside the Prometheus image (see README).
-    promtool check rules "$rules" >/dev/null || fail "Prometheus rules are invalid"
-else
-    printf 'WARNING: promtool unavailable on host; run the container-based promtool checks before deployment.\n' >&2
-fi
-
+# Validate the deployed Compose topology and EVERY mounted Prometheus rule.
+# A missing or invalid rule MUST fail production preflight.
 docker compose --env-file "$env_file" -f "$compose_file" config --quiet || fail "Docker Compose configuration invalid"
+bash "$script_dir/check-config-topology.sh" || fail "Canonical configuration structure invalid"
+bash "$script_dir/check-prometheus-config.sh" || fail "Prometheus configuration/rules invalid"
 printf 'Production configuration preflight passed (Alertmanager delivery must be separately verified).\n'

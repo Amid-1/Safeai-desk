@@ -350,7 +350,7 @@ class UserManagementPostgresIntegrationTest
     @Test
     void activeRefreshTokenBlocksPermanentDeletion() {
         DeletionFixture fixture = disabledUserFixture("refresh@test.com");
-        insertActiveRefreshToken(fixture.userId(), 0L);
+        insertActiveRefreshToken(fixture.userId());
 
         assertDeletionConflict(fixture, "refresh-сессии");
     }

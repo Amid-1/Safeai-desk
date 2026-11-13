@@ -13,6 +13,7 @@ import ru.safeai.gateway.knowledge.dto.KnowledgeReindexResponse;
 import ru.safeai.gateway.knowledge.embedding.KnowledgeEmbeddingProvider;
 import ru.safeai.gateway.knowledge.entity.KnowledgeDocumentEntity;
 import ru.safeai.gateway.knowledge.model.KnowledgeBaseAccessLevel;
+import ru.safeai.gateway.knowledge.model.KnowledgeDocumentLifecycleState;
 import ru.safeai.gateway.knowledge.model.KnowledgeHealthState;
 import ru.safeai.gateway.knowledge.model.KnowledgeIngestionStatus;
 import ru.safeai.gateway.knowledge.repository.KnowledgeDocumentRepository;
@@ -297,6 +298,13 @@ public class KnowledgeOperationsService {
                 .orElseThrow(
                         this::notFound
                 );
+
+        if (document.getLifecycleState()
+                != KnowledgeDocumentLifecycleState.AVAILABLE) {
+            throw new ConflictException(
+                    "Документ удаляется и не может быть переиндексирован."
+            );
+        }
 
         if (document.getCurrentVersionId() == null) {
             throw new ConflictException(

@@ -42,6 +42,7 @@ export type KnowledgeBase = {
         KnowledgeBaseVisibility
 
     enabled: boolean
+    lifecycleState?: 'AVAILABLE' | 'DELETING'
 
     createdByUserId: string
 

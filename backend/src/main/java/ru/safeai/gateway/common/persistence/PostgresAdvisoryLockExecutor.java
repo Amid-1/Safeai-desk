@@ -1,6 +1,7 @@
 package ru.safeai.gateway.common.persistence;
 
 import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.jdbc.datasource.DataSourceUtils;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -223,33 +224,40 @@ public final class PostgresAdvisoryLockExecutor {
     /**
      * Makes a potentially lock-owning pooled connection unusable best-effort.
      *
-     * <p>{@link Connection#abort(java.util.concurrent.Executor)} is preferred
-     * because ordinary {@code close()} on a pool proxy may mean "return to
-     * pool". If abort itself fails, close is still attempted as a final
-     * defensive fallback and all cleanup failures are attached to the original
-     * failure.</p>
+     * <p>Abort terminates the physical session. Closing the pool handle then
+     * lets the pool discard the aborted connection. Hikari may report a
+     * rollback failure during close, so keep it attached to the original
+     * advisory lock failure.</p>
      */
     private static void abortConnection(
             Connection connection,
             Throwable rootFailure
     ) {
+        Connection target = DataSourceUtils.getTargetConnection(connection);
         try {
-            connection.abort(
-                    Runnable::run
-            );
-            return;
+            target.abort(Runnable::run);
         } catch (SQLException abortFailure) {
-            rootFailure.addSuppressed(
-                    abortFailure
-            );
+            rootFailure.addSuppressed(abortFailure);
+            closeDelegate(target, rootFailure);
         }
 
         try {
-            connection.close();
+            target.close();
         } catch (SQLException closeFailure) {
-            rootFailure.addSuppressed(
-                    closeFailure
-            );
+            rootFailure.addSuppressed(closeFailure);
+        }
+    }
+
+    private static void closeDelegate(Connection target, Throwable rootFailure) {
+        // Hikari unwraps Connection.class to the driver connection. Close
+        // that session before closing the handle so it cannot be recycled.
+        try {
+            Connection delegate = target.unwrap(Connection.class);
+            if (delegate != null && delegate != target) {
+                delegate.close();
+            }
+        } catch (SQLException closeFailure) {
+            rootFailure.addSuppressed(closeFailure);
         }
     }
 

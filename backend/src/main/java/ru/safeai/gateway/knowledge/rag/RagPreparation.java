@@ -14,128 +14,63 @@ public record RagPreparation(
         String embeddingModel,
         String contextSha256,
         List<KnowledgeContextSource> sources,
-        AiChatRequest aiRequest
+        AiChatRequest aiRequest,
+        UUID executionPermitId
 ) {
+    private static final Pattern SHA256_HEX = Pattern.compile("[0-9a-f]{64}");
 
-    private static final Pattern SHA256_HEX =
-            Pattern.compile(
-                    "[0-9a-f]{64}"
-            );
-
-    public RagPreparation {
-        Objects.requireNonNull(
-                mode,
-                "mode не должен быть null"
-        );
-
-        Objects.requireNonNull(
-                aiRequest,
-                "aiRequest не должен быть null"
-        );
-
-        sources =
-                sources == null
-                        ? List.of()
-                        : List.copyOf(
-                        sources
-                );
-
-        if (mode == KnowledgeMode.GENERAL) {
-            validateGeneralState(
-                    knowledgeBaseId,
-                    retrievalRunId,
-                    embeddingModel,
-                    contextSha256,
-                    sources
-            );
-        } else {
-            validateKnowledgeState(
-                    knowledgeBaseId,
-                    retrievalRunId,
-                    embeddingModel,
-                    contextSha256
-            );
-        }
-    }
-
-    public static RagPreparation general(
-            AiChatRequest request
-    ) {
-        return new RagPreparation(
-                KnowledgeMode.GENERAL,
-                null,
-                null,
-                null,
-                null,
-                List.of(),
-                request
-        );
-    }
-
-    private static void validateGeneralState(
+    /** Source-compatible constructor for non-production tests and legacy GENERAL contexts. */
+    public RagPreparation(
+            KnowledgeMode mode,
             UUID knowledgeBaseId,
             UUID retrievalRunId,
             String embeddingModel,
             String contextSha256,
-            List<KnowledgeContextSource> sources
+            List<KnowledgeContextSource> sources,
+            AiChatRequest aiRequest
     ) {
-        if (knowledgeBaseId != null
-                || retrievalRunId != null
-                || embeddingModel != null
-                || contextSha256 != null
-                || !sources.isEmpty()) {
-            throw new IllegalArgumentException(
-                    "GENERAL RagPreparation не должен содержать knowledge state"
-            );
+        this(mode, knowledgeBaseId, retrievalRunId, embeddingModel, contextSha256,
+                sources, aiRequest, null);
+    }
+
+    public RagPreparation {
+        Objects.requireNonNull(mode, "mode не должен быть null");
+        Objects.requireNonNull(aiRequest, "aiRequest не должен быть null");
+        sources = sources == null ? List.of() : List.copyOf(sources);
+
+        if (mode == KnowledgeMode.GENERAL) {
+            if (knowledgeBaseId != null || retrievalRunId != null
+                    || embeddingModel != null || contextSha256 != null
+                    || !sources.isEmpty() || executionPermitId != null) {
+                throw new IllegalArgumentException(
+                        "GENERAL RagPreparation не должен содержать knowledge state");
+            }
+        } else {
+            Objects.requireNonNull(knowledgeBaseId,
+                    "knowledgeBaseId обязателен для knowledge mode");
+            Objects.requireNonNull(retrievalRunId,
+                    "retrievalRunId обязателен для knowledge mode");
+            if (embeddingModel == null || embeddingModel.isBlank()) {
+                throw new IllegalArgumentException(
+                        "embeddingModel обязателен для knowledge mode");
+            }
+            if (contextSha256 == null || !SHA256_HEX.matcher(contextSha256).matches()) {
+                throw new IllegalArgumentException(
+                        "contextSha256 должен быть SHA-256 hex");
+            }
         }
     }
 
-    private static void validateKnowledgeState(
-            UUID knowledgeBaseId,
-            UUID retrievalRunId,
-            String embeddingModel,
-            String contextSha256
-    ) {
-        Objects.requireNonNull(
-                knowledgeBaseId,
-                "knowledgeBaseId обязателен для knowledge mode"
-        );
-
-        Objects.requireNonNull(
-                retrievalRunId,
-                "retrievalRunId обязателен для knowledge mode"
-        );
-
-        requireEmbeddingModel(
-                embeddingModel
-        );
-
-        requireSha256(
-                contextSha256
-        );
+    public static RagPreparation general(AiChatRequest request) {
+        return new RagPreparation(KnowledgeMode.GENERAL, null, null, null,
+                null, List.of(), request, null);
     }
 
-    private static void requireEmbeddingModel(
-            String value
-    ) {
-        if (value == null
-                || value.isBlank()) {
-            throw new IllegalArgumentException(
-                    "embeddingModel обязателен для knowledge mode"
-            );
+    public RagPreparation withExecutionPermit(UUID permitId) {
+        if (!mode.usesKnowledge() || permitId == null) {
+            throw new IllegalArgumentException("Execution permit requires Knowledge mode");
         }
-    }
-
-    private static void requireSha256(
-            String value
-    ) {
-        if (value == null
-                || !SHA256_HEX.matcher(
-                value
-        ).matches()) {
-            throw new IllegalArgumentException(
-                    "contextSha256 должен быть SHA-256 hex"
-            );
-        }
+        return new RagPreparation(mode, knowledgeBaseId, retrievalRunId, embeddingModel,
+                contextSha256, sources, aiRequest, permitId);
     }
 }

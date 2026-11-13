@@ -281,7 +281,8 @@ docker compose -f infra/docker-compose.local.yml up -d postgres redis
 
 ## 8. Полное удаление локальной базы данных
 
-> Внимание: следующая команда удаляет контейнеры, сеть и Docker volumes проекта. Все данные локальной PostgreSQL будут потеряны.
+> Внимание: следующая команда удаляет контейнеры, сеть и Docker volumes проекта. Все данные локальной PostgreSQL будут 
+> потеряны.
 
 ```bash
 cd ~/Workspace/Projects/Products/SafeAI-Desk
@@ -327,7 +328,8 @@ open -a "IntelliJ IDEA" ~/Workspace/Projects/Products/SafeAI-Desk
 ~/Workspace/Projects/Products/SafeAI-Desk
 ```
 
-Не открывай только `backend/pom.xml` как отдельный проект, если требуется одновременно работать с backend, frontend, infra и документацией.
+Не открывай только `backend/pom.xml` как отдельный проект, если требуется одновременно работать с backend, frontend, 
+infra и документацией.
 
 ## 11. Используемые порты
 
@@ -419,6 +421,25 @@ SafeAI Backend
            └── bucket safeai-knowledge
                  └── реальные загруженные файлы
 ```
+
+
+
+Что теперь изменится в работе
+Теперь правильный процесс разработки SafeAI Desk выглядит так:
+1. Создаёшь отдельную ветку от актуальной main.
+2. Вносишь изменения в Java, React или документацию.
+3. Создаёшь Pull Request.
+4. GitHub автоматически проверяет frontend и backend.
+5. После успешных проверок объединяешь изменения с main.
+Для нового изменения начинай с этих команд:
+cd "$HOME/Workspace/Projects/Products/SafeAI-Desk"
+
+git switch main
+git pull --ff-only origin main
+
+git switch -c feature/nazvanie-zadachi
+
+
 
 Напиши полный комментарий сообщение по всем последним изменениям для сообщения commit -m "" для файла commit-message.txt, 
 который лежит в корне в прошедшем времени на русском и который сделаю

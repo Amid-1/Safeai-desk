@@ -16,6 +16,7 @@ import ru.safeai.gateway.knowledge.entity.KnowledgeDocumentEntity;
 import ru.safeai.gateway.knowledge.entity.KnowledgeDocumentVersionEntity;
 import ru.safeai.gateway.knowledge.entity.KnowledgeIngestionJobEntity;
 import ru.safeai.gateway.knowledge.model.KnowledgeBaseAccessLevel;
+import ru.safeai.gateway.knowledge.model.KnowledgeDocumentLifecycleState;
 import ru.safeai.gateway.knowledge.model.KnowledgeIngestionStatus;
 import ru.safeai.gateway.knowledge.repository.KnowledgeDocumentRepository;
 import ru.safeai.gateway.knowledge.repository.KnowledgeDocumentVersionRepository;
@@ -175,6 +176,13 @@ public class KnowledgeDocumentWriteService {
                         )
                 );
 
+        if (document.getLifecycleState()
+                != KnowledgeDocumentLifecycleState.AVAILABLE) {
+            throw new ConflictException(
+                    "Документ удаляется и недоступен для изменений."
+            );
+        }
+
         int versionNumber =
                 documents.currentVersionNumber(
                         documentId,
@@ -276,6 +284,13 @@ public class KnowledgeDocumentWriteService {
                                 "Документ не найден."
                         )
                 );
+
+        if (document.getLifecycleState()
+                != KnowledgeDocumentLifecycleState.AVAILABLE) {
+            throw new ConflictException(
+                    "Документ удаляется и недоступен для изменений."
+            );
+        }
 
         if (request == null
                 || request.expectedVersion() == null

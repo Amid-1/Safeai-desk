@@ -1,0 +1,503 @@
+{
+  "_format": 1,
+  "issues": {
+    "backend/src/main/java/ru/safeai/gateway/SafeaiBackendApplication.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/ai/config/AiConfiguration.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/ai/config/AnthropicProviderConfiguration.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/ai/config/OpenAiProviderConfiguration.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/ai/dto/AiChatRequest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/ai/execution/ModelExecutionPlanEntity.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/ai/provider/AiContextWindowService.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/ai/provider/AiRetryProperties.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/ai/provider/ProviderPropertyValidator.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/ai/provider/anthropic/AnthropicProperties.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/ai/provider/openai/OpenAiProperties.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/audit/dto/AuditEventResponse.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/audit/listener/RateLimitAuditListener.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/audit/service/AuditCommandFactory.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/audit/service/AuditEventQueryPolicy.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/audit/service/AuditRetentionLockService.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/auth/exception/AuthServiceUnavailableException.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/auth/exception/RefreshTokenReuseDetectedException.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/auth/security/AccessCookieAuthenticationFilter.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/auth/security/CsrfCookieFilter.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/auth/security/CustomUserDetailsService.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/auth/security/SpaCsrfTokenRequestHandler.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/auth/security/package-info.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/auth/service/LoginSessionResult.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/auth/service/LoginSessionTransactionService.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/auth/service/LogoutAuditSubject.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/auth/service/RefreshTokenCleanupProperties.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/auth/service/UserSessionRevocationService.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/auth/validation/Utf8ByteLength.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/auth/validation/Utf8ByteLengthValidator.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/chat/config/ChatProperties.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/chat/config/ChatQuotaProperties.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/chat/config/ChatRecoveryProperties.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/chat/dto/SendMessageRequest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/chat/entity/ChatMessageEntity.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/chat/exception/ChatAccessRevokedException.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/chat/exception/ChatApiException.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/chat/exception/ChatApiExceptionHandler.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/chat/exception/ChatTurnFailedException.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/chat/exception/ChatTurnInProgressException.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/chat/repository/ChatMessageRepository.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/chat/service/ChatLockService.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/common/exception/ApiErrorResponse.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/common/exception/ApiException.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/common/security/CorsProperties.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/common/security/RoleAuthorityMapper.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/common/security/SafeAiUserPrincipal.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/knowledge/chunking/KnowledgeChunker.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/knowledge/config/KnowledgeEmbeddingProperties.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/knowledge/config/KnowledgeOcrProperties.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/knowledge/dto/CreateKnowledgeBaseRequest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/knowledge/dto/KnowledgeBaseAccessResponse.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/knowledge/embedding/KnowledgeEmbeddingException.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/knowledge/embedding/OpenAiKnowledgeEmbeddingProvider.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/knowledge/entity/KnowledgeDocumentVersionEntity.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/knowledge/extraction/KnowledgeExtractionService.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/knowledge/extraction/PdfKnowledgeExtractor.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/knowledge/ingestion/KnowledgeIngestionProcessor.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/knowledge/ingestion/KnowledgeIngestionQueueRepository.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/knowledge/rag/KnowledgeContextAssembler.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/knowledge/rag/KnowledgeRagExecutionPermitService.java": {
+      "trailing-space:1a0f564ddc6039457b2f": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/knowledge/repository/KnowledgeDocumentQueryRepository.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/knowledge/repository/KnowledgeDocumentRepository.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/knowledge/repository/KnowledgeMemberDirectoryRepository.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/knowledge/service/KnowledgeDocumentNameNormalizer.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/knowledge/service/KnowledgeNameNormalizerSupport.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/knowledge/storage/KnowledgeStorageProperties.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/knowledge/storage/KnowledgeStorageType.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/knowledge/storage/LocalObjectStorage.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/knowledge/storage/S3ObjectStorage.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/model/domain/RuntimeModelProbeResult.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/ratelimit/LoginRateLimitService.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/ratelimit/RateLimitExceededEvent.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/ratelimit/RateLimitRedisKeyProperties.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/usage/config/UsageProperties.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/usage/controller/UsageRebuildController.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/usage/dto/UsageCostSummary.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/usage/dto/UsageDailySummaryResponse.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/usage/dto/UsageModelSummaryResponse.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/usage/dto/UsageResponseSummary.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/usage/dto/UsageSummaryResponse.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/usage/dto/UsageTokenSummary.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/usage/dto/UsageUserSummaryResponse.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/usage/repository/UsageInstantRange.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/usage/repository/UsageQueryCriteria.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/usage/repository/UsageQueryRepository.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/user/entity/UserEntity.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/user/repository/UserRepository.java": {
+      "trailing-space:1e8a105dbcab2f5d6b30": 8
+    },
+    "backend/src/main/java/ru/safeai/gateway/user/validation/BcryptUtf8Length.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/user/validation/BcryptUtf8LengthValidator.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/user/validation/PasswordPolicy.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/user/validation/PasswordValidator.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/user/validation/UserEmailNormalizer.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/main/java/ru/safeai/gateway/user/validation/ValidPassword.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/PasswordHashGenerator.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/ai/AiChatResponseTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/ai/AiContextWindowServiceTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/ai/AiExceptionHandlerTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/ai/AiMessageAndRequestTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/ai/AnthropicPropertiesTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/ai/OpenAiPropertiesTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/ai/PricingResultTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/ai/provider/AiProviderSupportResolvedModelTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/ai/provider/anthropic/AnthropicProviderContractTest.java": {
+      "trailing-space:07f3b6ecf75536d870ef": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/ai/provider/openai/OpenAiProviderContractTest.java": {
+      "trailing-space:07f3b6ecf75536d870ef": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/ai/testsupport/AiTestFixtures.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/audit/controller/AuditControllerSecurityTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/audit/dto/AuditEventPageResponseTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/audit/service/AuditDirectoryServiceTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/audit/service/AuditOutboxWriterTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/auth/integration/OrganizationSecurityGateConcurrencyIT.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/auth/integration/UserSecurityMutationTestService.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/auth/security/CustomUserDetailsServiceTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/auth/security/JwtCodecConfigurationTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/auth/security/SafeAiJwtAuthenticationConverterTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/auth/security/SecurityConfigIntegrationTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/auth/security/UserStatusFilterTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/auth/service/JwtServiceTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/chat/config/ChatConfigurationPropertiesTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/chat/controller/ChatControllerContractTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/chat/dto/ChatDtoContractTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/chat/integration/ChatTenantIsolationIntegrationTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/chat/integration/ChatTurnRepositoryTransactionIntegrationTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/chat/integration/ChatUsageQualityIntegrationTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/chat/service/ChatLockServiceTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/chat/service/ChatTurnRecoveryServiceTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/common/exception/GlobalExceptionHandlerAccessDeniedTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/common/exception/GlobalExceptionHandlerTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/common/security/AccessTokenSubjectTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/common/security/JwtBearerSecurityIntegrationTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/common/security/JwtConfigurationBindingTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/common/security/JwtPropertiesTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/common/security/SafeAiUserPrincipalTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/common/security/SecurityErrorResponseIntegrationTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/knowledge/ingestion/KnowledgeIngestionQueueIntegrationTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/knowledge/integration/KnowledgeGenerationLifecycleIntegrationTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/knowledge/integration/KnowledgePersistenceIntegrationTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/knowledge/service/KnowledgeRealFixtureContractTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/knowledge/storage/KnowledgeStoragePropertiesTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/knowledge/storage/LocalObjectStorageTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/model/service/ModelRoutingCostPolicyTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/organization/dto/OrganizationRequestValidationTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/organization/service/OrganizationServiceAuthorizationBoundaryTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/ratelimit/LoginRateLimitServiceTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/ratelimit/RedisFixedWindowRateLimiterIntegrationTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/ratelimit/RedisFixedWindowRateLimiterSingleKeyIntegrationTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/ratelimit/external/RedisClusterRateLimitIT.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/ratelimit/external/RedisSentinelFailoverIT.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/usage/controller/UsageControllerContractTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/usage/dto/UsagePagingContractTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/usage/dto/UsageSummaryValueObjectsTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/usage/repository/UsageCoverageIntegrationTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/usage/repository/UsageExplainAnalyzePerformanceIntegrationTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/usage/repository/UsagePerformanceIntegrationTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/usage/repository/UsageQueryRepositoryTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/usage/repository/UsageRollupAdvisoryLockIntegrationTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/usage/repository/UsageUtcAggregationIntegrationTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/usage/service/UsageQueryServiceTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/usage/service/UsageReportExecutorTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/usage/service/UsageRollupDayProcessorTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/usage/testsupport/UsagePostgresIntegrationTestSupport.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/user/dto/UserMutationRequestValidationTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/user/mapper/UserRoleMapperTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/user/service/UserServiceReadTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/user/service/UserStatusCacheProductionInvariantVerifierTest.java": {
+      "no-final-newline": 1
+    },
+    "backend/src/test/java/ru/safeai/gateway/user/validation/UserEmailNormalizerTest.java": {
+      "no-final-newline": 1
+    }
+  }
+}

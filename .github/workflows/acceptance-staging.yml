@@ -1,0 +1,85 @@
+# Not a PR gate: external provider costs and immutable S3 objects require approval.
+name: Staging acceptance / WORM и реальные AI
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Выбор строго изолированной проверки
+        required: true
+        type: choice
+        options:
+          - s3-worm
+          - live-ai-providers
+      approve_side_effects:
+        description: Подтверждаю затраты/неудаляемый staging-объект
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: safeai-staging-acceptance
+  cancel-in-progress: false
+
+jobs:
+  authorize:
+    name: Проверка допуска к опасным staging-испытаниям
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Требовать main и явное подтверждение побочных эффектов
+        env:
+          RELEASE_REF: ${{ github.ref }}
+          APPROVED: ${{ inputs.approve_side_effects }}
+        run: |
+          test "$RELEASE_REF" = refs/heads/main || { echo 'Only main allowed' >&2; exit 1; }
+          test "$APPROVED" = true || { echo 'Explicit approval required' >&2; exit 1; }
+
+  s3:
+    name: AWS / Object Lock COMPLIANCE и Legal Hold
+    needs: authorize
+    if: github.ref == 'refs/heads/main' && inputs.operation == 's3-worm' && inputs.approve_side_effects
+    runs-on: ubuntu-latest
+    environment: acceptance-staging
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Краткоживущие AWS credentials по OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.SAFEAI_TEST_AWS_ROLE_ARN }}
+          aws-region: ${{ vars.SAFEAI_TEST_AWS_REGION }}
+      - name: "Staging Object Lock: проверка поведения хранилища"
+        env:
+          SAFEAI_TEST_S3_BUCKET: ${{ vars.SAFEAI_TEST_S3_BUCKET }}
+          SAFEAI_TEST_AWS_ACCOUNT_ID: ${{ vars.SAFEAI_TEST_AWS_ACCOUNT_ID }}
+          SAFEAI_WORM_APPROVAL: I_ACCEPT_IMMUTABLE_STAGING_OBJECTS
+        run: python3 infra/tests/acceptance/s3_worm_probe.py
+
+  providers:
+    name: Live OpenAI и Anthropic / минимальные API-контракты
+    needs: authorize
+    if: github.ref == 'refs/heads/main' && inputs.operation == 'live-ai-providers' && inputs.approve_side_effects
+    runs-on: ubuntu-latest
+    environment: acceptance-staging
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Платные тестовые запросы без пользовательских данных
+        env:
+          SAFEAI_TEST_OPENAI_KEY: ${{ secrets.SAFEAI_TEST_OPENAI_KEY }}
+          SAFEAI_TEST_OPENAI_MODEL: ${{ vars.SAFEAI_TEST_OPENAI_MODEL }}
+          SAFEAI_TEST_ANTHROPIC_KEY: ${{ secrets.SAFEAI_TEST_ANTHROPIC_KEY }}
+          SAFEAI_TEST_ANTHROPIC_MODEL: ${{ vars.SAFEAI_TEST_ANTHROPIC_MODEL }}
+          SAFEAI_PROVIDER_APPROVAL: I_ACCEPT_PAID_STAGING_REQUESTS
+        run: python3 infra/tests/acceptance/provider_live_probe.py

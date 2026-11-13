@@ -6,6 +6,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatDetails } from '../../api/chatApi'
 import type { PendingTurn } from '../../lib/chatPage.helpers'
+import { createPendingTurn } from '../../lib/chatPage.helpers'
+import { applyReactStateUpdate } from '../../../../test/fixtures/applyReactStateUpdate'
 import { ApiError } from '../../../../shared/api/http'
 import { chat, userMessage, assistantMessage, succeeded, IDS } from '../../../../test/fixtures/chatApiFixtures'
 import { createTurnUpdates } from './chatTurnUpdates'
@@ -24,17 +26,8 @@ vi.mock('../../../../shared/lib/secureUuid', () => ({
 }))
 
 const sendMock = vi.mocked(sendMessage)
-const pending = (): PendingTurn => ({
-    chatId: IDS.chat,
-    clientRequestId: IDS.request,
-    optimisticMessageId: `pending-${IDS.request}`,
-    content: 'hello',
-    status: 'SENDING',
-    error: null,
-    retryAfterUntil: null,
-    knowledgeBaseId: null,
-    knowledgeMode: 'GENERAL',
-})
+const pending = (): PendingTurn =>
+    createPendingTurn(IDS.chat, 'hello', IDS.request)
 
 function harness() {
     let currentChat: ChatDetails | null = { ...chat(), messages: [] }
@@ -54,28 +47,29 @@ function harness() {
         scrollIntentRef,
         pendingTurnsRef,
         setChats: (next: Parameters<ChatControllerDependencies['setChats']>[0]) => {
-            currentChats = typeof next === 'function' ? next(currentChats) : next
+            currentChats = applyReactStateUpdate(currentChats, next)
         },
         setActiveChat: (next: Parameters<ChatControllerDependencies['setActiveChat']>[0]) => {
-            currentChat = typeof next === 'function' ? next(currentChat) : next
+            currentChat = applyReactStateUpdate(currentChat, next)
             activeChatRef.current = currentChat
         },
         setAnswerPassports: (next: Parameters<ChatControllerDependencies['setAnswerPassports']>[0]) => {
-            passports = typeof next === 'function' ? next(passports) : next
+            passports = applyReactStateUpdate(passports, next)
         },
         setDrafts: (next: Parameters<ChatControllerDependencies['setDrafts']>[0]) => {
-            drafts = typeof next === 'function' ? next(drafts) : next
+            drafts = applyReactStateUpdate(drafts, next)
         },
         setPendingTurns: (next: Parameters<ChatControllerDependencies['setPendingTurns']>[0]) => {
-            currentPending = typeof next === 'function' ? next(currentPending) : next
+            currentPending = applyReactStateUpdate(currentPending, next)
         },
         setSendError: (value: string | ((previous: string) => string)) => {
-            sendError = typeof value === 'function' ? value(sendError) : value
+            sendError = applyReactStateUpdate(sendError, value)
         },
     } satisfies Parameters<typeof createTurnUpdates>[0]
 
     const updates = createTurnUpdates(deps)
     const refreshChatTitle = vi.fn(async () => undefined)
+    const ensureAutomaticChatTitle = vi.fn(async () => undefined)
     const reconcilePendingTurn = vi.fn(async () => undefined)
     const failure = createTurnFailureHandler({
         setSendError: deps.setSendError,
@@ -100,6 +94,7 @@ function harness() {
         activePendingTurn: undefined,
         activeChatHasPending: false,
         refreshChatTitle,
+        ensureAutomaticChatTitle,
         handleSendFailure: failure.handleSendFailure,
         applySendSuccess: updates.applySendSuccess,
         finishPendingTurn: updates.finishPendingTurn,
@@ -109,7 +104,7 @@ function harness() {
         ...overrides,
     })
     return {
-        updates, failure, makeSubmission, reconcilePendingTurn,
+        updates, failure, makeSubmission, reconcilePendingTurn, ensureAutomaticChatTitle,
         pendingTurnsRef, sendInFlightRef,
         get activeChat() { return currentChat },
         get chats() { return currentChats },
@@ -189,6 +184,15 @@ describe('Контракт отправки и idempotency', () => {
 })
 
 describe('Классификация ошибок отправки', () => {
+    it('явный отказ авторизации не маскируется как неопределённая отправка', async () => {
+        const h = harness()
+        await h.failure.handleSendFailure(
+            pending(), new ApiError('Нет доступа к модели', { code: 'FORBIDDEN' }, 403),
+        )
+        expect(h.pendingTurnsRef.current[IDS.chat]?.status).toBe('FAILED')
+        expect(h.reconcilePendingTurn).not.toHaveBeenCalled()
+    })
+
     it.each([
         ['AI_OUTCOME_AMBIGUOUS', 'AMBIGUOUS'],
         ['CHAT_PROCESSOR_FENCED', 'AMBIGUOUS'],
@@ -219,6 +223,20 @@ describe('Классификация ошибок отправки', () => {
         await h.failure.handleSendFailure(pending(), new Error('network'))
         expect(h.pendingTurnsRef.current[IDS.chat]?.clientRequestId).toBe(IDS.request)
         expect(h.pendingTurnsRef.current[IDS.chat]?.status).toBe('SEND_UNKNOWN')
-        expect(h.reconcilePendingTurn).toHaveBeenCalledTimes(1)
+        expect(h.reconcilePendingTurn).toHaveBeenCalledExactlyOnceWith(
+            h.pendingTurnsRef.current[IDS.chat],
+        )
+    })
+
+    it('возвращает RATE_LIMITED и сохраняет исходный clientRequestId', async () => {
+        const h = harness()
+        await h.failure.handleSendFailure(
+            pending(), new ApiError('Too many requests', { code: 'RATE_LIMIT_EXCEEDED', retryAfterSeconds: 3 }, 429),
+        )
+        expect(h.pendingTurnsRef.current[IDS.chat]).toEqual(expect.objectContaining({
+            clientRequestId: IDS.request, status: 'RATE_LIMITED',
+        }))
+        expect(h.reconcilePendingTurn).not.toHaveBeenCalled()
+        expect(sendMock).not.toHaveBeenCalled()
     })
 })

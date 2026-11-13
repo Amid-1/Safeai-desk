@@ -3,6 +3,8 @@ package ru.safeai.gateway.chat.integration;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
@@ -14,7 +16,9 @@ import ru.safeai.gateway.ai.dto.AiChatResponse;
 import ru.safeai.gateway.ai.exception.AiProviderErrorType;
 import ru.safeai.gateway.ai.exception.AiProviderException;
 import ru.safeai.gateway.ai.execution.AiExecutionAttemptRecorder;
+import ru.safeai.gateway.ai.execution.AiOrganizationExecutionDeniedException;
 import ru.safeai.gateway.ai.execution.AiExecutionPlanService;
+import ru.safeai.gateway.ai.execution.ModelExecutionPlanEntity;
 import ru.safeai.gateway.ai.execution.AiExecutionRequest;
 import ru.safeai.gateway.ai.execution.AiExecutionService;
 import ru.safeai.gateway.ai.execution.ProviderExecutionTarget;
@@ -22,13 +26,17 @@ import ru.safeai.gateway.ai.provider.AiProviderAttemptContext;
 import ru.safeai.gateway.ai.metadata.AiResponseStatus;
 import ru.safeai.gateway.ai.metadata.PricingStatus;
 import ru.safeai.gateway.ai.metadata.UsageStatus;
+import ru.safeai.gateway.ai.pricing.ModelPricingScheme;
 import ru.safeai.gateway.chat.dto.SendMessageRequest;
 import ru.safeai.gateway.chat.entity.ChatTurnState;
 import ru.safeai.gateway.chat.exception.AiOutcomeAmbiguousException;
 import ru.safeai.gateway.chat.exception.ChatTurnFailedException;
+import ru.safeai.gateway.chat.exception.ChatAccessRevokedException;
+import ru.safeai.gateway.chat.exception.ChatQuotaExceededException;
 import ru.safeai.gateway.chat.exception.IdempotencyKeyReusedException;
 import ru.safeai.gateway.chat.repository.ChatTurnRepository;
 import ru.safeai.gateway.chat.service.ChatProcessingContext;
+import ru.safeai.gateway.chat.service.ChatSecurityStateService;
 import ru.safeai.gateway.chat.service.ChatTurnFinalizationService;
 import ru.safeai.gateway.chat.service.ChatTurnReservationService;
 import ru.safeai.gateway.chat.testsupport.ChatTestFixtures;
@@ -106,6 +114,9 @@ class ChatTurnStateMachineIntegrationTest
     private ChatTurnRepository turnRepository;
 
     @Autowired
+    private ChatSecurityStateService securityStateService;
+
+    @Autowired
     private ModelCatalogRepository modelCatalogRepository;
 
     @Autowired
@@ -126,7 +137,7 @@ class ChatTurnStateMachineIntegrationTest
         resetModelControlPlaneFixture();
         alignChatTimestamps();
         assertOwnedChatVisible();
-        seedEffectiveMockRuntimeCatalog();
+        seedEffectiveMockRuntimeCatalog(false);
         seedEnabledOrganizationPolicy();
         assertGovernedRuntimeReady();
         alignTestClockWithDatabaseForPhysicalExecution();
@@ -168,7 +179,7 @@ class ChatTurnStateMachineIntegrationTest
      * The strict router must resolve exactly one effective logical catalog
      * snapshot for the configured mock/mock-safeai physical runtime.
      */
-    private void seedEffectiveMockRuntimeCatalog() {
+    private void seedEffectiveMockRuntimeCatalog(boolean paid) {
         RuntimeModelStatusResponse runtime = runtimeModelStatusService.current();
 
         assertThat(runtime.provider()).isEqualTo("mock");
@@ -178,7 +189,7 @@ class ChatTurnStateMachineIntegrationTest
         ModelCatalogEntry catalogEntry = new ModelCatalogEntry(
                 UUID.randomUUID(),
                 TEST_MODEL_KEY,
-                1,
+                paid ? 2 : 1,
                 runtime.provider(),
                 runtime.model(),
                 "Chat state-machine mock runtime",
@@ -191,21 +202,22 @@ class ChatTurnStateMachineIntegrationTest
                 ModelRetentionStatus.NOT_DECLARED,
                 null,
                 ModelTrainingUseStatus.NOT_DECLARED,
-                ModelPricingStatus.FREE,
+                paid ? ModelPricingStatus.CONFIGURED : ModelPricingStatus.FREE,
                 true,
-                BigDecimal.ZERO,
+                paid ? BigDecimal.ONE : BigDecimal.ZERO,
                 null,
                 null,
-                BigDecimal.ZERO,
+                paid ? BigDecimal.ONE : BigDecimal.ZERO,
                 "{}",
-                null,
-                now.minusSeconds(60),
+                paid ? "test-flat-price-v2" : null,
+                now.minusSeconds(paid ? 30 : 60),
                 ModelCatalogSource.MANUAL,
                 USER_ID,
-                now.minusSeconds(120)
+                now.minusSeconds(120),
+                ModelPricingScheme.FLAT_TOKEN_V1
         );
 
-        modelCatalogRepository.insert(catalogEntry, "FLAT_TOKEN_V1");
+        modelCatalogRepository.insert(catalogEntry);
 
         assertThat(modelCatalogRepository.findEffectiveByRuntime(
                 runtime.provider(),
@@ -545,6 +557,37 @@ class ChatTurnStateMachineIntegrationTest
     }
 
     @Test
+    void uncertainPaidAttemptKeepsUnknownCostAndBlocksNextStrictQuotaReservation() {
+        seedEffectiveMockRuntimeCatalog(true);
+        jdbcTemplate.update("""
+                insert into organization_ai_quotas (
+                    organization_id, enabled, monthly_cost_limit_usd, created_at, updated_at
+                ) values (?, true, 100, current_timestamp, current_timestamp)
+                """, ORGANIZATION_ID);
+        ChatProcessingContext context = reserve("Paid question", UUID.randomUUID());
+        BigDecimal reserved = jdbcTemplate.queryForObject("""
+                select reserved_cost_usd from chat_quota_reservations where turn_id = ?
+                """, BigDecimal.class, context.turnId());
+        assertThat(reserved).isPositive();
+
+        UUID attemptId = startPhysicalAttempt(context);
+        physicalAttemptRecorder.ambiguous(attemptId, new IllegalStateException("No provider usage received"));
+        finalizationService.markAmbiguous(
+                context, "mock", context.requestedPhysicalModel(), null,
+                AiProviderErrorType.TIMEOUT.name(), "AI_PROVIDER_OUTCOME_AMBIGUOUS", principal()
+        );
+
+        assertThat(quotaState(context.turnId())).isEqualTo("AMBIGUOUS");
+        assertThat(jdbcTemplate.queryForObject("""
+                select actual_cost_usd from chat_quota_reservations where turn_id = ?
+                """, BigDecimal.class, context.turnId())).isNull();
+        assertThatThrownBy(() -> reserve("Next paid question", UUID.randomUUID()))
+                .isInstanceOf(ChatQuotaExceededException.class)
+                .hasMessageContaining("organization.monthlyCostUnverifiable");
+        assertThat(countChatQuotaReservations()).isEqualTo(1);
+    }
+
+    @Test
     void staleProcessingBeforeProviderCallBecomesRecoverableFailed() {
         UUID clientRequestId = UUID.randomUUID();
 
@@ -635,6 +678,78 @@ class ChatTurnStateMachineIntegrationTest
 
         assertThat(countChatMessages())
                 .isEqualTo(1);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void changedSecurityVersionRejectsDeliveryAfterPhysicalStart(boolean organizationChanged) {
+        SafeAiUserPrincipal authorizedCaller = principal();
+        ChatProcessingContext context = reserve("Question", UUID.randomUUID());
+        UUID attemptId = startPhysicalAttempt(context);
+        securityStateService.assertStillActive(
+                CHAT_ID, context.turnId(), context.clientRequestId(), authorizedCaller
+        );
+
+        if (organizationChanged) {
+            disableAndReenableOrganization();
+        } else {
+            assertThat(jdbcTemplate.update("""
+                    update users set token_version = token_version + 1 where id = ?
+                    """, USER_ID)).isEqualTo(1);
+        }
+
+        AiChatResponse providerResponse = response(AiResponseStatus.INCOMPLETE, "max_output_tokens");
+        physicalAttemptRecorder.succeeded(attemptId, providerResponse);
+        finalizationService.succeed(context, providerResponse, authorizedCaller);
+
+        assertThatThrownBy(() -> securityStateService.assertStillActive(
+                CHAT_ID, context.turnId(), context.clientRequestId(), authorizedCaller
+        )).isInstanceOf(ChatAccessRevokedException.class);
+        SafeAiUserPrincipal currentCaller = SafeAiUserPrincipal.accessTokenPrincipal(
+                USER_ID,
+                ORGANIZATION_ID,
+                authorizedCaller.getTokenVersion() + (organizationChanged ? 0 : 1),
+                authorizedCaller.getOrganizationAuthVersion() + (organizationChanged ? 1 : 0),
+                authorizedCaller.getAuthorities()
+        );
+        securityStateService.assertStillActive(
+                CHAT_ID, context.turnId(), context.clientRequestId(), currentCaller
+        );
+        assertThat(turnState(context.turnId())).isEqualTo("SUCCEEDED");
+        assertThat(jdbcTemplate.queryForList("""
+                select attempt.outcome
+                from model_execution_attempts attempt
+                join model_execution_plans plan on plan.id = attempt.execution_plan_id
+                where attempt.provider_attempt_id = ? and plan.chat_turn_id = ?
+                """, String.class, attemptId, context.turnId())).containsExactly("SUCCEEDED");
+        assertThat(quotaState(context.turnId())).isEqualTo("SETTLED");
+    }
+
+    @Test
+    void changedOrganizationEpochDeniesPhysicalStart() {
+        ChatProcessingContext context = reserve("Question", UUID.randomUUID());
+        var plan = preparePhysicalAttempt(context);
+
+        disableAndReenableOrganization();
+
+        UUID attemptId = UUID.randomUUID();
+        assertThatThrownBy(() -> physicalAttemptRecorder.started(
+                plan.getId(), aiExecutionService.targetFor(context.requestedPhysicalModel()),
+                new AiProviderAttemptContext(context.providerOperationId(), attemptId, 1, 1)
+        )).isInstanceOf(AiOrganizationExecutionDeniedException.class);
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from model_execution_attempts where execution_plan_id = ?
+                """, Long.class, plan.getId())).isZero();
+        assertThat(turnRepository.findById(context.turnId()).orElseThrow().getProviderCallStartedAt()).isNull();
+    }
+
+    private void disableAndReenableOrganization() {
+        assertThat(jdbcTemplate.update("""
+                update organizations set enabled = false, auth_version = auth_version + 1 where id = ?
+                """, ORGANIZATION_ID)).isEqualTo(1);
+        assertThat(jdbcTemplate.update("""
+                update organizations set enabled = true where id = ?
+                """, ORGANIZATION_ID)).isEqualTo(1);
     }
 
     @Test
@@ -846,6 +961,41 @@ class ChatTurnStateMachineIntegrationTest
      * physical terminal evidence (success, known failure or ambiguity).
      */
     private UUID startPhysicalAttempt(ChatProcessingContext context) {
+        var plan = preparePhysicalAttempt(context);
+        ProviderExecutionTarget target = aiExecutionService.targetFor(context.requestedPhysicalModel());
+        UUID attemptId = UUID.randomUUID();
+        physicalAttemptRecorder.started(
+                plan.getId(),
+                target,
+                new AiProviderAttemptContext(
+                        context.providerOperationId(),
+                        attemptId,
+                        1,
+                        1
+                )
+        );
+
+        var startedTurn = turnRepository.findById(context.turnId()).orElseThrow();
+        Instant physicalStartedAt = Objects.requireNonNull(
+                startedTurn.getProviderCallStartedAt(),
+                "Only a committed physical STARTED may set the ChatTurn marker"
+        );
+
+        assertThat(physicalStartedAt)
+                .as("PostgreSQL STARTED marker must not precede ChatTurn creation")
+                .isAfterOrEqualTo(startedTurn.getCreatedAt());
+
+        alignTestClockAfterPhysicalAttempt(physicalStartedAt);
+
+        assertThat(clock.instant())
+                .as("Terminal evidence must never be dated before physical STARTED")
+                .isAfterOrEqualTo(physicalStartedAt);
+        return attemptId;
+    }
+
+    private ModelExecutionPlanEntity preparePhysicalAttempt(
+            ChatProcessingContext context
+    ) {
         assertThat(context.replay()).isFalse();
         assertThat(context.aiRequest()).isNotNull();
 
@@ -882,35 +1032,7 @@ class ChatTurnStateMachineIntegrationTest
                 context.aiRequest()
         );
 
-        var plan = executionPlanService.createOrRead(executionRequest);
-        UUID attemptId = UUID.randomUUID();
-        physicalAttemptRecorder.started(
-                plan.getId(),
-                target,
-                new AiProviderAttemptContext(
-                        context.providerOperationId(),
-                        attemptId,
-                        1,
-                        1
-                )
-        );
-
-        var startedTurn = turnRepository.findById(context.turnId()).orElseThrow();
-        Instant physicalStartedAt = Objects.requireNonNull(
-                startedTurn.getProviderCallStartedAt(),
-                "Only a committed physical STARTED may set the ChatTurn marker"
-        );
-
-        assertThat(physicalStartedAt)
-                .as("PostgreSQL STARTED marker must not precede ChatTurn creation")
-                .isAfterOrEqualTo(startedTurn.getCreatedAt());
-
-        alignTestClockAfterPhysicalAttempt(physicalStartedAt);
-
-        assertThat(clock.instant())
-                .as("Terminal evidence must never be dated before physical STARTED")
-                .isAfterOrEqualTo(physicalStartedAt);
-        return attemptId;
+        return executionPlanService.createOrRead(executionRequest);
     }
 
     private ChatProcessingContext reserve(

@@ -18,12 +18,22 @@ RUN --mount=type=cache,target=/root/.npm \
 # skipping the production bundle check.
 COPY scripts/verify-build.mjs /workspace/scripts/verify-build.mjs
 
+COPY .github/workflows/browser-ci.yml /workspace/.github/workflows/browser-ci.yml
+
 COPY frontend/ ./
 
 RUN npm run check
 
 
 FROM ${NGINX_IMAGE} AS runtime
+
+# nginx-unprivileged по умолчанию работает от UID 101. Для обновления
+# пакетов Alpine нужны права root ТОЛЬКО на этапе сборки.
+USER root
+# Не подавляем Trivy: реально обновляем уязвимые пакеты и
+# требуем исправленный Brotli (CVE-2026-111497).
+RUN apk --no-cache upgrade \
+    && apk --no-cache add 'brotli-libs>=1.2.1-r0'
 
 ARG APP_VERSION=dev
 ARG VCS_REF=unknown

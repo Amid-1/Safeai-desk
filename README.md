@@ -5,22 +5,20 @@
 **SafeAI Desk** — production-oriented корпоративная AI-платформа / AI Gateway для безопасного и
 управляемого использования внешних AI-моделей внутри организаций.
 
-> **Обновлено:** 17 октября 2026 года.
-> **Репозиторий:** `Amid-1/Safeai-desk`.
-> **Подтверждённый GitHub baseline:** `main`, Flyway V1–V72,
-> merge PR #8 (`fdcff62`).
-> **Подготовленный целевой набор:** V73 (Organization),
-> V74 (Usage), V75 (Audit), V76 (Knowledge privacy),
-> V77 (backfill исторических заголовков чатов). Наличие этих SQL в текущем
-> локальном checkout и применение к PostgreSQL не подтверждены.
-> **Backend:** Java 21, Spring Boot 4.1.1, модульный монолит,
-> PostgreSQL, Redis, S3, Flyway, Micrometer/Prometheus.
-> **Исторические тесты PR #8:** 2259; 0 failures, 0 errors,
-> 3 skipped. Отдельно — 27/27 PostgreSQL/Redis tests.
-> **Для патчей 13–17 октября, включая V77 и chat-title integration:** полный `clean test`, populated
-> Flyway upgrade, CI и production smoke ещё не подтверждены.
-> **Стадия:** production-oriented pre-1.0; не заявляются
-> сертификация compliance, SLA/HA либо invoice-grade billing.
+> **Актуализировано:** 31 октября 2026 года. Документ описывает проект и локально подготовленные изменения вплоть до **Flyway V84**.
+> **Репозиторий:** `Amid-1/Safeai-desk`; основной файл документации — `README.md` в корне.
+> **Рабочая ветка, указанная пользователем 31.10.2026:** `fix/knowledge-upload-confirmation-20261025`;
+> в ней имеются staged/unstaged изменения. Исторически проверенный baseline PR #8 (`fdcff62`) относится к более раннему `main` (V1–V72), **не** к текущему checkout.
+> **Backend:** Java 21, Spring Boot (точную версию определяет `backend/pom.xml`), PostgreSQL/pgvector, Redis,
+> S3-compatible Object Storage, Flyway, Micrometer/Prometheus; frontend — React/TypeScript.
+> **Состояние V78–V84:** представлены миграции, backend-компоненты удаления документов и баз знаний,
+> операторская диагностика/контролируемый resume, аудит переходов и метрики. Присутствие файлов и применение patch
+> не равнозначны выполнению всех тестов, применению Flyway или production deployment.
+> **Проверки на 31.10.2026:** Testcontainers PostgreSQL 16.15 успешно прошёл Flyway validation и применение **84 миграций на пустой тестовой БД**. Отдельный полный backend-прогон завершился с **2455 tests, 0 failures, 1 error, 3 skipped**: некорректная подготовка `NEEDS_REVIEW → BLOCKED_BY_RETENTION` в `KnowledgeDeletionOperatorSafetyIntegrationTest`, которую V84 правильно заблокировал. Исправление тестового сценария подготовлено отдельно, но новый успешный полный `./mvnw clean verify` ещё не представлен. Frontend CI, миграция заполненной БД, real S3/MinIO end-to-end и production deployment не подтверждены.
+> **Подтверждено 31.10.2026:** `git diff --check`, проверки синтаксиса shell, `check-config-topology.sh`, `check-prometheus-config.sh` и `promtool` для конфигурации и трёх наборов правил (7 + 6 + 3); тесты правил Knowledge erasure также прошли. Это **не** проверка production deployment, Alertmanager или разрешение на физическое удаление.
+> **Режим безопасности:** удаление и operator recovery должны оставаться выключенными по умолчанию.
+> **Стадия:** production-oriented pre-1.0; не заявляются compliance certification, SLA/HA,
+> invoice-grade billing или гарантированное удаление из backup/external providers.
 
 **Источник истины:** файлы текущего checkout, история Flyway,
 фактическая конфигурация и результаты тестов. Подготовленный
@@ -34,8 +32,8 @@
 1. [Что решает проект](#что-решает-проект)
 2. [Текущее состояние](#текущее-состояние)
 3. [Архитектура](#архитектура)
-   - [Границы модулей и архитектурный контроль](#границы-модулей-и-архитектурный-контроль)
 4. [Технологический стек](#технологический-стек)
+   - [Карта репозитория на 31.10.2026](#карта-репозитория-на-31102026)
 5. [Структура backend](#структура-backend)
 6. [Роли и границы доступа](#роли-и-границы-доступа)
 7. [Multi-tenancy и database integrity](#multi-tenancy-и-database-integrity)
@@ -53,20 +51,21 @@
 19. [Модуль `model`](#модуль-model)
 20. [Модуль `ai`](#модуль-ai)
 21. [Модуль `knowledge`](#модуль-knowledge)
-22. [Ключевые backend contracts](#ключевые-backend-contracts)
-23. [Database / Flyway V1–V77](#database--flyway-v1v77)
-24. [Observability и operational jobs](#observability-и-operational-jobs)
-25. [Тестирование](#тестирование)
-26. [Local development](#local-development)
-27. [Production deployment notes](#production-deployment-notes)
-28. [Production-readiness gaps](#текущие-ограничения-и-production-readiness-gaps)
-29. [Позиционирование проекта](#позиционирование-проекта)
-30. [Frontend](#frontend)
-31. [Актуальность документации](#поддержание-документации-в-актуальном-состоянии)
-32. [Главное правило дальнейшей эволюции](#главное-правило-дальнейшей-эволюции)
-33. [Передача контекста в новый AI-чат](#передача-контекста-в-новый-ai-чат)
-34. [План следующего этапа](#план-следующего-этапа)
-35. [Релизный контроль V73–V77](#релизный-контроль-v73v77)
+22. [Безопасное удаление Knowledge — V78–V84](#безопасное-удаление-knowledge--v78v84)
+23. [Ключевые backend contracts](#ключевые-backend-contracts)
+24. [Database / Flyway V1–V84](#database--flyway-v1v84)
+25. [Observability и operational jobs](#observability-и-operational-jobs)
+26. [Тестирование](#тестирование)
+27. [Local development](#local-development)
+28. [Production deployment notes](#production-deployment-notes)
+29. [Текущие ограничения и production-readiness gaps](#текущие-ограничения-и-production-readiness-gaps)
+30. [Позиционирование проекта](#позиционирование-проекта)
+31. [Frontend](#frontend)
+32. [Поддержание документации](#поддержание-документации-в-актуальном-состоянии)
+33. [Главное правило дальнейшей эволюции](#главное-правило-дальнейшей-эволюции)
+34. [Передача контекста в новый AI-чат](#передача-контекста-в-новый-ai-чат)
+35. [План следующего этапа](#план-следующего-этапа)
+36. [Релизный контроль V73–V84](#релизный-контроль-v73v84)
 
 ---
 
@@ -119,10 +118,14 @@ Identity
 
 # Текущее состояние
 
-Основа раздела — подтверждённый baseline V71–V72.
-Функционал патчей V73–V77 описан далее отдельно.
-Его наличие в архиве не является доказательством внедрения,
-успешного Testcontainers-прогона или работы в production.
+Историческая контрольная точка — подтверждённый baseline V71–V72 (PR #8).
+К 31.10.2026 представлены миграции V73–V84, новые документные и базовые
+этапы Knowledge erasure, read-only диагностика, V83 operator recovery и V84
+transactional audit/metrics. Отдельно подтверждены проверки Prometheus-конфигурации.
+В тестовой изолированной PostgreSQL схема V1–V84 применена успешно, однако
+последний полный backend-прогон имел один ошибочный test fixture. Это не подтверждает
+успешный Testcontainers/CI suite, запуск destructive worker, применение миграций к
+пользовательской БД или production readiness.
 
 ## Identity / Security
 
@@ -238,6 +241,27 @@ Identity
 - hardened generation chronology;
 - fenced generation publication/GC.
 
+## Knowledge: управление физическим удалением — срез 31.10.2026
+
+- **V78–V81:** `AVAILABLE → DELETING`, durable/idempotent document request, независимые
+  immutable version/chunk identities, guarded content erasure, проверяемая очистка всех версий
+  оригинальных S3-объектов. `enabled=false` само по себе **не** является удалением.
+- **V82:** добавлены `knowledge_base_identities_v82`, `knowledge_base_deletions_v82`,
+  base lifecycle, защита новых записей, защищённое удаление живой строки базы после завершения дочерних операций.
+- **V83:** отдельный read-only status API; ADMIN diagnostics с актуальной DB-проверкой роли;
+  ограниченное продолжение только `NEEDS_REVIEW` с оптимистичной сверкой времени и required audit.
+- **V84:** SQL-trigger записывает обязательный transactional `audit_outbox` intent при реальных переходах
+  `DELETING → DELETED / NEEDS_REVIEW / BLOCKED_BY_RETENTION`; Micrometer публикует низкокардинальные
+  count/age/retry/freshness/failure; подготовлены канонические правила Prometheus и их тесты.
+- **Блокировка:** пять флагов приёма/исполнения/операторского продолжения по умолчанию `false`.
+  `BLOCKED_BY_RETENTION` не возобновляется административной командой и остаётся неизменяемым.
+- **Ограничение обещания удаления:** после `DELETED` возможно законное сохранение audit,
+  immutable provenance, исторических RAG/AI-артефактов и резервных копий по отдельной политике.
+- **Статус релиза:** код и схема подготовлены; enablement требует отдельного production-like
+  end-to-end release gate, а не только компиляции, применённого SQL или проверенного YAML.
+- **V85:** 
+
+
 ## Audit / Usage / Rate limits
 
 - transactional audit outbox;
@@ -265,34 +289,37 @@ Identity
 ---
 
 
-## Изменения, подготовленные к 17.10.2026
+## Хронология функциональности V73–V84 на 31.10.2026
 
-К базовой архитектуре добавлены **отдельные наборы изменений**.
-Статус каждого набора необходимо сверить с `git status`,
-`git diff --cached` и `flyway_schema_history`:
+Ниже приведены **состояния исходного кода и назначение миграций**, а не утверждение
+об их применении к production PostgreSQL. Историческая граница PR #8 — V72;
+все новые стадии требуют подтверждения по фактическому `git status`, CI и
+`flyway_schema_history`.
 
-- **Chat / V77 и интеграция title lifecycle.** Подготовлены backfill старых названий, automatic title при первой принятой reservation, ручное rename, frontend refresh, route-bound quota reservation и продление lease по времени PostgreSQL. Применение миграции, сборка и тесты должны подтверждаться отдельно.
-- **Organization / V73.** Согласована канонизация Unicode-
-  пробелов в Java и PostgreSQL. Усилены проверка коллизий,
-  ISO controls, индекса V23 и конкурентной записи.
-- **Usage / V74.** Устранена потеря dirty-date при переходе
-  через UTC-полночь; созданы индексы физического учёта.
-  Подготовлены физические отчёты, reconciliation, строгая
-  проверка полноты данных и защита тяжёлых SQL-запросов.
-- **Audit / V75.** Добавлена регистрация типа события
-  `AUDIT_OUTBOX_DEAD_LETTER_RECOVERED`. Подготовлен
-  контролируемый recovery terminal dead-letter без обхода V68.
-- **Audit P1/P2.** Подготовлены безопасное логирование
-  исключений, typed sanitizer route, ограничение OFFSET,
-  оптимизация справочников, алерты и тест пула/retention.
-- **Production.** Приведены к реальной структуре проекта
-  правила `infra/prometheus/rules/`, настройки внутренних
-  Actuator endpoints и проверка deployment-конфигурации.
+| Миграция / этап | Актуальная функциональность | Эксплуатационная оговорка |
+|-----------------|---|---|
+| V73             | Канонизация Unicode whitespace в именах организаций; защита от коллизий при backfill | Применяется после анализа имен на populated БД |
+| V74             | Учёт dirty-date при UTC-полуночи, индексы физического usage, reconciliation | Не является invoice-grade settlement |
+| V75             | Тип аудита controlled dead-letter recovery | Работает только совместно с Java recovery и V68 guards |
+| V76             | Privacy новых retrieval runs: redacted query + SHA-256; индекс review | Исторические строки не очищаются автоматически |
+| V77             | Backfill legacy названий чатов, сохранение title provenance | Не вызывает внешние AI-модели |
+| V78             | Durable документная операция удаления, lifecycle, lock/ingestion fences | SQL не запускает физический purge |
+| V79             | Тип обязательного аудита принятия удаления документа | `202` означает принятие, не успех |
+| V80             | Immutable identities для версий/chunks, перенос и валидация исторических FK | Audit/provenance остаются после контентного purge |
+| V81             | DB fences для erasure, проверка lease, inventory S3 keys и запрет преждевременного `DELETED` | Object Lock и legal hold не обходятся |
+| V82             | Parent-op удаления Knowledge Base, lifecycle базы, tombstone identity, дочерние операции | Нельзя подтверждать удаление базы до детей |
+| V83             | Раздельные read-only GET и destructive routes, диагностика и controlled `NEEDS_REVIEW` resume | Только current ADMIN, все 5 flags; `BLOCKED_BY_RETENTION` immutable |
+| V84             | Атомарный audit outbox на terminal/attention transitions, low-cardinality Micrometer, Prometheus alerts | Без backfill старых событий; alerts требуют рабочего scrape/Alertmanager |
+| V85             |  |  |
 
-**Не следует считать реализованным только по описанию:**
-автоматическое восстановление каждого dead-letter, доставка
-уведомлений дежурному, подтверждённый billing settlement,
-проведённые нагрузочные тесты и успешный Flyway upgrade.
+**Состояние frontend к 31.10:** существуют UI подтверждения удаления документов/баз,
+история операций и controller для capability/status. Изменение V84 отделило сбой
+GET истории от пустого результата и не скрывает историю при `FEATURE_DISABLED`.
+Права и возможности определяет backend; элементы интерфейса не служат security boundary.
+
+**Состояние поставки:** созданные SQL и Java-классы, успешный `promtool` и
+пройденные исторические тесты не означают, что пять destructive flags можно
+включать. До отдельной production-like приёмки они остаются выключенными.
 
 ---
 
@@ -336,6 +363,38 @@ Identity
      │ Mock / OpenAI / Anthropic    │
      └──────────────────────────────┘
 ```
+
+## Knowledge erasure: границы V78–V84
+
+```text
+Browser / React
+  |  GET capability, status, history                 (read-only, tenant-scoped)
+  |  DELETE + If-Match + Idempotency-Key              (feature-gated)
+  |  ADMIN diagnostics / reviewed resume             (V83, strictly gated)
+  v
+Spring Boot 4.x / Knowledge modules
+  +-- AcceptanceService (document) / BaseDeletionService (base)
+  |     +-- PostgreSQL transaction: request + lifecycle + required audit
+  +-- DocumentDeletionExecutor (V81) / BaseDeletionExecutor (V82)
+  |     +-- claim lease_token / expiration / fencing in PostgreSQL
+  |     +-- S3/MinIO: enumerate and verify ALL object versions/markers
+  |     +-- PostgreSQL: fenced content cleanup, state transition
+  |            +-- V84 AFTER UPDATE: terminal audit_outbox intent (same transaction)
+  +-- OperatorController + OperatorService (V83)
+  |     +-- current ADMIN, organization, expectedUpdatedAt, mandatory audit
+  +-- KnowledgeErasureObservability (V84, SELECT only)
+        +-- Micrometer -> internal /actuator/prometheus
+                           -> Prometheus rules -> Alertmanager (if configured)
+
+PostgreSQL retains immutable V78/V82 request identities and V80 provenance.
+Audit-outbox processor asynchronously delivers audit events; S3/network deletion
+NEVER belongs to the V84 audit trigger transaction.
+```
+
+Разделение принципиально: принятие запроса, исполнение, юридически заблокированное
+хранение, подтверждённый `DELETED`, запись аудита и доставка алерта — **шесть разных
+фактов**. В частности, `202 Accepted`, `NEEDS_REVIEW → DELETING` после resume и
+успешный HTTP-вызов S3 не подтверждают полную физическую очистку.
 
 ## Control plane vs execution plane
 
@@ -441,8 +500,7 @@ cd backend
   - **Архитектурный результат:** Добавлена автоматическая архитектурная проверка `common`
 
 
-PR #8: исходный коммит `103c587`, merge-коммит `fdcff62`; `main` синхронизирован с `origin/main`,
-рабочая директория чистая по последнему предоставленному выводу `git status -sb`.
+PR #8: исходный коммит `103c587`, merge-коммит `fdcff62`. Это **историческое** состояние `main`; на 31.10.2026 показана другая рабочая ветка `fix/knowledge-upload-confirmation-20261025` с изменёнными и новыми файлами. Статус чистого дерева к ней не относится.
 
 **Эти PR не означают, что остальные пакеты уже имеют автоматические правила независимости.**
 Не создавать новые правила по догадкам: сначала инвентаризировать исходящие зависимости и
@@ -477,7 +535,7 @@ Spring bean graph, затем выбрать допустимую границу
 - ArchUnit 1.5.1 (`archunit-junit5`, test scope);
 - Mockito / Spring Test;
 - Testcontainers;
-- AWS SDK v2 / S3-compatible storage;
+- MinIO Java SDK / S3-compatible storage (`io.minio.MinioClient` в текущем коде);
 - pgvector;
 - Apache PDFBox;
 - Apache POI;
@@ -488,7 +546,7 @@ Spring bean graph, затем выбрать допустимую границу
 - Docker / Docker Compose.
 
 Точные dependency versions определяет `backend/pom.xml`; README не дублирует их как источник истины.
-Для среза `fdcff62` проверены также `postgresql.version=42.7.14`,
+Для исторического среза `fdcff62` проверены также `postgresql.version=42.7.14`,
 `snappy-java.version=1.1.10.11` и `testcontainers.version=2.0.5`.
 
 Frontend baseline из `frontend/package.json`: React 19.2.7, React Router 7.18.3,
@@ -508,145 +566,136 @@ TypeScript 6.0.3, Vite 8.0.16, Vitest 4.1.10;
 
 ---
 
-├──
-├──
-├──
-├──
-├──
-├──
-├──
-├──
-├──
-├──
-├──
-├──
-├──
-├──
-├──
-└──
+Карта структуры каталогов приведена далее. Для точного перечня Java-файлов
+используйте текущий checkout, а не историческое дерево из документации.
 
+
+## Карта репозитория на 31.10.2026
+
+Это **структурная схема**, а не копия `find` из непереданного локального checkout.
+Пути проверены по предоставленным снимкам IDE, конфигурационным файлам и архивам
+V82–V84. Стандартный `target/`, IDE metadata, `.env`, секреты и локальные
+object-storage данные не являются частью релиза.
+
+```text
+SafeAI-Desk/
+├── .github/                          # CI workflows
+├── backend/
+│   ├── .mvn/ / mvnw / pom.xml         # Java 21 / Maven Wrapper
+│   ├── Dockerfile
+│   ├── .env.example                    # local template; commit allowed
+│   ├── .env.prod.example               # production template; commit allowed
+│   ├── .env / .env.prod                # local runtime, NEVER commit
+│   ├── .local-secrets/                 # local-only secret storage
+│   ├── docs/config/                    # documentation examples, NOT auto-loaded
+│   └── src/
+│       ├── main/java/ru/safeai/gateway/  # modular monolith
+│       ├── main/resources/db/migration/  # immutable Flyway V1..V84
+│       ├── main/resources/db/local-migration/
+│       ├── main/resources/application*.yml
+│       ├── main/resources/logback-spring.xml
+│       ├── test/java/ru/safeai/gateway/
+│       └── test/resources/             # JUnit and Spring test profiles
+├── frontend/
+│   ├── package.json / package-lock.json
+│   ├── scripts/                        # architecture/lint/dependency checks
+│   └── src/                            # app / entities / features / pages / shared
+├── infra/
+│   ├── docker-compose.yml              # production topology
+│   ├── docker-compose.local.yml        # local topology
+│   ├── prometheus/
+│   │   ├── prometheus.yml              # ACTIVE rule_files binding
+│   │   ├── rules/
+│   │   │   ├── safeai-audit-outbox.yml
+│   │   │   ├── safeai-knowledge-review.yml
+│   │   │   └── safeai-knowledge-erasure.yml
+│   │   └── tests/knowledge-erasure.test.yml
+│   ├── scripts/
+│   │   ├── check-config-topology.sh
+│   │   ├── check-prometheus-config.sh
+│   │   ├── validate-prod.sh
+│   │   ├── deploy-prod.sh
+│   │   └── ...                          # build/backup/restore/secret scripts
+│   ├── postgres/ / nginx/ / host-nginx/
+│   ├── config/pricing.yml.example
+│   ├── secrets/jwt-keys.yml.example
+│   └── systemd/                        # backup timer/service
+├── docs/
+│   ├── config/
+│   │   ├── CONFIGURATION_LAYOUT.md
+│   │   └── PRODUCTION_CONFIG_AUDIT_2026-10-31.md
+│   └── knowledge-erasure/              # V84 operator/readiness notes, if installed
+├── scripts/                             # local convenience tooling
+├── .gitignore / .dockerignore
+└── README.md                            # this entry point
+```
+
+**Важно:** `backend/deploy/prometheus/` — отдельный legacy/example-каталог в
+некоторых снимках. Он не становится активным из-за названия: актуальные
+`infra/docker-compose*.yml` монтируют только `infra/prometheus`.
+`ops/prometheus/knowledge-erasure-alerts.yml`, поставленный в V84 ZIP как
+пример, не следует одновременно подключать с каноническими rules: это создаёт
+дубликат аудиторского alert. Источником истины служит Compose mount + `rule_files`.
 
 # Структура frontend
 
-```text       
+Начиная с refactoring frontend использует feature-oriented каталоги. В архиве
+приведён проверяемый шаблон схемы; при установке `sync_readme_inventory.py`
+автоматически заменяет схему полным деревом реальных `frontend/` файлов из текущего
+checkout (без `node_modules`, `.env` и результатов сборки). Это исключает устаревшую
+плоскую структуру `src/api`, `src/components` и пропуски новых React/TypeScript файлов.
+
+```text
 frontend/
-├── .gitignore
-├── eslint.config.mjs
-├── index.html
-├── install-and-check.cmd
-├── install-and-check.sh
-├── package.json
-├── package-lock.json
-├── STATIC_CHECK_REPORT.json
-├── tsconfig.app.json
-├── tsconfig.test.json
-├── tsconfig.node.json
-├── tsconfig.json
-├── vite.config.ts
-│
+├── package.json / package-lock.json
 ├── scripts/
+│   ├── audit-dependencies.cjs
 │   ├── check-architecture.cjs
-│   └── verify-source-layout.cjs
-└── src/
-    ├── main.tsx
-    │
-    ├── vite-env.d.ts
-    │
-    ├── app/
-    │   │
-    │   ├──
-    │   │
-    │   └──
-    │
-    │
-    ├── shared/
-    │   │
-    │   ├── api/
-    │   │   │   
-    │   │   ├── http/ 
-    │   │   │   ├──
-    │   │   │   ├──
-    │   │   │   ├──
-    │   │   │   ├──    
-    │   │   │   └──                                       
-    │   │   │
-    │   │   └──
-    │   │
-    │   ├── lib/
-    │   │   │
-    │   │   └── hooks/
-    │   │
-    │   ├── styles/
-    │   │
-    │   └── ui/
-    │
-    │
-    ├── entities/
-    │   │
-    │   ├── knowledge/
-    │   │
-    │   ├── model/
-    │   │
-    │   ├── organization/
-    │   │
-    │   └── user/
-    │
-    │
-    ├── features/
-    │   │
-    │   ├── admin/
-    │   │
-    │   ├── admin-organizations/
-    │   │
-    │   ├── admin-users/
-    │   │
-    │   ├── audit/
-    │   │
-    │   ├── auth/
-    │   │
-    │   ├── chat/
-    │   │   │
-    │   │   ├── api/
-    │   │   │
-    │   │   ├── controller/
-    │   │   │
-    │   │   ├── lib/
-    │   │   │
-    │   │   └── ui/
-    │   │
-    │   ├── knowledge/
-    │   │   │
-    │   │   ├── controller/
-    │   │   │
-    │   │   ├── lib/
-    │   │   │
-    │   │   ├── styles/
-    │   │   │
-    │   │   └── ui/
-    │   │
-    │   ├── models/
-    │   │
-    │   └── usage/
-    │       │
-    │       ├── api/
-    │       │
-    │       ├── controller/
-    │       │
-    │       ├── lib/
-    │       │
-    │       ├── styles/
-    │       │
-    │       └── ui/
-    │
-    │
-    ├── pages/
-    │
-    │
-    └── test/
-        └── fixtures/
+│   ├── verify-source-layout.cjs
+│   └── ...                            # tests for module dependencies
+├── src/
+│   ├── app/                           # bootstrap, routing
+│   ├── entities/
+│   │   └── knowledge/api/
+│   │       ├── knowledgeDocumentDeletionApi.ts
+│   │       ├── knowledgeBaseDeletionApi.ts
+│   │       └── knowledge/             # parsers, DTO types
+│   ├── features/
+│   │   └── knowledge/
+│   │       ├── controller/
+│   │       │   ├── useKnowledgeDeletionController.ts
+│   │       │   └── useKnowledgeDeletionController.test.tsx
+│   │       ├── ui/
+│   │       │   ├── BaseDeletionHistory.tsx
+│   │       │   ├── KnowledgeBaseDeleteAction.tsx
+│   │       │   ├── KnowledgeDetailsWorkspace.tsx
+│   │       │   └── details/
+│   │       │       ├── KnowledgeDeleteDialog.tsx
+│   │       │       └── KnowledgeDetailsContent.tsx
+│   │       └── ...                     # display and editing components
+│   ├── pages/
+│   │   ├── KnowledgeDetailsPage.tsx
+│   │   ├── KnowledgeDetailsPage.test.tsx
+│   │   ├── KnowledgePage.test.tsx
+│   │   └── ...
+│   ├── shared/                        # HTTP client, UI, helpers
+│   ├── test/                          # fixtures, setup
+│   └── main.tsx
+├── tsconfig*.json
+└── vite.config.ts
 ```
 
 
+Список конкретных файлов и ограничений направленности imports проверяется
+`frontend/scripts/check-architecture.cjs`, `verify-source-layout.cjs` и
+`audit-dependencies.cjs`. При `FEATURE_DISABLED` история операций **не должна исчезать**: V84 отделяет
+`GET` истории и статуса от destructive DELETE. Ошибка запроса истории должна
+отображаться как ошибка, а не как «операций нет». Тесты в V84 архиве охватывают
+этот контракт; полное прохождение текущего `npm run ci` необходимо проверить
+в локальной ветке. Команда «Удалить…» является UI capability, а не разрешением
+backend на физическую очистку.
+
+---
 
 # Структура backend
 
@@ -671,7 +720,7 @@ backend/
 │
 ├── src/main/resources/
 │   ├── db/
-│   │   ├── migration/         # V1 ... V77 (целевой набор)
+│   │   ├── migration/         # V1 ... V84 (все 84 файла, подробно ниже)
 │   │   └── local-migration/   # local-only seed
 │   │
 │   ├── application.yml
@@ -690,9 +739,9 @@ backend/
 
 ### Подробная структура backend и Flyway
 
-Дерево включает исходный baseline и подготовленные файлы
-патчей V73–V77. Оно не является результатом `ls` твоего
-локального checkout и не подтверждает их коммит или запуск.
+Дерево объединяет исторический baseline и файлы, обнаруженные в предоставленных
+архивах и подготовленных патчах V73–V84. Это не результат `ls` актуальной рабочей
+ветки и не подтверждает коммит, успешную миграцию либо запуск worker.
 
 ```text
 backend/
@@ -709,6 +758,13 @@ backend/
 │   │   │               ├── common/
 │   │   │               ├── identity/
 │   │   │               ├── knowledge/
+│   │   │               │   ├── controller/   # document/base DELETE, read/status, operator
+│   │   │               │   ├── dto/          # deletion responses / capability
+│   │   │               │   ├── repository/   # durable document operation queries
+│   │   │               │   ├── service/      # см. полный inventory всех классов ниже; V78–V84 включены
+│   │   │               │   ├── storage/      # S3/MinIO verified version purge
+│   │   │               │   ├── ingestion/ / generation/ / retrieval/ / rag/
+│   │   │               │   └── ...          # extraction, embedding, configuration
 │   │   │               ├── model/
 │   │   │               ├── organization/
 │   │   │               ├── ratelimit/
@@ -721,7 +777,7 @@ backend/
 │   │       │   ├── local-migration/
 │   │       │   │   └── R__seed_local_demo_data.sql
 │   │       │   │
-│   │       │   └── migration/
+│   │       │   ├── migration/
 │   │       │       ├── V1__init_schema.sql
 │   │       │       ├── V2__seed_reference_data.sql
 │   │       │       ├── V3__denormalize_chat_organization.sql
@@ -799,19 +855,82 @@ backend/
 │   │       │       ├── V75__audit_dead_letter_recovery_event_type.sql
 │   │       │       ├── V76__knowledge_retrieval_query_privacy.sql
 │   │       │       ├── V77__backfill_legacy_default_chat_titles.sql
-│   │       │       └── README_DB.md
+│   │       │       ├── V78__knowledge_document_deletion_foundation.sql
+│   │       │       ├── V79__knowledge_deletion_request_audit_type.sql
+│   │       │       ├── V80__knowledge_erasure_provenance_identities.sql
+│   │       │       ├── V81__knowledge_erasure_executor_guards.sql
+│   │       │       ├── V82__knowledge_base_erasure_foundation.sql
+│   │       │       ├── V83__knowledge_erasure_operator_audit_types.sql
+│   │       │       ├── V84__knowledge_erasure_terminal_audit.sql
+│   │       │       └── V85__knowledge_rag_execution_leases_and_erasure_guards.sql
+│   │       │
+│   │       │   └── README_DB.md              # документация DB; структура db/
 │   │       │
 │   │       ├── META-INF/
 │   │       ├── application.yml
 │   │       ├── application-local.yml
 │   │       ├── application-local-nginx.yml
 │   │       ├── application-prod.yml
+│   │       ├── application-prod-knowledge.example.yml
 │   │       ├── application-prod-knowledge-reconciliation.example.yml
+│   │       ├── application-security-example.yml
 │   │       └── logback-spring.xml
 │   │
 │   └── test/
 │       └── java/
 ```
+
+### V78–V84: классы и интеграционные тесты по путям
+
+Имена классов сверены с приложенными исходными файлами/архивами; наличие каждого файла в актуальной локальной ветке следует проверить отдельно.
+Обозначение версии говорит о **появлении в пакете**, а не о подтверждённом
+production rollout; доступность в конкретном checkout нужно сравнить с `git ls-files`.
+
+```text
+backend/src/main/java/ru/safeai/gateway/knowledge/
+├── controller/
+│   ├── KnowledgeDocumentDeletionCapabilityController.java  # independent GET
+│   ├── KnowledgeDocumentDeletionController.java            # destructive DELETE
+│   ├── KnowledgeDocumentDeletionReadController.java        # V83 GET history/status
+│   ├── KnowledgeBaseDeletionController.java                # V82 base API/status
+│   └── KnowledgeDeletionOperatorController.java            # V83 ADMIN diagnostics/resume
+├── dto/
+│   ├── KnowledgeDocumentDeletionResponse.java
+│   └── KnowledgeBaseDeletionResponse.java
+├── repository/
+│   └── KnowledgeDocumentDeletionRepository.java
+├── service/
+│   ├── KnowledgeDocumentDeletionAcceptanceService.java     # V78/V79
+│   ├── KnowledgeDocumentDeletionExecutor.java              # V81
+│   ├── KnowledgeBaseDeletionService.java                   # V82
+│   ├── KnowledgeBaseDeletionExecutor.java                  # V82
+│   ├── KnowledgeDeletionOperatorService.java               # V83
+│   └── KnowledgeErasureObservability.java                  # V84 read-only
+└── storage/
+    ├── ObjectStorage.java                                 # purge interface
+    └── S3ObjectStorage.java                               # verified version purge
+
+backend/src/main/java/ru/safeai/gateway/audit/
+└── AuditEventType.java                                    # V79/V82/V83/V84 types
+
+backend/src/test/java/ru/safeai/gateway/knowledge/
+├── integration/
+│   ├── KnowledgeBaseDeletionFoundationIntegrationTest.java
+│   ├── KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest.java
+│   ├── KnowledgeBaseDeletionRealJvmCrashIntegrationTest.java
+│   ├── KnowledgeBaseObjectLockIntegrationTest.java
+│   ├── KnowledgeDeletionOperatorSafetyIntegrationTest.java
+│   └── KnowledgeErasureTerminalAuditIntegrationTest.java
+├── service/
+│   ├── KnowledgeBaseDeletionServiceSafetyTest.java
+│   └── KnowledgeErasureObservabilityTest.java
+└── storage/
+    └── KnowledgeDocumentErasureRealMinioIntegrationTest.java
+```
+
+Дополнительные тесты документного executor, version purge и отдельных S3
+провайдеров перечислены в разделе «Тестирование». Тестовый worker для
+kill/restart запускается в отдельной JVM, а не в production process.
 
 Основные потоки взаимодействия (логические, **не исчерпывающий граф Java imports**):
 
@@ -1199,6 +1318,44 @@ Public response не должен содержать:
 ---
 # Конфигурация
 
+## Каноническое расположение конфигурации — V84 (31.10.2026)
+
+**Нельзя «привести всё к одному `application.yml`».** Runtime Spring, Compose,
+настоящие файлы секретов, example-шаблоны и тестовые профили выполняют
+разные роли. Правка примера в `backend/docs/config` сама по себе ничего не
+активирует; production остаётся управляемым через `/etc/safeai/config`,
+`/etc/safeai/secrets`, `backend/.env.prod` и проверенные изображения контейнеров.
+
+Разделять **Spring runtime**, **Compose deployment**, **Prometheus monitoring** и
+**reference templates**. Одинаковое имя в другом каталоге не делает файл активным.
+
+| Роль | Канонический источник |
+|---|---|
+| Общие свойства Spring | `backend/src/main/resources/application.yml` |
+| Local / prod | `backend/src/main/resources/application-local.yml`, `application-prod.yml` |
+| JUnit integration | `backend/src/test/resources/application-test.yml`, `application-auth-postgres-it.yml` |
+| Production/local Compose | `infra/docker-compose.yml`, `infra/docker-compose.local.yml` |
+| Prometheus + alerts | `infra/prometheus/prometheus.yml`, `infra/prometheus/rules/*.yml` |
+| Erasure monitoring regression | `infra/prometheus/tests/knowledge-erasure.test.yml` |
+| Production env template | `backend/.env.prod.example` (commit разрешён) |
+| Production host env | `backend/.env.prod` (**не** коммитить) |
+| Pricing / secrets на host | `/etc/safeai/config/pricing.yml`, `/etc/safeai/secrets/` |
+| Документационные примеры | `backend/docs/config/`, `infra/config/*.example`, `infra/secrets/*.example` |
+
+Файлы `backend/deploy/prometheus/*` — **legacy** с точки зрения актуального
+`infra/docker-compose*.yml`: они не монтируются и не активируют алерты. То же
+относится к `ops/prometheus/*`, если его явно не включает иной deployment.
+Не удалять legacy файлы, пока не выполнены `git grep` по ссылкам и review скриптов.
+
+31.10.2026 конфигурационным merge добавлены `check-config-topology.sh`,
+`check-prometheus-config.sh`, erasure rules/tests, уточнены env template,
+production Compose/validator/deploy. Применение merge выполнено пользователем
+без изменения runtime secrets и базы. Сообщённые `promtool` проверки успешны;
+для release всё равно нужны Compose render with actual **non-secret**
+production settings, pinned image digest, проверка секретов на host и
+Alertmanager routing. Подробности: `docs/config/CONFIGURATION_LAYOUT.md`,
+`docs/config/PRODUCTION_CONFIG_AUDIT_2026-10-31.md`.
+
 Ниже перечислены ключевые configuration groups, подтверждённые в просмотренном backend. Конкретный
 production secret/value задаётся deployment environment, а не README.
 
@@ -1473,6 +1630,33 @@ OCR provider configuration включает:
 
 Credential-bearing property records редактируют `toString()` так, чтобы API keys не утекали в
 logs/diagnostics.
+### Безвозвратное удаление документов (опционально, по умолчанию выключено)
+
+```yaml
+safeai:
+  knowledge:
+    deletion:
+      accept-enabled: false
+      executor-enabled: false
+      poll-delay: PT20S
+```
+
+- `accept-enabled`: регистрация destructive HTTP DELETE/controller.
+- `executor-enabled`: регистрация фонового `KnowledgeDocumentDeletionExecutor`.
+- **Оба** document-флага должны быть `true`, чтобы backend разрешил приём
+  destructive DELETE; status/list GET с V83 вынесены в независимый read-only controller.
+- Сам read-only capability endpoint регистрируется **независимо** от двух флагов;
+  проверяет tenant и `OWNER` на backend и при выключенной функции возвращает
+  `200 {"allowed":false,"reason":"FEATURE_DISABLED"}` для уполномоченного пользователя.
+- Переменные среды для Spring Boot:
+  `SAFEAI_KNOWLEDGE_DELETION_ACCEPT_ENABLED`,
+  `SAFEAI_KNOWLEDGE_DELETION_EXECUTOR_ENABLED`.
+- **Нельзя включать** оба флага только ради активации UI. Сначала выполнить
+  migration rehearsal и полную destructive integration matrix на изолированном стенде.
+- V82 добавляет отдельные `safeai.knowledge.base-deletion.accept-enabled` и
+  `safeai.knowledge.base-deletion.executor-enabled` (default `false`). V83 добавляет
+  `safeai.knowledge.deletion.recovery-enabled` (default `false`). Подробная матрица ниже.
+
 
 ---
 
@@ -2313,6 +2497,28 @@ POST /api/admin/audit-events/outbox/dead-letters/{eventId}/recover
 старое `occurred_at`: обычные правила retention продолжают
 действовать и для восстановленной записи.
 
+## V84: транзакционный аудит завершения удаления Knowledge
+
+В `V84__knowledge_erasure_terminal_audit.sql` зарегистрированы **шесть** типов:
+`KNOWLEDGE_DOCUMENT_DELETION_COMPLETED`,
+`KNOWLEDGE_DOCUMENT_DELETION_REVIEW_REQUIRED`,
+`KNOWLEDGE_DOCUMENT_DELETION_RETENTION_BLOCKED` и аналогичные
+`KNOWLEDGE_BASE_DELETION_*`.
+
+`trg_document_erasure_terminal_audit_v84` / `trg_base_erasure_terminal_audit_v84`
+срабатывают **после реального UPDATE state**, когда операция перешла из
+`DELETING` в `DELETED`, `NEEDS_REVIEW` либо `BLOCKED_BY_RETENTION`.
+`enqueue_knowledge_erasure_terminal_audit_v84()` вставляет outbox intent в **той же
+PostgreSQL транзакции**; rollback отменяет и state, и audit. Для одного перехода
+создаётся один event; повторный вход в `NEEDS_REVIEW` после санкционированного
+V83 resume может породить новое событие, что корректно отражает новую попытку.
+
+Детали содержат только UUID операции/базы/документа, state, предыдущий state,
+число попыток и безопасный код ошибки; `actor_user_id = NULL` обозначает системный
+worker. Запрещено помещать в этот payload storage keys, file names, query text,
+access tokens и provider exception strings. Асинхронный `AuditOutboxProcessor`
+проводит доставку отдельно; V84 **не** backfill-ит старые завершённые операции.
+
 ## Query
 
 ADMIN scope повторно ограничивается tenant policy на service/query layer.
@@ -2676,6 +2882,7 @@ chat/
 │   ├── ChatController
 │   └── ChatTitleController
 ├── dto/
+│   ├── AutomaticChatTitleRequest
 │   ├── ChatCapabilitiesResponse
 │   ├── ChatDetailsResponse
 │   ├── ChatErrorResponse
@@ -2821,7 +3028,12 @@ Provider call не выполняется внутри долгой business tra
 
 ## Lease / fencing
 
-Watchdog `ChatTurnLeaseService` использует `ChatTurnRepository.renewLeaseUsingDatabaseClock(turnId, processingToken, leaseMillis)` — PostgreSQL `clock_timestamp()` определяет и проверку действующего срока, и новую границу lease в одном SQL-запросе. Сохраняются условия `PROCESSING`, точного `processing_token` и непросроченной аренды; результат, отличный от одной обновлённой строки, означает потерю ownership. Ошибка БД также инвалидирует watchdog; нельзя переключаться на разрешающий fallback по локальным часам JVM. Сигнатура конструктора service сохранена для совместимости существующих consumers.
+Watchdog `ChatTurnLeaseService` использует
+`ChatTurnRepository.renewLeaseUsingDatabaseClock(turnId, processingToken, leaseMillis)` — PostgreSQL `clock_timestamp()`
+определяет и проверку действующего срока, и новую границу lease в одном SQL-запросе. Сохраняются условия `PROCESSING`,
+точного `processing_token` и непросроченной аренды; результат, отличный от одной обновлённой строки, означает потерю
+ownership. Ошибка БД также инвалидирует watchdog; нельзя переключаться на разрешающий fallback по локальным часам JVM.
+Сигнатура конструктора service сохранена для совместимости существующих consumers.
 
 
 `processingToken` является fencing token.
@@ -2893,7 +3105,12 @@ epoch-колонки запрещает DB-trigger.
 
 ## Quota reservation
 
-Новая reservation-путь вызывает перегрузку `ChatQuotaService.reserve(..., ChatQuotaReservation)` вместо устаревшего пятиаргументного `reserve(...)`. `ChatQuotaReservation` привязывается к immutable `ModelRouteResult.decisionId`, использует `estimatedInputTokens`, `estimatedOutputTokens`, верхнюю оценку `estimatedMaxCostUsd` и `pricingComplete`. Сервис отдельно подтверждает поддерживаемую схему через `hasVerifiedRoutePricingScheme`; неизвестная стоимость не подменяется доказанным нулём и не обходит денежный hard quota. Старую перегрузку не следует возвращать в production-flow лишь ради предупреждений IDE.
+Новая reservation-путь вызывает перегрузку `ChatQuotaService.reserve(..., ChatQuotaReservation)` вместо устаревшего
+пятиаргументного `reserve(...)`. `ChatQuotaReservation` привязывается к immutable `ModelRouteResult.decisionId`,
+использует `estimatedInputTokens`, `estimatedOutputTokens`, верхнюю оценку `estimatedMaxCostUsd` и `pricingComplete`.
+Сервис отдельно подтверждает поддерживаемую схему через `hasVerifiedRoutePricingScheme`; неизвестная стоимость не
+подменяется доказанным нулём и не обходит денежный hard quota. Старую перегрузку не следует возвращать в production-flow
+лишь ради предупреждений IDE.
 
 
 Quota резервируется до provider call и затем finalization корректирует состояние согласно persisted
@@ -2942,20 +3159,41 @@ Automatic naming:
 
 ### Автоматическое и ручное переименование — интеграция 17.10.2026
 
-- `ChatTitlePolicy.automaticTitle()` формирует заголовок детерминированно из первого принятого сообщения пользователя, не вызывая LLM; длина ограничена 72 Unicode code points.
-- Frontend при создании пустого чата должен отправлять `title: null` или неявное значение по контракту `CreateChatRequest`, **не** строку `«Новый чат»` как пользовательский заголовок: иначе `ChatSessionEntity.create()` установит `title_source=USER` и автоматическое назначение не сработает. Совместимость JSON уточняется по актуальному DTO.
-- `ChatTurnReservationService.reserveOrReplay()` выполняет проверку идемпотентности до любых новых изменений заголовка; при первом новом принятом USER-сообщении под `ChatTurnMutexRepository.lockChat()` вызывает `assignAutomaticTitle(...)` только если `title_source=DEFAULT`. Все изменения заголовка принадлежат той же транзакции reservation и откатываются при её отказе.
-- Если заголовок имеет источник `AUTO` или `USER`, последующие сообщения не меняют его. Явное изменение пользователем имеет приоритет и переводит источник в `USER`.
-- `ChatTitleService.rename()` проверяет владельца/организацию, использует ту же mutex boundary и регистрирует `CHAT_RENAMED` без помещения текста заголовка в audit details; повторное одинаковое пользовательское переименование идемпотентно.
-- Заголовок в истории должен перечитываться из API после отправки сообщения, чтобы новое название появилось без обновления страницы. Успешный ответ провайдера **не является** необходимым условием для названия уже принятого сообщения: наименование привязано к успешной reservation transaction.
+- `ChatTitlePolicy.automaticTitle()` формирует заголовок детерминированно из первого принятого сообщения пользователя,
+  не вызывая LLM; длина ограничена 72 Unicode code points.
+- Frontend при создании пустого чата должен отправлять `title: null` или неявное значение по контракту
+  `CreateChatRequest`, **не** строку `«Новый чат»` как пользовательский заголовок: иначе `ChatSessionEntity.create()`
+  установит `title_source=USER` и автоматическое назначение не сработает. Совместимость JSON уточняется по актуальному
+  DTO.
+- `ChatTurnReservationService.reserveOrReplay()` выполняет проверку идемпотентности до любых новых изменений заголовка;
+  при первом новом принятом USER-сообщении под `ChatTurnMutexRepository.lockChat()` вызывает `assignAutomaticTitle(...)`
+  только если `title_source=DEFAULT`. Все изменения заголовка принадлежат той же транзакции reservation и откатываются
+  при её отказе.
+- Если заголовок имеет источник `AUTO` или `USER`, последующие сообщения не меняют его. Явное изменение пользователем
+  имеет приоритет и переводит источник в `USER`.
+- `ChatTitleService.rename()` проверяет владельца/организацию, использует ту же mutex boundary и регистрирует
+  `CHAT_RENAMED` без помещения текста заголовка в audit details; повторное одинаковое пользовательское переименование
+  идемпотентно.
+- Заголовок в истории должен перечитываться из API после отправки сообщения, чтобы новое название появилось без
+  обновления страницы. Успешный ответ провайдера **не является** необходимым условием для названия уже принятого
+  сообщения: наименование привязано к успешной reservation transaction.
 
 ### V77 — однократный backfill исторических заголовков
 
-`V77__backfill_legacy_default_chat_titles.sql` обрабатывает только строки `chat_sessions`, где `title = 'Новый чат'`. Для них по первому непустому `USER`-сообщению (сортировка `created_at, id`) вычисляется заголовок с ограничением до 72 символов, устанавливается `title_source='AUTO'` и увеличивается optimistic `version`. Остальные пользовательские названия сохраняются.
+`V77__backfill_legacy_default_chat_titles.sql` обрабатывает только строки `chat_sessions`, где `title = 'Новый чат'`.
+Для них по первому непустому `USER`-сообщению (сортировка `created_at, id`) вычисляется заголовок с ограничением до 72
+символов, устанавливается `title_source='AUTO'` и увеличивается optimistic `version`. Остальные пользовательские
+названия сохраняются.
 
-Пустые старые чаты с заглушкой, без USER-сообщений, получают `title_source='DEFAULT'`, чтобы первое новое сообщение могло назвать их автоматически. Миграция не передаёт сообщения провайдеру и не изменяет tenant ownership. При повторном исполнении обновлённые строки не подходят под условие заглушки; однако **Flyway не следует запускать повторно с изменённой checksum**.
+Пустые старые чаты с заглушкой, без USER-сообщений, получают `title_source='DEFAULT'`, чтобы первое новое сообщение
+могло назвать их автоматически. Миграция не передаёт сообщения провайдеру и не изменяет tenant ownership. При повторном
+исполнении обновлённые строки не подходят под условие заглушки; однако **Flyway не следует запускать повторно с
+изменённой checksum**.
 
-**Неустранимая неоднозначность legacy:** старый frontend мог записать буквальную строку `Новый чат` как `USER`; по данным БД нельзя надёжно отличить это от сознательного ручного выбора такого же названия. V77 реализует явную политику восстановления всех заглушек, заказанную владельцем проекта. Перед применением к populated БД необходимо сделать backup и оценить этот компромисс. V58 задним числом не менять.
+**Неустранимая неоднозначность legacy:** старый frontend мог записать буквальную строку `Новый чат` как `USER`; по
+данным БД нельзя надёжно отличить это от сознательного ручного выбора такого же названия. V77 реализует явную политику
+восстановления всех заглушек, заказанную владельцем проекта. Перед применением к populated БД необходимо сделать backup
+и оценить этот компромисс. V58 задним числом не менять.
 
 ---
 # Модуль `model`
@@ -3317,6 +3555,7 @@ ai/
 │   ├── AiProviderTimeoutException
 │   └── AiProviderUnavailableException
 ├── execution/
+│   ├── AiExecutionAttemptAuthorization
 │   ├── AiExecutionAttemptObserver
 │   ├── AiExecutionAttemptRecorder
 │   ├── AiExecutionAttemptScope
@@ -3659,6 +3898,7 @@ knowledge/
 ├── config/
 │   ├── KnowledgeEmbeddingConfigurationInvariantVerifier
 │   ├── KnowledgeEmbeddingProperties
+│   ├── KnowledgeErasureReleaseInvariantVerifier
 │   ├── KnowledgeIngestionProperties
 │   ├── KnowledgeOcrConfigurationInvariantVerifier
 │   ├── KnowledgeOcrProperties
@@ -3668,7 +3908,13 @@ knowledge/
 ├── controller/
 │   ├── AnswerPassportController
 │   ├── KnowledgeBaseController
+│   ├── KnowledgeBaseSearchController
 │   ├── KnowledgeDocumentController
+│   ├── KnowledgeDocumentDeletionCapabilityController
+│   ├── KnowledgeDocumentDeletionController
+│   ├── KnowledgeDocumentDeletionReadController
+│   ├── KnowledgeBaseDeletionController
+│   ├── KnowledgeDeletionOperatorController
 │   ├── KnowledgeEvaluationController
 │   └── KnowledgeRetrievalController
 ├── dto/
@@ -3681,6 +3927,8 @@ knowledge/
 │   ├── KnowledgeBaseMemberResponse
 │   ├── KnowledgeBasePageResponse
 │   ├── KnowledgeBaseResponse
+│   ├── KnowledgeBaseDeletionResponse
+│   ├── KnowledgeDocumentDeletionResponse
 │   ├── KnowledgeDocumentPageResponse
 │   ├── KnowledgeDocumentResponse
 │   ├── KnowledgeDocumentVersionPageResponse
@@ -3750,6 +3998,7 @@ knowledge/
 ├── model/
 │   ├── KnowledgeBaseAccessLevel
 │   ├── KnowledgeBaseVisibility
+│   ├── KnowledgeDocumentLifecycleState
 │   ├── KnowledgeHealthState
 │   └── KnowledgeIngestionStatus
 ├── ocr/
@@ -3760,6 +4009,7 @@ knowledge/
 │   └── OcrPage
 ├── rag/
 │   ├── AnswerPassportService
+│   ├── KnowledgeChatContext
 │   ├── KnowledgeCitationValidator
 │   ├── KnowledgeContextAssembler
 │   ├── KnowledgeContextSource
@@ -3767,6 +4017,9 @@ knowledge/
 │   ├── KnowledgeMode
 │   ├── KnowledgeRagContextReceiptRepository
 │   ├── KnowledgeRagContextReceiptService
+│   ├── KnowledgeRagContextRevokedException
+│   ├── KnowledgeRagErasureGuard
+│   ├── KnowledgeRagExecutionPermitService
 │   ├── KnowledgeRagService
 │   ├── RagCitation
 │   ├── RagCompletion
@@ -3774,6 +4027,7 @@ knowledge/
 ├── repository/
 │   ├── KnowledgeBaseMembershipRepository
 │   ├── KnowledgeBaseRepository
+│   ├── KnowledgeDocumentDeletionRepository
 │   ├── KnowledgeDocumentQueryRepository
 │   ├── KnowledgeDocumentRepository
 │   ├── KnowledgeDocumentVersionRepository
@@ -3785,14 +4039,23 @@ knowledge/
 │   └── KnowledgeRetrievalRepository
 ├── service/
 │   ├── KnowledgeAccessService
+│   ├── KnowledgeBaseDeletionExecutor
+│   ├── KnowledgeBaseDeletionService
 │   ├── KnowledgeBaseNameNormalizer
+│   ├── KnowledgeBaseSearchPattern
+│   ├── KnowledgeBaseSearchService
 │   ├── KnowledgeBaseService
+│   ├── KnowledgeDeletionDiagnostics
+│   ├── KnowledgeDeletionOperatorService
+│   ├── KnowledgeDocumentDeletionAcceptanceService
+│   ├── KnowledgeDocumentDeletionExecutor
 │   ├── KnowledgeDocumentFileValidator
 │   ├── KnowledgeDocumentMediaTypeDetector
 │   ├── KnowledgeDocumentMediaTypes
 │   ├── KnowledgeDocumentNameNormalizer
 │   ├── KnowledgeDocumentService
 │   ├── KnowledgeDocumentWriteService
+│   ├── KnowledgeErasureObservability
 │   ├── KnowledgeEvaluationService
 │   ├── KnowledgeNameNormalizerSupport
 │   ├── KnowledgeOoxmlDetector
@@ -3806,7 +4069,10 @@ knowledge/
     │   ├── KnowledgeStorageReconciliationConfiguration
     │   ├── KnowledgeStorageReconciliationProperties
     │   ├── KnowledgeStorageReconciliationScheduler
+    │   ├── KnowledgeStorageReviewMetrics
     │   └── KnowledgeStorageUploadJournal
+    ├── ErasureTombstoneJournal
+│   ├── KnowledgeErasureTombstoneJournal
     ├── KnowledgeStorageConfiguration
     ├── KnowledgeStorageProductionInvariantVerifier
     ├── KnowledgeStorageProperties
@@ -3816,6 +4082,19 @@ knowledge/
     ├── S3ObjectStorage
     └── StoredObject
 ```
+
+**Контроль полноты структурных схем (31.10.2026).** В обоих присланных файлах в
+`knowledge/service` перечислены **25** имён `.java`; указанные тобой 26 относятся
+к более свежему локальному checkout, к которому эти два документа сами по себе
+доступа не дают. Добавлять 26-е имя по догадке запрещено. В поставку включён
+`sync_readme_inventory.py`, который считывает фактические `.java` непосредственно
+из `backend/src/main/java/ru/safeai/gateway` **на твоём Mac** и синхронизирует
+12 полных деревьев модулей. Он выводит отдельно число файлов
+`knowledge/service`, проверяет V1–V84 и не редактирует миграции или исходники.
+После синхронизации эта схема должна показывать **все** локальные классы, а не
+частичный список из старого README. Аналогичная проверка проводится для
+`common`, `auth`, `user`, `organization`, `ratelimit`, `audit`, `usage`, `chat`,
+`model`, `ai` и `identity`. См. инструкцию в архиве.
 
 ## Конкурентный ingestion, lease fencing и bounded processing
 
@@ -4092,6 +4371,371 @@ COLLECTED
 - incomplete GC transaction блокируется deferred guard.
 
 ---
+## Безвозвратное удаление документа — V78–V81 (подготовлено, opt-in)
+
+### Разные операции: отключение и удаление
+
+| Операция | Поиск AI | Файлы и версии | Можно восстановить |
+|---|---|---|---|
+| `enabled=false`, `lifecycle_state=AVAILABLE` | выключен | сохранены | да, повторным включением |
+| `lifecycle_state=DELETING` | запрещён | очистка ожидает/выполняется | нет через обычный API |
+| `knowledge_document_deletions_v78.state=DELETED` | запрещён | онлайн-очистка должна быть доказана | нет |
+
+`DELETED` — **состояние независимой операции**, не строка в `knowledge_documents`:
+после завершения документ и его версии физически удаляются из online DB.
+Статусы операции: `DELETING`, `NEEDS_REVIEW`, `BLOCKED_BY_RETENTION`, `DELETED`.
+Состояние `BLOCKED_BY_RETENTION` означает, что Object Lock/legal hold/retention
+препятствует обещанию очистки. Обозначение не подменяется успехом.
+
+### Принятие запроса и закрытие доступа
+
+`KnowledgeDocumentDeletionController` зарегистрирован только при обоих feature flags.
+`KnowledgeDocumentDeletionAcceptanceService` выполняет принятие в короткой транзакции:
+
+1. Проверяет `OWNER` своей базы/организацию на сервере, а не по кнопке UI.
+2. Проверяет `Idempotency-Key` (12–128 символов) и `If-Match` — кавычки вокруг
+   целой версии документа, например `"7"`.
+3. Берёт документ под `FOR UPDATE`, исключая гонку с новой версией/редактированием.
+4. В том же коммите сохраняет deletion intent, `enabled=false`, `DELETING`
+   и обязательное событие аудита `KNOWLEDGE_DOCUMENT_DELETION_REQUESTED`.
+5. Отвечает `202 Accepted`; **это принятие**, а не факт физического удаления.
+
+Повтор с тем же ключом и той же семантикой возвращает исходную операцию;
+повтор с другим документом/версией — конфликт. Права и организация повторно
+проверяются при чтении операции. V78 дополнительно ограничивает запись новых
+версий и публикацию после перехода в `DELETING`.
+
+### Фоновая очистка: lease, fencing, S3 и PostgreSQL
+
+`KnowledgeDocumentDeletionExecutor` создан как opt-in scheduled job:
+
+```text
+claim durable DELETING job (SKIP LOCKED) + lease_token
+    ↓
+transactional inventory of storage keys (V81)
+    ↓ COMMIT
+purgeAllVersionsVerified(key) для каждого ключа — OUTSIDE DB TRANSACTION
+    ↓
+transactional fenced erase of chunks/versions/jobs/document
+    ↓
+DB completion guard + DELETED acknowledgement
+```
+
+- `knowledge_document_erasure_objects_v81` содержит **временный** перечень
+  storage keys документных версий и связанных upload-intents, но не текст
+  или bytes документа. Прочие derived artifacts требуют отдельной инвентаризации.
+- Inventory учитывает версии и связанные `LINKED`/`CLEANED` upload intents.
+  Неоднозначные `INTENT/STORED/CLEANING/NEEDS_REVIEW` требуют разбора:
+  нельзя объявлять отсутствие физического объекта без проверки.
+- Lease продлевается до S3-операций; stale worker не имеет права подтверждать завершение.
+  Ошибки приводят к bounded retry либо `NEEDS_REVIEW`.
+- `ObjectStorage.purgeAllVersionsVerified` обязан проверить все S3 `versionId` и
+  delete markers: обычный `delete(key)` этого **не гарантирует**.
+- `S3ObjectStorage` использует MinIO Java SDK; `LocalObjectStorage` — отдельный
+  provider-specific контракт. Версионирование, Object Lock и provider errors требуют
+  интеграционных тестов по реальной конфигурации.
+- PostgreSQL-транзакция очищает chunks/embeddings, документы, версии и ingestion jobs,
+  а V81 запрещает зафиксировать `DELETED`, если остались online-content rows
+  или временный inventory. Проверка БД не доказывает физическую очистку S3.
+- Очистка учитывает V57/V63 generation state machine, не должна обходить
+  защищённые поколения без отдельного fenced разрешения.
+
+### Сохранение независимых аудиторских свидетельств
+
+V80 создаёт `knowledge_document_version_identities_v80` и
+`knowledge_chunk_identities_v80` и переносит к ним внешние ключи после backfill
+и `VALIDATE CONSTRAINT`. В этих таблицах нет самого извлечённого текста,
+векторов или storage keys. Исторические retrieval hits и generation records
+сохраняют корректную ссылочную целостность. V81 допускает ограниченную
+санитизацию `document_name_snapshot` до `Удалённый документ` под fenced lease.
+
+**Граница обещания удаления:** исторические чаты, ранее отправленные ответы,
+RAG context receipts, prompts, аудит, backup snapshots, внешние OCR/embedding/AI
+провайдеры и реплики имеют самостоятельный retention/erasure контракт.
+Без инвентаризации этих мест нельзя обещать тотальное удаление каждого следа
+содержимого. Нельзя каскадно уничтожать immutable RAG receipts или историю аудита.
+
+### UI: capability и подтверждение
+
+`KnowledgeDocumentDeletionCapabilityController` зарегистрирован независимо от
+feature flags. Его ответ защищён ACL/tenant/OWNER и не является разрешением на
+обход backend checks. В интерфейсе владельцу показывается «Удалить…»;
+при `allowed:false` команда неактивна с понятной причиной. При `allowed:true`
+требуется точное название документа; после `202` показывается ход операции.
+Повтор при timeout использует тот же `Idempotency-Key`; успешное сообщение
+«Файл удалён» допустимо только после терминального `DELETED` от сервера.
+
+### Удаление Knowledge Base — V82 (подготовлено, opt-in)
+
+V78–V81 относятся к документам; V82 отдельно вводит durable
+`knowledge_base_deletions_v82`, `knowledge_bases.lifecycle_state`, неизменяемую
+base identity и транзакционные ограничения на новые загрузки/retrieval/ссылки.
+`KnowledgeBaseDeletionService` принимает и координирует удаление дочерних
+документов, а `KnowledgeBaseDeletionExecutor` удаляет live base row только
+при подтверждённой очистке. `DELETE knowledge_bases` вручную запрещён
+DB fencing. Frontend подтверждения базы подготовлен, но V82–V84 UI/CI release
+приёмка текущей ветки отдельно не подтверждена.
+
+
+# Безопасное удаление Knowledge — V78–V84
+
+Этот раздел описывает фактическую последовательность предоставленных SQL V78–V84,
+классы и эксплуатационный контракт. Миграции **добавляют ограничения и аудит**;
+сами по себе они не удаляют документов, объектов S3 или базы. Runtime-операции разрушительны,
+поэтому отделены feature flags и проверками прав, lease, fencing и состояния провайдера.
+
+## Состояния и граница подтверждения
+
+```text
+Живой документ / Knowledge Base: AVAILABLE → DELETING
+
+Долговечная операция удаления:
+DELETING ──► DELETED                  # verified, terminal, immutable
+         ├─► NEEDS_REVIEW            # операторский разбор
+         └─► BLOCKED_BY_RETENTION    # доказанный Object Lock / legal hold
+
+NEEDS_REVIEW ──► DELETING             # только V83 controlled resume при строгих условиях
+BLOCKED_BY_RETENTION ──► [нет обычного resume]
+DELETED ──► [нет переходов]
+```
+
+`DELETING` — защитное состояние, не факт окончания физической очистки. `NEEDS_REVIEW`
+не подразумевает, что S3 уже очищен. `BLOCKED_BY_RETENTION` фиксирует подтверждённое
+ограничение хранения; нельзя заменять его generic ошибкой, автоматически снимать hold
+или переписывать terminal evidence. `DELETED` устанавливается только после проверок
+executor и внутренних БД-ограничений; оно **не** обещает удаления из backup,
+исторического аудита и внешних копий.
+
+## Миграции V78–V84: точные обязанности
+
+| Версия | SQL | Назначение |
+|---|---|--|
+| **V78** | `V78__knowledge_document_deletion_foundation.sql` | `knowledge_documents.lifecycle_state`, durable `knowledge_document_deletions_v78`, unique tenant/document + tenant/idempotency, lease/completion CHECK, immutable operation identity, запреты поздних version/ingestion/chunk writes |
+| **V79** | `V79__knowledge_deletion_request_audit_type.sql` | Регистрация `KNOWLEDGE_DOCUMENT_DELETION_REQUESTED` в `audit_event_types` |
+| **V80** | `V80__knowledge_erasure_provenance_identities.sql` | Immutable version/chunk identity, backfill истории, validated FK для retrieval hits/index generations без необходимости удерживать оригинальный текст/embeddings |
+| **V81** | `V81__knowledge_erasure_executor_guards.sql` | Object inventory, transaction-local erasure lease/token validation, ограниченное право на chunk GC/hit redaction, запрет `DELETED`, пока живы online-rows/inventory; `BLOCKED_BY_RETENTION` immutable |
+| **V82** | `V82__knowledge_base_erasure_foundation.sql` | Immutable base identity и backfill, validated FK исторических chat/retrieval/evaluation, `knowledge_base_deletions_v82`, lifecycle/child-write fences, verified owner fence перед физическим удалением базы, audit request type |
+| **V83** | `V83__knowledge_erasure_operator_audit_types.sql` | Регистрация `KNOWLEDGE_DOCUMENT_DELETION_RESUMED` и `KNOWLEDGE_BASE_DELETION_RESUMED` для авторизованного операторского requeue |
+| **V84** | `V84__knowledge_erasure_terminal_audit.sql` | Шесть terminal/attention audit types и два `AFTER UPDATE OF state` trigger, запись в `audit_outbox` в исходной транзакции |
+| **V84** | `V85__knowledge_rag_execution_leases_and_erasure_guards.sql` |  |
+
+V78: после принятия durable document operation состояние документа монотонно;
+новые версии, ingestion и chunk publication после `DELETING` отвергаются. Серверная
+проверка наличия operation при переходе в `DELETING` не заменяет tenant/RBAC checks.
+
+V80: сначала копируются immutable identities из уже существующих версий/chunks,
+затем новая составная FK добавляется как `NOT VALID`, **проверяется** через
+`VALIDATE CONSTRAINT` и лишь после этого удаляется старый RESTRICT FK.
+Это смена provenance reference, а не каскадное удаление исторических цитирований.
+
+V81: разрешение на удаление chunks устанавливается по **действующему DB lease**
+(`operation_id`, `lease_token`, `lease_until`), lifecycle и состоянию operation.
+Простое `SET safeai.knowledge.erasure_*` не даёт достаточного права без живой
+строки с совпадающим токеном. Нарушение inventory/completion guard должно
+останавливать финализацию, а не игнорироваться в Java.
+
+V82: базовый identity сохраняется после удаления live-row. Три исторические ссылки
+(`chat_turns`, `knowledge_retrieval_runs`, `knowledge_evaluation_runs`) переходят
+на `knowledge_base_identities_v82` после валидации. Дополнительные запреты
+сериализуют новые документы/версии/upload intents/retrieval/evaluation/generation/hits,
+изменение memberships и повторную публикацию относительно перехода базы в `DELETING`.
+Физический `DELETE knowledge_bases` разрешён только актуальному base-erasure owner
+после завершения дочерних операций и очистки активных зависимостей.
+
+V83: только регистрация audited operator-resume types; реальное разрешение, requeue
+и валидация находятся в `KnowledgeDeletionOperatorController` и
+`KnowledgeDeletionOperatorService`. **Не** объявлять ручным recovery SQL-обновление
+статуса или удаление `knowledge_document_erasure_objects_v81`.
+
+V84: триггеры фиксируют только **реальное изменение** состояния из `DELETING`
+в `DELETED`, `NEEDS_REVIEW` или `BLOCKED_BY_RETENTION`. Для документа и базы
+записываются соответствующие шесть event types. Поля деталей: `operationId`,
+`knowledgeBaseId`, `documentId` (для базы `null`), текущий/предыдущий state,
+`attempts`, безопасный `last_error_code`. Отсутствуют имя файла, S3 keys,
+текст документа и provider exception text. `actor_user_id=NULL` означает системный
+worker; инициатор запроса остаётся в immutable V78/V82 operation. Уже завершённые
+**до** установки V84 операции не получают синтетического audit-backfill.
+V85:
+
+## Backend-классы и ответственность
+
+| Компонент | Роль в workflow |
+|---|---|
+| `KnowledgeDocumentDeletionAcceptanceService` | Tenant/OWNER authorization, optimistic version/idempotency, принятие документа и атомарный durable audit/request |
+| `KnowledgeDocumentDeletionRepository` | Хранение/чтение документных операций удаления |
+| `KnowledgeDocumentDeletionExecutor` | Lease claim/renewal, inventory, S3 version-aware verified purge, DB-fenced физическая очистка и финализация |
+| `KnowledgeBaseDeletionService` | Административное принятие базы, создание parent operation, связь с дочерними документами и защитное отключение базы |
+| `KnowledgeBaseDeletionExecutor` | Координация завершения дочерних операций, физическое удаление live base row только после DB fences |
+| `KnowledgeDocumentDeletionCapabilityController` | Read-only capability для интерфейса; доступен и при выключенном DELETE |
+| `KnowledgeDocumentDeletionController` | Destructive document DELETE; включается только с требуемыми флагами |
+| `KnowledgeDocumentDeletionReadController` | Отдельные GET status/list, сохраняющие чтение при выключенных destructive flags и tenant/RBAC checks |
+| `KnowledgeBaseDeletionController` | Base DELETE/capability/status, проверка авторизации и подтверждения запроса |
+| `KnowledgeDeletionOperatorController` | ADMIN diagnostics + узкий POST resume, без физического удаления внутри HTTP handler |
+| `KnowledgeDeletionOperatorService` | Проверка актуальных ADMIN/organization DB state, `expectedUpdatedAt`, unresolved uploads/children, mandatory audit для `NEEDS_REVIEW → DELETING` |
+| `KnowledgeErasureObservability` | Read-only scheduled collector Micrometer, не захватывает leases и не выполняет DELETE |
+| `S3ObjectStorage` / `ObjectStorage` | Provider-specific version-aware deletion и проверка результатов; обычный S3 `DELETE` не доказывает отсутствия предыдущих версий |
+
+Точные Java package names и HTTP signatures сверяются с исходниками в текущей ветке,
+особенно если локальные файлы после ZIP/patch были вручную изменены.
+
+## Feature flags: default-deny
+
+| Свойство | По умолчанию | За что отвечает |
+|---|---|---|
+| `safeai.knowledge.deletion.accept-enabled` | `false` | Приём document DELETE |
+| `safeai.knowledge.deletion.executor-enabled` | `false` | Document physical executor |
+| `safeai.knowledge.base-deletion.accept-enabled` | `false` | Приём base DELETE |
+| `safeai.knowledge.base-deletion.executor-enabled` | `false` | Base physical executor |
+| `safeai.knowledge.deletion.recovery-enabled` | `false` | V83 operator resume; одного этого флага недостаточно |
+
+Для base DELETE V82 требует четыре document/base флага одновременно. V83
+operator resume требует **все пять**. Чтение диагностики и статусов не должно
+зависеть от включения физического удаления, но авторизация для него обязательна.
+**Ни один из флагов нельзя включать ради проверки UI на существующей БД.**
+
+## HTTP, idempotency и операторское продолжение
+
+Подтверждённые по контроллерам V82/V83 маршруты (authorization проверяется на backend):
+
+```http
+DELETE /api/knowledge-bases/{baseId}/documents/{documentId}
+GET    /api/knowledge-bases/{baseId}/document-deletions
+GET    /api/knowledge-bases/{baseId}/document-deletions/{operationId}
+GET    /api/knowledge-bases/{baseId}/document-deletions/capability
+
+DELETE /api/knowledge-bases/{baseId}
+GET    /api/knowledge-bases/{baseId}/base-deletions/capability
+GET    /api/knowledge-bases/{baseId}/base-deletions/current
+GET    /api/knowledge-bases/{baseId}/base-deletions/{operationId}
+GET    /api/knowledge-bases/base-deletions
+```
+
+Фактические HTTP mapping annotations и сигнатуры ответа проверять в исходниках.
+Особенно важно, что document read-only GET в V83 находится в отдельном
+`KnowledgeDocumentDeletionReadController`, а не за флагом destructive DELETE.
+`If-Match` и `Idempotency-Key` обязательны для запросов, принимающих удаление;
+ответ `202 Accepted` означает принятие durable request, **не** завершение purge.
+
+Подтверждённые по V83 пути защищённой диагностики:
+
+```http
+GET /api/knowledge-bases/{baseId}/document-deletions/{operationId}/diagnostics
+GET /api/knowledge-bases/{baseId}/base-deletions/{operationId}/diagnostics
+```
+
+Продолжение только с текущей ролью ADMIN, tenant isolation и всеми пятью flags:
+
+```http
+POST /api/knowledge-bases/{baseId}/document-deletions/{operationId}/resume
+POST /api/knowledge-bases/{baseId}/base-deletions/{operationId}/resume
+```
+
+```json
+{
+  "expectedUpdatedAt": "2026-10-29T18:00:00Z",
+  "reasonCode": "OPERATOR_REVIEWED"
+}
+```
+
+`expectedUpdatedAt` берётся из свежего GET diagnostics; `reasonCode` — короткий
+нормализованный код (не свободное описание инцидента). Service проверяет
+актуальную включённость пользователя/организации и **сохранённую** роль ADMIN,
+точную временную версию, истёкший/отсутствующий lease и неразрешённые upload intents.
+Для базы дополнительно запрещён resume при `NEEDS_REVIEW`/
+`BLOCKED_BY_RETENTION` у дочерних документов. V83 requeue не выполняет S3 I/O:
+следующий штатный executor заново проверяет inventory/ownership.
+
+Отмена ранее принятого destructive request и восстановление `DELETING → AVAILABLE`
+по умолчанию **не** поддерживаются. Конкурентный duplicate request не должен
+приводить к двум несогласованным операциям или повторной физической очистке.
+
+## Физическое удаление, retention и crash safety
+
+- Versioned S3/MinIO bucket: удалять и проверять **каждую** версию и delete marker;
+  не считать обычный `DELETE object` достаточным доказательством удаления.
+- `COMPLIANCE` Object Lock / legal hold: при **подтверждённом** ограничении
+  переходить в `BLOCKED_BY_RETENTION`, сохранять immutable evidence; не пытаться
+  обойти lock или снять hold через административный retry.
+- Неоднозначный provider failure / непроверенный `InvalidRequest` — не то же самое,
+  что достоверный retention block; требуется безопасный retry/review согласно
+  ограниченному retry policy и фактическому доказательству.
+- После crash между S3 purge и PostgreSQL commit возобновление должно опираться
+  на durable inventory, текущий lease/fencing и повторную верификацию; нельзя
+  подставлять «успех» из факта, что прежний worker запустился.
+- Исторические citation/Answer Passport/audit identifiers сохраняются отдельно
+  от исходных bytes; metadata/provenance persistence надо учитывать в privacy policy.
+- Если источники данных уже были отправлены внешнему AI provider, локальный purge
+  не удаляет их копии у провайдера; действует отдельный provider retention contract.
+
+## Monitoring V84 и поведение при сбоях
+
+`KnowledgeErasureObservability` по расписанию (default `PT1M`) читает агрегаты
+PostgreSQL для `scope=document|base` и четырёх states: `DELETING`,
+`NEEDS_REVIEW`, `BLOCKED_BY_RETENTION`, `DELETED`. В каждом bucket публикуются
+count, возраст самой старой операции **от `created_at`** и сумма `max(attempts-1,0)`.
+
+Prometheus names после экспорта Micrometer:
+
+```text
+safeai_knowledge_erasure_operations{scope="document|base",state="..."}
+safeai_knowledge_erasure_oldest_age_seconds{scope="document|base",state="..."}
+safeai_knowledge_erasure_retries{scope="document|base",state="..."}
+safeai_knowledge_erasure_metrics_last_success_epoch_seconds
+safeai_knowledge_erasure_metrics_refresh_failures_total
+```
+
+24 gauges по scope/state + 1 freshness gauge + 1 failure counter. Метки
+`operationId`, `documentId`, `tenant`, `storageKey`, exception text **не** используются.
+Если SQL refresh завершается ошибкой, сохраняется последний корректный снимок,
+увеличивается failure counter; `last_success=0` до первого успешного сбора,
+после чего устаревание определяется по его возрасту. Повторяющиеся PostgreSQL-backed
+counts от разных replicas следует агрегировать `max`, **не** `sum`.
+
+Канонические файлы мониторинга:
+
+```text
+infra/prometheus/prometheus.yml
+infra/prometheus/rules/safeai-audit-outbox.yml
+infra/prometheus/rules/safeai-knowledge-review.yml
+infra/prometheus/rules/safeai-knowledge-erasure.yml
+infra/prometheus/tests/knowledge-erasure.test.yml
+infra/scripts/check-prometheus-config.sh
+```
+
+`infra/prometheus/prometheus.yml` подключает `/etc/prometheus/rules/*.yml`.
+`infra/docker-compose.yml` монтирует канонический каталог rules read-only.
+**Не** копировать второй dead-letter alert из `ops/prometheus` или
+`backend/deploy/prometheus`: dead-letter уже отслеживает canonical audit rule.
+Prometheus firing без Alertmanager routing не означает уведомления дежурного.
+
+31.10.2026 пользователь подтвердил успешную проверку `promtool`: валидна общая
+конфигурация и **3 файла** правил (audit: 7, erasure: 6, storage review: 3);
+проверка erasure unit rules также прошла. Это не проверка реально активного
+Alertmanager и не доказательство подключённого production Prometheus.
+
+## Операторский runbook и release safety
+
+1. Считать защищённую диагностику и текущую роль; проверить state, `lastErrorCode`,
+   `attempts`, age, upload intents, дочерние операции. Зафиксировать incident вне свободного audit payload.
+2. `DELETING`: диагностировать работу PostgreSQL/S3/lease; не запускать второй worker в обход fencing.
+3. `NEEDS_REVIEW`: устранить первопричину; продолжить только с одобренным `reasonCode`,
+   актуальным `expectedUpdatedAt` и включёнными всеми пятью flags на отдельном разрешённом стенде.
+4. `BLOCKED_BY_RETENTION`: оставить evidence неизменным; выполнить compliance/legal hold review,
+   не править SQL и не возобновлять V83 endpoint.
+5. После любого перехода проверить V78/V82 operation, audit outbox/delivery, метрики и пользовательский status;
+   `202 Accepted` и запись `*_RESUMED` не означают `DELETED`.
+6. При проблеме — управляемое выключение flags и redeploy с сохранением диагностики;
+   не удалять immutable rows и не редактировать применённые миграции.
+
+До любого production enablement нужны: пустая и populated PostgreSQL Flyway
+rehearsal; V78–V84 negative/concurrency/lease/retention/real versioned-S3 tests;
+Frontend CI и staging UX; восстановление из backup; проверка RBAC после revoke;
+реальный Prometheus scrape + Alertmanager notification test; согласованная
+policy для архивов, audit, Answer Passport и provider retention. До прохождения
+этой матрицы feature flags остаются `false`.
+
+---
+
 # Ключевые backend contracts
 
 Ниже — основные публичные API groups. Controllers остаются source of truth для exact query/body
@@ -4117,7 +4761,10 @@ POST /api/chats/{id}/messages
 GET  /api/chats/{chatId}/turns/by-client-request/{clientRequestId}
 ```
 
-Ручное переименование обслуживает отдельный `ChatTitleController` / `ChatTitleService`; точный HTTP verb и путь сверять с текущим кодом контроллера. Доступ только к собственным неархивированным чатам своей организации; повторное одинаковое пользовательское название — no-op. Заголовки при создании без пользовательского ввода не должны передаваться как явное `"Новый чат"`.
+Ручное переименование обслуживает отдельный `ChatTitleController` / `ChatTitleService`; точный HTTP verb и путь сверять
+с текущим кодом контроллера. Доступ только к собственным неархивированным чатам своей организации; повторное одинаковое
+пользовательское название — no-op. Заголовки при создании без пользовательского ввода не должны передаваться как явное
+`"Новый чат"`.
 
 ## Users
 
@@ -4239,6 +4886,38 @@ GET  /api/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/download
 GET  /api/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions/{versionId}/download
 ```
 
+### Knowledge: API безвозвратного удаления документа (opt-in)
+
+```http
+GET    /api/knowledge-bases/{knowledgeBaseId}/document-deletions/capability
+DELETE /api/knowledge-bases/{knowledgeBaseId}/documents/{documentId}
+GET    /api/knowledge-bases/{knowledgeBaseId}/document-deletions
+GET    /api/knowledge-bases/{knowledgeBaseId}/document-deletions/{operationId}
+```
+
+- Read-only `capability` зарегистрирован и при выключенных двух флагах;
+  требует backend tenant/OWNER, возвращает `allowed:false, reason:FEATURE_DISABLED`.
+- Только destructive DELETE зависит от двух document flags. Начиная с V83
+  GET status/list должны работать независимо от этих флагов и сохранять ACL.
+  Для DELETE обязательны `If-Match: "<version>"` и `Idempotency-Key`.
+- `202 Accepted` = операция принята, документ находится в `DELETING`;
+  сведения об окончании берутся из status/list, а не из статуса HTTP 202.
+- `GET` защищён той же серверной авторизацией, что и DELETE.
+- V82 добавляет отдельный base deletion controller, durable parent operation и
+  read-only историю; интерфейс и безопасность выключены по умолчанию до release gate.
+
+ADMIN V83 diagnostics / opt-in continuation:
+
+```http
+GET  /api/knowledge-bases/{baseId}/document-deletions/{operationId}/diagnostics
+GET  /api/knowledge-bases/{baseId}/base-deletions/{operationId}/diagnostics
+POST /api/knowledge-bases/{baseId}/document-deletions/{operationId}/resume
+POST /api/knowledge-bases/{baseId}/base-deletions/{operationId}/resume
+```
+
+GET сохраняет tenant/RBAC проверки при выключенных destructive flags; POST
+допускается только для `NEEDS_REVIEW` после верификации текущей роли/причины.
+
 ## Knowledge retrieval / evaluation
 
 ### V76 — privacy для новых retrieval runs
@@ -4285,7 +4964,7 @@ Answer Passport читается по chat/turn identity через `AnswerPassp
 
 ---
 
-# Database / Flyway V1–V77
+# Database / Flyway V1–V84
 
 Production migrations:
 
@@ -4311,8 +4990,11 @@ local seed != production reference data
 
 ## V76: безопасное применение
 
-Порядок миграций обязателен: V73 → V74 → V75 → V76. Нельзя применять V76
-к БД без успешной V75 или переигрывать immutable V41/V44/V55/V63.
+Исторический privacy-gate V76 остаётся обязательной составной частью
+последовательного V73–V84 upgrade. На реальной БД нельзя перескакивать
+через обязательные версии. V76 нельзя применять без успешного прохождения
+V75; нельзя переигрывать immutable V41/V44/V55/V63. Порядок V73 → V74 → V75
+→ V76 — префикс общей последовательности V73–V84.
 
 `NOT VALID` не означает disabled: PostgreSQL проверяет новые строки, но
 разрешает оставаться существующим строкам, которые могли нарушать новый CHECK.
@@ -4436,8 +5118,98 @@ plaintext in newly created retrieval runs на отдельном PostgreSQL с�
     Частичный индекс ускоряет обработку `NEEDS_REVIEW` upload intents.
     Исторический plaintext требует отдельного privacy/retention решения.
 - **`V77`**
-  - **Назначение:** восстановление исторических названий чатов `Новый чат` из первого пользовательского сообщения; `AUTO`-provenance для заполненных чатов, `DEFAULT` для пустых legacy-чата, увеличение optimistic `version` без изменения сообщений/tenant. Дополнительных AI-вызовов нет.
+  - **Назначение:** восстановление исторических названий чатов `Новый чат` из первого пользовательского сообщения;
+    `AUTO`-provenance для заполненных чатов, `DEFAULT` для пустых legacy-чата, увеличение optimistic `version` без
+    изменения сообщений/tenant. Дополнительных AI-вызовов нет.
+- **`V78`**
+  - **Назначение:** создан фундамент удаления отдельных документов без автоматического физического purge.
+    В `knowledge_documents` добавлено монотонное состояние `AVAILABLE / DELETING`, а в
+    `knowledge_document_deletions_v78` — durable operation с tenant/document identity,
+    `Idempotency-Key`, `expected_version`, числом попыток, lease-токеном, сроком аренды и
+    проверяемым terminal state. `UNIQUE` предотвращает два конкурирующих запроса на один
+    документ и повторное использование ключа идемпотентности в организации. Триггеры
+    запрещают восстановление удаляемого документа, повторное добавление версий и позднюю
+    запись ingestion/chunks после принятия удаления. Доказательство запроса нельзя
+    обновлять в части identity или удалять обычным SQL.
+- **`V79`**
+  - **Назначение:** зарегистрирован `KNOWLEDGE_DOCUMENT_DELETION_REQUESTED` в
+    `audit_event_types` — тип обязательного события принятия запроса на удаление;
+    миграция не открывала HTTP DELETE, не вызывала S3 и не меняла статус операции.
+- **`V80`**
+  - **Назначение:** вынесено независимое immutable provenance версий и фрагментов в
+    `knowledge_document_version_identities_v80` и `knowledge_chunk_identities_v80`.
+    Существующие UUID и tenant lineage перенесены backfill-запросами; исторические
+    `knowledge_retrieval_hits` и `knowledge_index_generations` переключены на новые
+    составные FK только после `NOT VALID` и `VALIDATE CONSTRAINT`. Так сохранена
+    ссылочная история цитирований без удержания исходных байтов, текстовых chunks,
+    embeddings и storage keys. Обновление или удаление identity запрещено триггерами.
+- **`V81`**
+  - **Назначение:** усилены PostgreSQL fences фактического document-erasure executor.
+    Добавлен временный durable inventory `knowledge_document_erasure_objects_v81`,
+    предотвращён новый upload-intent для уже удаляемого документа. Разрешение на
+    контентный DELETE требует совпадающих `operation_id`, `lease_token`, действующего
+    `lease_until`, состояния `DELETING` и отключённого поиска. Узко разрешены
+    fenced GC chunks и санитизация исторического `document_name_snapshot`; обычные
+    guards V57/V44 остаются. Переход в `DELETED` запрещён при наличии online records
+    или незачищенного inventory; `BLOCKED_BY_RETENTION` сохраняет immutable evidence.
+    Сам SQL не проверяет отсутствие S3-версий и не заменяет проверку провайдера.
+- **`V82`**
+  - **Назначение:** добавлен отдельный жизненный цикл удаления всей Knowledge Base.
+    Созданы `knowledge_base_identities_v82` и `knowledge_base_deletions_v82`, сохранены
+    независимые immutable UUID/tenant lineage и перенесены исторические FK для
+    chat/retrieval/evaluation с проверкой целостности. Base lifecycle, parent operation,
+    child-document operations и DB fencing предотвращают новую загрузку, публикацию,
+    retrieval/evaluation и необоснованное удаление live base row после принятия удаления.
+    Завершение parent требует завершения зависимостей; retention/hold не обходятся.
+- **`V83`**
+  - **Назначение:** зарегистрированы `KNOWLEDGE_DOCUMENT_DELETION_RESUMED` и
+    `KNOWLEDGE_BASE_DELETION_RESUMED` для обязательного аудита контролируемого
+    operator recovery. Java-контроллер и сервис могут возвращать только
+    `NEEDS_REVIEW → DELETING` при действующей DB-роли ADMIN, совпадающем
+    `expectedUpdatedAt`, tenant scope, отсутствии неразрешённых upload intents,
+    включённых защитных флагах и обязательном аудите. `DELETED` и
+    `BLOCKED_BY_RETENTION` не восстанавливаются; GET status/diagnostics отделены от
+    destructive DELETE. В SQL V83 нет самостоятельного физического удаления.
+- **`V84`**
+  - **Назначение:** добавлены шесть типов аудита фактических переходов
+    `DELETING → DELETED / NEEDS_REVIEW / BLOCKED_BY_RETENTION` отдельно для документов
+    и баз знаний, а также два `AFTER UPDATE OF state` PostgreSQL-триггера.
+    В `audit_outbox` в **той же транзакции**, что и изменение состояния, записываются
+    только безопасные идентификаторы операции/base/document, старое/новое состояние,
+    attempts и код ошибки, без исходных файлов, storage keys, текста и provider errors.
+    Откат записи outbox откатывает терминальный переход. Прямой
+    `NEEDS_REVIEW → BLOCKED_BY_RETENTION` запрещён. Micrometer/Prometheus и проверки
+    frontend/Java относятся к программному выпуску V84, а не к содержимому SQL-миграции.
+- **`V85`**
+  - **Назначение:**
 
+
+## V78–V84 — эволюция жизненного цикла удаления
+
+| Этап | Durable schema / DB enforcement | Java и внешний эффект |
+|------|---|---|
+| V78  | `knowledge_document_deletions_v78`, документ `AVAILABLE/DELETING`, immutable intent, запрет поздней публикации | Приём операции, без физического удаления при самой миграции |
+| V79  | `audit_event_types` содержит `KNOWLEDGE_DOCUMENT_DELETION_REQUESTED` | Required audit при принятии |
+| V80  | `knowledge_document_version_identities_v80`, `knowledge_chunk_identities_v80`, перенесённые validated FK | История цитирования не блокирует удаление исходных bytes |
+| V81  | `knowledge_document_erasure_objects_v81`, fenced checks `is_knowledge_erasure_lease_owner_v81`, terminal guards | Executor вызывает verified S3 purge, затем защищённый DB cleanup |
+| V82  | `knowledge_base_identities_v82`, `knowledge_base_deletions_v82`, parent lifecycle/fences | Base executor ждёт состояния всех детей; не стирает audit/provenance |
+| V83  | Два новых `*_RESUMED` audit event types | Контролируемый operator resume только из `NEEDS_REVIEW`; независимая GET диагностика |
+| V84  | Два AFTER UPDATE trigger и шесть terminal/attention event types | Outbox сохраняется атомарно, low-cardinality мониторинг собирается отдельно |
+| V85  |  | |
+
+
+V78–V81 образуют document-erasure фундамент, V82 добавляет удаление всей базы,
+V83 — контролируемое операторское продолжение и отдельный read API, V84 —
+обязательный атомарный аудит переходов. Полные таблицы, бизнес-инварианты,
+feature flags и операторский runbook приведены в главе
+[«Безопасное удаление Knowledge — V78–V84»](#безопасное-удаление-knowledge--v78v84).
+
+**Порядок миграций строго последовательный:** V78 → V79 → V80 → V81 → V82 → V83 → V84.
+V80/V82 выполняют identity backfill и validated FK переходы; V84 регистрирует
+триггеры и audit types без физического удаления. На populated PostgreSQL нужны
+backup, preflight существующих данных, проверка ограничений и остановка старых
+workers, несовместимых с новым SQL contract. **Не исправлять checksum
+применённых Flyway SQL**, включая V1–V83; schema fix — следующей миграцией.
 
 
 ## V73 — Canonical names организаций
@@ -4537,26 +5309,38 @@ V75__audit_dead_letter_recovery_event_type.sql
 ## Порядок внедрения
 
 ```text
-V1–V72  →  V73 (Organization)
-        →  V74 (Usage)
-        →  V75 (Audit event type)
-        →  V76 (Knowledge retrieval query privacy)
+V1–V72 → V73 Organization → V74 Usage → V75 Audit → V76 Retrieval privacy
+       → V77 Chat titles → V78 Document lifecycle → V79 Request audit
+       → V80 Provenance identities → V81 Document erasure guards
+       → V82 Base deletion → V83 Operator recovery → V84 Terminal audit
 ```
+
+Это последовательность **номеров Flyway**, а не инструкция вручную запускать
+каждый SQL на действующей базе. Миграции выполняет Flyway на разрешённом
+стенде после проверки checksum и предварительного резервного копирования.
 
 Не копировать ранний конфликтный
 `V73__audit_dead_letter_recovery_event_type.sql`:
 этот номер уже занят миграцией организаций.
 
-В текущем публичном `main` проверено только наличие
-**V1–V72**. Отображение V73–V77 в этом README — описание
-подготовленного целевого пакета, не подтверждение применённой
-схемы. Истину об установке даёт `flyway_schema_history`.
+В исторически проверенном `main` (PR #8) было подтверждено наличие V1–V72.
+В предоставленных архивных материалах от 28–31.10.2026 доступны V73–V84,
+но это **не** подтверждает их применение к текущей PostgreSQL.
+Истину об установке даёт `flyway_schema_history`.
 
 ## V77 — безопасный backfill исторических чатов
 
-Перед применением `V77__backfill_legacy_default_chat_titles.sql` проверить, что V58 и все V73–V76 уже успешно применены в правильном порядке, сделать snapshot populated БД и провести dry-run подсчёта строк. Данные первого сообщения используются **только внутри того же чата**; миграция не меняет `organization_id`, `user_id`, `created_at`, `chat_messages` и audit trail. Legacy-заголовок `Новый чат` по своей природе неоднозначен, поэтому возможное намеренное название, совпадающее с заглушкой, также будет заменено: это явно принятая политика backfill, а не универсальное восстановление provenance.
+Перед применением `V77__backfill_legacy_default_chat_titles.sql` проверить, что V58 и все V73–V76 уже успешно применены
+в правильном порядке, сделать snapshot populated БД и провести dry-run подсчёта строк. Данные первого сообщения
+используются **только внутри того же чата**; миграция не меняет `organization_id`, `user_id`, `created_at`,
+`chat_messages` и audit trail. Legacy-заголовок `Новый чат` по своей природе неоднозначен, поэтому возможное намеренное
+название, совпадающее с заглушкой, также будет заменено: это явно принятая политика backfill, а не универсальное
+восстановление provenance.
 
-После применения проверить число оставшихся заглушек с/без сообщений, распределение `title_source`, `version` и неизменность названий, отличных от заглушки. Новые транзакционные проверки должны охватывать идемпотентный replay, ошибку Redis/quota, ручное rename одновременно с первым сообщением и frontend refresh списка. Если V77 уже есть в `flyway_schema_history`, изменять её нельзя; correction требует следующей свободной версии.
+После применения проверить число оставшихся заглушек с/без сообщений, распределение `title_source`, `version` и
+неизменность названий, отличных от заглушки. Новые транзакционные проверки должны охватывать идемпотентный replay,
+ошибку Redis/quota, ручное rename одновременно с первым сообщением и frontend refresh списка. Если V77 уже есть в
+`flyway_schema_history`, изменять её нельзя; correction требует следующей свободной версии.
 
 ## V72 — границы транзакционного допуска и обратная совместимость
 
@@ -4720,19 +5504,52 @@ PII и bind values. Допустим ограниченный safe failure type.
 Required audit failure при этом **не проглатывается**:
 иначе теряется transactional evidence.
 
+## Knowledge erasure (V84): техническая наблюдаемость и правила
+
+`KnowledgeErasureObservability` регистрирует на старте 26 meters:
+`2 scopes × 4 states × 3 gauges = 24`, плюс freshness gauge и refresh failure counter.
+Период обновления `${safeai.knowledge.erasure.observability.poll-delay:PT1M}`.
+Параметры запроса только агрегированные, без tenant/user/operation labels.
+
+```promql
+safeai_knowledge_erasure_operations{scope="document",state="NEEDS_REVIEW"}
+safeai_knowledge_erasure_oldest_age_seconds{scope="base",state="DELETING"}
+safeai_knowledge_erasure_retries{scope="document",state="DELETING"}
+safeai_knowledge_erasure_metrics_last_success_epoch_seconds
+safeai_knowledge_erasure_metrics_refresh_failures_total
+```
+
+Статусы без операций представлены нулями после успешного refresh. При ошибке
+SELECT данные **не обнуляются**, counter сбоя увеличивается, timestamp
+успешного refresh не сдвигается. До первого успешного refresh `last_success=0`.
+У всех этих рядов проверять `absent(...)` и freshness отдельно, а реплики
+агрегировать `max` для PostgreSQL-backed gauges, не `sum`.
+
+`infra/prometheus/rules/safeai-knowledge-erasure.yml` содержит 6 правил:
+`NeedsReview`, `RetentionBlocked`, `Stuck`, `MetricsStale`, `MetricsAbsent`,
+и `SafeAIKnowledgeErasureMetricsRefreshFailed` (полные identifiers приведены в YAML).
+Дублирующее правило audit dead letters не добавляется — оно уже находится в
+`safeai-audit-outbox.yml`. Инструментальный endpoint — **внутренний**
+`/actuator/prometheus` на management port 9091, не public Nginx.
+
 ## Metrics
 
 Проект содержит module-level metrics, включая:
 
 - chat processing;
 - rate limiting;
-- audit outbox.
+- audit outbox;
+- Knowledge storage reconciliation;
+- V84 Knowledge erasure (`KnowledgeErasureObservability`).
+
+Для V84 точные названия метрик, aggregation, freshness и правила приведены
+в отдельной главе «Безопасное удаление Knowledge — V78–V84».
 
 Prometheus endpoint должен быть internal/network-protected.
 
 ## Scheduled jobs
 
-В текущем baseline существуют scheduled/maintenance paths для:
+В историческом baseline существуют scheduled/maintenance paths для:
 
 - refresh-token cleanup;
 - audit outbox processing;
@@ -4741,7 +5558,10 @@ Prometheus endpoint должен быть internal/network-protected.
 - ChatTurn recovery;
 - Knowledge ingestion;
 - Knowledge storage reconciliation;
-- Knowledge generation GC.
+- Knowledge generation GC;
+- opt-in `KnowledgeDocumentDeletionExecutor` и `KnowledgeBaseDeletionExecutor`
+  (исполняются только при соответствующих feature flags; по умолчанию выключены);
+- `KnowledgeErasureObservability` (V84, read-only, не зависит от destructive flags).
 
 Multi-instance job должен иметь DB/distributed coordination там, где duplicate work нарушит
 semantics.
@@ -4752,7 +5572,7 @@ semantics.
 
 README не утверждает `BUILD SUCCESS` без фактического запуска конкретного commit.
 
-## Регрессионные проверки для изменений 17.10.2026
+## Регрессии V73–V77 (историческая матрица, не замена V84 CI)
 
 Ниже — **требуемые проверки, а не результаты выполненного прогона**.
 
@@ -4766,9 +5586,11 @@ README не утверждает `BUILD SUCCESS` без фактического
   extraction timeout, object hash/size, embedding vector validity и shutdown.
 - Retrieval V76: PostgreSQL constraint negative tests, preserved historical
   row, inserted redacted query and valid hash, immutable trigger, review index.
-- Chat title V58/V77: first accepted message, manually named chats, default placeholder submitted as `null`, concurrent rename/reservation, idempotent replay, rollback, legacy backfill on populated PostgreSQL and UI list refresh.
+- Chat title V58/V77: first accepted message, manually named chats, default placeholder submitted as `null`, concurrent
+  rename/reservation, idempotent replay, rollback, legacy backfill on populated PostgreSQL and UI list refresh.
 - Lease: PostgreSQL-clock renewal, fencing token mismatch, expired lease, DB outage and watchdog ownership-loss metrics.
-- Quota: route-bound reservation, verified/unverified pricing scheme, hard monthly cost limit, unknown-cost fail-closed and rollback consistency.
+- Quota: route-bound reservation, verified/unverified pricing scheme, hard monthly cost limit, unknown-cost fail-closed
+  and rollback consistency.
 - Upgrade: populated Flyway V72 → V77, application startup, production profile,
   Testcontainers PostgreSQL/Redis и отсутствие регрессии публичных API.
 
@@ -4776,7 +5598,75 @@ README не утверждает `BUILD SUCCESS` без фактического
 изменением истории Flyway. Сначала установить фактическую причину и
 соответствие нового контракта ожидаемому поведению теста.
 
-## Исторические проверки на 11.10.2026
+## Целевой release gate удаления Knowledge (V78–V84)
+
+**Слои проверки должны оставаться раздельными:** unit/API-contract tests,
+PostgreSQL/Testcontainers constraints/concurrency, настоящие versioned MinIO
+purge/Object Lock/legal hold, отдельный JVM SIGKILL/restart, frontend UI,
+Prometheus rule tests и deployment preflight. Положительный результат одного
+слоя **не** подменяет другой. Тесты удаления работают только с одноразовой БД;
+не запускать destructive проверку с текущими рабочими 7 KB / 18 документами.
+
+
+Наличие Java-теста не означает, что он запускался на текущем checkout. Исторический
+V82 `./mvnw clean verify` не подтверждает новое дерево; V83/V84 требуют
+нового прогона уже после объединения всех изменений, а не переиспользования
+старого результата.
+
+Ключевые test categories/classes из ранее предоставленных архивов и ZIP:
+
+- `KnowledgeDocumentDeletionFoundationIntegrationTest`,
+  `KnowledgeDocumentDeletionAcceptanceIntegrationTest`,
+  `KnowledgeDocumentDeletionExecutorIntegrationTest` — request, DB fences, cleanup;
+- `KnowledgeBaseDeletionFoundationIntegrationTest`,
+  `KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest`,
+  `KnowledgeBaseDeletionRealJvmCrashIntegrationTest` — parent/child lifecycle,
+  конкурентность, recovery после реального SIGKILL;
+- `S3VerifiedKnowledgeObjectPurgeIntegrationTest`,
+  `KnowledgeBaseObjectLockIntegrationTest` — versioned MinIO,
+  COMPLIANCE Object Lock, legal hold, непроверенный InvalidRequest;
+- `KnowledgeDeletionOperatorSafetyIntegrationTest` — V83 role/revoke/flags,
+  current-state diagnostics и ограниченный operator resume;
+- `KnowledgeErasureTerminalAuditIntegrationTest` — V84 атомарный outbox,
+  exactly-one transition intent и rollback;
+- `KnowledgeErasureObservabilityTest` — V84 fixed-cardinality metrics,
+  last-success freshness, failure-preserved last known values;
+- `KnowledgeDocumentDeletionCapabilityControllerTest` и frontend
+  `useKnowledgeDeletionController.test.tsx`, `KnowledgeDetailsPage.test.tsx` —
+  capability/history/UX даже при выключенных destructive flags.
+
+Фактический набор файлов сверить через `find` — часть тестов поставлялась
+в отдельных предыдущих ZIP и может отличаться по именам/ревизиям.
+
+```bash
+cd ~/Workspace/Projects/Products/SafeAI-Desk
+
+git status -sb
+git diff --check
+for f in infra/scripts/*.sh; do bash -n "$f" || exit 1; done
+bash infra/scripts/check-config-topology.sh
+bash infra/scripts/check-prometheus-config.sh
+
+cd backend
+./mvnw -Dtest=KnowledgeErasureTerminalAuditIntegrationTest,KnowledgeErasureObservabilityTest test
+./mvnw -Dtest=KnowledgeDeletionOperatorSafetyIntegrationTest test
+./mvnw clean verify
+
+cd ../frontend
+npm ci
+NODE_OPTIONS=--no-experimental-webstorage npm run ci
+```
+
+Для Testcontainers/S3 tests — только одноразовые PostgreSQL и versioned MinIO.
+Тестирование **не** должно затрагивать пользовательские 7 Knowledge Bases / 18
+документов либо production database, включая Flyway, S3 purge и UI deletion.
+Проверить loss-of-response, retention/legal hold, unknown provider outcomes,
+stale worker, failing JDBC commit, prior provider purge, archive references,
+retry idempotency, tenant isolation, permission revoke и отсутствие утечки
+operation IDs в метрики. Не снижать assertions/guards ради зелёной сборки.
+
+
+## Исторические проверки до V78 (11.10.2026)
 
 Проверки выполнены пользователем локально перед merge PR #8; это **конкретные команды и их вывод**,
 а не заявление о статусе независимого CI, production или `clean` сборки.
@@ -5106,8 +5996,8 @@ npm run check
 Перед серьёзным deployment:
 
 ```text
-fresh V1 → V76 (при наличии всех четырёх патчей)
-populated upgrade V72 → V76; порядок/lock-timeouts
+fresh V1 → V84 (только на disposable PostgreSQL/pgvector)
+populated upgrade V72 → V84; порядок/lock-timeouts; Flyway checksum
 Flyway history validation
 critical index validity check
 backend clean test
@@ -5256,6 +6146,29 @@ Production Knowledge требует:
 - production role имеет необходимые extension/index privileges;
 - `pgvector` доступен до применения Knowledge vector migrations.
 
+## V78–V84: controlled destructive erasure rollout — NO-GO без отдельной приёмки
+
+Разработаны документы и база: `V78–V81` (document), `V82` (base),
+`V83` (операторское `NEEDS_REVIEW` requeue), `V84` (terminal audit и метрики).
+Наличие SQL, сервисов, готового frontend confirmation и настроенного Prometheus
+**не** означает разрешение включить удаление на реальных данных.
+
+Пять flags `safeai.knowledge.deletion.accept-enabled`,
+`safeai.knowledge.deletion.executor-enabled`,
+`safeai.knowledge.base-deletion.accept-enabled`,
+`safeai.knowledge.base-deletion.executor-enabled`,
+`safeai.knowledge.deletion.recovery-enabled` по умолчанию должны оставаться `false`.
+Для операторского resume **все пять** должны быть явно включены только на
+утверждённом окружении. `BLOCKED_BY_RETENTION` нельзя переводить в `DELETING`
+обычной командой. Read-only diagnosis и аудит продолжают работать без включения
+физического удаления.
+
+После backup/restore rehearsal и populated V77→V84 Flyway upgrade на отдельной
+БД проверить реальные Object Lock/retention, tenant/RBAC/revoke,
+known vs ambiguous S3 failures, отказ SQL после S3 purge, consumer concurrency,
+frontend UI, audit outbox и Prometheus/Alertmanager end-to-end.
+
+
 ## V73–V76: порядок release и rollback
 
 V73–V76 должны находиться в одном согласованном release
@@ -5331,34 +6244,40 @@ Redirect following с credentials запрещён.
 
 # Текущие ограничения и production-readiness gaps
 
-Здесь собраны старые риски и новые release gaps по состоянию
-на 17.10.2026. Некоторые тезисы требуют повторного code audit перед изменением production behavior;
+Здесь собраны исторические риски и новые release gaps по состоянию
+на 31.10.2026. Некоторые тезисы требуют повторного code audit перед изменением production behavior;
 их наличие в README не подтверждает незакрытый дефект текущего `main`. Пункты, закрытые `V59–V68`,
 из списка удалены: budget-state representability закрыт `V62/V64`, final-request/RAG binding —
 `V62/V64/V65`,
 searchable Knowledge publication — `V63`, physical response vs protocol rejection — `V66`,
 а Chat/Audit evidence получил дополнительные DB backstops в `V67/V68`.
 
-## P0 до production — release validation V72–V75 и мониторинг
+## P0 до production — release validation V72–V84, deletion safety и мониторинг
 
-- **Текущий локальный baseline зеленый:** `./mvnw test` — 2259/0/0/3; целевые PostgreSQL/Redis IT —
-  27/27. Исторический сбой clock fixture не является текущим выводом Maven.
-- Нет подтверждения нового полного `./mvnw clean test`,
-  CI на релизном SHA и populated V72→V75 upgrade rehearsal.
-- Для Audit ещё необходимо доказать Alertmanager delivery,
-  atomic recovery и отсутствие секретов в exception-логах.
-- Для Usage необходимы midnight-race и high-contention
-  тесты dirty-date queue, physical spend и Hikari slots.
-- Для Organization V73 требуется rehearsal блокировок и
-  проверка коллизий на реальном наборе tenant names. Успешные локальные тесты нельзя объявлять
-  достаточным release gate.
-- Kill-switch синхронизирует **разрешение STARTED**, но не обещает физическую отмену уже допущенного
-  HTTP I/O; если нужен сетевой hard-stop, требуется отдельный dispatch/draining протокол.
-- Старые application instances без нового epoch contract при смешанной раскатке могут получить
-  fail-closed ошибки. Важно описать rollback/runbook и последовательность остановки workers.
+- Исторический PR #8: 2259 tests и 27/27 PostgreSQL/Redis; отдельный
+  V82 `clean verify` также сообщался как успешный. Его точное количество тестов
+  следует брать из вывода того прогона, не переносить на V83/V84.
+- После объединения V83/V84 нужен новый `./mvnw clean verify`, frontend CI,
+  upgrade rehearsal populated V77→V84 и S3/MinIO/Object Lock + live-SIGKILL matrix.
+- `BLOCKED_BY_RETENTION` остаётся immutable. Для отмены legal hold/истечения retention
+  нужен отдельный согласованный процесс и новая migration, если потребуется
+  разрешённый переход; нельзя делать plain `UPDATE state`.
+- V83 operator resume допускается только для проверенного `NEEDS_REVIEW`,
+  при актуальном ADMIN в БД, `expectedUpdatedAt`, устранении upload/child blockers
+  и пяти flags. Required audit обязателен.
+- V84 outbox trigger даёт атомарный event intent, но доставка в `audit_events`
+  асинхронна; dead letters, stale/failure metrics и реальный Alertmanager
+  должны иметь эксплуатационный runbook и tested routing.
+- 31.10.2026 локальные `promtool`/topology/shell проверки прошли; недоказанными
+  остаются production Compose execution, image digest verification на релизном
+  commit, реальный scrape/alert delivery и DB migration.
+- Для Audit/Usage/Organization остаются исторические и release gates по V72–V76:
+  миграция populated tenants, contention, dirty dates, heavy reports и security epochs.
+- API `202 Accepted` означает создание задачи, **не** окончательное удаление;
+  `DELETED` не включает backup, RAG/audit provenance и внешних AI providers.
 
-Это **release gates**, а не повод ослаблять блокировки, DB triggers, idempotency, durable evidence
-или прежнюю логику recovery.
+**Запрещено** отключать safety triggers, менять applied SQL checksum,
+ослаблять RBAC/tenant scope и подменять unknown provider result успехом.
 
 
 ## P1 — Governed provider entry point
@@ -5601,35 +6520,47 @@ provider**:
 
 # Frontend
 
-Срез `frontend/package.json` и дерева `frontend/src/` в `main` на `fdcff62`, а не только старых
-скриншотов. UI — React 19, TypeScript 6, React Router 7, Vite 8; Vitest / Testing Library.
+На 31.10.2026 сценарии Knowledge deletion вынесены в feature controllers и
+отдельные API clients. В V84 исправлено поведение чтения истории: выключенный
+capability не должен очищать ранее загруженные операции; network/parse failure
+не маскируется под пустую историю. Acceptance `202` показывает состояние запроса,
+не завершение erasure. Все отрицательные состояния и stale errors должны
+оставаться видимыми после перезагрузки страницы.
+
+Актуальный предоставленный frontend использует React 19 / TypeScript 6 и
+feature-oriented layout (`app`, `entities`, `features`, `pages`, `shared`, `test`),
+не старые корневые `src/api`, `src/auth`, `src/components`.
 
 ```text
-frontend/
-├── package.json
-├── src/
-│   ├── api/               # HTTP clients, parsers, CSRF, chat, model, Knowledge
-│   ├── auth/              # AuthContext, auth context definition, useAuth
-│   ├── components/
-│   │   ├── admin/         # admin tables/forms/controls
-│   │   ├── chat/
-│   │   └── knowledge/
-│   ├── constants/         # audit event presentation constants
-│   ├── domain/            # UI-level role/policy helpers
-│   ├── hooks/
-│   ├── pages/             # Login, Chat, Knowledge, Users, Audit, Usage, Models
-│   ├── styles/
-│   ├── test/              # Vitest setup
-│   ├── utils/
-│   ├── App.tsx
-│   └── main.tsx
-└── ...
+frontend/src/
+├── app/
+├── entities/knowledge/api/knowledgeDocumentDeletionApi.ts
+├── features/knowledge/
+│   ├── controller/useKnowledgeDeletionController.ts
+│   └── ui/details/KnowledgeDeleteDialog.tsx
+├── pages/KnowledgeDetailsPage.tsx
+├── shared/
+├── test/
+└── main.tsx
 ```
 
-Auth и browser transport нужно согласовывать с backend HttpOnly cookies + `X-XSRF-TOKEN`;
-frontend route guard — не authorization boundary. API DTO и runtime parsers должны отказывать
-на неверных публичных response shapes, не доверять raw provider body, не раскрывать токены
-в логах/хранилищах браузера.
+Команда «Удалить…» появилась в меню документов только для серверно разрешённого
+владельца; при выключенной функции видна **неактивной** с текстом причины.
+React-модалка требует точного совпадения имени, отправляет `If-Match` и
+стабильный `Idempotency-Key`, не объявляет успех по одному HTTP 202, отображает
+`DELETING` / `NEEDS_REVIEW` / `BLOCKED_BY_RETENTION` / `DELETED`.
+Модальный UI и проверки ролей не заменяют серверную tenant/OWNER авторизацию.
+В предоставленном V82 frontend-снимке есть `knowledgeBaseDeletionApi.ts`,
+`KnowledgeBaseDeleteAction.tsx`, `BaseDeletionHistory.tsx` и тесты подтверждения;
+V84 затрагивает `useKnowledgeDeletionController.ts` и историю/ошибки статуса.
+Фактическая работа текущей локальной UI-ветки и `npm run ci` подлежит отдельной проверке.
+
+**Ключевые изменения по V84 ZIP:**
+`useKnowledgeDeletionController.ts` и его `.test.tsx`,
+`KnowledgeDetailsWorkspace.tsx`, `KnowledgeDetailsContent.tsx` и
+`KnowledgeDetailsPage.test.tsx`. Они относятся к реакции UI на ошибки/историю
+и не расширяют доступ к destructive DELETE. Источником фактических связей и
+контрактов остаётся `frontend/src` текущей рабочей копии.
 
 ### Локальные проверки frontend
 
@@ -5642,7 +6573,8 @@ npm run build
 ```
 
 Для объединенного прогона `npm run check`; CI-ориентированный script — `npm run ci`
-(lint + coverage + production build). `npm run audit:prod` проверяет production dependencies
+(проверка архитектуры, lint, coverage, production build). Для текущего проекта
+используется `NODE_OPTIONS=--no-experimental-webstorage npm run ci`. `npm run audit:prod` проверяет production dependencies
 по npm audit policy. **Эти команды не запускались в предоставленных логах PR #8.**
 
 Frontend routes/API contracts в точности определяются актуальными `App.tsx`, `api/`,
@@ -5748,7 +6680,7 @@ usage / physical spend / Answer Passport / audit
 Этот раздел предназначен для продолжения работы над SafeAI Desk в **новом диалоге** без повторного
 обсуждения восьми уже завершенных PR. Он фиксирует workflow, а не заменяет чтение исходников.
 
-## Исторический baseline PR #8 и целевой пакет 17.10.2026
+## Исторический baseline PR #8 и доступные исходники 28.10.2026
 
 ```text
 Repository:  https://github.com/Amid-1/Safeai-desk
@@ -5756,7 +6688,7 @@ Base:        main / origin/main
 Main HEAD:   fdcff62fc32131474cbc2639b1fa636edffd45bc (merge PR #8)
 Java:        21
 Spring Boot: 4.1.1
-DB:          PostgreSQL, GitHub main Flyway V1–V72, target V73–V76
+DB:          PostgreSQL; historical main V1–V72; supplied sources V1–V84
 Structure:   modular monolith; common, identity, auth, user, organization,
              ratelimit, audit, usage, chat, model, ai, knowledge
 PRs merged:  #1–#8; latest adds ArchUnit 1.5.1 architecture rule for common
@@ -5828,6 +6760,13 @@ Spring wiring, database triggers и concurrency.
 
 # План следующего этапа
 
+**Ближайший функциональный приоритет — завершить общую V78–V84
+production-like приёмку удаления документов и Knowledge Base, V83 operator recovery,
+V84 аудита/наблюдаемости и frontend.** Основа для удаления базы уже создана в V82;
+не проектировать её повторно. До отдельного GO серверные destructive flags
+остаются выключенными.
+
+
 Приоритет — **не массовый перенос Java-файлов**, а доказуемое выравнивание ownership
 и направление зависимостей в текущем модульном монолите.
 
@@ -5875,16 +6814,18 @@ Spring wiring, database triggers и concurrency.
 
 ---
 
-**Актуализация:** 17 октября 2026 года. Сохранён исторический baseline PR #8;
-учтены подготовленные V73–V77 и chat-title/lease/quota integration, Model pricing, Knowledge ingestion и Audit/Usage hardening.
-Публичный baseline `main` в ранее проведённой проверке содержал V1–V72;
-локальный checkout и реальная схема БД не прочитаны.
-Полный release gate и deployment не заявляются.
+**Актуализация документа:** 31 октября 2026 года. Сохранён исторический baseline PR #8,
+обновлены описания V73–V84, общие и доменные структурные деревья,
+frontend feature architecture, транзакционный аудит V84, metрики,
+Prometheus, operator recovery и opt-in удаление документов и целых баз знаний. Фактический Git HEAD и текущая пользовательская PostgreSQL/Flyway
+не были прочитаны; полный release gate и production deployment не заявляются.
 ---
 
-# Релизный контроль V73–V77
+# Релизный контроль V73–V84
 
-Выполнить перед внесением README и патчей в основную ветку:
+Ниже **обязательные проверки перед release**, не заявление об их прохождении.
+Работать с фактической веткой и незакоммиченными изменениями. Не пытаться
+переустановить V84 поверх populated production database ради проверки.
 
 ```bash
 cd ~/Workspace/Projects/Products/SafeAI-Desk
@@ -5892,33 +6833,64 @@ cd ~/Workspace/Projects/Products/SafeAI-Desk
 git status -sb
 git diff --check
 git diff --stat
+git diff --cached --stat
 
-find backend/src/main/resources/db/migration \
-  -maxdepth 1 -name 'V7[34567]__*.sql' -print
+# На macOS/BSD find, без GNU -regextype:
+find backend/src/main/resources/db/migration -maxdepth 1 \
+  -name 'V*.sql' -print | LC_ALL=C sort
+
+for f in infra/scripts/*.sh; do bash -n "$f" || exit 1; done
+bash infra/scripts/check-config-topology.sh
+bash infra/scripts/check-prometheus-config.sh
+
+# Только с корректно подготовленным окружением и без запуска деплоя:
+# docker compose --env-file backend/.env.prod -f infra/docker-compose.yml config --quiet
 
 cd backend
-./mvnw clean test
+./mvnw clean verify
+cd ../frontend
+npm ci
+NODE_OPTIONS=--no-experimental-webstorage npm run ci
 ```
 
-Сравнить `flyway_schema_history` с именами новых SQL:
+На **отдельной disposable или восстановленной staging БД** проверить миграционную историю:
 
 ```sql
-SELECT installed_rank, version, script, success
+SELECT installed_rank, version, description, script, success
 FROM public.flyway_schema_history
-WHERE version IN ('72', '73', '74', '75', '76', '77')
+WHERE version IN ('73','74','75','76','77','78','79','80','81','82','83','84')
 ORDER BY installed_rank;
+
+SELECT to_regclass('public.knowledge_document_deletions_v78') AS document_operations,
+       to_regclass('public.knowledge_document_version_identities_v80') AS version_identity,
+       to_regclass('public.knowledge_chunk_identities_v80') AS chunk_identity,
+       to_regclass('public.knowledge_document_erasure_objects_v81') AS object_inventory,
+       to_regclass('public.knowledge_base_identities_v82') AS base_identity,
+       to_regclass('public.knowledge_base_deletions_v82') AS base_operations;
+
+SELECT conname, convalidated
+FROM pg_constraint
+WHERE conname IN (
+  'fk_knowledge_retrieval_hits_provenance_v80',
+  'fk_knowledge_generation_provenance_v80',
+  'fk_chat_turns_knowledge_base_identity_v82',
+  'fk_knowledge_retrieval_runs_base_identity_v82',
+  'fk_knowledge_evaluation_runs_base_identity_v82'
+);
 ```
 
-После миграции проверить canonical names, dirty queue,
-`audit_event_types`, V76 CHECK, retrieval query redaction,
-review queue index и PostgreSQL index validity. Проверить V77 backfill, автоматическое название при первой reservation, ручное rename и DB-clock lease; затем
-два экземпляра backend, Redis/DB failures, retention contention
-и реальные события `firing` плюс получение уведомления.
+Для V84 дополнительно проверить наличие `trg_document_erasure_terminal_audit_v84`
+и `trg_base_erasure_terminal_audit_v84`, а также шести типов audit events;
+для V83 — обоих `*_RESUMED` и fail-closed operator permissions.
+Не проверять destructive SQL на живой базе.
 
-Для коммита документации использовать отдельную осмысленную
-запись, а не объявлять «проверено в production» без evidence.
+**Release gate остаётся открытым**, пока нет свежего green backend/frontend CI,
+законченного populated upgrade rehearsal, восстановления из backup,
+проверенных S3 Object Lock/legal hold, независимого permission-revoke теста,
+работающего Prometheus scrape/Alertmanager delivery и формального решения
+о включении всех конкретных destructive flags. В противном случае оставлять
+flags off и выпускать только read-only observability, если она отдельно принята.
 
-**Неизменяемое правило:** миграции V1–V72 не переписывать;
-если V73–V77 уже присутствуют в `flyway_schema_history`,
-изменять их checksum нельзя. Новые corrections — новой
-версией миграции после проверки занятой нумерации.
+**Неизменяемое правило:** не редактировать миграции, уже существующие в
+`flyway_schema_history`. Последующие исправления оформлять следующей свободной
+версией после проверки текущей ветки и применённой схемы.

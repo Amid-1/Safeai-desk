@@ -156,6 +156,9 @@ export default function ChatHistoryRow({
                     >
                         Убрать из списка
                     </button>
+                    {pending && (
+                        <small>Убрать чат можно, когда определится результат запроса.</small>
+                    )}
                 </div>
             )}
         </div>

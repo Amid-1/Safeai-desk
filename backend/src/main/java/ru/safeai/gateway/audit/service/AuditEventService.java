@@ -114,6 +114,16 @@ public class AuditEventService {
     public void recordSystemStandaloneRequired(
             UUID targetOrganizationId,
             AuditEventType eventType,
+            AuditDetails details
+    ) {
+        AuditCommand command = commandFactory.createTyped(
+                AuditActor.system(), targetOrganizationId, eventType, details);
+        outboxWriter.writeStandaloneRequired(command);
+    }
+
+    public void recordSystemStandaloneRequired(
+            UUID targetOrganizationId,
+            AuditEventType eventType,
             Map<String, Object> details
     ) {
         recordStandaloneRequired(AuditActor.system(), targetOrganizationId, eventType, details);

@@ -286,6 +286,19 @@ class AuthPostgresConcurrencyIT {
     }
 
     @Test
+    void retryAfterLostRotationResponseRevokesTheUnreceivedSuccessor() {
+        String original = createLoginRefreshToken(createSeed());
+        UUID familyId = familyIdForRawToken(original);
+
+        refreshTokenService.rotate(original, request("lost-refresh-response"));
+        assertThat(activeFamilyRows(familyId)).isEqualTo(1);
+
+        assertThatThrownBy(() -> refreshTokenService.rotate(original, request("retry-old-token")))
+                .isInstanceOf(RefreshTokenReuseDetectedException.class);
+        assertThat(activeFamilyRows(familyId)).isZero();
+    }
+
+    @Test
     void concurrentRefreshAndLogout_noFamilyTokenRemainsActive()
             throws Exception {
         Seed seed = createSeed();

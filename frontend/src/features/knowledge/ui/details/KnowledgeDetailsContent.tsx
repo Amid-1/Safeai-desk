@@ -13,6 +13,10 @@ import { EmptyState, ErrorState, LoadingState } from '../../../../shared/ui/Stat
 import ResizableScrollRegion from '../../../../shared/ui/ResizableScrollRegion'
 import KnowledgePagination from '../KnowledgePagination'
 import { formatBytes } from './knowledgeDocumentFormat'
+import { KnowledgeDocumentDeleteAction } from './KnowledgeDocumentDeleteAction'
+import type {KnowledgeDocumentDeletion} from '../../../../entities/knowledge/api/knowledgeDocumentDeletionApi'
+import {KnowledgeDeletionProgress} from '../KnowledgeDeletionProgress'
+import {isUnfinishedDeletion} from '../../lib/knowledgeDeletionStatus'
 
 const STATUS_LABEL:
     Record<KnowledgeIngestionStatus, string> = {
@@ -56,6 +60,15 @@ export type KnowledgeDetailsContentProps = {
     reindexNotice: string
     openingDocumentId: string
     downloadingDocumentId: string
+    changingEnabledId: string
+    canDeleteDocuments: boolean
+    canShowDeleteAction: boolean
+    deleteUnavailableReason: string
+    requestDeletion: (document: KnowledgeDocument) => void
+    openDeletionOperation: (document: KnowledgeDocument, operation: KnowledgeDocumentDeletion) => void
+    deletionOperations: KnowledgeDocumentDeletion[]
+    deletionHistoryError: boolean
+    requestEnabledChange: (document: KnowledgeDocument) => void
     setDocumentPage: (page: number) => void
     openUpload: (target: KnowledgeDocument | 'new') => void
     openDocumentPreview: (document: KnowledgeDocument) => void | Promise<void>
@@ -81,6 +94,15 @@ export function KnowledgeDetailsContent({
     reindexNotice,
     openingDocumentId,
     downloadingDocumentId,
+    changingEnabledId,
+    canDeleteDocuments,
+    canShowDeleteAction,
+    deleteUnavailableReason,
+    requestDeletion,
+    openDeletionOperation,
+    deletionOperations,
+    deletionHistoryError,
+    requestEnabledChange,
     setDocumentPage,
     openUpload,
     openDocumentPreview,
@@ -296,6 +318,31 @@ export function KnowledgeDetailsContent({
                 maxHeight={760}
                 minUpperHeight={128}
             >
+                {canShowDeleteAction && !canDeleteDocuments && (
+                    <p role="status" className="knowledge-documents__notice">
+                        {deleteUnavailableReason}
+                    </p>
+                )}
+                {deletionHistoryError && (
+                    <p role="alert" className="knowledge-documents__notice">
+                        История удаления временно недоступна. Не повторяйте удаление до проверки статуса на сервере.
+                    </p>
+                )}
+                {deletionOperations.length > 0 && (
+                    <section id="knowledge-document-deletion-history" className="knowledge-documents__notice"
+                        aria-label="Операции удаления документов">
+                        <details open={deletionOperations.some(operation => isUnfinishedDeletion(operation.state))}>
+                            <summary><strong>История удаления документов ({deletionOperations.length})</strong></summary>
+                            <div className="knowledge-erasure-history">
+                                {deletionOperations.map(operation => (
+                                    <KnowledgeDeletionProgress key={operation.operationId}
+                                        operation={operation}/>
+                                ))}
+                            </div>
+                        </details>
+                    </section>
+                )}
+
                 {reindexNotice && (
                     <div className="knowledge-documents__notice" role="status">
                         {reindexNotice}
@@ -436,6 +483,11 @@ export function KnowledgeDetailsContent({
                                                     >
                                                         {STATUS_LABEL[status]}
                                                     </span>
+                                                    {!document.enabled && (
+                                                        <small className="knowledge-document-status-cell__published">
+                                                            Отключён — не участвует в AI-поиске
+                                                        </small>
+                                                    )}
                                                     {status === 'FAILED' && (
                                                         <small className="knowledge-document-status-cell__issue">
                                                             Обработка завершилась ошибкой.
@@ -505,6 +557,30 @@ export function KnowledgeDetailsContent({
                                                                 >
                                                                     Версии
                                                                 </button>
+                                                                <button
+                                                                    type="button"
+                                                                    className="secondary-button"
+                                                                    disabled={busy || changingEnabledId !== ''}
+                                                                    onClick={() => requestEnabledChange(document)}
+                                                                >
+                                                                    {changingEnabledId === document.id
+                                                                        ? 'Сохраняем…'
+                                                                        : document.enabled
+                                                                            ? 'Отключить'
+                                                                            : 'Включить'}
+                                                                </button>
+                                                                {canShowDeleteAction && (
+                                                                    <KnowledgeDocumentDeleteAction
+                                                                        document={document}
+                                                                        canDelete={canDeleteDocuments}
+                                                                        busy={busy}
+                                                                        unavailableReason={deleteUnavailableReason}
+                                                                        onDelete={requestDeletion}
+                                                                        activeOperation={deletionOperations.find(operation =>
+                                                                            operation.documentId === document.id)}
+                                                                        onOpenOperation={openDeletionOperation}
+                                                                    />
+                                                                )}
                                                                 <button
                                                                     type="button"
                                                                     className="secondary-button document-reindex-button"
@@ -681,4 +757,3 @@ function documentTypeLabel(
 
     return ''
 }
-

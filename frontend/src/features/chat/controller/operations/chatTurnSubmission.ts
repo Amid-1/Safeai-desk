@@ -25,6 +25,7 @@ export function createTurnSubmission(deps: Pick<ChatControllerDependencies,
     | 'activePendingTurn'
     | 'activeChatHasPending'
     | 'refreshChatTitle'
+    | 'ensureAutomaticChatTitle'
     | 'handleSendFailure'
     | 'applySendSuccess'
     | 'finishPendingTurn'
@@ -32,7 +33,7 @@ export function createTurnSubmission(deps: Pick<ChatControllerDependencies,
     | 'putPendingTurn'
     | 'sendInFlightRef'
 >) {
-    const { capabilities, activeChat, knowledgeMode, knowledgeBaseId, drafts, clock, pendingTurnsRef, activeChatRef, scrollIntentRef, setSendError, activePendingTurn, activeChatHasPending, refreshChatTitle, handleSendFailure, applySendSuccess, finishPendingTurn, setDraft, putPendingTurn, sendInFlightRef } = deps
+    const { capabilities, activeChat, knowledgeMode, knowledgeBaseId, drafts, clock, pendingTurnsRef, activeChatRef, scrollIntentRef, setSendError, activePendingTurn, activeChatHasPending, refreshChatTitle, ensureAutomaticChatTitle, handleSendFailure, applySendSuccess, finishPendingTurn, setDraft, putPendingTurn, sendInFlightRef } = deps
 
     async function handleSendMessage() {
         const chat = activeChatRef.current
@@ -88,6 +89,11 @@ export function createTurnSubmission(deps: Pick<ChatControllerDependencies,
             type: 'BOTTOM',
         }
 
+        // Non-blocking metadata request: every role/tenant gets a title even
+        // if model policy prevents the AI request from being accepted.
+        if (chat.title === 'Новый чат') {
+            void ensureAutomaticChatTitle(chat.id, content)
+        }
         await executePendingTurn(pending)
     }
 
@@ -117,19 +123,13 @@ export function createTurnSubmission(deps: Pick<ChatControllerDependencies,
         })
     }
 
-    const sendingRequests = new Set<string>()
-
     async function executePendingTurn(
         pending: PendingTurn,
     ) {
-        // Предотвращаем конкурентные POST для одного turn в пределах рендера.
-        // Между рендерами блокировка хранится в неизменяемом ref контроллера.
-        const requestKey = `${pending.chatId}:${pending.clientRequestId}`
-        if (sendingRequests.has(requestKey)
-            || sendInFlightRef.current.has(pending.chatId)) {
+        // Единственная блокировка на чат между всеми рендерами React.
+        if (sendInFlightRef.current.has(pending.chatId)) {
             return
         }
-        sendingRequests.add(requestKey)
         sendInFlightRef.current.add(pending.chatId)
 
         putPendingTurn({
@@ -164,7 +164,6 @@ export function createTurnSubmission(deps: Pick<ChatControllerDependencies,
                 error,
             )
         } finally {
-            sendingRequests.delete(requestKey)
             sendInFlightRef.current.delete(pending.chatId)
         }
     }

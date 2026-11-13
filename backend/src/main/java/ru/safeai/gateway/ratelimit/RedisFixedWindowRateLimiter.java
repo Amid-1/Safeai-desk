@@ -11,6 +11,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 
 @Component
 @RequiredArgsConstructor
@@ -27,6 +28,7 @@ public class RedisFixedWindowRateLimiter {
                 end
                 local normalized = string.gsub(raw, '^0+', '')
                 if normalized == '' then normalized = '0' end
+                if raw ~= normalized then return redis.error_reply('INVALID_RATE_LIMIT_COUNTER') end
                 -- Stay strictly below signed int64 max: an INCR must be safe.
                 local max = '9223372036854775806'
                 if #normalized > #max or (#normalized == #max and normalized > max) then
@@ -78,6 +80,7 @@ public class RedisFixedWindowRateLimiter {
                 end
                 local normalized = string.gsub(raw, '^0+', '')
                 if normalized == '' then normalized = '0' end
+                if raw ~= normalized then return redis.error_reply('INVALID_RATE_LIMIT_COUNTER') end
                 -- Stay strictly below signed int64 max: an INCR must be safe.
                 local max = '9223372036854775806'
                 if #normalized > #max or (#normalized == #max and normalized > max) then
@@ -127,16 +130,12 @@ public class RedisFixedWindowRateLimiter {
                 local secondNotification = 0
 
                 if firstExceeded then
-                    local markerTtl = firstTtl
-
-                    if markerTtl < 1 then
-                        markerTtl = ttlMs
-                    end
+                    local markerTtl = math.max(1, firstTtl)
 
                     local markerResult = redis.call(
                         'SET',
                         KEYS[3],
-                        '1',
+                        ARGV[4],
                         'PX',
                         markerTtl,
                         'NX'
@@ -148,16 +147,12 @@ public class RedisFixedWindowRateLimiter {
                 end
 
                 if secondExceeded then
-                    local markerTtl = secondTtl
-
-                    if markerTtl < 1 then
-                        markerTtl = ttlMs
-                    end
+                    local markerTtl = math.max(1, secondTtl)
 
                     local markerResult = redis.call(
                         'SET',
                         KEYS[4],
-                        '1',
+                        ARGV[4],
                         'PX',
                         markerTtl,
                         'NX'
@@ -176,17 +171,9 @@ public class RedisFixedWindowRateLimiter {
                     decision = 'SECOND_EXCEEDED'
                 end
 
-                local returnedFirstTtl = firstTtl
+                local returnedFirstTtl = firstTtl < 0 and ttlMs or math.max(1, firstTtl)
 
-                if returnedFirstTtl < 1 then
-                    returnedFirstTtl = ttlMs
-                end
-
-                local returnedSecondTtl = secondTtl
-
-                if returnedSecondTtl < 1 then
-                    returnedSecondTtl = ttlMs
-                end
+                local returnedSecondTtl = secondTtl < 0 and ttlMs or math.max(1, secondTtl)
 
                 return decision
                     .. ':' .. tostring(firstCurrent)
@@ -244,8 +231,8 @@ public class RedisFixedWindowRateLimiter {
             return 'ALLOWED'
                 .. ':' .. tostring(newFirst)
                 .. ':' .. tostring(newSecond)
-                .. ':' .. tostring(firstTtl)
-                .. ':' .. tostring(secondTtl)
+                .. ':' .. tostring(math.max(1, firstTtl))
+                .. ':' .. tostring(math.max(1, secondTtl))
                 .. ':0:0'
             """);
 
@@ -263,6 +250,7 @@ public class RedisFixedWindowRateLimiter {
                 end
                 local normalized = string.gsub(raw, '^0+', '')
                 if normalized == '' then normalized = '0' end
+                if raw ~= normalized then return redis.error_reply('INVALID_RATE_LIMIT_COUNTER') end
                 -- Stay strictly below signed int64 max: an INCR must be safe.
                 local max = '9223372036854775806'
                 if #normalized > #max or (#normalized == #max and normalized > max) then
@@ -274,6 +262,12 @@ public class RedisFixedWindowRateLimiter {
             if type(firstCurrent) == 'table' then return firstCurrent end
             local secondCurrent = counter(KEYS[2])
             if type(secondCurrent) == 'table' then return secondCurrent end
+
+            local firstMissing = redis.call('EXISTS', KEYS[1]) == 0
+            local secondMissing = redis.call('EXISTS', KEYS[2]) == 0
+            -- A deleted or evicted counter starts a new generation even if its sidecar survived.
+            if firstMissing then redis.call('DEL', KEYS[5]) end
+            if secondMissing then redis.call('DEL', KEYS[6]) end
 
             local newFirst =
                 redis.call(
@@ -329,16 +323,12 @@ public class RedisFixedWindowRateLimiter {
             local secondNotification = 0
 
             if firstExceeded then
-                local markerTtl = firstTtl
-
-                if markerTtl < 1 then
-                    markerTtl = ttlMs
-                end
+                local markerTtl = math.max(1, firstTtl)
 
                 local markerResult = redis.call(
                     'SET',
                     KEYS[3],
-                    '1',
+                    ARGV[4],
                     'PX',
                     markerTtl,
                     'NX'
@@ -350,16 +340,12 @@ public class RedisFixedWindowRateLimiter {
             end
 
             if secondExceeded then
-                local markerTtl = secondTtl
-
-                if markerTtl < 1 then
-                    markerTtl = ttlMs
-                end
+                local markerTtl = math.max(1, secondTtl)
 
                 local markerResult = redis.call(
                     'SET',
                     KEYS[4],
-                    '1',
+                    ARGV[4],
                     'PX',
                     markerTtl,
                     'NX'
@@ -380,18 +366,66 @@ public class RedisFixedWindowRateLimiter {
                 decision = 'SECOND_EXCEEDED'
             end
 
+            if decision == 'ALLOWED' then
+                local function window(counterKey, windowKey)
+                    local generation = redis.call('GET', windowKey)
+                    if generation then return generation end
+                    redis.call('SET', windowKey, ARGV[4], 'PXAT', redis.call('PEXPIRETIME', counterKey))
+                    return ARGV[4]
+                end
+                local firstWindow = window(KEYS[1], KEYS[5])
+                local secondWindow = window(KEYS[2], KEYS[6])
+                redis.call('SET', KEYS[7], firstWindow .. ':' .. secondWindow .. ':' .. KEYS[2],
+                    'PX', math.max(1, firstTtl, secondTtl))
+            end
+
             return decision
                 .. ':' .. tostring(newFirst)
                 .. ':' .. tostring(newSecond)
-                .. ':' .. tostring(firstTtl)
-                .. ':' .. tostring(secondTtl)
+                .. ':' .. tostring(math.max(1, firstTtl))
+                .. ':' .. tostring(math.max(1, secondTtl))
                 .. ':' .. tostring(firstNotification)
                 .. ':' .. tostring(secondNotification)
             """);
 
     private static final DefaultRedisScript<Long>
-            LOGIN_SUCCESS_CLEANUP_SCRIPT =
-            createLoginSuccessCleanupScript();
+            LOGIN_SUCCESS_CLEANUP_SCRIPT = new DefaultRedisScript<>("""
+            local receipt = redis.call('GET', KEYS[5])
+            if not receipt then return 0 end
+            local firstWindow, secondWindow, secondKey = string.match(receipt, '^([^:]+):([^:]+):(.+)$')
+            if secondKey ~= KEYS[2] then return redis.error_reply('INVALID_LOGIN_RECEIPT') end
+
+            local function eligible(counterKey, generationKey, generation)
+                if redis.call('GET', generationKey) ~= generation then return false end
+                local raw = redis.call('GET', counterKey)
+                if not raw then return false end
+                local max = '9223372036854775807'
+                if not string.match(raw, '^%d+$') or (#raw > 1 and string.sub(raw, 1, 1) == '0')
+                    or #raw > #max or (#raw == #max and raw > max) then
+                    return redis.error_reply('INVALID_RATE_LIMIT_COUNTER')
+                end
+                return raw ~= '0'
+            end
+
+            local first = eligible(KEYS[1], KEYS[3], firstWindow)
+            if type(first) == 'table' then return first end
+            local second = eligible(KEYS[2], KEYS[4], secondWindow)
+            if type(second) == 'table' then return second end
+            if first then redis.call('DECR', KEYS[1]) end
+            if second then redis.call('DECR', KEYS[2]) end
+            redis.call('DEL', KEYS[5])
+            return 1
+            """, Long.class);
+
+    private static final DefaultRedisScript<Long> RELEASE_MARKERS_SCRIPT = new DefaultRedisScript<>("""
+            local removed = 0
+            for _, key in ipairs(KEYS) do
+                if redis.call('GET', key) == ARGV[1] then
+                    removed = removed + redis.call('DEL', key)
+                end
+            end
+            return removed
+            """, Long.class);
 
     private final StringRedisTemplate redisTemplate;
 
@@ -501,48 +535,25 @@ public class RedisFixedWindowRateLimiter {
         );
     }
 
-    /**
-     * После успешного login:
-     *
-     * <ol>
-     *     <li>удаляет email counter и его marker;</li>
-     *     <li>уменьшает IP counter ровно на одну
-     *     зарезервированную попытку;</li>
-     *     <li>не удаляет ранее накопленные IP failures.</li>
-     * </ol>
-     */
-    public void resetFirstAndDecrementSecond(
-            String firstKey,
-            String secondKey,
-            String firstMarkerKey,
-            String secondMarkerKey
-    ) {
-        validateDistinctKeys(
-                firstKey,
-                secondKey,
-                firstMarkerKey,
-                secondMarkerKey
+    void compensateLogin(LoginRateLimitService.Attempt attempt) {
+        String firstKey = attempt.emailKey();
+        String secondKey = attempt.ipKey();
+        Long result = redisTemplate.execute(
+                LOGIN_SUCCESS_CLEANUP_SCRIPT,
+                List.of(firstKey, secondKey, generationKey(firstKey), generationKey(secondKey),
+                        receiptKey(firstKey, attempt.id()))
         );
-
-        Long remainingSecondCount =
-                redisTemplate.execute(
-                        LOGIN_SUCCESS_CLEANUP_SCRIPT,
-                        List.of(
-                                firstKey,
-                                secondKey,
-                                firstMarkerKey,
-                                secondMarkerKey
-                        )
-                );
-
-        if (remainingSecondCount == null
-                || remainingSecondCount < 0L) {
-
-            throw new IllegalStateException(
-                    "Redis login success cleanup returned "
-                            + "invalid result"
-            );
+        if (result == null || (result != 0L && result != 1L)) {
+            throw new IllegalStateException("Redis login success cleanup returned invalid result");
         }
+    }
+
+    static String generationKey(String counterKey) {
+        return counterKey + ":generation";
+    }
+
+    static String receiptKey(String firstKey, UUID id) {
+        return firstKey + ":attempt:" + id;
     }
 
     /**
@@ -582,10 +593,8 @@ public class RedisFixedWindowRateLimiter {
             );
         }
 
-        if (!markerKeys.isEmpty()) {
-            redisTemplate.delete(
-                    markerKeys
-            );
+        if (!markerKeys.isEmpty() && result.operationId() != null) {
+            redisTemplate.execute(RELEASE_MARKERS_SCRIPT, markerKeys, result.operationId().toString());
         }
     }
 
@@ -624,25 +633,19 @@ public class RedisFixedWindowRateLimiter {
         long ttlMillis =
                 requireTtlMillis(ttl);
 
-        String result =
-                redisTemplate.execute(
-                        script,
-                        List.of(
-                                firstKey,
-                                secondKey,
-                                firstMarkerKey,
-                                secondMarkerKey
-                        ),
-                        Long.toString(
-                                ttlMillis
-                        ),
-                        Integer.toString(
-                                firstLimit
-                        ),
-                        Integer.toString(
-                                secondLimit
-                        )
-                );
+        UUID operationId = UUID.randomUUID();
+        List<String> keys = new ArrayList<>(List.of(firstKey, secondKey, firstMarkerKey, secondMarkerKey));
+        if (script == INCREMENT_BOTH_AND_CHECK_SCRIPT) {
+            keys.add(generationKey(firstKey));
+            keys.add(generationKey(secondKey));
+            keys.add(receiptKey(firstKey, operationId));
+            validateDistinctKeys(keys.toArray(String[]::new));
+        }
+
+        String result = redisTemplate.execute(
+                script, keys, Long.toString(ttlMillis), Integer.toString(firstLimit),
+                Integer.toString(secondLimit), operationId.toString()
+        );
 
         if (result == null
                 || result.isBlank()) {
@@ -700,7 +703,8 @@ public class RedisFixedWindowRateLimiter {
                 parseNotificationFlag(
                         parts[6],
                         result
-                )
+                ),
+                operationId
         );
     }
 
@@ -717,54 +721,6 @@ public class RedisFixedWindowRateLimiter {
         script.setScriptText(
                 text
         );
-
-        return script;
-    }
-
-    private static DefaultRedisScript<Long>
-    createLoginSuccessCleanupScript() {
-        DefaultRedisScript<Long> script =
-                new DefaultRedisScript<>();
-
-        script.setResultType(
-                Long.class
-        );
-
-        script.setScriptText("""
-                local function counter(key)
-                    local raw = redis.call('GET', key)
-                    if not raw then return 0 end
-                    if not string.match(raw, '^%d+$') then
-                        return redis.error_reply('INVALID_RATE_LIMIT_COUNTER')
-                    end
-                    local normalized = string.gsub(raw, '^0+', '')
-                    if normalized == '' then normalized = '0' end
-                    -- Stay strictly below signed int64 max: an INCR must be safe.
-                    local max = '9223372036854775806'
-                    if #normalized > #max or (#normalized == #max and normalized > max) then
-                        return redis.error_reply('INVALID_RATE_LIMIT_COUNTER')
-                    end
-                    return tonumber(normalized)
-                end
-                local secondCurrent = counter(KEYS[2])
-                if type(secondCurrent) == 'table' then return secondCurrent end
-                redis.call('DEL', KEYS[1], KEYS[3])
-
-                if secondCurrent <= 1 then
-                    redis.call(
-                        'DEL',
-                        KEYS[2],
-                        KEYS[4]
-                    )
-
-                    return 0
-                end
-
-                return redis.call(
-                    'DECR',
-                    KEYS[2]
-                )
-                """);
 
         return script;
     }

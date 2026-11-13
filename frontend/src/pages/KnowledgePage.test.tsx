@@ -12,6 +12,7 @@ import {
     updateKnowledgeBase,
 } from '../entities/knowledge/api/knowledgeApi'
 import type { KnowledgeBase } from '../entities/knowledge/api/knowledgeApi'
+import {getBaseDeletion, listBaseDeletions} from '../entities/knowledge/api/knowledgeBaseDeletionApi'
 import { getKnowledgeHealth } from '../entities/knowledge/api/knowledgeDocumentApi'
 import KnowledgePage from './KnowledgePage'
 
@@ -34,6 +35,13 @@ vi.mock('../entities/knowledge/api/knowledgeApi', () => ({
     addKnowledgeBaseMember: vi.fn(),
     updateKnowledgeBaseMember: vi.fn(),
     removeKnowledgeBaseMember: vi.fn(),
+}))
+
+vi.mock('../entities/knowledge/api/knowledgeBaseDeletionApi', () => ({
+    baseDeletionCapability: vi.fn().mockResolvedValue(false),
+    acceptBaseDeletion: vi.fn(),
+    listBaseDeletions: vi.fn().mockResolvedValue([]),
+    getBaseDeletion: vi.fn(),
 }))
 
 vi.mock('../entities/knowledge/api/knowledgeDocumentApi', () => ({
@@ -85,6 +93,8 @@ function displayPage() {
 describe('KnowledgePage', () => {
     beforeEach(() => {
         vi.clearAllMocks()
+        vi.mocked(listBaseDeletions).mockResolvedValue([])
+        vi.mocked(getBaseDeletion).mockRejectedValue(new ApiError('not found', {}, 404))
         // mockReset: true clears factory-level mockResolvedValue before each test.
         vi.mocked(getKnowledgeHealth).mockResolvedValue({
             knowledgeBaseId: testBase.id,

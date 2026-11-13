@@ -125,6 +125,23 @@ export async function createChat(
     return parseChat(response)
 }
 
+export async function assignAutomaticChatTitle(
+    chatId: string,
+    content: string,
+    options: RequestOptions = {},
+): Promise<Chat> {
+    const response = await apiRequest<unknown>(
+        `/api/chats/${uuidPathSegment(chatId)}/automatic-title`,
+        {
+            method: 'POST',
+            json: { content },
+            signal: options.signal,
+            timeoutMs: API_TIMEOUTS.default,
+        },
+    )
+    return parseChat(response)
+}
+
 export async function updateChatTitle(
     chatId: string,
     title: string,

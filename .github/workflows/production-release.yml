@@ -1,0 +1,410 @@
+#SafeAI-Desk/github/workflows/production-release.yml
+name: Production release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: safeai-production-release
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Предпубликационный шлюз CI
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      checks: read
+      actions: read
+    steps:
+      - name: Получение исходного кода
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Проверка неизменности HEAD main и всех обязательных GitHub Checks
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$GITHUB_REF" == 'refs/heads/main' ]] || exit 1
+          head_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          [[ "$head_sha" == "$GITHUB_SHA" ]] || {
+            echo "Отказ: в main уже есть другой commit: $head_sha" >&2
+            exit 1
+          }
+          gh api -H 'Accept: application/vnd.github+json' \
+            "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs?per_page=100" \
+            > "$RUNNER_TEMP/safeai-checks.json"
+          python3 .github/scripts/check-release-ci.py \
+            "$RUNNER_TEMP/safeai-checks.json" "$GITHUB_SHA"
+
+  publish:
+    name: Production build, image scan, SBOM и GHCR
+    needs: preflight
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    outputs:
+      backend_image: ${{ steps.digests.outputs.backend_image }}
+      nginx_image: ${{ steps.digests.outputs.nginx_image }}
+      postgres_image: ${{ steps.digests.outputs.postgres_image }}
+
+    steps:
+      - name: Получение исходного кода
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Установка Java 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+
+      - name: Установка Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Сборка production-образов с digest-pinned base images
+        id: build
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          pin_image() {
+            local tag="$1"
+            docker pull "$tag" >/dev/null
+            local reference
+            reference="$(
+              docker image inspect \
+                --format '{{range .RepoDigests}}{{println .}}{{end}}' "$tag" \
+                | sed -n '1p' | tr -d '\r'
+            )"
+            [[ "$reference" == *@sha256:* ]] || {
+              echo "Could not resolve immutable digest for $tag" >&2
+              exit 1
+            }
+            printf '%s' "$reference"
+          }
+
+          app_version="$(cd backend && ./mvnw -q -DforceStdout help:evaluate -Dexpression=project.version)"
+          owner_lc="${GITHUB_REPOSITORY_OWNER,,}"
+          backend_tag="ghcr.io/${owner_lc}/safeai-backend:${GITHUB_SHA}"
+          nginx_tag="ghcr.io/${owner_lc}/safeai-nginx:${GITHUB_SHA}"
+          postgres_tag="ghcr.io/${owner_lc}/safeai-postgres:${GITHUB_SHA}"
+          echo "owner_lc=$owner_lc" >> "$GITHUB_OUTPUT"
+
+          java_build_image="$(pin_image eclipse-temurin:21-jdk)"
+          java_runtime_image="$(pin_image eclipse-temurin:21-jre)"
+          node_build_image="$(pin_image node:24-alpine)"
+          nginx_base_image="$(pin_image nginxinc/nginx-unprivileged:stable-alpine)"
+          postgres_base_image="$(cat infra/postgres/base-image.txt)"
+          [[ "$postgres_base_image" =~ ^ubuntu:24[.]04@sha256:[0-9a-f]{64}$ ]] || {
+            echo "Expected digest-pinned Ubuntu Noble PostgreSQL base image" >&2
+            exit 1
+          }
+          docker pull "$postgres_base_image" >/dev/null
+
+          build_env="$(mktemp)"
+          trap 'rm -f "$build_env"' EXIT
+          cat > "$build_env" <<EOF
+          APP_VERSION=$app_version
+          SOURCE_URL=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY
+          JAVA_BUILD_IMAGE=$java_build_image
+          JAVA_RUNTIME_IMAGE=$java_runtime_image
+          NODE_BUILD_IMAGE=$node_build_image
+          NGINX_BASE_IMAGE=$nginx_base_image
+          POSTGRES_BASE_IMAGE=$postgres_base_image
+          SAFEAI_BACKEND_BUILD_TAG=$backend_tag
+          SAFEAI_NGINX_BUILD_TAG=$nginx_tag
+          SAFEAI_POSTGRES_BUILD_TAG=$postgres_tag
+          SAFEAI_SECRET_GID=21001
+          SAFEAI_REQUIRE_IMMUTABLE_IMAGES=true
+          EOF
+
+          bash infra/scripts/build-prod.sh "$build_env"
+
+      - name: Сканирование backend image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.76.2
+          scan-type: image
+          image-ref: ghcr.io/${{ steps.build.outputs.owner_lc }}/safeai-backend:${{ github.sha }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Сканирование frontend/Nginx image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.76.2
+          scan-type: image
+          image-ref: ghcr.io/${{ steps.build.outputs.owner_lc }}/safeai-nginx:${{ github.sha }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Сканирование PostgreSQL image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.76.2
+          scan-type: image
+          image-ref: ghcr.io/${{ steps.build.outputs.owner_lc }}/safeai-postgres:${{ github.sha }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: CRITICAL (включая unfixed) / backend
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.76.2
+          scan-type: image
+          image-ref: ghcr.io/${{ steps.build.outputs.owner_lc }}/safeai-backend:${{ github.sha }}
+          scanners: vuln
+          severity: CRITICAL
+          ignore-unfixed: false
+          exit-code: '1'
+
+      - name: CRITICAL (включая unfixed) / Nginx
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.76.2
+          scan-type: image
+          image-ref: ghcr.io/${{ steps.build.outputs.owner_lc }}/safeai-nginx:${{ github.sha }}
+          scanners: vuln
+          severity: CRITICAL
+          ignore-unfixed: false
+          exit-code: '1'
+
+      - name: CRITICAL (включая unfixed) / PostgreSQL
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.76.2
+          scan-type: image
+          image-ref: ghcr.io/${{ steps.build.outputs.owner_lc }}/safeai-postgres:${{ github.sha }}
+          scanners: vuln
+          severity: CRITICAL
+          ignore-unfixed: false
+          exit-code: '1'
+
+      - name: Генерация SBOM backend
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.76.2
+          scan-type: image
+          image-ref: ghcr.io/${{ steps.build.outputs.owner_lc }}/safeai-backend:${{ github.sha }}
+          scanners: vuln
+          format: cyclonedx
+          output: backend.sbom.cdx.json
+          exit-code: '0'
+
+      - name: Генерация SBOM frontend
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.76.2
+          scan-type: image
+          image-ref: ghcr.io/${{ steps.build.outputs.owner_lc }}/safeai-nginx:${{ github.sha }}
+          scanners: vuln
+          format: cyclonedx
+          output: frontend.sbom.cdx.json
+          exit-code: '0'
+
+      - name: Генерация SBOM PostgreSQL
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.76.2
+          scan-type: image
+          image-ref: ghcr.io/${{ steps.build.outputs.owner_lc }}/safeai-postgres:${{ github.sha }}
+          scanners: vuln
+          format: cyclonedx
+          output: postgres.sbom.cdx.json
+          exit-code: '0'
+
+      - name: Сохранение SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: safeai-production-sbom-${{ github.sha }}
+          path: |
+            backend.sbom.cdx.json
+            frontend.sbom.cdx.json
+            postgres.sbom.cdx.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Повторная проверка HEAD main перед публикацией
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          current="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          [[ "$current" == "$GITHUB_SHA" ]] || {
+            echo "Отказ: в main появился новый commit: $current" >&2
+            exit 1
+          }
+
+      - name: Вход в GitHub Container Registry
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      - name: Публикация backend, frontend и PostgreSQL
+        run: |
+          set -Eeuo pipefail
+          owner_lc="${GITHUB_REPOSITORY_OWNER,,}"
+          docker push "ghcr.io/${owner_lc}/safeai-backend:${GITHUB_SHA}"
+          docker push "ghcr.io/${owner_lc}/safeai-nginx:${GITHUB_SHA}"
+          docker push "ghcr.io/${owner_lc}/safeai-postgres:${GITHUB_SHA}"
+
+      - name: Сохранение immutable image digests
+        id: digests
+        run: |
+          set -Eeuo pipefail
+          owner_lc="${GITHUB_REPOSITORY_OWNER,,}"
+
+          digest_for() {
+            local tag="$1"
+            local repository="${tag%:*}"
+            local reference
+            reference="$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$tag" \
+              | awk -v prefix="${repository}@" 'index($0, prefix) == 1 { print; exit }')"
+            [[ "$reference" =~ @sha256:[0-9a-f]{64}$ ]] || {
+              echo "Missing pushed digest for $tag" >&2
+              exit 1
+            }
+            printf '%s' "$reference"
+          }
+
+          backend_image="$(digest_for "ghcr.io/${owner_lc}/safeai-backend:${GITHUB_SHA}")"
+          nginx_image="$(digest_for "ghcr.io/${owner_lc}/safeai-nginx:${GITHUB_SHA}")"
+          postgres_image="$(digest_for "ghcr.io/${owner_lc}/safeai-postgres:${GITHUB_SHA}")"
+
+          {
+            echo "backend_image=$backend_image"
+            echo "backend_digest=${backend_image##*@}"
+            echo "nginx_image=$nginx_image"
+            echo "nginx_digest=${nginx_image##*@}"
+            echo "postgres_image=$postgres_image"
+            echo "postgres_digest=${postgres_image##*@}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Подпись происхождения backend image
+        uses: actions/attest@v4
+        with:
+          subject-name: ghcr.io/${{ steps.build.outputs.owner_lc }}/safeai-backend
+          subject-digest: ${{ steps.digests.outputs.backend_digest }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Подпись происхождения frontend image
+        uses: actions/attest@v4
+        with:
+          subject-name: ghcr.io/${{ steps.build.outputs.owner_lc }}/safeai-nginx
+          subject-digest: ${{ steps.digests.outputs.nginx_digest }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Подпись происхождения PostgreSQL image
+        uses: actions/attest@v4
+        with:
+          subject-name: ghcr.io/${{ steps.build.outputs.owner_lc }}/safeai-postgres
+          subject-digest: ${{ steps.digests.outputs.postgres_digest }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Аттестация CycloneDX SBOM backend
+        uses: actions/attest@v4
+        with:
+          subject-name: ghcr.io/${{ steps.build.outputs.owner_lc }}/safeai-backend
+          subject-digest: ${{ steps.digests.outputs.backend_digest }}
+          sbom-path: backend.sbom.cdx.json
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Аттестация CycloneDX SBOM frontend
+        uses: actions/attest@v4
+        with:
+          subject-name: ghcr.io/${{ steps.build.outputs.owner_lc }}/safeai-nginx
+          subject-digest: ${{ steps.digests.outputs.nginx_digest }}
+          sbom-path: frontend.sbom.cdx.json
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Аттестация CycloneDX SBOM PostgreSQL
+        uses: actions/attest@v4
+        with:
+          subject-name: ghcr.io/${{ steps.build.outputs.owner_lc }}/safeai-postgres
+          subject-digest: ${{ steps.digests.outputs.postgres_digest }}
+          sbom-path: postgres.sbom.cdx.json
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Криптографическая проверка трёх provenance перед допуском
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BACKEND_IMAGE: ${{ steps.digests.outputs.backend_image }}
+          NGINX_IMAGE: ${{ steps.digests.outputs.nginx_image }}
+          POSTGRES_IMAGE: ${{ steps.digests.outputs.postgres_image }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for img in "$BACKEND_IMAGE" "$NGINX_IMAGE" "$POSTGRES_IMAGE"; do
+            gh attestation verify "oci://$img" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/production-release.yml" \
+              --source-ref refs/heads/main \
+              --source-digest "$GITHUB_SHA"
+          done
+
+      - name: Запись immutable релизного манифеста после подписания
+        env:
+          BACKEND_IMAGE: ${{ steps.digests.outputs.backend_image }}
+          NGINX_IMAGE: ${{ steps.digests.outputs.nginx_image }}
+          POSTGRES_IMAGE: ${{ steps.digests.outputs.postgres_image }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PYMANIFEST'
+          import json
+          import os
+          from pathlib import Path
+          document = {
+              'release_sha': os.environ['GITHUB_SHA'],
+              'publish_run_id': int(os.environ['GITHUB_RUN_ID']),
+              'backend_image': os.environ['BACKEND_IMAGE'],
+              'nginx_image': os.environ['NGINX_IMAGE'],
+              'postgres_image': os.environ['POSTGRES_IMAGE'],
+          }
+          target = Path(os.environ['RUNNER_TEMP']) / 'safeai-published-images.json'
+          target.write_text(json.dumps(document, sort_keys=True) + '\n', encoding='utf-8')
+          PYMANIFEST
+
+      - name: Сохранение релизного манифеста с тремя digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: safeai-published-images-${{ github.sha }}
+          path: ${{ runner.temp }}/safeai-published-images.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Удаление учётных данных GHCR из Docker
+        run: docker logout ghcr.io

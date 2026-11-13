@@ -1,0 +1,247 @@
+#SafeAI-Desk/github/workflows/docker-ci.yml
+name: Docker и Compose
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docker:
+    name: Dockerfiles, Compose и image scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - name: Получение исходного кода
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Проверка Docker и Compose
+        run: |
+          docker version
+          docker compose version
+
+      - name: Проверка production Compose topology
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          temp_dir="$(mktemp -d)"
+          trap 'rm -rf "$temp_dir"' EXIT
+          mkdir -p "$temp_dir/config" "$temp_dir/secrets"
+          cp infra/config/pricing.yml.example "$temp_dir/config/pricing.yml"
+
+          python3 - "$temp_dir" <<'PY'
+          from pathlib import Path
+          import sys
+
+          root = Path(sys.argv[1])
+          env_path = root / "backend.env"
+          text = Path("backend/.env.prod.example").read_text(encoding="utf-8")
+          values = {
+              "SAFEAI_BACKEND_IMAGE": "ghcr.io/example/safeai-backend:ci",
+              "SAFEAI_NGINX_IMAGE": "ghcr.io/example/safeai-nginx:ci",
+              "SAFEAI_PROMETHEUS_IMAGE": "prom/prometheus:v3.5.0",
+              "POSTGRES_IMAGE": "ghcr.io/example/safeai-postgres@sha256:" + "a" * 64,
+              "REDIS_IMAGE": "redis:8-alpine",
+              "SAFEAI_CONFIG_DIR": str(root / "config"),
+              "SAFEAI_SECRETS_DIR": str(root / "secrets"),
+              "SAFEAI_JWT_ISSUER": "https://safeai.example.test",
+              "SAFEAI_CORS_ALLOWED_ORIGINS": "https://safeai.example.test",
+              "SAFEAI_KNOWLEDGE_STORAGE_ENDPOINT": "https://s3.example.test",
+              "SAFEAI_RUNTIME_ENV_FILE": str(env_path),
+          }
+          lines = text.splitlines()
+          for key, value in values.items():
+              matches = [i for i, line in enumerate(lines) if line.startswith(key + "=")]
+              if key == "SAFEAI_RUNTIME_ENV_FILE" and not matches:
+                  lines.append(f"{key}={value}")
+                  continue
+              if len(matches) != 1:
+                  raise SystemExit(f"Expected exactly one {key} in production env example")
+              lines[matches[0]] = f"{key}={value}"
+          env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+          secret_names = [
+              "postgres_bootstrap_password", "db_migrator_password", "db_app_password",
+              "redis_password", "rate_limit_hmac_secret", "openai_api_key",
+              "knowledge_ocr_api_key", "anthropic_api_key",
+              "knowledge_storage_access_key", "knowledge_storage_secret_key", "jwt-keys.yml",
+          ]
+          for name in secret_names:
+              (root / "secrets" / name).write_text("ci-only-placeholder\n", encoding="utf-8")
+          PY
+
+          docker compose --env-file "$temp_dir/backend.env" \
+            -f infra/docker-compose.yml config --quiet
+
+      - name: Сборка backend image
+        run: docker build --pull --file backend/Dockerfile --tag safeai-backend:ci backend
+
+      - name: Сборка frontend/Nginx image
+        run: docker build --pull --file infra/nginx/Dockerfile --tag safeai-nginx:ci .
+
+      - name: Сборка PostgreSQL Noble из основного Dockerfile (native amd64)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          base_image="$(cat infra/postgres/base-image.txt)"
+          [[ "$base_image" == "ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852" ]] || { echo 'BLOCKED: unexpected PostgreSQL base digest' >&2; exit 1; }
+          docker buildx build --platform linux/amd64 --pull --load \
+            --file infra/postgres/Dockerfile \
+            --build-arg "UBUNTU_IMAGE=$base_image" \
+            --build-arg SAFEAI_READER_GID=21001 \
+            --tag safeai-postgres:ci .
+          [[ "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' safeai-postgres:ci)" == linux/amd64 ]]
+
+      - name: Проверка PostgreSQL, pgvector, ролей и постоянства тестовых данных
+        shell: bash
+        run: bash infra/scripts/test-postgres-bootstrap.sh safeai-postgres:ci
+
+      - name: SQL/XML и pgvector HNSW на отдельной временной БД
+        shell: bash
+        run: bash infra/postgres/noble-candidate/xml-hnsw-smoke.sh safeai-postgres:ci
+
+      - name: JSON-отчёт Trivy для каждого Docker image
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for name in backend nginx postgres; do
+            docker image inspect "safeai-$name:ci" >/dev/null
+          done
+
+      - name: Диагностический JSON Trivy / backend
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.76.2
+          scan-type: image
+          image-ref: safeai-backend:ci
+          scanners: vuln
+          format: json
+          output: trivy-backend.json
+          exit-code: '0'
+
+      - name: Диагностический JSON Trivy / Nginx
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.76.2
+          scan-type: image
+          image-ref: safeai-nginx:ci
+          scanners: vuln
+          format: json
+          output: trivy-nginx.json
+          exit-code: '0'
+
+      - name: Диагностический JSON Trivy / PostgreSQL
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.76.2
+          scan-type: image
+          image-ref: safeai-postgres:ci
+          scanners: vuln
+          format: json
+          output: trivy-postgres.json
+          exit-code: '0'
+
+      - name: Сохранить диагностические отчёты независимо от результата gate
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safeai-image-trivy-${{ github.sha }}
+          path: |
+            trivy-backend.json
+            trivy-nginx.json
+            trivy-postgres.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Запрет root-пользователя в runtime backend и Nginx
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          backend_user="$(docker image inspect -f '{{.Config.User}}' safeai-backend:ci)"
+          nginx_user="$(docker image inspect -f '{{.Config.User}}' safeai-nginx:ci)"
+          [[ "$backend_user" == '10001:10001' ]] || {
+            echo "Backend запускается не от ожидаемого пользователя: $backend_user" >&2
+            exit 1
+          }
+          [[ "$nginx_user" == '101' ]] || {
+            echo "Nginx запускается не от ожидаемого пользователя: $nginx_user" >&2
+            exit 1
+          }
+
+      - name: CRITICAL (включая unfixed) / backend
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.76.2
+          scan-type: image
+          image-ref: safeai-backend:ci
+          scanners: vuln
+          severity: CRITICAL
+          ignore-unfixed: false
+          exit-code: '1'
+
+      - name: CRITICAL (включая unfixed) / Nginx
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.76.2
+          scan-type: image
+          image-ref: safeai-nginx:ci
+          scanners: vuln
+          severity: CRITICAL
+          ignore-unfixed: false
+          exit-code: '1'
+
+      - name: CRITICAL (включая unfixed) / PostgreSQL
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.76.2
+          scan-type: image
+          image-ref: safeai-postgres:ci
+          scanners: vuln
+          severity: CRITICAL
+          ignore-unfixed: false
+          exit-code: '1'
+
+      - name: Сканирование backend image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.76.2
+          scan-type: image
+          image-ref: safeai-backend:ci
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Сканирование frontend/Nginx image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.76.2
+          scan-type: image
+          image-ref: safeai-nginx:ci
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Сканирование PostgreSQL image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.76.2
+          scan-type: image
+          image-ref: safeai-postgres:ci
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'

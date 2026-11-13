@@ -60,7 +60,7 @@ class RedisFixedWindowRateLimiterIT {
     @Test
     void dualReservationIsAtomicUnderConcurrency() throws Exception {
         try (var executor = Executors.newFixedThreadPool(16)) {
-            List<Future<Boolean>> futures = executor.invokeAll(createConcurrentTasks(80));
+            List<Future<Boolean>> futures = executor.invokeAll(createConcurrentTasks());
             int admitted = 0;
             for (Future<Boolean> future : futures) {
                 if (future.get()) admitted++;
@@ -120,13 +120,14 @@ class RedisFixedWindowRateLimiterIT {
 
     @Test
     void malformedIpCounterDoesNotDeleteLoginEmailCounter() {
-        redis.opsForValue().set("{login}:email", "2");
+        DualRateLimitResult accepted = limiter.incrementBothAndCheck(
+                "{login}:email", "{login}:email:exceeded", 10,
+                "{login}:ip", "{login}:ip:exceeded", 10, WINDOW);
         redis.opsForValue().set("{login}:ip", "not-a-number");
-        assertThatThrownBy(() -> limiter.resetFirstAndDecrementSecond(
-                "{login}:email", "{login}:ip",
-                "{login}:email:exceeded", "{login}:ip:exceeded"))
+        assertThatThrownBy(() -> limiter.compensateLogin(new LoginRateLimitService.Attempt(
+                "{login}:email", "{login}:ip", accepted.operationId())))
                 .isInstanceOf(RuntimeException.class);
-        assertThat(redis.opsForValue().get("{login}:email")).isEqualTo("2");
+        assertThat(redis.opsForValue().get("{login}:email")).isEqualTo("1");
         assertThat(redis.opsForValue().get("{login}:ip")).isEqualTo("not-a-number");
     }
 
@@ -142,9 +143,9 @@ class RedisFixedWindowRateLimiterIT {
                 .isEqualTo("9223372036854775807");
     }
 
-    private List<Callable<Boolean>> createConcurrentTasks(int totalRequests) {
-        List<Callable<Boolean>> tasks = new ArrayList<>(totalRequests);
-        for (int i = 0; i < totalRequests; i++) {
+    private List<Callable<Boolean>> createConcurrentTasks() {
+        List<Callable<Boolean>> tasks = new ArrayList<>(80);
+        for (int i = 0; i < 80; i++) {
             tasks.add(() -> limiter.tryIncrementBoth(
                     "{test}:user", "{test}:user:exceeded", 25,
                     "{test}:org", "{test}:org:exceeded", 40, WINDOW).allowed());

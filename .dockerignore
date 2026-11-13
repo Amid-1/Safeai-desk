@@ -11,6 +11,9 @@
 !infra/postgres/init/10-create-app-roles.sh
 !scripts/
 !scripts/verify-build.mjs
+!.github/
+!.github/workflows/
+!.github/workflows/browser-ci.yml
 
 # Never transfer frontend local data, generated files or credentials.
 frontend/node_modules/

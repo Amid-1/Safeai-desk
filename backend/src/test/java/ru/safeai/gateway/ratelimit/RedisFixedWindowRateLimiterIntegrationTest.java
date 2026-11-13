@@ -147,60 +147,69 @@ class RedisFixedWindowRateLimiterIntegrationTest {
     }
 
     @Test
-    void successfulLoginRemovesEmailAndDecrementsIpButKeepsEarlierIpFailures() {
-        LoginKeys failedEmail =
-                loginKeys("failed-email");
+    void compensationPreservesPriorFailuresAndConsumesReceiptOnce() {
+        LoginKeys keys = loginKeys("compensation");
+        loginAttempt(keys, 10, 10);
+        DualRateLimitResult accepted = loginAttempt(keys, 10, 10);
 
-        LoginKeys successfulEmail =
-                new LoginKeys(
-                        "rate-limit:{login}:email:success",
-                        failedEmail.ipKey(),
-                        "rate-limit:{login}:email:success:exceeded",
-                        failedEmail.ipMarkerKey()
-                );
+        compensate(keys, accepted);
+        compensate(keys, accepted);
 
-        loginAttempt(
-                failedEmail,
-                100,
-                100
-        );
+        assertThat(value(keys.emailKey())).isEqualTo(1);
+        assertThat(value(keys.ipKey())).isEqualTo(1);
+    }
 
-        loginAttempt(
-                failedEmail,
-                100,
-                100
-        );
+    @Test
+    void compensationPreservesFailuresOfAnotherUserBehindSameNat() {
+        LoginKeys failed = loginKeys("shared-nat");
+        String otherEmail = failed.emailKey() + ":other";
+        LoginKeys successful = new LoginKeys(
+                otherEmail, failed.ipKey(), otherEmail + ":exceeded", failed.ipMarkerKey());
+        loginAttempt(failed, 10, 10);
+        DualRateLimitResult accepted = loginAttempt(successful, 10, 10);
 
-        loginAttempt(
-                successfulEmail,
-                100,
-                100
-        );
+        compensate(successful, accepted);
 
-        rateLimiter.resetFirstAndDecrementSecond(
-                successfulEmail.emailKey(),
-                successfulEmail.ipKey(),
-                successfulEmail.emailMarkerKey(),
-                successfulEmail.ipMarkerKey()
-        );
+        assertThat(value(failed.emailKey())).isEqualTo(1);
+        assertThat(value(successful.emailKey())).isZero();
+        assertThat(value(failed.ipKey())).isEqualTo(1);
+    }
 
-        assertThat(
-                redisTemplate.hasKey(
-                        successfulEmail.emailKey()
-                )
-        ).isFalse();
+    @Test
+    void compensationIgnoresReplacementWindowButDecrementsStillActiveWindow() {
+        LoginKeys keys = loginKeys("replacement-window");
+        DualRateLimitResult accepted = loginAttempt(keys, 10, 10);
 
-        assertThat(
-                value(
-                        failedEmail.emailKey()
-                )
-        ).isEqualTo(2);
+        // Expire the email generation and counter as Redis does at the window boundary.
+        redisTemplate.expire(keys.emailKey(), Duration.ZERO);
+        redisTemplate.expire(RedisFixedWindowRateLimiter.generationKey(keys.emailKey()), Duration.ZERO);
+        DualRateLimitResult replacement = loginAttempt(keys, 10, 10);
+        assertThat(replacement.allowed()).isTrue();
 
-        assertThat(
-                value(
-                        failedEmail.ipKey()
-                )
-        ).isEqualTo(2);
+        compensate(keys, accepted);
+
+        assertThat(value(keys.emailKey())).isEqualTo(1);
+        assertThat(value(keys.ipKey())).isEqualTo(1);
+    }
+
+    @Test
+    void staleMarkerOwnerCannotReleaseReplacementMarker() {
+        LoginKeys keys = loginKeys("marker-ownership");
+        loginAttempt(keys, 1, 10);
+        DualRateLimitResult old = loginAttempt(keys, 1, 10);
+        redisTemplate.expire(keys.emailMarkerKey(), Duration.ZERO);
+        DualRateLimitResult replacement = loginAttempt(keys, 1, 10);
+        assertThat(replacement.firstExceededNotification()).isTrue();
+
+        rateLimiter.releaseNotificationMarkers(old, keys.emailMarkerKey(), keys.ipMarkerKey());
+
+        assertThat(redisTemplate.opsForValue().get(keys.emailMarkerKey()))
+                .isEqualTo(replacement.operationId().toString());
+    }
+
+    private void compensate(LoginKeys keys, DualRateLimitResult accepted) {
+        rateLimiter.compensateLogin(new LoginRateLimitService.Attempt(
+                keys.emailKey(), keys.ipKey(), accepted.operationId()));
     }
 
     @Test
@@ -236,17 +245,10 @@ class RedisFixedWindowRateLimiterIntegrationTest {
             assertThat(result.allowed())
                     .isTrue();
 
-            rateLimiter.resetFirstAndDecrementSecond(
-                    keys.emailKey(),
-                    keys.ipKey(),
-                    keys.emailMarkerKey(),
-                    keys.ipMarkerKey()
-            );
+            compensate(keys, result);
         }
 
-        assertThat(
-                redisTemplate.hasKey(ipKey)
-        ).isFalse();
+        assertThat(value(ipKey)).isZero();
 
         LoginKeys nextUser =
                 new LoginKeys(

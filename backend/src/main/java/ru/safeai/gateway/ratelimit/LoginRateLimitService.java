@@ -11,10 +11,10 @@ import ru.safeai.gateway.ratelimit.exception.RateLimitUnavailableException;
 
 import java.time.Duration;
 import java.util.Locale;
-import java.util.Map;
+import java.util.UUID;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Slf4j
 @Service
@@ -51,20 +51,19 @@ public class LoginRateLimitService {
     private final ApplicationEventPublisher eventPublisher;
     private final RateLimitMetrics metrics;
 
-    private final AtomicLong nextCleanupWarningNanos =
-            new AtomicLong();
+    private final AtomicReference<Long> nextCleanupWarningNanos = new AtomicReference<>();
 
     /**
      * Fail-closed: Redis недоступен — login блокируется с HTTP 503.
      *
      * <p>Email и IP резервируются одним атомарным Lua-скриптом.</p>
      */
-    public void checkAllowed(
+    public Attempt checkAllowed(
             String email,
             String ipAddress
     ) {
         if (!properties.isEnabled()) {
-            return;
+            return null;
         }
 
         LoginRateLimitKeys keys =
@@ -113,7 +112,7 @@ public class LoginRateLimitService {
                     RATE_LIMIT_TYPE
             );
 
-            return;
+            return new Attempt(keys.emailKey(), keys.ipKey(), result.operationId());
         }
 
         metrics.recordRejected(
@@ -138,33 +137,23 @@ public class LoginRateLimitService {
         );
     }
 
-    /**
-     * Вызывать только после полностью успешной аутентификации.
-     *
-     * <p>Email failures сбрасываются полностью, а IP counter уменьшается
-     * ровно на одну предварительно зарезервированную успешную попытку.</p>
-     */
-    public void onLoginSuccess(
-            String email,
-            String ipAddress
-    ) {
-        if (!properties.isEnabled()) {
+    public record Attempt(String emailKey, String ipKey, UUID id) {
+        public Attempt {
+            Objects.requireNonNull(id, "id");
+        }
+    }
+
+    /** Compensates the reserved attempt after the login session has committed. */
+    public void onLoginSuccess(Attempt attempt) {
+        if (attempt == null) {
             return;
         }
-
-        LoginRateLimitKeys keys =
-                createKeys(email, ipAddress);
 
         Timer.Sample sample =
                 metrics.startRedisOperation();
 
         try {
-            rateLimiter.resetFirstAndDecrementSecond(
-                    keys.emailKey(),
-                    keys.ipKey(),
-                    keys.emailMarkerKey(),
-                    keys.ipMarkerKey()
-            );
+            rateLimiter.compensateLogin(attempt);
 
             finishRedisOperation(
                     sample,
@@ -249,30 +238,19 @@ public class LoginRateLimitService {
         Integer eventLimit =
                 notificationLimit(result);
 
-        Map<String, Object> details =
-                buildEventDetails(
-                        keys,
-                        result,
-                        notificationDimension
-                );
-
         try {
-            eventPublisher.publishEvent(
-                    new RateLimitExceededEvent(
-                            null,
-                            null,
-                            keys.normalizedEmail(),
-                            null,
-                            properties
-                                    .effectiveAuditOrganizationId(),
-                            loginEventType(result),
-                            eventLimit,
-                            formatWindow(
-                                    properties.effectiveWindow()
-                            ),
-                            details
-                    )
-            );
+            eventPublisher.publishEvent(new LoginRateLimitExceededEvent(
+                    properties.effectiveAuditOrganizationId(),
+                    loginEventType(result),
+                    notificationDimension,
+                    eventLimit,
+                    properties.effectiveWindow(),
+                    keyFactory.emailFingerprint(keys.normalizedEmail()),
+                    keyFactory.ipFingerprint(keys.normalizedIp()),
+                    properties.effectiveEmailLimit(),
+                    properties.effectiveIpLimit(),
+                    result
+            ));
         } catch (RuntimeException exception) {
             metrics.recordAuditPublishFailed(
                     RATE_LIMIT_TYPE
@@ -280,97 +258,22 @@ public class LoginRateLimitService {
 
             releaseNotificationMarkersBestEffort(
                     keys,
-                    result,
-                    exception
+                    result
             );
 
             log.warn(
                     "Failed to publish login rate-limit event: "
-                            + "dimension={}, decision={}",
+                            + "dimension={}, decision={}, failureType={}",
                     notificationDimension,
                     result.decision(),
-                    exception
+                    exception.getClass().getName()
             );
         }
     }
 
-    private Map<String, Object> buildEventDetails(
-            LoginRateLimitKeys keys,
-            DualRateLimitResult result,
-            String notificationDimension
-    ) {
-        return Map.ofEntries(
-                Map.entry(
-                        "source",
-                        "LOGIN"
-                ),
-                Map.entry(
-                        "dimension",
-                        notificationDimension
-                ),
-                Map.entry(
-                        "decision",
-                        result.decision().name()
-                ),
-                Map.entry(
-                        "email",
-                        keys.normalizedEmail()
-                ),
-                Map.entry(
-                        "emailFingerprint",
-                        keyFactory.emailFingerprint(
-                                keys.normalizedEmail()
-                        )
-                ),
-                Map.entry(
-                        "ipFingerprint",
-                        keyFactory.ipFingerprint(
-                                keys.normalizedIp()
-                        )
-                ),
-                Map.entry(
-                        "emailLimit",
-                        properties.effectiveEmailLimit()
-                ),
-                Map.entry(
-                        "ipLimit",
-                        properties.effectiveIpLimit()
-                ),
-                Map.entry(
-                        "emailCount",
-                        result.firstCount()
-                ),
-                Map.entry(
-                        "ipCount",
-                        result.secondCount()
-                ),
-                Map.entry(
-                        "emailTtlSeconds",
-                        result.firstTtlSeconds()
-                ),
-                Map.entry(
-                        "ipTtlSeconds",
-                        result.secondTtlSeconds()
-                ),
-                Map.entry(
-                        "retryAfterSeconds",
-                        result.retryAfterSeconds()
-                ),
-                Map.entry(
-                        "emailNotification",
-                        result.firstExceededNotification()
-                ),
-                Map.entry(
-                        "ipNotification",
-                        result.secondExceededNotification()
-                )
-        );
-    }
-
     private void releaseNotificationMarkersBestEffort(
             LoginRateLimitKeys keys,
-            DualRateLimitResult result,
-            RuntimeException publicationException
+            DualRateLimitResult result
     ) {
         try {
             rateLimiter.releaseNotificationMarkers(
@@ -379,10 +282,6 @@ public class LoginRateLimitService {
                     keys.ipMarkerKey()
             );
         } catch (RuntimeException markerException) {
-            publicationException.addSuppressed(
-                    markerException
-            );
-
             metrics.recordUnavailable(
                     RATE_LIMIT_TYPE
             );
@@ -465,42 +364,16 @@ public class LoginRateLimitService {
                 : ipAddress.trim();
     }
 
-    private String formatWindow(
-            Duration window
-    ) {
-        Objects.requireNonNull(
-                window,
-                "window не должен быть null"
-        );
-
-        if (window.toHoursPart() == 0
-                && window.toMinutesPart() == 0) {
-            return window.toSeconds() + "s";
-        }
-
-        if (window.toHoursPart() == 0
-                && window.toSecondsPart() == 0) {
-            return window.toMinutes() + "m";
-        }
-
-        if (window.toMinutesPart() == 0
-                && window.toSecondsPart() == 0) {
-            return window.toHours() + "h";
-        }
-
-        return window.toString();
-    }
-
     private void warnCleanupFailureRateLimited(
             RuntimeException exception
     ) {
         long now = System.nanoTime();
 
         while (true) {
-            long next =
+            Long next =
                     nextCleanupWarningNanos.get();
 
-            if (now - next < 0L) {
+            if (next != null && now - next < 0L) {
                 return;
             }
 
@@ -513,8 +386,8 @@ public class LoginRateLimitService {
             )) {
                 log.warn(
                         "Failed to compensate successful login "
-                                + "in Redis rate limit",
-                        exception
+                                + "in Redis rate limit: failureType={}",
+                        exception.getClass().getName()
                 );
 
                 return;

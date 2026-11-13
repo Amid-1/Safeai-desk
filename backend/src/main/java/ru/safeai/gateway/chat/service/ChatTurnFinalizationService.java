@@ -26,6 +26,8 @@ import ru.safeai.gateway.knowledge.dto.AnswerPassportResponse;
 import ru.safeai.gateway.knowledge.rag.AnswerPassportService;
 import ru.safeai.gateway.knowledge.rag.RagCompletion;
 import ru.safeai.gateway.knowledge.rag.RagPreparation;
+import ru.safeai.gateway.knowledge.rag.KnowledgeRagExecutionPermitService;
+import ru.safeai.gateway.knowledge.rag.KnowledgeRagContextRevokedException;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -53,6 +55,7 @@ public class ChatTurnFinalizationService {
     private final ChatDatabaseClockRepository databaseClock;
     private final AnswerPassportService answerPassportService;
     private final ChatTurnReadSupport readSupport;
+    private final KnowledgeRagExecutionPermitService knowledgeExecutionPermits;
 
     /** Constructor signature intentionally remains unchanged for Spring/tests. */
     public ChatTurnFinalizationService(
@@ -67,7 +70,24 @@ public class ChatTurnFinalizationService {
             AnswerPassportService answerPassportService
     ) {
         this(turnRepository, messageRepository, sessionRepository, quotaService,
-                auditEventService, mapper, metrics, clock, answerPassportService, null);
+                auditEventService, mapper, metrics, clock, answerPassportService, null, null);
+    }
+
+    public ChatTurnFinalizationService(
+            ChatTurnRepository turnRepository,
+            ChatMessageRepository messageRepository,
+            ChatSessionRepository sessionRepository,
+            ChatQuotaService quotaService,
+            AuditEventService auditEventService,
+            ChatMapper mapper,
+            ChatMetrics metrics,
+            Clock clock,
+            AnswerPassportService answerPassportService,
+            ChatDatabaseClockRepository databaseClock
+    ) {
+        this(turnRepository, messageRepository, sessionRepository, quotaService,
+                auditEventService, mapper, metrics, clock, answerPassportService,
+                databaseClock, null);
     }
 
     @Autowired
@@ -81,9 +101,11 @@ public class ChatTurnFinalizationService {
             ChatMetrics metrics,
             Clock clock,
             AnswerPassportService answerPassportService,
-            ChatDatabaseClockRepository databaseClock
+            ChatDatabaseClockRepository databaseClock,
+            KnowledgeRagExecutionPermitService knowledgeExecutionPermits
     ) {
         this.databaseClock = databaseClock;
+        this.knowledgeExecutionPermits = knowledgeExecutionPermits;
         this.turnRepository = Objects.requireNonNull(
                 turnRepository,
                 "turnRepository не должен быть null"
@@ -196,6 +218,18 @@ public class ChatTurnFinalizationService {
                 "response не должен быть null"
         );
 
+        RagPreparation ragPreparation = completion.preparation();
+        if (ragPreparation != null && ragPreparation.mode().usesKnowledge()) {
+            if (knowledgeExecutionPermits == null || ragPreparation.executionPermitId() == null) {
+                throw new KnowledgeRagContextRevokedException();
+            }
+            // Joins this transaction. The base/document FOR SHARE locks are held
+            // through message, Answer Passport, quota and terminal ChatTurn commit.
+            knowledgeExecutionPermits.assertFinalizationAllowed(
+                    ragPreparation.executionPermitId(), context.turnId(),
+                    currentUser.getOrganizationId());
+        }
+
         Instant now = (databaseClock == null ? clock.instant() : databaseClock.now());
         UUID assistantMessageId = UUID.randomUUID();
 
@@ -294,6 +328,70 @@ public class ChatTurnFinalizationService {
                 now,
                 answerPassport
         );
+    }
+
+    /**
+     * The provider returned successfully, but Knowledge was revoked before the
+     * atomic ChatTurn finalization lock was acquired. Do not persist an answer;
+     * still settle the known provider usage so accounting does not erase a real cost.
+     */
+    @Transactional
+    public void failAfterProviderContextRevoked(
+            ChatProcessingContext context,
+            RagCompletion completion,
+            AiChatResponse response,
+            SafeAiUserPrincipal currentUser
+    ) {
+        Objects.requireNonNull(context, "context");
+        Objects.requireNonNull(response, "response");
+        Objects.requireNonNull(currentUser, "currentUser");
+        RagPreparation preparation = completion == null ? null : completion.preparation();
+        if (preparation == null || preparation.executionPermitId() == null
+                || knowledgeExecutionPermits == null) {
+            throw new KnowledgeRagContextRevokedException();
+        }
+
+        Instant now = (databaseClock == null ? clock.instant() : databaseClock.now());
+        ChatTurnEntity current = readSupport.ownedTurn(context, currentUser);
+        int updated = turnRepository.markFailed(
+                context.turnId(), context.processingToken(), current.getProvider(),
+                response.requestedModel(), response.providerRequestId(),
+                "KNOWLEDGE_CONTEXT_REVOKED_AFTER_PROVIDER_RESPONSE",
+                "KNOWLEDGE_CONTEXT_REVOKED_BEFORE_FINALIZATION", now);
+        if (updated != 1) throw stale(context);
+
+        knowledgeExecutionPermits.revokePermitAfterRejectedFinalization(preparation.executionPermitId());
+        quotaService.settleSuccess(context.turnId(), response, now);
+        auditEventService.recordPrincipalSnapshot(
+                currentUser, currentUser.getOrganizationId(), AuditEventType.AI_RESPONSE_FAILED,
+                ChatTurnAuditDetailsFactory.failure(
+                        context, current.getProvider(), response.requestedModel(),
+                        response.providerRequestId(),
+                        "KNOWLEDGE_CONTEXT_REVOKED_AFTER_PROVIDER_RESPONSE",
+                        "KNOWLEDGE_CONTEXT_REVOKED_BEFORE_FINALIZATION", false));
+        metrics.recordTerminalAfterCommit(ChatTurnState.FAILED);
+    }
+
+    /** No physical call was admitted because a retry was denied after erasure began. */
+    @Transactional
+    public void failBeforePhysicalAttemptAfterKnowledgeRevocation(
+            ChatProcessingContext context,
+            SafeAiUserPrincipal currentUser
+    ) {
+        Instant now = (databaseClock == null ? clock.instant() : databaseClock.now());
+        int updated = turnRepository.markFailed(
+                context.turnId(), context.processingToken(), null, null, null,
+                "KNOWLEDGE_CONTEXT_REVOKED_BEFORE_PHYSICAL_ATTEMPT",
+                "KNOWLEDGE_CONTEXT_REVOKED_DURING_RETRY", now);
+        if (updated != 1) throw stale(context);
+        quotaService.releaseFailure(context.turnId(), now);
+        auditEventService.recordPrincipalSnapshot(
+                currentUser, currentUser.getOrganizationId(), AuditEventType.AI_RESPONSE_FAILED,
+                ChatTurnAuditDetailsFactory.failure(
+                        context, null, null, null,
+                        "KNOWLEDGE_CONTEXT_REVOKED_BEFORE_PHYSICAL_ATTEMPT",
+                        "KNOWLEDGE_CONTEXT_REVOKED_DURING_RETRY", false));
+        metrics.recordTerminalAfterCommit(ChatTurnState.FAILED);
     }
 
     @Transactional

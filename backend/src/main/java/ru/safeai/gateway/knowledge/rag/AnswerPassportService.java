@@ -1,3 +1,4 @@
+// SafeAI-Desk/backend/src/main/java/ru/safeai/gateway/knowledge/rag/AnswerPassportService.java
 package ru.safeai.gateway.knowledge.rag;
 
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -94,6 +95,10 @@ public class AnswerPassportService {
                 context.modelRouteDecisionId(),
                 "V45 knowledge answer требует modelRouteDecisionId"
         );
+
+        // Проверка выполняется внутри транзакции завершения ChatTurn.
+        // FOR SHARE сериализует сохранение ответа с принятием удаления Knowledge.
+        KnowledgeRagErasureGuard.assertAvailable(jdbc, preparation, user.getOrganizationId());
 
         UUID passportId =
                 UUID.randomUUID();

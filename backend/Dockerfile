@@ -17,13 +17,18 @@ RUN --mount=type=cache,target=/root/.m2 \
 
 COPY src src
 
+# Spring Boot собирает один исполняемый JAR. Исключаем архивы исходников и тестов.
+# При отсутствии JAR или нескольких подходящих файлах сборка завершится ошибкой.
+# find -exec не требует промежуточной shell-переменной.
 RUN --mount=type=cache,target=/root/.m2 \
     ./mvnw -q -DskipTests clean package \
-    && JAR_FILE="$(find target -maxdepth 1 -type f -name '*.jar' \
-        ! -name '*-sources.jar' ! -name '*-javadoc.jar' -print -quit)" \
-    && test -n "$JAR_FILE" \
-    && test -s "$JAR_FILE" \
-    && cp "$JAR_FILE" /app/app.jar
+    && find target -maxdepth 1 -type f \
+        -name 'safeai-backend-*.jar' \
+        ! -name '*-sources.jar' \
+        ! -name '*-javadoc.jar' \
+        ! -name '*-tests.jar' \
+        -exec sh -ec 'test "$#" -eq 1 && cp -- "$1" /app/app.jar' sh {} + \
+    && test -s /app/app.jar
 
 FROM ${RUNTIME_IMAGE} AS runtime
 
@@ -41,8 +46,10 @@ LABEL org.opencontainers.image.title="SafeAI Backend" \
 
 WORKDIR /app
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
+# Обновляем системные пакеты и не скрываем ошибки менеджера пакетов.
+RUN apt-get -o Acquire::Retries=0 update \
+    && apt-get -o Acquire::Retries=0 upgrade -y \
+    && apt-get -o Acquire::Retries=0 install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10001 safeai \
     && useradd --system --uid 10001 --gid safeai \
