@@ -105,6 +105,14 @@ describe('Каталог чатов', () => {
         expect(h.creating).toBe(false)
     })
 
+    it('создаёт чат с явным названием даже при открытом пустом чате', async () => {
+        const h = mount({ activeChat: { ...chat(), messages: [] } })
+        createMock.mockResolvedValueOnce({ ...chat(), title: 'План работ' })
+        expect(await h.handleCreateChat('План работ')).toBeNull()
+        expect(createMock).toHaveBeenCalledWith('План работ')
+        expect(h.activeChat?.title).toBe('План работ')
+    })
+
     it('обновляет заголовок активного и списочного чатов', async () => {
         const h = mount()
         await h.handleRenameChat('Переименован')

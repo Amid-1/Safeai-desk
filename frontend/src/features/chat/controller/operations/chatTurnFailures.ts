@@ -117,7 +117,7 @@ export function createTurnFailureHandler(deps: Pick<ChatControllerDependencies,
             }
         }
 
-        putPendingTurn({
+        const unknownTurn: PendingTurn = {
             ...pending,
             status: 'SEND_UNKNOWN',
             error: getApiErrorMessage(
@@ -125,9 +125,10 @@ export function createTurnFailureHandler(deps: Pick<ChatControllerDependencies,
                 'Статус отправки неизвестен.',
             ),
             retryAfterUntil: null,
-        })
+        }
+        putPendingTurn(unknownTurn)
 
-        await reconcilePendingTurn(pending)
+        await reconcilePendingTurn(unknownTurn)
     }
 
     return { handleSendFailure }

@@ -1,6 +1,7 @@
 /* frontend/src/features/chat/ui/ChatHistoryRow.css */
 /* Chat history uses an inline menu so the scroll viewport never clips actions. */
 .chat-list-row {
+    flex: 0 0 auto;
     min-width: 0;
 }
 
@@ -80,6 +81,10 @@
     transform: none;
 }
 
+.chat-history-actions small {
+    padding: 0 9px;
+}
+
 .chat-history-actions button:disabled {
     cursor: not-allowed;
     opacity: 0.5;
@@ -95,4 +100,16 @@
 
 .chat-list-row.active .chat-history-actions button:hover:not(:disabled) {
     background: rgb(255 255 255 / 17%);
+}
+
+@media (max-width: 900px) {
+    .chat-list-row {
+        width: min(240px, 78vw);
+    }
+
+    .chat-list-row .chat-item__body small {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
 }

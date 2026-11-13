@@ -219,6 +219,8 @@ describe('Классификация ошибок отправки', () => {
         await h.failure.handleSendFailure(pending(), new Error('network'))
         expect(h.pendingTurnsRef.current[IDS.chat]?.clientRequestId).toBe(IDS.request)
         expect(h.pendingTurnsRef.current[IDS.chat]?.status).toBe('SEND_UNKNOWN')
-        expect(h.reconcilePendingTurn).toHaveBeenCalledTimes(1)
+        expect(h.reconcilePendingTurn).toHaveBeenCalledExactlyOnceWith(
+            h.pendingTurnsRef.current[IDS.chat],
+        )
     })
 })

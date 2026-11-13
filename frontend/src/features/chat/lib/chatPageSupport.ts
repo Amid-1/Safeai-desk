@@ -15,10 +15,7 @@ export function getPendingLabel(
             return 'Запрос ещё обрабатывается.'
 
         case 'SEND_UNKNOWN':
-            return (
-                'Статус отправки неизвестен. '
-                + 'Новый clientRequestId не создаётся.'
-            )
+            return 'Статус отправки неизвестен.'
 
         case 'FAILED':
             return 'AI-запрос завершился ошибкой.'

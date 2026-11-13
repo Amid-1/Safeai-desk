@@ -173,10 +173,8 @@ export function createTurnReconciliation(deps: Pick<ChatControllerDependencies,
                         putPendingTurn({
                             ...pending,
                             status: 'SEND_UNKNOWN',
-                            error:
-                                'Backend пока не видит turn по clientRequestId. '
-                                + 'Безопасен только повтор исходного запроса '
-                                + 'с тем же clientRequestId.',
+                            error: pending.error
+                                ?? 'Сервер пока не подтвердил получение сообщения.',
                             retryAfterUntil: null,
                         })
                         return
@@ -189,7 +187,7 @@ export function createTurnReconciliation(deps: Pick<ChatControllerDependencies,
                         putPendingTurn({
                             ...pending,
                             status: 'SEND_UNKNOWN',
-                            error: getApiErrorMessage(
+                            error: pending.error ?? getApiErrorMessage(
                                 error,
                                 'Не удалось определить состояние turn.',
                             ),

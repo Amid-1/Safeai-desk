@@ -137,20 +137,21 @@ export function createDirectoryActions(deps: Pick<ChatControllerDependencies,
         }
     }
 
-    async function handleCreateChat() {
+    async function handleCreateChat(title?: string): Promise<string | null> {
         if (createInFlightRef.current) {
-            return
+            return 'Чат уже создаётся.'
         }
 
         // Не плодим пустые "Новый чат" при повторных кликах после
         // сетевых/контрактных ошибок. Пользователь уже находится в пустом чате.
         if (
-            activeChat
+            !title
+            && activeChat
             && activeChat.title === 'Новый чат'
             && activeChat.messages.length === 0
             && !pendingTurns[activeChat.id]
         ) {
-            return
+            return null
         }
 
         createInFlightRef.current = true
@@ -167,7 +168,7 @@ export function createDirectoryActions(deps: Pick<ChatControllerDependencies,
         setHistoryLoading(false)
 
         try {
-            const chat = await createChat()
+            const chat = title ? await createChat(title) : await createChat()
 
             setChats((current) => [
                 chat,
@@ -186,13 +187,9 @@ export function createDirectoryActions(deps: Pick<ChatControllerDependencies,
             })
             setHistoryPage(1)
             setHistoryHasNext(false)
+            return null
         } catch (error) {
-            setListError(
-                getApiErrorMessage(
-                    error,
-                    'Не удалось создать чат.',
-                ),
-            )
+            return getApiErrorMessage(error, 'Не удалось создать чат.')
         } finally {
             createInFlightRef.current = false
             setChatCreating(false)
