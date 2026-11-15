@@ -167,9 +167,9 @@ export async function archiveChat(
     options: RequestOptions = {},
 ): Promise<void> {
     await apiRequest<void>(
-        `/api/chats/${uuidPathSegment(chatId)}`,
+        `/api/chats/${uuidPathSegment(chatId)}/archive`,
         {
-            method: 'DELETE',
+            method: 'POST',
             signal: options.signal,
             timeoutMs: API_TIMEOUTS.default,
         },

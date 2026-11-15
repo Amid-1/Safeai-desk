@@ -19,6 +19,9 @@ services:
 
     environment:
       SPRING_PROFILES_ACTIVE: prod
+      SPRING_FLYWAY_ENABLED: "false"
+      SPRING_FLYWAY_USER: ""
+      SPRING_FLYWAY_PASSWORD: ""
       SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/${POSTGRES_DB:?POSTGRES_DB is required}"
 
       # pricing.yml is non-secret deployment config. jwt-keys.yml is a secret
@@ -27,7 +30,8 @@ services:
         file:/run/config/pricing.yml,file:/run/secrets/jwt-keys.yml
 
       SAFEAI_DB_APP_USER: "${SAFEAI_DB_APP_USER:?SAFEAI_DB_APP_USER is required}"
-      SAFEAI_DB_MIGRATOR_USER: "${SAFEAI_DB_MIGRATOR_USER:?SAFEAI_DB_MIGRATOR_USER is required}"
+      SAFEAI_DB_MIGRATOR_USER: ""
+      SAFEAI_DB_MIGRATOR_PASSWORD: ""
 
       REDIS_HOST: redis
       REDIS_PORT: "6379"
@@ -49,8 +53,6 @@ services:
       # Scalar secrets are loaded by application.yml configtree:/run/secrets/.
       - source: db_app_password
         target: SAFEAI_DB_APP_PASSWORD
-      - source: db_migrator_password
-        target: SAFEAI_DB_MIGRATOR_PASSWORD
       - source: redis_password
         target: REDIS_PASSWORD
       - source: rate_limit_hmac_secret
@@ -88,7 +90,7 @@ services:
       - "9091"
 
     depends_on:
-      db-bootstrap:
+      db-migrate:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
@@ -217,6 +219,40 @@ services:
     security_opt:
       - no-new-privileges:true
 
+    logging: *default-logging
+    restart: "no"
+
+  db-migrate:
+    image: "${SAFEAI_BACKEND_IMAGE:?SAFEAI_BACKEND_IMAGE_REQUIRED}"
+    entrypoint:
+      - java
+      - -Dloader.main=ru.safeai.gateway.common.db.DatabaseMigrationMain
+      - -cp
+      - /app/app.jar
+      - org.springframework.boot.loader.launch.PropertiesLauncher
+    environment:
+      SAFEAI_MIGRATION_JDBC_URL: "jdbc:postgresql://postgres:5432/${POSTGRES_DB:?POSTGRES_DB is required}"
+      SAFEAI_MIGRATION_PASSWORD_FILE: /run/secrets/db_migrator_password
+    secrets:
+      - db_migrator_password
+    depends_on:
+      db-bootstrap:
+        condition: service_completed_successfully
+    networks:
+      safeai_data: {}
+    user: "10001:10001"
+    group_add:
+      - "${SAFEAI_SECRET_GID:?SAFEAI_SECRET_GID is required}"
+    read_only: true
+    tmpfs:
+      - "/tmp:size=64m,mode=1777,noexec,nosuid,nodev"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 768m
+    cpus: "1.0"
+    pids_limit: 128
     logging: *default-logging
     restart: "no"
 

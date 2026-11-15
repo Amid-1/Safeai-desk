@@ -22,6 +22,8 @@ class KnowledgeErasureObservabilityTest {
                 "state", "NEEDS_REVIEW",
                 "quantity", 3L,
                 "oldest_age_seconds", 120L, "retry_count", 8L)));
+        when(jdbc.queryForMap(anyString())).thenReturn(Map.of(
+                "pending", 2L, "overdue", 1L, "retries", 5L));
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         try {
             var observer = new KnowledgeErasureObservability(jdbc, registry);
@@ -37,8 +39,10 @@ class KnowledgeErasureObservabilityTest {
             assertThat(registry.get("safeai.knowledge.erasure.retries")
                     .tags("scope", "document", "state", "NEEDS_REVIEW")
                     .gauge().value()).isEqualTo(8d);
-            assertThat(registry.getMeters()).hasSize(26);
-            // 2*4*3 gauges, 1 freshness gauge, 1 failure counter.
+            assertThat(registry.getMeters()).hasSize(29);
+            // 2*4*3 state gauges + freshness + failures + 3 receipt gauges.
+            assertThat(registry.get("safeai.knowledge.erasure.external.receipts.pending")
+                    .gauge().value()).isEqualTo(2d);
         } finally {
             registry.close();
         }
@@ -50,7 +54,11 @@ class KnowledgeErasureObservabilityTest {
         when(jdbc.queryForList(anyString()))
                 .thenReturn(List.of(Map.of("scope", "base", "state", "DELETING",
                         "quantity", 2L, "oldest_age_seconds", 3600L, "retry_count", 2L)))
-                .thenThrow(new IllegalStateException("simulated database outage"));
+                .thenReturn(List.of(Map.of("scope", "base", "state", "DELETING",
+                        "quantity", 99L, "oldest_age_seconds", 1L, "retry_count", 99L)));
+        when(jdbc.queryForMap(anyString()))
+                .thenReturn(Map.of("pending", 4L, "overdue", 1L, "retries", 2L))
+                .thenThrow(new IllegalStateException("simulated outbox database outage"));
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         try {
             var observer = new KnowledgeErasureObservability(jdbc, registry);
@@ -59,6 +67,8 @@ class KnowledgeErasureObservabilityTest {
             assertThat(registry.get("safeai.knowledge.erasure.operations")
                     .tags("scope", "base", "state", "DELETING")
                     .gauge().value()).isEqualTo(2d);
+            assertThat(registry.get("safeai.knowledge.erasure.external.receipts.pending")
+                    .gauge().value()).isEqualTo(4d);
             assertThat(registry.get("safeai.knowledge.erasure.metrics.refresh.failures")
                     .counter().count()).isEqualTo(1d);
         } finally {

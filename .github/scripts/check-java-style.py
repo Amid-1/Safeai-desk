@@ -1,3 +1,4 @@
+#SafeAI-Desk/.github/scripts/check-java-style.py
 #!/usr/bin/env python3
 """Incremental Java hygiene gate with immutable reviewed legacy exceptions.
 

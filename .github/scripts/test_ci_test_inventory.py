@@ -1,3 +1,4 @@
+#SafeAI-Desk/.github/scripts/test_ci_test_inventory.py
 #!/usr/bin/env python3
 """Изолированные регрессионные проверки контрольных скриптов."""
 import importlib.util

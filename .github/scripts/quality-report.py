@@ -1,3 +1,4 @@
+#SafeAI-Desk/.github/scripts/quality-report.py
 #!/usr/bin/env python3
 """Read-only JaCoCo/Vitest dashboard for GitHub summary and offline HTML."""
 from __future__ import annotations

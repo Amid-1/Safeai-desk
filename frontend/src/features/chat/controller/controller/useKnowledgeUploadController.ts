@@ -1,4 +1,4 @@
-// frontend/src/features/knowledge/controller/useKnowledgeUploadController.ts
+// frontend/src/features/chat/controller/controller/useKnowledgeUploadController.ts
 import {
     useRef,
     useState,

@@ -1,3 +1,4 @@
+#SafeAI-Desk/.github/scripts/test_production_manifest.py
 """Fail-closed validation for the GitHub Production publish manifest."""
 import importlib.util
 from pathlib import Path

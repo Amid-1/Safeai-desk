@@ -1,3 +1,4 @@
+// frontend/src/features/chat/controller/operations/chatTurnFailures.ts
 import type { PendingTurn, PendingTurnStatus } from '../../lib/chatPage.helpers'
 import { ApiError, getApiErrorMessage } from '../../../../shared/api/http'
 import type { ChatControllerDependencies } from './chatControllerTypes'

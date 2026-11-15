@@ -1,3 +1,4 @@
+#SafeAI-Desk/.github/scripts/verify-production-manifest.py
 #!/usr/bin/env python3
 """Verify one successful immutable publish run and its exact image manifest."""
 import argparse

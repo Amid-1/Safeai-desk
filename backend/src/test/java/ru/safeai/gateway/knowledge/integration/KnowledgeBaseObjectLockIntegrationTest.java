@@ -15,6 +15,8 @@ import io.minio.messages.Retention;
 import io.minio.messages.RetentionMode;
 import io.minio.messages.VersioningConfiguration;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -27,6 +29,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 import ru.safeai.gateway.knowledge.testsupport.KnowledgeErasureTestJournal;
+import ru.safeai.gateway.knowledge.config.KnowledgeErasureWorkerDatabaseConfig.WorkerConnections;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.knowledge.dto.KnowledgeBaseDeletionResponse;
@@ -69,6 +72,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SpringBootTest(properties = {"safeai.rate-limit.ai-messages.enabled=false"})
 @ActiveProfiles("test")
 class KnowledgeBaseObjectLockIntegrationTest extends AbstractPostgresIntegrationTest {
+    private WorkerConnections erasureConnections;
+
+    @BeforeEach
+    void provisionWorkerConnection() {
+        erasureConnections = new WorkerConnections(POSTGRES.getJdbcUrl(),
+                "safeai_knowledge_erasure_worker", "test-only-knowledge-worker-password");
+        assertThat(erasureConnections.jdbc().queryForObject("SELECT session_user", String.class))
+                .isEqualTo("safeai_knowledge_erasure_worker");
+    }
+
+    @AfterEach
+    void closeWorkerConnection() {
+        if (erasureConnections != null) erasureConnections.close();
+    }
+
 
     private static final String ACCESS_KEY = "safeai";
     private static final String SECRET_KEY = "safeai-local-change-me";
@@ -113,7 +131,8 @@ class KnowledgeBaseObjectLockIntegrationTest extends AbstractPostgresIntegration
                 .execute(tx -> service.accept(base, 0L, "no-lock-" + UUID.randomUUID(), admin));
         assertThat(accepted).isNotNull();
         KnowledgeDocumentDeletionExecutor worker = invalidRequestWorker(key);
-        worker.poll();
+        UUID childOperation = documentOperation(base, document);
+        worker.pollOperation(childOperation);
         assertThat(jdbcTemplate.queryForObject("""
                 SELECT state FROM public.knowledge_document_deletions_v78
                 WHERE knowledge_base_id = ? AND document_id = ?
@@ -128,7 +147,7 @@ class KnowledgeBaseObjectLockIntegrationTest extends AbstractPostgresIntegration
                     WHERE knowledge_base_id = ? AND document_id = ?
                       AND state = 'DELETING'
                     """, base, document);
-            worker.poll();
+            worker.pollOperation(childOperation);
         }
         assertThat(jdbcTemplate.queryForObject("""
                 SELECT state FROM public.knowledge_document_deletions_v78
@@ -139,7 +158,7 @@ class KnowledgeBaseObjectLockIntegrationTest extends AbstractPostgresIntegration
                 JOIN public.knowledge_document_deletions_v78 d ON d.id = i.operation_id
                 WHERE d.knowledge_base_id = ? AND i.storage_key = ?
                 """, Integer.class, base, key)).isEqualTo(1);
-        new KnowledgeBaseDeletionExecutor(jdbcTemplate, transactionManager, true, null, KnowledgeErasureTestJournal.INSTANCE).poll();
+        baseWorker().pollOperation(accepted.operationId());
         assertThat(jdbcTemplate.queryForObject("""
                 SELECT state FROM public.knowledge_base_deletions_v82 WHERE id = ?
                 """, String.class, accepted.operationId())).isEqualTo("NEEDS_REVIEW");
@@ -159,7 +178,7 @@ class KnowledgeBaseObjectLockIntegrationTest extends AbstractPostgresIntegration
                 throw new IOException("InvalidRequest without verified retention");
             }
         };
-        return new KnowledgeDocumentDeletionExecutor(jdbcTemplate, transactionManager, refused, null, KnowledgeErasureTestJournal.INSTANCE);
+        return documentWorker(refused);
     }
 
     private void assertBlockedEndToEnd(boolean legalHold) throws Exception {
@@ -231,8 +250,7 @@ class KnowledgeBaseObjectLockIntegrationTest extends AbstractPostgresIntegration
                 assertThat(accepted).isNotNull();
                 assertThat(accepted.state()).isEqualTo("DELETING");
 
-                new KnowledgeDocumentDeletionExecutor(jdbcTemplate, transactionManager,
-                        storage, null, KnowledgeErasureTestJournal.INSTANCE).poll();
+                documentWorker(storage).pollOperation(documentOperation(base, document));
                 String childState = jdbcTemplate.queryForObject("""
                         SELECT state FROM public.knowledge_document_deletions_v78
                         WHERE knowledge_base_id = ? AND document_id = ?
@@ -246,8 +264,7 @@ class KnowledgeBaseObjectLockIntegrationTest extends AbstractPostgresIntegration
                                 + "BLOCKED_BY_RETENTION, not retry/DELETED", providerCode)
                         .isEqualTo("BLOCKED_BY_RETENTION");
 
-                new KnowledgeBaseDeletionExecutor(jdbcTemplate, transactionManager,
-                        true, null, KnowledgeErasureTestJournal.INSTANCE).poll();
+                baseWorker().pollOperation(accepted.operationId());
                 String parentState = jdbcTemplate.queryForObject("""
                         SELECT state FROM public.knowledge_base_deletions_v82
                         WHERE id = ?
@@ -280,6 +297,27 @@ class KnowledgeBaseObjectLockIntegrationTest extends AbstractPostgresIntegration
                 ReflectionTestUtils.invokeMethod(storage, "closeClient");
             }
         }
+    }
+
+    private KnowledgeDocumentDeletionExecutor documentWorker(ObjectStorage storage) {
+        return new KnowledgeDocumentDeletionExecutor(erasureConnections.jdbc(),
+                erasureConnections.transactionManager(), storage, null,
+                KnowledgeErasureTestJournal.INSTANCE);
+    }
+
+    private KnowledgeBaseDeletionExecutor baseWorker() {
+        return new KnowledgeBaseDeletionExecutor(erasureConnections.jdbc(),
+                erasureConnections.transactionManager(), true, null,
+                KnowledgeErasureTestJournal.INSTANCE);
+    }
+
+    private UUID documentOperation(UUID base, UUID document) {
+        UUID operationId = jdbcTemplate.queryForObject("""
+                SELECT id FROM public.knowledge_document_deletions_v78
+                WHERE organization_id=? AND knowledge_base_id=? AND document_id=?
+                """, UUID.class, PLATFORM_ORGANIZATION_ID, base, document);
+        assertThat(operationId).as("V78 erasure operation must be persisted").isNotNull();
+        return operationId;
     }
 
     private void createFixture(UUID actor, UUID base, UUID document, String key) {

@@ -58,17 +58,16 @@ export function delay(milliseconds: number, signal: AbortSignal): Promise<void> 
 
     return new Promise<void>((resolve) => {
         let settled = false
-        let timeoutId: ReturnType<typeof setTimeout> | undefined
         const finish = () => {
             if (settled) return
             settled = true
             signal.removeEventListener('abort', finish)
-            if (timeoutId !== undefined) clearTimeout(timeoutId)
+            clearTimeout(timeoutId)
             resolve()
         }
 
+        const timeoutId = setTimeout(finish, milliseconds)
         signal.addEventListener('abort', finish, { once: true })
-        timeoutId = setTimeout(finish, milliseconds)
         // Защищает от отмены между первым `aborted` и регистрацией обработчика.
         if (signal.aborted) finish()
     })

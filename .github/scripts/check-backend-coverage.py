@@ -1,3 +1,4 @@
+#SafeAI-Desk/.github/scripts/check-backend-coverage.py
 #!/usr/bin/env python3
 """Проверка JaCoCo coverage baseline по каждому backend-модулю."""
 from __future__ import annotations

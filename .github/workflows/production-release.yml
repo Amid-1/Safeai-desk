@@ -1,4 +1,4 @@
-#SafeAI-Desk/github/workflows/production-release.yml
+#SafeAI-Desk/.github/workflows/production-release.yml
 name: Production release
 
 on:
@@ -45,9 +45,17 @@ jobs:
           python3 .github/scripts/check-release-ci.py \
             "$RUNNER_TEMP/safeai-checks.json" "$GITHUB_SHA"
 
+  performance:
+    name: Предрелизная проверка производительности
+    needs: preflight
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/performance-ci.yml
+
   publish:
     name: Production build, image scan, SBOM и GHCR
-    needs: preflight
+    needs: [preflight, performance]
     permissions:
       contents: read
       packages: write
@@ -140,6 +148,18 @@ jobs:
           EOF
 
           bash infra/scripts/build-prod.sh "$build_env"
+
+      - name: Runtime ACL на точных release-образах
+        env:
+          OWNER_LC: ${{ steps.build.outputs.owner_lc }}
+        run: |
+          set -Eeuo pipefail
+          for image in backend nginx postgres; do
+            docker image inspect --format '{{.Id}}' "ghcr.io/$OWNER_LC/safeai-$image:$GITHUB_SHA" > "$RUNNER_TEMP/safeai-$image.id"
+          done
+          bash infra/scripts/test-runtime-acl.sh \
+            "ghcr.io/$OWNER_LC/safeai-postgres:$GITHUB_SHA" \
+            "ghcr.io/$OWNER_LC/safeai-backend:$GITHUB_SHA"
 
       - name: Сканирование backend image
         uses: aquasecurity/trivy-action@v0.36.0
@@ -271,6 +291,9 @@ jobs:
         run: |
           set -Eeuo pipefail
           owner_lc="${GITHUB_REPOSITORY_OWNER,,}"
+          for image in backend nginx postgres; do
+            [[ "$(docker image inspect --format '{{.Id}}' "ghcr.io/$owner_lc/safeai-$image:$GITHUB_SHA")" == "$(cat "$RUNNER_TEMP/safeai-$image.id")" ]] || exit 1
+          done
           docker push "ghcr.io/${owner_lc}/safeai-backend:${GITHUB_SHA}"
           docker push "ghcr.io/${owner_lc}/safeai-nginx:${GITHUB_SHA}"
           docker push "ghcr.io/${owner_lc}/safeai-postgres:${GITHUB_SHA}"

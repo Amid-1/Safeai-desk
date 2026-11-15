@@ -264,8 +264,10 @@ class KnowledgeBaseDeletionRealJvmCrashIntegrationTest
         builder.redirectErrorStream(true);
         builder.environment().put("SAFEAI_SIGKILL_TEST_GUARD", "DISPOSABLE_TESTCONTAINERS_ONLY");
         builder.environment().put("SAFEAI_SIGKILL_TEST_JDBC_URL", POSTGRES.getJdbcUrl());
-        builder.environment().put("SAFEAI_SIGKILL_TEST_DB_USER", POSTGRES.getUsername());
-        builder.environment().put("SAFEAI_SIGKILL_TEST_DB_PASSWORD", POSTGRES.getPassword());
+        // Crash and recovery must use the same isolated SQL role as production,
+        // not the Testcontainers administrator that would bypass the V89 fence.
+        builder.environment().put("SAFEAI_SIGKILL_TEST_DB_USER", "safeai_knowledge_erasure_worker");
+        builder.environment().put("SAFEAI_SIGKILL_TEST_DB_PASSWORD", "test-only-knowledge-worker-password");
         builder.environment().put("SAFEAI_SIGKILL_TEST_S3_ENDPOINT", endpoint);
         builder.environment().put("SAFEAI_SIGKILL_TEST_S3_BUCKET", bucket);
         builder.environment().put("SAFEAI_SIGKILL_TEST_S3_USER", ACCESS_KEY);

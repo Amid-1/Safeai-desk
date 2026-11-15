@@ -4,6 +4,7 @@ package ru.safeai.gateway.knowledge.service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import ru.safeai.gateway.knowledge.config.KnowledgeErasureWorkerDatabaseConfig.WorkerConnections;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -102,7 +103,6 @@ public class KnowledgeDocumentDeletionExecutor {
      * В тестах допускается null только для executionPermits:
      * вместо реального журнала обязательно передаётся тестовая реализация.
      */
-    @Autowired
     public KnowledgeDocumentDeletionExecutor(
             JdbcTemplate jdbc,
             PlatformTransactionManager transactionManager,
@@ -122,6 +122,17 @@ public class KnowledgeDocumentDeletionExecutor {
         this.storage = java.util.Objects.requireNonNull(storage, "storage");
         this.executionPermits = executionPermits;
         this.tombstoneJournal = tombstoneJournal;
+    }
+
+    /** Dedicated DB connection is mandatory when the executor is enabled. */
+    @Autowired
+    public KnowledgeDocumentDeletionExecutor(
+            WorkerConnections connections,
+            ObjectStorage storage,
+            KnowledgeRagExecutionPermitService executionPermits,
+            ErasureTombstoneJournal tombstoneJournal) {
+        this(connections.jdbc(), connections.transactionManager(), storage,
+                executionPermits, tombstoneJournal);
     }
 
     private record Claim(
@@ -191,6 +202,25 @@ public class KnowledgeDocumentDeletionExecutor {
                 return;
             }
 
+            processClaim(claim, false);
+        }
+    }
+
+    /**
+     * Runs at most one eligible attempt for the supplied durable operation ID.
+     * <p>
+     * Unlike processOperation(), this method intentionally permits an outcome
+     * of DELETING, NEEDS_REVIEW or BLOCKED_BY_RETENTION. It is useful for
+     * incident recovery and integration scenarios that must NOT claim unrelated
+     * tenants' queued operations. A missing, delayed or live-leased operation
+     * is not claimed or modified. SQL grants and V81/V89 fencing are unchanged.
+     * <p>
+     * The method is not a REST endpoint and never grants the caller SQL rights.
+     */
+    public void pollOperation(UUID operationId) {
+        java.util.Objects.requireNonNull(operationId, "operationId");
+        Claim claim = claim(operationId);
+        if (claim != null) {
             processClaim(claim, false);
         }
     }
@@ -339,12 +369,10 @@ public class KnowledgeDocumentDeletionExecutor {
 
             requireRenewedLease(claim);
 
-            requireTombstoneJournal().publishDocumentCommitted(
-                    claim.id(),
-                    claim.organizationId(),
-                    claim.knowledgeBaseId(),
-                    claim.documentId()
-            );
+            // The V89 DELETED trigger creates an S3 receipt OUTBOX intent
+            // in the exact PostgreSQL commit below. The isolated publisher
+            // writes DOCUMENT_ERASURE_COMMITTED only AFTER that commit.
+            // Never publish a final receipt before a successful DB erasure.
 
             boolean completed = Boolean.TRUE.equals(
                     transactions.execute(tx -> eraseDatabase(claim))
@@ -583,7 +611,8 @@ public class KnowledgeDocumentDeletionExecutor {
      * Удаляет оперативные данные документа и фиксирует DELETED.
      * <p>
      * Вызывается только после подтверждённого физического удаления
-     * всех объектов S3 и публикации внешнего доказательства.
+     * всех объектов S3. V89 queues the final immutable external receipt
+     * atomically with the DELETED transition.
      */
     private boolean eraseDatabase(Claim claim) {
         assertDeletionLeaseUnderDocumentLock(claim);

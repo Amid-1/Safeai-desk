@@ -51,6 +51,12 @@ placeholder_name="$(awk -F= '/^[[:space:]]*[A-Za-z_][A-Za-z_0-9]*=/ && $0 ~ /REP
 [[ -z "$placeholder_name" ]] || fail "Placeholder remains in $placeholder_name"
 
 [[ "${SPRING_PROFILES_ACTIVE:-}" == prod ]] || fail "SPRING_PROFILES_ACTIVE=prod required"
+[[ "$SAFEAI_DB_MIGRATOR_USER" == safeai_migrator && "$SAFEAI_DB_APP_USER" == safeai_app ]] || fail "Canonical V86+ database roles required"
+[[ "${POSTGRES_BOOTSTRAP_USER}" != safeai_migrator && "${POSTGRES_BOOTSTRAP_USER}" != safeai_app ]] || fail "Bootstrap must be distinct"
+for name in SAFEAI_DB_MIGRATOR_PASSWORD SPRING_FLYWAY_USER SPRING_FLYWAY_PASSWORD SAFEAI_MIGRATION_PASSWORD_FILE; do
+    [[ -z "${!name:-}" ]] || fail "Runtime environment must not provide migration credentials: $name"
+done
+[[ "${SPRING_FLYWAY_ENABLED:-false}" == false ]] || fail "Flyway must be disabled in runtime"
 [[ "${SAFEAI_PUBLIC_BIND:-}" =~ ^127\.0\.0\.1:[0-9]{1,5}$ ]] || fail "SAFEAI_PUBLIC_BIND must be 127.0.0.1:<port>"
 [[ "${SAFEAI_SECRET_GID:-}" == "21001" ]] || fail "SAFEAI_SECRET_GID=21001 required to match hardened image"
 [[ "${SAFEAI_REQUIRE_IMMUTABLE_IMAGES:-}" == true ]] || fail "Immutable release images are mandatory"

@@ -68,6 +68,9 @@ jobs:
       - name: Отрицательные тесты инфраструктурного security policy
         run: python3 -m unittest discover -s .github/scripts -p 'test_infra_security_policy.py' -v
 
+      - name: Проверка защиты отчётов Performance CI
+        run: python3 -m unittest discover -s .github/scripts -p 'test_performance_reports.py' -v
+
       - name: Проверка release-gate против поддельных и пропущенных статусов
         run: python3 -m unittest discover -s .github/scripts -p 'test_release_ci.py'
 

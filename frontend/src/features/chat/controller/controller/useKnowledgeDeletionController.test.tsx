@@ -1,4 +1,4 @@
-// frontend/src/features/knowledge/controller/useKnowledgeDeletionController.test.tsx
+// frontend/src/features/chat/controller/controller/useKnowledgeDeletionController.test.tsx
 import {act, renderHook, waitFor} from '@testing-library/react'
 import {beforeEach, describe, expect, it, vi} from 'vitest'
 
@@ -16,13 +16,13 @@ import {
 import {deferred, flushMicrotasks} from '../../../knowledge/test/knowledgeDeletionTestUtils'
 import {useKnowledgeDeletionController} from './useKnowledgeDeletionController'
 
-vi.mock('../../../entities/knowledge/api/knowledgeDocumentDeletionApi', () => ({
+vi.mock('../../../../entities/knowledge/api/knowledgeDocumentDeletionApi', () => ({
     acceptDocumentDeletion: vi.fn(),
     deletionCapability: vi.fn(),
     listDocumentDeletions: vi.fn(),
 }))
 
-vi.mock('../lib/knowledgeDeletionRequestKey', () => ({
+vi.mock('../../../knowledge/lib/knowledgeDeletionRequestKey', () => ({
     getKnowledgeDeletionRequestKey: vi.fn(),
     clearKnowledgeDeletionRequestKey: vi.fn(),
 }))

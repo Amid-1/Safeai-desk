@@ -1,3 +1,4 @@
+#SafeAI-Desk/.github/scripts/test_release_ci.py
 #!/usr/bin/env python3
 # SafeAI-Desk/.github/scripts/test_release_ci.py
 """Регрессии release-gate: нельзя считать отсутствие или failure успехом."""

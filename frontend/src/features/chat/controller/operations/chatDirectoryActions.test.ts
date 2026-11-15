@@ -25,7 +25,9 @@ const autoTitleMock = vi.mocked(assignAutomaticChatTitle)
 
 function mount(overrides: Partial<Parameters<typeof createDirectoryActions>[0]> = {}) {
     let chats = [chat({ title: 'Рабочий чат' })]
-    let activeChat: ChatDetails | null = { ...chats[0]!, messages: [] }
+    let activeChat: ChatDetails | null = overrides.activeChat === undefined
+        ? { ...chats[0]!, messages: [] }
+        : overrides.activeChat
     let listError = ''
     let creating = false
     const openChat = vi.fn(async () => undefined)

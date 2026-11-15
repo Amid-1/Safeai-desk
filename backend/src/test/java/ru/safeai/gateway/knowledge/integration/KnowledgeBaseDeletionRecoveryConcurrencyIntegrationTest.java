@@ -8,6 +8,9 @@ import io.minio.SetBucketVersioningArgs;
 import io.minio.messages.Item;
 import io.minio.messages.VersioningConfiguration;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
+import ru.safeai.gateway.knowledge.config.KnowledgeErasureWorkerDatabaseConfig.WorkerConnections;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -65,6 +68,20 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @ActiveProfiles("test")
 class KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest
         extends AbstractPostgresIntegrationTest {
+    private WorkerConnections deletionWorkerConnections;
+
+    @BeforeEach
+    void createIsolatedKnowledgeWorker() {
+        deletionWorkerConnections = new WorkerConnections(
+                POSTGRES.getJdbcUrl(), "safeai_knowledge_erasure_worker",
+                "test-only-knowledge-worker-password");
+    }
+
+    @AfterEach
+    void closeIsolatedKnowledgeWorker() {
+        if (deletionWorkerConnections != null) deletionWorkerConnections.close();
+    }
+
 
     private static final String ACCESS_KEY = "safeai";
     private static final String SECRET_KEY = "safeai-local-change-me";
@@ -129,7 +146,7 @@ class KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest
                         throw new IOException("injected failure after real verified S3 purge");
                     }
                 };
-                childWorker(failureAfterVerifiedPurge).poll();
+                childWorker(failureAfterVerifiedPurge).pollOperation(childOperation);
 
                 assertThat(calls.get()).isEqualTo(1);
                 assertThat(exactVersions(client, bucket, targetKey)).isEmpty();
@@ -151,7 +168,7 @@ class KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest
                 // повторяет подтверждённую очистку и только затем фиксирует результат.
                 jdbcTemplate.update("UPDATE knowledge_document_deletions_v78 "
                         + "SET next_attempt_at=clock_timestamp() WHERE id=?", childOperation);
-                childWorker(storage).poll();
+                childWorker(storage).processOperation(childOperation);
                 assertThat(childState(childOperation)).isEqualTo("DELETED");
                 assertThat(count("SELECT count(*) FROM knowledge_document_erasure_objects_v81 "
                         + "WHERE operation_id=?", childOperation)).isZero();
@@ -159,7 +176,7 @@ class KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest
                 assertThat(versionIds(client, bucket, untouchedKey))
                         .containsExactlyElementsOf(untouchedVersionIds);
 
-                parentWorker().poll();
+                parentWorker().processOperation(accepted.operationId());
                 assertThat(baseState(accepted.operationId())).isEqualTo("DELETED");
                 assertThat(count("SELECT count(*) FROM knowledge_bases WHERE id=?",
                         target.base())).isZero();
@@ -191,7 +208,7 @@ class KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest
         });
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             try {
-                Future<?> first = executor.submit(() -> childWorker(blockingStorage).poll());
+                Future<?> first = executor.submit(() -> childWorker(blockingStorage).processOperation(childOperation));
                 awaitPurgeOrReport(insidePurge, first, childOperation);
                 assertThat(count("SELECT count(*) FROM knowledge_document_erasure_objects_v81 "
                         + "WHERE operation_id=? AND storage_key=?", childOperation, key))
@@ -202,7 +219,7 @@ class KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest
                 assertThat(originalLease).isNotNull();
 
                 // Второй независимый исполнитель не вправе захватить действующую аренду.
-                childWorker(blockingStorage).poll();
+                childWorker(blockingStorage).pollOperation(childOperation);
                 assertThat(purges.get()).isEqualTo(1);
                 assertThat(jdbcTemplate.queryForObject(
                         "SELECT lease_token FROM knowledge_document_deletions_v78 WHERE id=?",
@@ -213,7 +230,7 @@ class KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest
                 first.get(15, TimeUnit.SECONDS);
                 assertThat(childState(childOperation)).isEqualTo("DELETED");
                 assertThat(purges.get()).isEqualTo(1);
-                parentWorker().poll();
+                parentWorker().processOperation(accepted.operationId());
                 assertThat(baseState(accepted.operationId())).isEqualTo("DELETED");
             } finally {
                 finishPurge.countDown();
@@ -243,7 +260,7 @@ class KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest
         });
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             try {
-                Future<?> oldWorker = executor.submit(() -> childWorker(fencedStorage).poll());
+                Future<?> oldWorker = executor.submit(() -> childWorker(fencedStorage).pollOperation(childOperation));
                 awaitPurgeOrReport(firstEntered, oldWorker, childOperation);
                 UUID previousToken = jdbcTemplate.queryForObject(
                         "SELECT lease_token FROM knowledge_document_deletions_v78 WHERE id=?",
@@ -257,7 +274,7 @@ class KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest
                 jdbcTemplate.update("UPDATE knowledge_document_deletions_v78 "
                         + "SET lease_until=clock_timestamp()-interval '1 second', "
                         + "next_attempt_at=clock_timestamp() WHERE id=?", childOperation);
-                childWorker(fencedStorage).poll();
+                childWorker(fencedStorage).processOperation(childOperation);
                 assertThat(calls.get()).isEqualTo(2);
                 assertThat(childState(childOperation)).isEqualTo("DELETED");
                 assertThat(count("SELECT count(*) FROM knowledge_documents WHERE id=?",
@@ -276,7 +293,7 @@ class KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest
                         + "WHERE id=? AND lease_token IS NULL AND state='DELETED'", childOperation))
                         .isEqualTo(1);
                 assertThat(baseState(accepted.operationId())).isEqualTo("DELETING");
-                parentWorker().poll();
+                parentWorker().processOperation(accepted.operationId());
                 assertThat(baseState(accepted.operationId())).isEqualTo("DELETED");
             } finally {
                 releaseFirst.countDown();
@@ -291,7 +308,10 @@ class KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest
         Fixture untouched = fixture(false);
         KnowledgeBaseDeletionResponse accepted = accept(target);
         KnowledgeBaseDeletionExecutor oldWorker = parentWorker();
-        Object staleClaim = ReflectionTestUtils.invokeMethod(oldWorker, "claim");
+        // Claim exactly this V82 operation, not an unrelated durable operation
+        // left behind in the shared Testcontainers PostgreSQL instance.
+        Object staleClaim = ReflectionTestUtils.invokeMethod(
+                oldWorker, "claim", accepted.operationId());
         assertThat(staleClaim).isNotNull();
         UUID oldToken = jdbcTemplate.queryForObject(
                 "SELECT lease_token FROM knowledge_base_deletions_v82 WHERE id=?",
@@ -302,7 +322,7 @@ class KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest
         jdbcTemplate.update("UPDATE knowledge_base_deletions_v82 "
                 + "SET lease_token=? WHERE id=?", stolenToken, accepted.operationId());
 
-        assertThatThrownBy(() -> new TransactionTemplate(transactionManager)
+        assertThatThrownBy(() -> new TransactionTemplate(deletionWorkerConnections.transactionManager())
                 .executeWithoutResult(tx -> ReflectionTestUtils.invokeMethod(
                         oldWorker, "finishOrReschedule", staleClaim)))
                 .satisfies(error -> assertThat(error.getClass().getSimpleName())
@@ -315,7 +335,7 @@ class KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest
         jdbcTemplate.update("UPDATE knowledge_base_deletions_v82 "
                 + "SET lease_until=clock_timestamp()-interval '1 second', "
                 + "next_attempt_at=clock_timestamp() WHERE id=?", accepted.operationId());
-        parentWorker().poll();
+        parentWorker().processOperation(accepted.operationId());
         assertThat(baseState(accepted.operationId())).isEqualTo("DELETED");
         assertThat(count("SELECT count(*) FROM knowledge_bases WHERE id=?", target.base()))
                 .isZero();
@@ -444,11 +464,11 @@ class KnowledgeBaseDeletionRecoveryConcurrencyIntegrationTest
     }
 
     private KnowledgeDocumentDeletionExecutor childWorker(ObjectStorage store) {
-        return new KnowledgeDocumentDeletionExecutor(jdbcTemplate, transactionManager, store, null, KnowledgeErasureTestJournal.INSTANCE);
+        return new KnowledgeDocumentDeletionExecutor(deletionWorkerConnections.jdbc(), deletionWorkerConnections.transactionManager(), store, null, KnowledgeErasureTestJournal.INSTANCE);
     }
 
     private KnowledgeBaseDeletionExecutor parentWorker() {
-        return new KnowledgeBaseDeletionExecutor(jdbcTemplate, transactionManager, true, null, KnowledgeErasureTestJournal.INSTANCE);
+        return new KnowledgeBaseDeletionExecutor(deletionWorkerConnections.jdbc(), deletionWorkerConnections.transactionManager(), true, null, KnowledgeErasureTestJournal.INSTANCE);
     }
 
     private String childState(UUID operation) {

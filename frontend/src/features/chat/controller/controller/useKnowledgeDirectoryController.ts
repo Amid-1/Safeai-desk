@@ -1,4 +1,4 @@
-// frontend/src/features/knowledge/controller/useKnowledgeDirectoryController.ts
+// frontend/src/features/chat/controller/controller/useKnowledgeDirectoryController.ts
 // Состояние каталога баз знаний, фильтрация, пагинация и операции изменения.
 import { useCallback, useEffect, useState } from 'react'
 import { createKnowledgeBase, getKnowledgeBase, getKnowledgeBases, searchKnowledgeBases, updateKnowledgeBase } from '../../../../entities/knowledge/api/knowledgeApi'

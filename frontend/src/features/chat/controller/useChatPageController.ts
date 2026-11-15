@@ -1,3 +1,4 @@
+// frontend/src/features/chat/controller/useChatPageController.ts
 // Публичный контракт контроллера страницы чата.
 // Состояние, визуальные эффекты и операции живут отдельно.
 import { useChatSessionLifecycle } from './operations/useChatSessionLifecycle'

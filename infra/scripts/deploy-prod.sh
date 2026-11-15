@@ -51,6 +51,9 @@ docker compose \
     -f "$compose_file" \
     up -d --wait --wait-timeout 180 postgres redis
 
+# The runtime ACL is revoked during bootstrap. Close traffic before changing it.
+docker compose --env-file "$env_file" -f "$compose_file" stop nginx backend
+
 # Recreate the one-shot bootstrap job on every deployment.
 # Do not recreate PostgreSQL or Redis as a side effect.
 docker compose \
@@ -78,6 +81,13 @@ bootstrap_exit="$(docker wait "$bootstrap_id")"
 }
 
 echo "Database role bootstrap completed successfully."
+
+docker compose --env-file "$env_file" -f "$compose_file" \
+    up -d --no-deps --force-recreate db-migrate
+migration_id="$(docker compose --env-file "$env_file" -f "$compose_file" ps -aq db-migrate)"
+[[ -n "$migration_id" ]] || { echo 'db-migrate container missing' >&2; exit 1; }
+[[ "$(docker wait "$migration_id")" == 0 ]] || { echo 'Migration or ACL failed; backend remains offline' >&2; exit 1; }
+echo 'Flyway migration and runtime ACL completed successfully.'
 
 docker compose \
     --env-file "$env_file" \

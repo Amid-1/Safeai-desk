@@ -1,3 +1,4 @@
+#SafeAI-Desk/.github/scripts/check-frontend-coverage.py
 #!/usr/bin/env python3
 """Fail-closed per-group Vitest coverage gate. Baseline is never updated in CI."""
 from __future__ import annotations

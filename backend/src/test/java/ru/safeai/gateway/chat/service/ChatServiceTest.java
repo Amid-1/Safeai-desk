@@ -18,8 +18,6 @@ import ru.safeai.gateway.ai.execution.AiExecutionResult;
 import ru.safeai.gateway.ai.execution.AiExecutionService;
 import ru.safeai.gateway.ai.execution.AiOrganizationExecutionDeniedException;
 import ru.safeai.gateway.ai.execution.ProviderExecutionTarget;
-import ru.safeai.gateway.audit.AuditEventType;
-import ru.safeai.gateway.audit.details.AuditDetails;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.chat.config.ChatProperties;
 import ru.safeai.gateway.chat.dto.CreateChatRequest;
@@ -46,7 +44,6 @@ import ru.safeai.gateway.user.repository.UserRepository;
 
 import java.time.Duration;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -70,6 +67,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -894,48 +892,18 @@ class ChatServiceTest {
     }
 
     @Test
-    void archiveHidesChatWithoutDeletingItsAuditHistory() {
-        ChatSessionEntity session = ChatTestFixtures.session();
-        when(sessionRepository.findByIdAndUser_IdAndOrganization_IdAndArchivedAtIsNull(
-                ChatTestFixtures.CHAT_ID,
-                ChatTestFixtures.USER_ID,
-                ChatTestFixtures.ORGANIZATION_ID
-        )).thenReturn(Optional.of(session));
-        when(sessionRepository.saveAndFlush(session)).thenReturn(session);
+    void legacyArchiveDelegatesToCanonicalSerializedLifecycleWithoutBypassingGuards() {
+        ChatLifecycleService lifecycle = mock(ChatLifecycleService.class);
+        service.setLifecycleService(lifecycle);
+        service.archive(ChatTestFixtures.CHAT_ID, ChatTestFixtures.principal());
 
-        service.archive(
-                ChatTestFixtures.CHAT_ID,
-                ChatTestFixtures.principal()
-        );
-
-        assertThat(session.getArchivedAt()).isEqualTo(ChatTestFixtures.NOW);
-        assertThat(session.getArchivedByUserId()).isEqualTo(ChatTestFixtures.USER_ID);
-        verify(sessionRepository).saveAndFlush(session);
-        verify(auditEventService).recordPrincipalSnapshot(
-                argThat((SafeAiUserPrincipal principal) ->
-                        principal != null
-                                && ChatTestFixtures.USER_ID.equals(principal.getId())
-                                && ChatTestFixtures.ORGANIZATION_ID.equals(principal.getOrganizationId())),
-                eq(ChatTestFixtures.ORGANIZATION_ID),
-                eq(AuditEventType.CHAT_ARCHIVED),
-                argThat((AuditDetails details) ->
-                        details != null && isArchivedAuditDetails(details.toMap())
-                )
-        );
-    }
-
-    private static boolean isArchivedAuditDetails(
-            Map<String, ?> details
-    ) {
-        return ChatTestFixtures.CHAT_ID.equals(
-                details.get("chatId")
-        )
-                && "AUDIT_PRESERVED".equals(
-                details.get("retentionMode")
-        )
-                && ChatTestFixtures.NOW.toString().equals(
-                details.get("archivedAt")
-        );
+        verify(lifecycle).archive(eq(ChatTestFixtures.CHAT_ID),
+                argThat(principal -> principal != null
+                        && ChatTestFixtures.USER_ID.equals(principal.getId())
+                        && ChatTestFixtures.ORGANIZATION_ID.equals(principal.getOrganizationId())));
+        // The compatibility endpoint must NEVER edit the session independently;
+        // canonical lifecycle owns locking, persisted membership and audit.
+        verifyNoInteractions(sessionRepository, messageRepository, auditEventService);
     }
 
     @Test

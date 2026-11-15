@@ -1,3 +1,5 @@
+browser-ci.yml
+#SafeAI-Desk/.github/workflows/
 # CI for browser UI plus opt-in, real deployed staging integration.
 name: Browser UI и staging E2E
 

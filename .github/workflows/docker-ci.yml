@@ -20,7 +20,7 @@ jobs:
   docker:
     name: Dockerfiles, Compose и image scan
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 120
     steps:
       - name: Получение исходного кода
         uses: actions/checkout@v7
@@ -31,6 +31,14 @@ jobs:
         run: |
           docker version
           docker compose version
+
+      - name: Установка Java 21 для runtime ACL
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
 
       - name: Проверка production Compose topology
         shell: bash
@@ -111,6 +119,17 @@ jobs:
       - name: SQL/XML и pgvector HNSW на отдельной временной БД
         shell: bash
         run: bash infra/postgres/noble-candidate/xml-hnsw-smoke.sh safeai-postgres:ci
+
+      - name: Runtime ACL / чистая БД и upgrade V85
+        run: bash infra/scripts/test-runtime-acl.sh safeai-postgres:ci safeai-backend:ci
+
+      - name: Отчёты runtime ACL
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-acl-ci-${{ github.sha }}
+          path: backend/target/runtime-acl-reports/
+          retention-days: 14
 
       - name: JSON-отчёт Trivy для каждого Docker image
         shell: bash

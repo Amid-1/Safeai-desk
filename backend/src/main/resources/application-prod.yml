@@ -8,10 +8,7 @@ spring:
     password: ${SAFEAI_DB_APP_PASSWORD}
 
   flyway:
-    locations:
-      - classpath:db/migration
-    user: ${SAFEAI_DB_MIGRATOR_USER}
-    password: ${SAFEAI_DB_MIGRATOR_PASSWORD}
+    enabled: false
 
   jpa:
     properties:

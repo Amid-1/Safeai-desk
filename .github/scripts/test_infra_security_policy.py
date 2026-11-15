@@ -1,3 +1,4 @@
+#SafeAI-Desk/.github/scripts/test_infra_security_policy.py
 #!/usr/bin/env python3
 """Негативные тесты: обойти security gates и допуск к production нельзя."""
 import importlib.util
@@ -23,6 +24,7 @@ REQUIRED = [
     '.github/workflows/production-deploy.yml',
     '.github/workflows/security-ci.yml',
     '.github/workflows/ci-policy.yml',
+    '.github/workflows/performance-ci.yml',
 ]
 
 
@@ -67,6 +69,38 @@ class InfraPolicyTests(unittest.TestCase):
         self.alter('.github/workflows/docker-ci.yml',
                    'bash infra/scripts/test-postgres-bootstrap.sh safeai-postgres:ci',
                    'echo skipped')
+        with self.assertRaises(AssertionError):
+            policy.assert_policy(self.repo)
+
+    def test_missing_runtime_acl_contract_fails(self):
+        self.alter('.github/workflows/docker-ci.yml',
+                   'bash infra/scripts/test-runtime-acl.sh safeai-postgres:ci safeai-backend:ci',
+                   'echo skipped')
+        with self.assertRaises(AssertionError):
+            policy.assert_policy(self.repo)
+
+    def test_missing_release_runtime_contract_fails(self):
+        self.alter('.github/workflows/production-release.yml',
+                   'bash infra/scripts/test-runtime-acl.sh', 'echo skipped')
+        with self.assertRaises(AssertionError):
+            policy.assert_policy(self.repo)
+
+    def test_release_without_performance_fails(self):
+        self.alter('.github/workflows/production-release.yml',
+                   'needs: [preflight, performance]', 'needs: preflight')
+        with self.assertRaises(AssertionError):
+            policy.assert_policy(self.repo)
+
+    def test_performance_disabled_fails(self):
+        self.alter('.github/workflows/performance-ci.yml',
+                   '-Dsafeai.usage.performance=true', '-Dsafeai.usage.performance=false')
+        with self.assertRaises(AssertionError):
+            policy.assert_policy(self.repo)
+
+    def test_performance_missing_report_gate_fails(self):
+        self.alter('.github/workflows/performance-ci.yml',
+                   'run: python3 .github/scripts/check-performance-reports.py backend/target/surefire-reports',
+                   'run: echo skipped')
         with self.assertRaises(AssertionError):
             policy.assert_policy(self.repo)
 

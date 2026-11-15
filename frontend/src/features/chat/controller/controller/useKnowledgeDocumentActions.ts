@@ -1,4 +1,4 @@
-// frontend/src/features/knowledge/controller/useKnowledgeDocumentActions.ts
+// frontend/src/features/chat/controller/controller/useKnowledgeDocumentActions.ts
 import {
     useRef,
     useState,

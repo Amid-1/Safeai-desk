@@ -1,4 +1,4 @@
-// frontend/src/features/knowledge/controller/useKnowledgeVersionsController.ts
+// frontend/src/features/chat/controller/controller/useKnowledgeVersionsController.ts
 import {
     useEffect,
     useRef,

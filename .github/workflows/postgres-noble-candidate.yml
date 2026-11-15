@@ -1,3 +1,4 @@
+#SafeAI-Desk/.github/workflows/postgres-noble-candidate.yml
 name: SafeAI PostgreSQL Noble candidate (native amd64)
 
 # Parallel validation only. Production-release remains unchanged and fail-closed.

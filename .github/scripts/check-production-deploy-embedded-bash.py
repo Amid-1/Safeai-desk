@@ -1,3 +1,4 @@
+#SafeAI-Desk/.github/scripts/check-production-deploy-embedded-bash.py
 #!/usr/bin/env python3
 """Синтаксис встроенного SSH-скрипта и критичные запреты Production deploy."""
 from __future__ import annotations

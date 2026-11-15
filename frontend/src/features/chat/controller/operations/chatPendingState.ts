@@ -1,3 +1,4 @@
+// frontend/src/features/chat/controller/operations/chatPendingState.ts
 import type { PendingTurn, PendingTurnStatus } from '../../lib/chatPage.helpers'
 
 /** Меняются только UI-поля; идентичность исходной операции сохраняется. */

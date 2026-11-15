@@ -1,3 +1,4 @@
+#SafeAI-Desk/.github/workflows/acceptance-staging.yml
 # Not a PR gate: external provider costs and immutable S3 objects require approval.
 name: Staging acceptance / WORM и реальные AI
 

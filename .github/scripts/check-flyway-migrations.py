@@ -1,3 +1,4 @@
+#SafeAI-Desk/.github/scripts/check-flyway-migrations.py
 #!/usr/bin/env python3
 """Проверка целостности и append-only истории Flyway."""
 from __future__ import annotations

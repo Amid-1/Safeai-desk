@@ -48,7 +48,7 @@ describe('chat state composition', () => {
         const sendLock = result.current.sendInFlightRef
         const cancellation = result.current.reconciliationControllersRef
         const listAbort = result.current.listControllerRef
-        act(() => sendLock.current.add('request-1'))
+        act(() => { sendLock.current.add('request-1') })
 
         rerender({ active: chat, pending: secondPending })
         expect(result.current.sendInFlightRef).toBe(sendLock)

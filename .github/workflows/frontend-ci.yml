@@ -1,4 +1,4 @@
-#SafeAI-Desk/github/workflows/frontend-ci.yml
+#SafeAI-Desk/.github/workflows/frontend-ci.yml
 name: Проверка фронтенда
 
 on:

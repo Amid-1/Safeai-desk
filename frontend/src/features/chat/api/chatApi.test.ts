@@ -133,9 +133,9 @@ describe('chatApi production contract', () => {
         await archiveChat(CHAT_ID)
 
         expect(requestMock).toHaveBeenCalledWith(
-            `/api/chats/${CHAT_ID}`,
+            `/api/chats/${CHAT_ID}/archive`,
             expect.objectContaining({
-                method: 'DELETE',
+                method: 'POST',
             }),
         )
     })

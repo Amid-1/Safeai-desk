@@ -1,3 +1,4 @@
+// frontend/src/test/fixtures/applyReactStateUpdate.ts
 // Общий тестовый адаптер для React SetStateAction.
 // Позволяет мокам корректно обрабатывать как значение, так и функциональное обновление.
 import type { SetStateAction } from 'react'

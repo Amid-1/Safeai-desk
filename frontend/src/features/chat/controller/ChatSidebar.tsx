@@ -1,31 +1,33 @@
 // frontend/src/features/chat/controller/ChatSidebar.tsx
-import { useId, useRef, useState } from 'react'
-import type { SubmitEvent } from 'react'
+import {useCallback, useId, useRef, useState} from 'react'
+import type {SubmitEvent} from 'react'
 import Modal from '../../../shared/ui/Modal'
+import ChatArchiveModal from './ChatArchiveModal'
 import ChatHistoryRow from '../ui/ChatHistoryRow'
-import type { ChatPageController } from './useChatPageController'
+import type {ChatPageController} from './useChatPageController'
 
 type ChatSidebarProps = {
     controller: Pick<ChatPageController,
-    | 'chats'
-    | 'chatCreating'
-    | 'chatsLoading'
-    | 'pendingTurns'
-    | 'activeChat'
-    | 'openingChatId'
-    | 'archivingChatId'
-    | 'chatHasNext'
-    | 'moreChatsLoading'
-    | 'clock'
-    | 'handleCreateChat'
-    | 'setChatToRename'
-    | 'setChatToArchive'
-    | 'openChat'
-    | 'loadMoreChats'
->
+        | 'chats'
+        | 'chatCreating'
+        | 'chatsLoading'
+        | 'pendingTurns'
+        | 'activeChat'
+        | 'openingChatId'
+        | 'archivingChatId'
+        | 'chatHasNext'
+        | 'moreChatsLoading'
+        | 'clock'
+        | 'handleCreateChat'
+        | 'setChatToRename'
+        | 'setChatToArchive'
+        | 'openChat'
+        | 'loadMoreChats'
+        | 'setReloadToken'
+    >
 }
 
-export default function ChatSidebar({ controller }: ChatSidebarProps) {
+export default function ChatSidebar({controller}: ChatSidebarProps) {
     const {
         chats,
         chatCreating,
@@ -42,14 +44,19 @@ export default function ChatSidebar({ controller }: ChatSidebarProps) {
         setChatToArchive,
         openChat,
         loadMoreChats,
+        setReloadToken,
     } = controller
 
     const [creating, setCreating] = useState(false)
+    const [archiveOpen, setArchiveOpen] = useState(false)
     const [title, setTitle] = useState('')
     const [error, setError] = useState('')
     const titleId = useId()
     const hintId = useId()
     const titleRef = useRef<HTMLInputElement>(null)
+    const archiveChanged = useCallback(() => {
+        setReloadToken(value => value + 1)
+    }, [setReloadToken])
 
     async function submit(event: SubmitEvent<HTMLFormElement>) {
         event.preventDefault()
@@ -119,6 +126,13 @@ export default function ChatSidebar({ controller }: ChatSidebarProps) {
                 </Modal>
             )}
 
+            <button type="button" className="secondary-button"
+                    onClick={() => setArchiveOpen(true)}>Архив чатов
+            </button>
+            {archiveOpen && <ChatArchiveModal
+                onClose={() => setArchiveOpen(false)}
+                onChanged={archiveChanged}
+            />}
             <div className="chat-sidebar__heading">
                 <div>
                     <span className="chat-sidebar__eyebrow">История</span>

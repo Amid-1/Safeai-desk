@@ -1,3 +1,4 @@
+#SafeAI-Desk/.github/scripts/check-infra-security-policy.py
 #!/usr/bin/env python3
 """Fail-closed policy: Noble build parity, supply-chain protection and release gate.
 
@@ -75,10 +76,31 @@ def assert_policy(repo: Path) -> None:
     build = read('infra/scripts/build-prod.sh')
     security = read('.github/workflows/security-ci.yml')
     policy_workflow = read('.github/workflows/ci-policy.yml')
+    performance = read('.github/workflows/performance-ci.yml')
+    for trigger in ('workflow_dispatch', 'schedule', 'workflow_call'):
+        must(re.search(r'(?m)^  ' + trigger + r':\s*$', performance),
+             'Performance CI: отсутствует ' + trigger)
+    for field in ('-Dsafeai.erasure.load-tests=true',
+                  '-Dsafeai.usage.performance=true',
+                  'ChatErasureBatchBoundaryV86IntegrationTest,UsageExplainAnalyzePerformanceIntegrationTest,UsagePerformanceIntegrationTest',
+                  'run: python3 .github/scripts/check-performance-reports.py backend/target/surefire-reports'):
+        must(field in performance, 'Performance CI: отсутствует ' + field)
+    must('continue-on-error:' not in performance, 'Performance CI: ошибки не блокируют релиз')
+    release_gate = re.search(r'(?ms)^  performance:\n(.*?)(?=^  \w[\w-]*:|\Z)', prod)
+    must(bool(release_gate), 'Production release: отсутствует performance gate')
+    must('    needs: preflight\n' in release_gate[1]
+         and '    uses: ./.github/workflows/performance-ci.yml\n' in release_gate[1]
+         and 'continue-on-error:' not in release_gate[1],
+         'Production release: изменён обязательный Performance CI')
+    must(re.search(r'(?m)^    needs: \[preflight, performance\]\s*$', prod),
+         'Production release: publish не ждёт Performance CI')
+    must('test_performance_reports.py' in policy_workflow,
+         'CI policy: отсутствуют тесты Performance CI')
     assert 'infra/postgres/Dockerfile' in docker and 'infra/postgres/noble-candidate/Dockerfile' not in docker
     assert 'cat infra/postgres/base-image.txt' in docker
     assert 'UBUNTU_IMAGE=$base_image' in docker
     assert 'bash infra/scripts/test-postgres-bootstrap.sh safeai-postgres:ci' in docker
+    assert 'bash infra/scripts/test-runtime-acl.sh safeai-postgres:ci safeai-backend:ci' in docker
     assert 'bash infra/postgres/noble-candidate/xml-hnsw-smoke.sh safeai-postgres:ci' in docker
     assert 'docker buildx build --platform linux/amd64' in docker
     assert 'cat infra/postgres/base-image.txt' in prod
@@ -94,6 +116,9 @@ def assert_policy(repo: Path) -> None:
     assert '  deploy:' not in prod
     assert 'SAFEAI_POSTGRES_BUILD_TAG' in prod
     assert 'build-prod.sh "$build_env"' in prod
+    assert 'bash infra/scripts/test-runtime-acl.sh' in prod
+    assert 'safeai-$image.id' in prod
+    assert prod.index('bash infra/scripts/test-runtime-acl.sh') < prod.index('docker push ')
     assert 'attestations: write' in prod
     assert 'artifact-metadata: write' not in prod
     assert prod.count('create-storage-record: false') == 6

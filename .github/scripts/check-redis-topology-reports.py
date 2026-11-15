@@ -1,3 +1,4 @@
+#SafeAI-Desk/.github/scripts/check-redis-topology-reports.py
 #!/usr/bin/env python3
 """Fail-closed проверка двух внешних Redis-тестов после Failsafe verify."""
 from pathlib import Path

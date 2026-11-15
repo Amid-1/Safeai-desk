@@ -61,6 +61,8 @@ class KnowledgeRagErasureGuardIntegrationTest extends AbstractPostgresIntegratio
      */
     private final UUID knowledgeBaseId = UUID.randomUUID();
     private final UUID chatTurnId = UUID.randomUUID();
+    private final UUID chatSessionId = UUID.randomUUID();
+    private final UUID chatOwnerId = UUID.randomUUID();
     private final UUID providerOperationId = UUID.randomUUID();
 
     /** Идентификаторы исходного документа также уникальны для каждого теста. */
@@ -81,7 +83,7 @@ class KnowledgeRagErasureGuardIntegrationTest extends AbstractPostgresIntegratio
 
     @Test
     void baseDeletionInvalidatesKnowledgeContextIncludingEmptyRetrieval() {
-        createBaseDocumentAndVersion();
+        createBaseDocumentAndVersion(KnowledgeMode.KNOWLEDGE_ASSISTED);
         RagPreparation emptyContext = prepareForTest(KnowledgeMode.KNOWLEDGE_ASSISTED, 0);
         receipts.assertSourcesAvailable(emptyContext, PLATFORM_ORGANIZATION_ID);
 
@@ -131,7 +133,7 @@ class KnowledgeRagErasureGuardIntegrationTest extends AbstractPostgresIntegratio
 
     @Test
     void emptyRetrievalStillHoldsBaseScopedAttemptLease() {
-        createBaseDocumentAndVersion();
+        createBaseDocumentAndVersion(KnowledgeMode.KNOWLEDGE_ASSISTED);
         RagPreparation empty = prepareForTest(KnowledgeMode.KNOWLEDGE_ASSISTED, 0);
         UUID permitId = permitFor(empty);
         AiExecutionRequest request = executionRequest(permitId);
@@ -160,7 +162,7 @@ class KnowledgeRagErasureGuardIntegrationTest extends AbstractPostgresIntegratio
 
     @Test
     void newPermitIsDeniedAfterBaseDeletionEvenWithoutHits() {
-        createBaseDocumentAndVersion();
+        createBaseDocumentAndVersion(KnowledgeMode.KNOWLEDGE_ASSISTED);
         RagPreparation empty = prepareForTest(KnowledgeMode.KNOWLEDGE_ASSISTED, 0);
         markBaseDeleting();
 
@@ -175,7 +177,7 @@ class KnowledgeRagErasureGuardIntegrationTest extends AbstractPostgresIntegratio
         UUID foreignTurnId = UUID.randomUUID();
         UUID routeDecisionId = UUID.randomUUID();
         AiChatRequest aiRequest = new AiChatRequest(
-                UUID.randomUUID(), PLATFORM_ORGANIZATION_ID, UUID.randomUUID(), providerOperationId,
+                chatOwnerId, PLATFORM_ORGANIZATION_ID, chatSessionId, providerOperationId,
                 "system", "developer", "Question", List.of(), 4096L, 512);
         AiExecutionIdentity identity = mock(AiExecutionIdentity.class);
         when(identity.decisionId()).thenReturn(routeDecisionId);
@@ -254,7 +256,7 @@ class KnowledgeRagErasureGuardIntegrationTest extends AbstractPostgresIntegratio
                 })
                 .toList();
         AiChatRequest request = new AiChatRequest(
-                UUID.randomUUID(), PLATFORM_ORGANIZATION_ID, UUID.randomUUID(),
+                chatOwnerId, PLATFORM_ORGANIZATION_ID, chatSessionId,
                 providerOperationId, "system", "developer", "Question",
                 List.of(), 4096L, 512);
         return new RagPreparation(
@@ -274,7 +276,7 @@ class KnowledgeRagErasureGuardIntegrationTest extends AbstractPostgresIntegratio
 
     private AiExecutionRequest executionRequest(UUID permitId) {
         AiChatRequest aiRequest = new AiChatRequest(
-                UUID.randomUUID(), PLATFORM_ORGANIZATION_ID, UUID.randomUUID(), providerOperationId,
+                chatOwnerId, PLATFORM_ORGANIZATION_ID, chatSessionId, providerOperationId,
                 "system", "developer", "Question", List.of(), 4096L, 512);
 
         UUID routeDecisionId = UUID.randomUUID();
@@ -324,11 +326,15 @@ class KnowledgeRagErasureGuardIntegrationTest extends AbstractPostgresIntegratio
     }
 
     private RagPreparation createBaseDocumentAndVersion() {
-        RagPreparation prepared = prepareForTest(KnowledgeMode.KNOWLEDGE_ONLY, 1);
+        return createBaseDocumentAndVersion(KnowledgeMode.KNOWLEDGE_ONLY);
+    }
+
+    private RagPreparation createBaseDocumentAndVersion(KnowledgeMode mode) {
+        RagPreparation prepared = prepareForTest(mode, 1);
         KnowledgeRetrievalHit source = prepared.sources().getFirst().hit();
         assertThat(source.documentId()).isEqualTo(documentId);
         assertThat(source.documentVersionId()).isEqualTo(documentVersionId);
-        UUID actor = UUID.randomUUID();
+        UUID actor = chatOwnerId;
         insertUser(actor, PLATFORM_ORGANIZATION_ID,
                 "rag-guard-" + actor + "@example.test", true, "ADMIN", Instant.now());
 
@@ -358,6 +364,35 @@ class KnowledgeRagErasureGuardIntegrationTest extends AbstractPostgresIntegratio
                 """, source.documentVersionId(), PLATFORM_ORGANIZATION_ID,
                 knowledgeBaseId, source.documentId(), "a".repeat(64),
                 "guard/" + UUID.randomUUID(), actor)).isEqualTo(1);
+        // V86 requires a real, tenant-matched chat turn. Never bypass this
+        // guard by disabling the RAG trigger or spoofing a session id.
+        UUID sessionId = chatSessionId;
+        UUID userMessageId = UUID.randomUUID();
+        UUID clientRequestId = UUID.randomUUID();
+        insertChatSession(sessionId, actor, PLATFORM_ORGANIZATION_ID);
+        assertThat(jdbcTemplate.update("""
+                INSERT INTO public.chat_messages
+                    (id,session_id,organization_id,role,content,client_request_id,
+                     created_at,status,usage_status,pricing_status)
+                VALUES (?,?,?,'USER','RAG permit test',?,clock_timestamp(),
+                        'COMPLETED','NOT_APPLICABLE','NOT_APPLICABLE')
+                """, userMessageId, sessionId, PLATFORM_ORGANIZATION_ID,
+                clientRequestId)).isEqualTo(1);
+        assertThat(jdbcTemplate.update("""
+                INSERT INTO public.chat_turns
+                  (id,session_id,organization_id,user_id,client_request_id,
+                   request_content_hash,provider_operation_id,user_message_id,
+                   knowledge_base_id,knowledge_mode,state,processing_token,lease_until,provider,
+                   created_at,updated_at,version)
+                VALUES (?,?,?,?,?,repeat('0',64),?,?,?,?,
+                        'PROCESSING',gen_random_uuid(),clock_timestamp()+interval '1 hour',
+                        'mock',clock_timestamp(),clock_timestamp(),0)
+                """, chatTurnId, sessionId, PLATFORM_ORGANIZATION_ID, actor,
+                clientRequestId, providerOperationId, userMessageId,
+                knowledgeBaseId, mode.name())).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT knowledge_mode FROM public.chat_turns WHERE id=?
+                """, String.class, chatTurnId)).isEqualTo(mode.name());
         return prepared;
     }
 }

@@ -1,4 +1,4 @@
-// frontend/src/features/knowledge/controller/useKnowledgeDeletionController.ts
+// frontend/src/features/chat/controller/controller/useKnowledgeDeletionController.ts
 import {useEffect, useLayoutEffect, useRef, useState} from 'react'
 import type {KnowledgeDocument} from '../../../../entities/knowledge/api/knowledgeDocumentApi'
 import {

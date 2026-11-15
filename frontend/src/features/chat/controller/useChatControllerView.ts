@@ -1,3 +1,4 @@
+// frontend/src/features/chat/controller/useChatControllerView.ts
 // Производное состояние и жизненный цикл визуального представления чата.
 import { useEffect, useLayoutEffect, useMemo } from 'react'
 import { buildDisplayMessages, isProcessingPendingStatus } from '../lib/chatPage.helpers'
@@ -72,10 +73,9 @@ export function useChatControllerView(state: ChatControllerState) {
 
     useEffect(() => {
         const controllers = reconciliationControllersRef.current
+        const requestRefs = [listControllerRef, openControllerRef, historyControllerRef]
         return () => {
-            listControllerRef.current?.abort()
-            openControllerRef.current?.abort()
-            historyControllerRef.current?.abort()
+            requestRefs.forEach(ref => ref.current?.abort())
             controllers.forEach((controller) => controller.abort())
             controllers.clear()
         }

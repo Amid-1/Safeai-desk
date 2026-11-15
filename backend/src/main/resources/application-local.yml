@@ -8,10 +8,14 @@ app:
 spring:
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/safeai}
-    username: ${SPRING_DATASOURCE_USERNAME:safeai}
-    password: ${SPRING_DATASOURCE_PASSWORD:safeai_password}
+    # Runtime identity must never silently fall back to the DBA.
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
 
   flyway:
+    # Separate migration identity. No fallback to the app login.
+    user: ${SPRING_FLYWAY_USER}
+    password: ${SPRING_FLYWAY_PASSWORD}
     locations:
       - classpath:db/migration
       - classpath:db/local-migration

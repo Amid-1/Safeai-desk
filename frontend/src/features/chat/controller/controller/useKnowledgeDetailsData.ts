@@ -1,4 +1,4 @@
-// frontend/src/features/knowledge/controller/useKnowledgeDetailsData.ts
+// frontend/src/features/chat/controller/controller/useKnowledgeDetailsData.ts
 import {
     useCallback,
     useEffect,

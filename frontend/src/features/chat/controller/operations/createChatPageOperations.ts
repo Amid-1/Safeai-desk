@@ -1,3 +1,4 @@
+// frontend/src/features/chat/controller/operations/createChatPageOperations.ts
 // Только композиция чистых фабрик действий. Хуки React здесь не вызываются.
 // Каждая фабрика получает тот же snapshot состояния, что и прежний контроллер.
 import { createDirectoryActions } from './chatDirectoryActions'

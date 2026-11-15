@@ -6,6 +6,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import ru.safeai.gateway.knowledge.rag.KnowledgeRagExecutionPermitService;
+import ru.safeai.gateway.knowledge.config.KnowledgeErasureWorkerDatabaseConfig.WorkerConnections;
 import ru.safeai.gateway.knowledge.storage.ErasureTombstoneJournal;
 import ru.safeai.gateway.knowledge.storage.ObjectStorage;
 import ru.safeai.gateway.knowledge.testsupport.KnowledgeErasureTestJournal;
@@ -45,12 +46,11 @@ class KnowledgeDocumentDeletionExecutorWiringTest {
     }
 
     @Test
-    void springUsesOnlyTheFiveArgumentConstructorForInjection() throws Exception {
-        // У Spring должен быть ровно один явно выбранный конструктор внедрения.
+    void springInjectsOnlyDedicatedWorkerConnectionConstructor() throws Exception {
+        // Spring must never inject the normal app JdbcTemplate into the eraser.
         Constructor<KnowledgeDocumentDeletionExecutor> primary =
                 KnowledgeDocumentDeletionExecutor.class.getConstructor(
-                        JdbcTemplate.class,
-                        PlatformTransactionManager.class,
+                        WorkerConnections.class,
                         ObjectStorage.class,
                         KnowledgeRagExecutionPermitService.class,
                         ErasureTombstoneJournal.class);

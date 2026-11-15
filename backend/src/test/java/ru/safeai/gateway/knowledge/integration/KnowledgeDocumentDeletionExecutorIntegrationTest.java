@@ -1,11 +1,13 @@
 package ru.safeai.gateway.knowledge.integration;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
+import ru.safeai.gateway.knowledge.config.KnowledgeErasureWorkerDatabaseConfig.WorkerConnections;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.transaction.PlatformTransactionManager;
 import ru.safeai.gateway.knowledge.testsupport.KnowledgeErasureTestJournal;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.knowledge.service.KnowledgeDocumentDeletionAcceptanceService;
@@ -29,7 +31,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SpringBootTest(properties = {"safeai.rate-limit.ai-messages.enabled=false"})
 @ActiveProfiles("test")
 class KnowledgeDocumentDeletionExecutorIntegrationTest extends AbstractPostgresIntegrationTest {
-    @Autowired private PlatformTransactionManager transactions;
+    private WorkerConnections deletionWorkerConnections;
+
+    @BeforeEach
+    void createIsolatedKnowledgeWorker() {
+        deletionWorkerConnections = new WorkerConnections(
+                POSTGRES.getJdbcUrl(), "safeai_knowledge_erasure_worker",
+                "test-only-knowledge-worker-password");
+    }
+
+    @AfterEach
+    void closeIsolatedKnowledgeWorker() {
+        if (deletionWorkerConnections != null) deletionWorkerConnections.close();
+    }
+
     @Autowired private KnowledgeDocumentDeletionAcceptanceService acceptance;
 
     @Test
@@ -67,7 +82,8 @@ class KnowledgeDocumentDeletionExecutorIntegrationTest extends AbstractPostgresI
             @Override public void delete(String k) { }
             @Override public void purgeAllVersionsVerified(String k) { purged.add(k); }
         };
-        new KnowledgeDocumentDeletionExecutor(jdbcTemplate, transactions, store, null, KnowledgeErasureTestJournal.INSTANCE).poll();
+        new KnowledgeDocumentDeletionExecutor(deletionWorkerConnections.jdbc(), deletionWorkerConnections.transactionManager(), store, null, KnowledgeErasureTestJournal.INSTANCE)
+                .processOperation(operation.operationId());
 
         assertThat(purged).containsExactly(key);
         assertThat(acceptance.status(base, operation.operationId(), admin).state())
@@ -119,7 +135,8 @@ class KnowledgeDocumentDeletionExecutorIntegrationTest extends AbstractPostgresI
             @Override public void delete(String k) { }
             @Override public void purgeAllVersionsVerified(String k) { purged.add(k); }
         };
-        new KnowledgeDocumentDeletionExecutor(jdbcTemplate, transactions, store, null, KnowledgeErasureTestJournal.INSTANCE).poll();
+        new KnowledgeDocumentDeletionExecutor(deletionWorkerConnections.jdbc(), deletionWorkerConnections.transactionManager(), store, null, KnowledgeErasureTestJournal.INSTANCE)
+                .pollOperation(operation.operationId());
         assertThat(purged).isEmpty();
         assertThat(acceptance.status(base, operation.operationId(), admin).state())
                 .isEqualTo("NEEDS_REVIEW");

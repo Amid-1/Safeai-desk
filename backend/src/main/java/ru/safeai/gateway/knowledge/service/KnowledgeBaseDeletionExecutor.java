@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
+import ru.safeai.gateway.knowledge.config.KnowledgeErasureWorkerDatabaseConfig.WorkerConnections;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -49,7 +50,6 @@ public class KnowledgeBaseDeletionExecutor {
         this(jdbc, transactionManager, childExecutorEnabled, executionPermits, null);
     }
 
-    @Autowired
     public KnowledgeBaseDeletionExecutor(
             JdbcTemplate jdbc, PlatformTransactionManager transactionManager,
             @Value("${safeai.knowledge.deletion.executor-enabled:false}") boolean childExecutorEnabled,
@@ -60,6 +60,16 @@ public class KnowledgeBaseDeletionExecutor {
         this.childExecutorEnabled = childExecutorEnabled;
         this.executionPermits = executionPermits;
         this.tombstoneJournal = tombstoneJournal;
+    }
+
+    @Autowired
+    public KnowledgeBaseDeletionExecutor(
+            WorkerConnections connections,
+            @Value("${safeai.knowledge.deletion.executor-enabled:false}") boolean childExecutorEnabled,
+            KnowledgeRagExecutionPermitService executionPermits,
+            ErasureTombstoneJournal tombstoneJournal) {
+        this(connections.jdbc(), connections.transactionManager(), childExecutorEnabled,
+                executionPermits, tombstoneJournal);
     }
 
     private record Claim(UUID id, UUID baseId, UUID orgId, UUID requestedByUserId,
@@ -73,6 +83,24 @@ public class KnowledgeBaseDeletionExecutor {
         for (int i = 0; i < 5; i++) {
             Claim claim = claim();
             if (claim == null) return;
+            processClaim(claim, false);
+        }
+    }
+
+    /**
+     * Processes no more than one eligible attempt of exactly this base erasure.
+     * Unlike processOperation(), it does not require an immediate DELETED state:
+     * blocked child operations, active child deletion and retention are valid
+     * intermediate outcomes. It never claims another queued base or bypasses
+     * the existing SQL worker-role, lease and V82/V89 guards.
+     */
+    public void pollOperation(UUID operationId) {
+        java.util.Objects.requireNonNull(operationId, "operationId");
+        if (!childExecutorEnabled) {
+            throw new IllegalStateException("Child document deletion executor must be enabled");
+        }
+        Claim claim = claim(operationId);
+        if (claim != null) {
             processClaim(claim, false);
         }
     }
@@ -109,7 +137,9 @@ public class KnowledgeBaseDeletionExecutor {
 
     private void processClaim(Claim claim, boolean propagateFailures) {
         try {
-            publishBaseTombstoneIfReady(claim);
+            // The transactional V89 trigger queues the external COMMITTED receipt
+            // only after the base has been deleted and marked DELETED.
+            // The separate publisher delivers it after the PostgreSQL commit.
             transactions.executeWithoutResult(tx -> finishOrReschedule(claim));
         } catch (LeaseLost lost) {
             log.warn("Base deletion lease expired or fenced: {}", claim.id());
@@ -177,38 +207,14 @@ public class KnowledgeBaseDeletionExecutor {
         return claimed.isEmpty() ? null : claimed.getFirst();
     }
 
-    /** External journal I/O is deliberately outside the PostgreSQL transaction. */
-    private void publishBaseTombstoneIfReady(Claim claim) throws java.io.IOException {
-        if (tombstoneJournal == null) {
-            throw new IllegalStateException("External erasure tombstone journal is required before DELETED");
-        }
-        if (executionPermits != null && executionPermits.hasActiveAttemptsForBase(claim.orgId(), claim.baseId())) {
-            return;
-        }
-        List<String> childStates = jdbc.queryForList("""
-                SELECT state FROM public.knowledge_document_deletions_v78
-                 WHERE organization_id=? AND knowledge_base_id=?
-                """, String.class, claim.orgId(), claim.baseId());
-        if (childStates.stream().anyMatch(state -> !"DELETED".equals(state))) return;
-        boolean unsettled = Boolean.TRUE.equals(jdbc.queryForObject("""
-                SELECT EXISTS (SELECT 1 FROM public.knowledge_storage_upload_intents
-                 WHERE organization_id=? AND knowledge_base_id=?
-                   AND state NOT IN ('LINKED','CLEANED'))
-                """, Boolean.class, claim.orgId(), claim.baseId()));
-        if (unsettled) return;
-        boolean remaining = Boolean.TRUE.equals(jdbc.queryForObject("""
-                SELECT EXISTS(SELECT 1 FROM public.knowledge_documents WHERE knowledge_base_id=?)
-                    OR EXISTS(SELECT 1 FROM public.knowledge_document_versions WHERE knowledge_base_id=?)
-                    OR EXISTS(SELECT 1 FROM public.knowledge_document_chunks WHERE knowledge_base_id=?)
-                    OR EXISTS(SELECT 1 FROM public.knowledge_ingestion_jobs WHERE knowledge_base_id=?)
-                """, Boolean.class, claim.baseId(), claim.baseId(), claim.baseId(), claim.baseId()));
-        if (!remaining) {
-            tombstoneJournal.publishBaseCommitted(claim.id(), claim.orgId(), claim.baseId(),
-                    claim.requestedByUserId(), claim.expectedVersion());
-        }
-    }
+    // External journal delivery is deliberately moved to
+    // KnowledgeErasureCommitPublisher (V89 outbox, post-commit).
 
     private void finishOrReschedule(Claim claim) {
+        // Fail before irreversible SQL if the external receipt boundary is absent.
+        if (tombstoneJournal == null) {
+            throw new IllegalStateException("External erasure tombstone journal required");
+        }
         // Serialize parent finalization with base mutation, then validate live lease.
         List<String> states = jdbc.queryForList("""
                 SELECT lifecycle_state FROM public.knowledge_bases

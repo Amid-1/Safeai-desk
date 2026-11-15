@@ -1,3 +1,4 @@
+#SafeAI-Desk/.github/scripts/test_maven_reports.py
 #!/usr/bin/env python3
 # SafeAI-Desk/.github/scripts/test_maven_reports.py
 """Офлайн-регрессии защиты от неполных и пропущенных тестов."""

@@ -9,6 +9,9 @@ import io.minio.SetBucketVersioningArgs;
 import io.minio.messages.Item;
 import io.minio.messages.VersioningConfiguration;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
+import ru.safeai.gateway.knowledge.config.KnowledgeErasureWorkerDatabaseConfig.WorkerConnections;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
@@ -61,6 +64,20 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SpringBootTest(properties = {"safeai.rate-limit.ai-messages.enabled=false"})
 @ActiveProfiles("test")
 class KnowledgeBaseDeletionEndToEndIntegrationTest extends AbstractPostgresIntegrationTest {
+    private WorkerConnections deletionWorkerConnections;
+
+    @BeforeEach
+    void createIsolatedKnowledgeWorker() {
+        deletionWorkerConnections = new WorkerConnections(
+                POSTGRES.getJdbcUrl(), "safeai_knowledge_erasure_worker",
+                "test-only-knowledge-worker-password");
+    }
+
+    @AfterEach
+    void closeIsolatedKnowledgeWorker() {
+        if (deletionWorkerConnections != null) deletionWorkerConnections.close();
+    }
+
 
     private static final String ACCESS_KEY = "safeai";
     private static final String SECRET_KEY = "safeai-local-change-me";
@@ -141,13 +158,22 @@ class KnowledgeBaseDeletionEndToEndIntegrationTest extends AbstractPostgresInteg
                         base)).isEqualTo(2);
 
                 // Parent must not delete the base before both children finish.
-                parentWorker().poll();
+                parentWorker().pollOperation(accepted.operationId());
                 assertThat(baseDeletionState(accepted.operationId()))
                         .isEqualTo("DELETING");
                 assertThat(count("SELECT count(*) FROM knowledge_bases WHERE id=?", base))
                         .isEqualTo(1);
 
-                childWorker(storage).poll();
+                List<UUID> childOperations = jdbcTemplate.queryForList("""
+                        SELECT id FROM public.knowledge_document_deletions_v78
+                        WHERE organization_id=? AND knowledge_base_id=? AND state='DELETING'
+                        ORDER BY id
+                        """, UUID.class, PLATFORM_ORGANIZATION_ID, base);
+                assertThat(childOperations).hasSize(2);
+                KnowledgeDocumentDeletionExecutor deleting = childWorker(storage);
+                for (UUID childOperation : childOperations) {
+                    deleting.processOperation(childOperation);
+                }
                 assertThat(count("SELECT count(*) FROM knowledge_document_deletions_v78 "
                         + "WHERE knowledge_base_id=? AND state='DELETED'", base)).isEqualTo(2);
                 for (String key : List.of(firstKey, secondKey, thirdKey)) {
@@ -161,7 +187,7 @@ class KnowledgeBaseDeletionEndToEndIntegrationTest extends AbstractPostgresInteg
                 jdbcTemplate.update("UPDATE knowledge_base_deletions_v82 "
                         + "SET next_attempt_at=clock_timestamp() WHERE id=?",
                         accepted.operationId());
-                parentWorker().poll();
+                parentWorker().processOperation(accepted.operationId());
                 assertThat(baseDeletionState(accepted.operationId()))
                         .isEqualTo("DELETED");
                 assertThat(count("SELECT count(*) FROM knowledge_bases WHERE id=?", base))
@@ -197,7 +223,7 @@ class KnowledgeBaseDeletionEndToEndIntegrationTest extends AbstractPostgresInteg
         KnowledgeBaseDeletionResponse accepted = accept(target,
                 "base-empty-" + UUID.randomUUID(), principal(actor));
 
-        parentWorker().poll();
+        parentWorker().processOperation(accepted.operationId());
 
         assertThat(baseDeletionState(accepted.operationId()))
                 .isEqualTo("DELETED");
@@ -227,13 +253,20 @@ class KnowledgeBaseDeletionEndToEndIntegrationTest extends AbstractPostgresInteg
                 "base-uncertain-" + UUID.randomUUID(), principal(actor));
         ObjectStorage storage = org.mockito.Mockito.mock(ObjectStorage.class);
 
-        childWorker(storage).poll();
+        childWorker(storage).pollOperation(documentOperation(base, document));
         assertThat(count("SELECT count(*) FROM knowledge_document_deletions_v78 "
-                + "WHERE knowledge_base_id=? AND state='NEEDS_REVIEW'", base)).isEqualTo(1);
+                + "WHERE knowledge_base_id=? AND state='NEEDS_REVIEW'", base))
+                .as("document: %s", documentDeletionDiagnostics(base)).isEqualTo(1);
         org.mockito.Mockito.verifyNoInteractions(storage);
-        parentWorker().poll();
+        parentWorker().pollOperation(accepted.operationId());
 
         assertThat(baseDeletionState(accepted.operationId()))
+                .as("V82 parent operation %s: %s", accepted.operationId(),
+                        jdbcTemplate.queryForList("""
+                            SELECT state, attempts, last_error_code, next_attempt_at,
+                                   lease_token, lease_until
+                            FROM public.knowledge_base_deletions_v82 WHERE id=?
+                            """, accepted.operationId()))
                 .isEqualTo("NEEDS_REVIEW");
         assertThat(count("SELECT count(*) FROM knowledge_bases WHERE id=? "
                 + "AND lifecycle_state='DELETING' AND NOT enabled", base)).isEqualTo(1);
@@ -259,9 +292,15 @@ class KnowledgeBaseDeletionEndToEndIntegrationTest extends AbstractPostgresInteg
                        last_error_code='OBJECT_LOCK'
                  WHERE knowledge_base_id=? AND document_id=? AND state='DELETING'
                 """, base, doc);
-        parentWorker().poll();
+        parentWorker().pollOperation(accepted.operationId());
 
         assertThat(baseDeletionState(accepted.operationId()))
+                .as("V82 parent operation %s: %s", accepted.operationId(),
+                        jdbcTemplate.queryForList("""
+                            SELECT state, attempts, last_error_code, next_attempt_at,
+                                   lease_token, lease_until
+                            FROM public.knowledge_base_deletions_v82 WHERE id=?
+                            """, accepted.operationId()))
                 .isEqualTo("BLOCKED_BY_RETENTION");
         assertThat(count("SELECT count(*) FROM knowledge_bases "
                 + "WHERE id=? AND lifecycle_state='DELETING' AND NOT enabled", base))
@@ -293,21 +332,22 @@ class KnowledgeBaseDeletionEndToEndIntegrationTest extends AbstractPostgresInteg
             }
         };
 
-        childWorker(storage).poll();
+        UUID childOperation = documentOperation(base, document);
+        childWorker(storage).pollOperation(childOperation);
         assertThat(purgeCalls.get()).isEqualTo(1);
         assertThat(count("SELECT count(*) FROM knowledge_document_deletions_v78 "
                 + "WHERE knowledge_base_id=? AND state='DELETING' AND attempts=1", base))
                 .isEqualTo(1);
         assertThat(count("SELECT count(*) FROM knowledge_documents WHERE id=?", document))
                 .isEqualTo(1);
-        parentWorker().poll();
+        parentWorker().pollOperation(accepted.operationId());
         assertThat(baseDeletionState(accepted.operationId()))
                 .isEqualTo("DELETING");
 
         // Fast-forward only the transient child's retry in disposable test DB.
         jdbcTemplate.update("UPDATE knowledge_document_deletions_v78 "
                 + "SET next_attempt_at=clock_timestamp() WHERE knowledge_base_id=?", base);
-        childWorker(storage).poll();
+        childWorker(storage).processOperation(childOperation);
         assertThat(purgeCalls.get()).isEqualTo(2);
         assertThat(count("SELECT count(*) FROM knowledge_document_deletions_v78 "
                 + "WHERE knowledge_base_id=? AND state='DELETED'", base)).isEqualTo(1);
@@ -315,7 +355,7 @@ class KnowledgeBaseDeletionEndToEndIntegrationTest extends AbstractPostgresInteg
         jdbcTemplate.update("UPDATE knowledge_base_deletions_v82 "
                 + "SET next_attempt_at=clock_timestamp() WHERE id=?",
                 accepted.operationId());
-        parentWorker().poll();
+        parentWorker().processOperation(accepted.operationId());
         assertThat(baseDeletionState(accepted.operationId()))
                 .isEqualTo("DELETED");
     }
@@ -372,11 +412,29 @@ class KnowledgeBaseDeletionEndToEndIntegrationTest extends AbstractPostgresInteg
     }
 
     private KnowledgeBaseDeletionExecutor parentWorker() {
-        return new KnowledgeBaseDeletionExecutor(jdbcTemplate, transactionManager, true, null, KnowledgeErasureTestJournal.INSTANCE);
+        return new KnowledgeBaseDeletionExecutor(deletionWorkerConnections.jdbc(), deletionWorkerConnections.transactionManager(), true, null, KnowledgeErasureTestJournal.INSTANCE);
     }
 
     private KnowledgeDocumentDeletionExecutor childWorker(ObjectStorage storage) {
-        return new KnowledgeDocumentDeletionExecutor(jdbcTemplate, transactionManager, storage, null, KnowledgeErasureTestJournal.INSTANCE);
+        return new KnowledgeDocumentDeletionExecutor(deletionWorkerConnections.jdbc(), deletionWorkerConnections.transactionManager(), storage, null, KnowledgeErasureTestJournal.INSTANCE);
+    }
+
+    private UUID documentOperation(UUID base, UUID document) {
+        UUID op = jdbcTemplate.queryForObject("""
+                SELECT id FROM public.knowledge_document_deletions_v78
+                WHERE organization_id=? AND knowledge_base_id=? AND document_id=?
+                """, UUID.class, PLATFORM_ORGANIZATION_ID, base, document);
+        assertThat(op).as("Durable document erasure operation must exist").isNotNull();
+        return op;
+    }
+
+    private List<java.util.Map<String, Object>> documentDeletionDiagnostics(UUID base) {
+        return jdbcTemplate.queryForList("""
+                SELECT id,state,attempts,last_error_code,lease_until,next_attempt_at
+                FROM public.knowledge_document_deletions_v78
+                WHERE organization_id=? AND knowledge_base_id=?
+                ORDER BY id
+                """, PLATFORM_ORGANIZATION_ID, base);
     }
 
     private String baseDeletionState(UUID operation) {

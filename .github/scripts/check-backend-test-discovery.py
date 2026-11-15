@@ -1,3 +1,4 @@
+#SafeAI-Desk/.github/scripts/check-backend-test-discovery.py
 #!/usr/bin/env python3
 """Контроль запуска каждого локального *IT и инвентаризация функциональных модулей."""
 from __future__ import annotations

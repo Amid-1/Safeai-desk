@@ -148,16 +148,16 @@ export default function ChatHistoryRow({
                         disabled={Boolean(pending) || archiving}
                         title={pending
                             ? 'Дождитесь завершения запроса'
-                            : 'Убрать из списка, сохранив историю'}
+                            : 'Архивировать, сохранив историю'}
                         onClick={() => {
                             setActionsOpen(false)
                             onArchive(chat)
                         }}
                     >
-                        Убрать из списка
+                        Архивировать
                     </button>
                     {pending && (
-                        <small>Убрать чат можно, когда определится результат запроса.</small>
+                        <small>Архивировать чат можно, когда определится результат запроса.</small>
                     )}
                 </div>
             )}

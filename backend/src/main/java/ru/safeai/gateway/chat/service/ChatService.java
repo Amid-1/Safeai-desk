@@ -56,6 +56,13 @@ public class ChatService {
     private final ChatProperties properties;
     private final Clock clock;
     private final ChatTurnExecutionCoordinator turnExecution;
+    private ChatLifecycleService lifecycle;
+
+    /** Spring wires the canonical lifecycle implementation after construction. */
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setLifecycleService(ChatLifecycleService lifecycle) {
+        this.lifecycle = Objects.requireNonNull(lifecycle);
+    }
 
     /**
      * Chat has no provider dependency. All physical I/O is delegated to the
@@ -167,28 +174,14 @@ public class ChatService {
                 .map(mapper::toChatResponse);
     }
 
-    @Transactional
-    public void archive(
-            UUID chatId,
-            SafeAiUserPrincipal currentUser
-    ) {
-        ChatSessionEntity session = findOwnedSession(chatId, currentUser);
-        Instant archivedAt = clock.instant();
-
-        session.archive(currentUser.getId(), archivedAt);
-        sessionRepository.saveAndFlush(session);
-
-        auditEventService.recordPrincipalSnapshot(
-                currentUser,
-                currentUser.getOrganizationId(),
-                AuditEventType.CHAT_ARCHIVED,
-                () -> Map.of(
-                        "chatId", session.getId(),
-                        "archivedAt", archivedAt.toString(),
-                        "retentionMode", "AUDIT_PRESERVED"
-                )
-        );
+/** Legacy DELETE route. Delegates to the same audited, serialized archive
+ * implementation as POST /api/chats/{id}/archive. */
+public void archive(UUID chatId, SafeAiUserPrincipal currentUser) {
+    if (lifecycle == null) {
+        throw new IllegalStateException("ChatLifecycleService was not injected");
     }
+    lifecycle.archive(chatId,currentUser);
+}
 
     @Transactional(readOnly = true)
     public ChatDetailsResponse findById(

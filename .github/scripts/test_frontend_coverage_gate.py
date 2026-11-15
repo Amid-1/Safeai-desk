@@ -1,3 +1,4 @@
+#SafeAI-Desk/.github/scripts/test_frontend_coverage_gate.py
 #!/usr/bin/env python3
 """Negative tests: missing coverage, wrong counters, group/branch regressions."""
 from __future__ import annotations

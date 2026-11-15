@@ -89,8 +89,8 @@ run_bootstrap() {
         --env POSTGRES_PORT=5432 \
         --env POSTGRES_DB=safeai_contract \
         --env POSTGRES_USER=safeai_bootstrap_it \
-        --env SAFEAI_DB_MIGRATOR_USER=safeai_migrator_it \
-        --env SAFEAI_DB_APP_USER=safeai_app_it \
+        --env SAFEAI_DB_MIGRATOR_USER=safeai_migrator \
+        --env SAFEAI_DB_APP_USER=safeai_app \
         --entrypoint /bin/bash \
         "$image" /opt/safeai/10-create-app-roles.sh \
         > "$workdir/bootstrap-$iteration.log" 2>&1; then
@@ -121,13 +121,13 @@ assert_sql() {
 assert_sql "vector extension installed" \
     "SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'vector')"
 assert_sql "migrator and app roles exist" \
-    "SELECT count(*) = 2 FROM pg_roles WHERE rolname IN ('safeai_migrator_it','safeai_app_it')"
+    "SELECT count(*) = 2 FROM pg_roles WHERE rolname IN ('safeai_migrator','safeai_app')"
 assert_sql "runtime user has no elevated role attributes" \
-    "SELECT NOT (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls) FROM pg_roles WHERE rolname = 'safeai_app_it'"
+    "SELECT NOT (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls) FROM pg_roles WHERE rolname = 'safeai_app'"
 assert_sql "runtime user cannot CREATE on public schema" \
-    "SELECT has_schema_privilege('safeai_app_it','public','USAGE') AND NOT has_schema_privilege('safeai_app_it','public','CREATE')"
+    "SELECT has_schema_privilege('safeai_app','public','USAGE') AND NOT has_schema_privilege('safeai_app','public','CREATE')"
 assert_sql "database owned by migrator" \
-    "SELECT pg_get_userbyid(datdba) = 'safeai_migrator_it' FROM pg_database WHERE datname = 'safeai_contract'"
+    "SELECT pg_get_userbyid(datdba) = 'safeai_migrator' FROM pg_database WHERE datname = 'safeai_contract'"
 
 app_user="$(docker run --rm \
     --network "$network" \
@@ -135,10 +135,10 @@ app_user="$(docker run --rm \
     --entrypoint /bin/sh \
     "$image" -ec '
         export PGPASSWORD="$(cat /run/secrets/db_app_password)"
-        psql -h postgres -U safeai_app_it -d safeai_contract -At \
+        psql -h postgres -U safeai_app -d safeai_contract -At \
             -c "SELECT current_user"
     ')"
-[[ "$app_user" == safeai_app_it ]] || {
+[[ "$app_user" == safeai_app ]] || {
     echo "FAIL: runtime user cannot authenticate over TCP" >&2
     exit 1
 }

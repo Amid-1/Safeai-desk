@@ -1,3 +1,4 @@
+#SafeAI-Desk/.github/scripts/test_production_deploy_embedded_bash.py
 #!/usr/bin/env python3
 """Негативные проверки встроенного Bash и PostgreSQL-guards."""
 import importlib.util
