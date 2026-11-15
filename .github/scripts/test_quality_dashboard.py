@@ -60,6 +60,33 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(data['rows'][0]['name'], 'chat')
             self.assertEqual(data['overall']['line'], 0.8)
 
+    def test_frontend_knowledge_controller_moves_preserve_logical_coverage(self):
+        files = (
+            'useKnowledgeDeletionController.ts',
+            'useKnowledgeDetailsData.ts',
+            'useKnowledgeDetailsPageController.ts',
+            'useKnowledgeDirectoryController.ts',
+            'useKnowledgeDocumentActions.ts',
+            'useKnowledgeUploadController.ts',
+            'useKnowledgeVersionsController.ts',
+        )
+        entry = {'lines': {'total': 10, 'covered': 8}, 'branches': {'total': 4, 'covered': 2}}
+        chat_entry = {'lines': {'total': 12, 'covered': 6}, 'branches': {'total': 8, 'covered': 4}}
+        total = {'lines': {'total': 82, 'covered': 62}, 'branches': {'total': 36, 'covered': 18}}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'coverage-summary.json'
+            for folder in ('knowledge/controller/', 'chat/controller/controller/'):
+                data = {'total': total, '/repo/frontend/src/features/chat/controller/ChatKnowledgeModeSelector.tsx': chat_entry}
+                data.update({f'/repo/frontend/src/features/{folder}{name}': entry for name in files})
+                path.write_text(json.dumps(data), encoding='utf-8')
+                rows = {row['name']: row for row in report.frontend_stats(path)['rows']}
+                self.assertEqual(rows['knowledge']['line_count'], 70)
+                self.assertEqual(rows['knowledge']['branch_count'], 28)
+                self.assertAlmostEqual(rows['knowledge']['line'], 0.8)
+                self.assertAlmostEqual(rows['knowledge']['branch'], 0.5)
+                self.assertEqual(rows['chat']['line_count'], 12)
+                self.assertEqual(rows['chat']['branch_count'], 8)
+
     def test_java_style_regression(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)

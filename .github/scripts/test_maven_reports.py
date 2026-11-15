@@ -18,6 +18,12 @@ BASE = [
     ("ru.safeai.gateway.usage.repository.UsagePerformanceIntegrationTest",
      "rollupBackedReportsFor366DaysStayWithinConfiguredSla"),
 ]
+STANDARD = BASE + [
+    ("ru.safeai.gateway.chat.integration.ChatErasureBatchBoundaryV86IntegrationTest",
+     "exactlyTenThousandCompletesWithoutOffByOne"),
+    ("ru.safeai.gateway.chat.integration.ChatErasureBatchBoundaryV86IntegrationTest",
+     "tenThousandAndOneIsRejectedBeforeIntentAndWithoutAnyRedaction"),
+]
 
 class MavenReportGateTest(unittest.TestCase):
     def call(self, mode, skipped, total):
@@ -25,8 +31,11 @@ class MavenReportGateTest(unittest.TestCase):
             path = Path(t) / "TEST-case.xml"
             root = Element("testsuite")
             for i in range(total):
-                SubElement(root, "testcase", classname="test.Clazz", name=f"test_{i}")
-            for clazz, name in BASE:
+                name = f"test_{i}"
+                case = SubElement(root, "testcase", classname="test.Clazz", name=name)
+                if ("test.Clazz", name) in skipped:
+                    SubElement(case, "skipped", message="unexpected skip")
+            for clazz, name in (STANDARD if mode == "standard" else BASE):
                 case = SubElement(root, "testcase", classname=clazz, name=name)
                 if (clazz, name) in skipped:
                     SubElement(case, "skipped", message="system property disabled")
@@ -35,13 +44,20 @@ class MavenReportGateTest(unittest.TestCase):
                                   capture_output=True, text=True)
 
     def test_standard_exact_baseline(self):
-        self.assertEqual(self.call("standard", set(BASE), 2000).returncode, 0)
+        self.assertEqual(self.call("standard", set(STANDARD), 2000).returncode, 0)
 
     def test_standard_reject_new_skip(self):
-        self.assertNotEqual(self.call("standard", set(), 2000).returncode, 0)
+        self.assertNotEqual(self.call("standard", set(STANDARD) | {("test.Clazz", "test_0")}, 2000).returncode, 0)
+
+    def test_standard_reject_missing_expected_skip(self):
+        self.assertNotEqual(self.call("standard", set(BASE), 2000).returncode, 0)
+
+    def test_standard_reject_substituted_skip(self):
+        skips = set(STANDARD[:-1]) | {("test.Clazz", "test_0")}
+        self.assertNotEqual(self.call("standard", skips, 2000).returncode, 0)
 
     def test_standard_reject_too_few(self):
-        self.assertNotEqual(self.call("standard", set(BASE), 12).returncode, 0)
+        self.assertNotEqual(self.call("standard", set(STANDARD), 12).returncode, 0)
 
     def test_performance_selected_baseline(self):
         self.assertEqual(self.call("performance", set(), 0).returncode, 0)

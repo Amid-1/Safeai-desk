@@ -14,6 +14,21 @@ from xml.etree import ElementTree as ET
 MODULES = ("ai", "audit", "auth", "chat", "common", "identity", "knowledge",
            "model", "organization", "ratelimit", "usage", "user")
 
+# These Knowledge controllers moved under the Chat orchestration package.
+# Keep their original logical coverage group so a folder move neither hides
+# missing coverage nor triggers a false denominator regression against baseline.
+KNOWLEDGE_CONTROLLER_PATHS = frozenset(
+    "chat/controller/controller/" + filename for filename in (
+        "useKnowledgeDeletionController.ts",
+        "useKnowledgeDetailsData.ts",
+        "useKnowledgeDetailsPageController.ts",
+        "useKnowledgeDirectoryController.ts",
+        "useKnowledgeDocumentActions.ts",
+        "useKnowledgeUploadController.ts",
+        "useKnowledgeVersionsController.ts",
+    )
+)
+
 
 def ratio(covered: int, missed: int) -> float | None:
     count = covered + missed
@@ -123,7 +138,9 @@ def frontend_stats(
             continue
         path = filename.replace("\\", "/")
         if "/src/features/" in path:
-            name = path.split("/src/features/", 1)[1].split("/", 1)[0]
+            feature_path = path.split("/src/features/", 1)[1]
+            name = ("knowledge" if feature_path in KNOWLEDGE_CONTROLLER_PATHS
+                    else feature_path.split("/", 1)[0])
         elif "/src/" in path:
             name = path.split("/src/", 1)[1].split("/", 1)[0]
         else:

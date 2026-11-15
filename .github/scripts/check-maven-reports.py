@@ -15,6 +15,15 @@ BASELINE = {
      "rollupBackedReportsFor366DaysStayWithinConfiguredSla"),
 }
 
+# The ordinary run deliberately skips both large chat-erasure boundaries.
+# They are compulsory in the separate Performance CI, not in the legacy Usage SLA job.
+STANDARD_SKIPS = BASELINE | {
+    ("ru.safeai.gateway.chat.integration.ChatErasureBatchBoundaryV86IntegrationTest",
+     "exactlyTenThousandCompletesWithoutOffByOne"),
+    ("ru.safeai.gateway.chat.integration.ChatErasureBatchBoundaryV86IntegrationTest",
+     "tenThousandAndOneIsRejectedBeforeIntentAndWithoutAnyRedaction"),
+}
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -43,8 +52,8 @@ def main():
     if args.mode == "standard":
         if len(cases) < 2000:
             raise SystemExit(f"ОШИБКА: регрессия количества тестов: {len(cases)} < 2000")
-        if skipped != BASELINE:
-            raise SystemExit(f"ОШИБКА: набор пропусков отличается от 3 разрешённых performance-тестов: {sorted(skipped ^ BASELINE)}")
+        if skipped != STANDARD_SKIPS:
+            raise SystemExit(f"ОШИБКА: набор пропусков отличается от {len(STANDARD_SKIPS)} разрешённых performance-тестов: {sorted(skipped ^ STANDARD_SKIPS)}")
     else:
         if skipped:
             raise SystemExit(f"ОШИБКА: пропуски в performance suite: {sorted(skipped)}")
