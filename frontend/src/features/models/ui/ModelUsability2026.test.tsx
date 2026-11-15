@@ -41,7 +41,7 @@ describe('Модели: понятный и безопасный интерфе�
         render(<ModelAvailabilitySummary
             runtime={runtime}
             effectiveCatalog={[entry]}
-            policy={policy}
+            policy={{ ...policy, configured: true }}
             organizationName="SafeAI Platform"
             onOpenPolicy={onOpenPolicy}
         />)

@@ -28,6 +28,7 @@ export function AdminModelsPageView({ controller }: { controller: AdminModelsCon
     function navigate(next: ModelsSection) {
         if (next === section) return
         const updated = new URLSearchParams(params)
+        if (next !== 'diagnostics') updated.delete('decisionId')
         if (next === 'overview') updated.delete('section')
         else updated.set('section', next)
         setParams(updated, { preventScrollReset: true })
@@ -65,7 +66,7 @@ export function AdminModelsPageView({ controller }: { controller: AdminModelsCon
             {historyModalEntry && <ModelCatalogHistoryModal
                 modelKey={historyModalEntry.modelKey} displayName={historyModalEntry.displayName}
                 runtime={runtime} onClose={() => setHistoryModalEntry(null)} />}
-            {catalogModal && <ModelCatalogVersionModal
+            {controller.isSuperAdmin && catalogModal && <ModelCatalogVersionModal
                 base={catalogModal.base} runtime={runtime} catalogByKey={catalogByKey}
                 pending={mutationPending} onClose={() => setCatalogModal(null)}
                 onSubmit={handleCreateCatalogVersion} />}

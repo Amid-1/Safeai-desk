@@ -93,7 +93,7 @@ function configureApi() {
 
 async function loadPage() {
     render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
-    await screen.findByRole('heading', { name: 'Модели и доступ' })
+    await screen.findByRole('heading', { name: 'Управление AI' })
 }
 
 describe('AdminModelsPage — контрактные и регрессионные сценарии', () => {
@@ -107,7 +107,7 @@ describe('AdminModelsPage — контрактные и регрессионны
         vi.mocked(getRuntimeModelStatus).mockRejectedValueOnce(new Error('runtime unavailable'))
         render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
         expect(await screen.findByText('Не удалось загрузить настройки моделей.')).toBeInTheDocument()
-        expect(screen.queryByRole('heading', { name: 'Модели и доступ' }))
+        expect(screen.queryByRole('heading', { name: 'Управление AI' }))
             .not.toBeInTheDocument()
     })
 
@@ -118,7 +118,7 @@ describe('AdminModelsPage — контрактные и регрессионны
         render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
         expect(await screen.findByText(/Сервер вернул правила другой организации/))
             .toBeInTheDocument()
-        expect(screen.queryByRole('heading', { name: 'Модели и доступ' }))
+        expect(screen.queryByRole('heading', { name: 'Управление AI' }))
             .not.toBeInTheDocument()
     })
 
@@ -147,12 +147,12 @@ describe('AdminModelsPage — контрактные и регрессионны
         fireEvent.click(screen.getByRole('button', { name: 'Найти' }))
         fireEvent.click(await screen.findByRole('button', { name: /Second Organization/ }))
 
-        expect(screen.queryByRole('heading', { name: 'Модели и доступ' }))
+        expect(screen.queryByRole('heading', { name: 'Управление AI' }))
             .not.toBeInTheDocument()
         expect(screen.getByText('Загрузка настроек моделей...')).toBeInTheDocument()
 
         secondPolicy.resolve(createOrganizationModelPolicy({ organizationId: SECOND_ORG }))
-        await screen.findByRole('heading', { name: 'Модели и доступ' })
+        await screen.findByRole('heading', { name: 'Управление AI' })
         await waitFor(() => {
             expect(screen.getAllByText(SECOND_ORG).length).toBeGreaterThan(0)
         })
@@ -239,7 +239,7 @@ describe('AdminModelsPage — контрактные и регрессионны
         vi.mocked(getModelRouteDecision).mockResolvedValueOnce(decision)
         await loadPage()
         fireEvent.click(screen.getByRole('tab', { name: 'Диагностика' }))
-        fireEvent.change(screen.getByLabelText('ID решения'), {
+        fireEvent.change(screen.getByLabelText('Номер решения безопасности'), {
             target: { value: ROUTE_ID },
         })
         fireEvent.click(screen.getByRole('button', { name: 'Проверить' }))
@@ -255,7 +255,7 @@ describe('AdminModelsPage — контрактные и регрессионны
         vi.mocked(getModelRouteDecision).mockReturnValue(request.promise)
         await loadPage()
         fireEvent.click(screen.getByRole('tab', { name: 'Диагностика' }))
-        const input = screen.getByLabelText('ID решения')
+        const input = screen.getByLabelText('Номер решения безопасности')
         fireEvent.change(input, { target: { value: ROUTE_ID } })
         fireEvent.click(screen.getByRole('button', { name: 'Проверить' }))
         await waitFor(() => expect(getModelRouteDecision).toHaveBeenCalledTimes(1))
@@ -267,6 +267,15 @@ describe('AdminModelsPage — контрактные и регрессионны
             expect(screen.queryByText('Ответ старого запроса')).not.toBeInTheDocument()
         })
         expect(screen.getByRole('button', { name: 'Проверить' })).not.toBeDisabled()
+    })
+
+    it('открывает диагностику из журнала и проверяет именно номер решения', async () => {
+        vi.mocked(getModelRouteDecision).mockRejectedValue(new Error('not found'))
+        render(<MemoryRouter initialEntries={['/admin/models?section=diagnostics&decisionId=' + ROUTE_ID]}>
+            <AdminModelsPage />
+        </MemoryRouter>)
+        await waitFor(() => expect(getModelRouteDecision).toHaveBeenCalledWith(ROUTE_ID, { signal: expect.any(AbortSignal) }))
+        expect(screen.getByLabelText('Номер решения безопасности')).toHaveValue(ROUTE_ID)
     })
 
     it('не публикует частично обновлённые latest/effective после неудачного refresh', async () => {
@@ -343,7 +352,7 @@ describe('AdminModelsPage — контрактные и регрессионны
         render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
         expect(getRuntimeModelStatus).not.toHaveBeenCalled()
         expect(getOrganizationModelPolicy).not.toHaveBeenCalled()
-        expect(screen.queryByRole('heading', { name: 'Модели и доступ' }))
+        expect(screen.queryByRole('heading', { name: 'Управление AI' }))
             .not.toBeInTheDocument()
     })
 

@@ -3,6 +3,7 @@ import type { PendingTurn, PendingTurnStatus } from '../../lib/chatPage.helpers'
 import { ApiError, getApiErrorMessage } from '../../../../shared/api/http'
 import type { ChatControllerDependencies } from './chatControllerTypes'
 import { withPendingState } from './chatPendingState'
+import { parsePublicModelRouteDenial } from '../../../../shared/lib/modelRouteDenial'
 
 type FailureDeps = Pick<ChatControllerDependencies,
     'setSendError' | 'setClock' | 'reconcilePendingTurn' | 'putPendingTurn'
@@ -25,6 +26,11 @@ const IN_PROGRESS_CODES = new Set(['CHAT_TURN_IN_PROGRESS', 'CHAT_BUSY'])
 /** Преобразует известный HTTP-отказ в действие, не инициируя новый AI-запрос. */
 function resolveFailure(error: ApiError, now: number): FailureDecision | null {
     const code = error.errorCode ?? ''
+    const denied = parsePublicModelRouteDenial(error.status, code, error.message)
+    if (denied) {
+        const message = denied.message + ' Обратитесь к администратору. Номер решения: ' + denied.decisionId
+        return { status: 'FAILED', pendingMessage: message, visibleMessage: message }
+    }
     if (QUOTA_CODES.has(code)) {
         const message = error.message || 'Квота AI исчерпана.'
         return { status: 'QUOTA_BLOCKED', pendingMessage: message, visibleMessage: message }

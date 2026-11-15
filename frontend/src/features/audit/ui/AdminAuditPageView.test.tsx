@@ -81,7 +81,7 @@ beforeEach(() => vi.clearAllMocks())
 describe('AdminAuditPageView — форма и рабочая область', () => {
     it('оставляет фильтры и экспорт в upper, таблицу в viewport и пагинацию в footer', () => {
         mount()
-        expect(within(screen.getByTestId('audit-upper')).getByText('Аудит событий')).toBeInTheDocument()
+        expect(within(screen.getByTestId('audit-upper')).getByText('Журнал событий')).toBeInTheDocument()
         expect(within(screen.getByTestId('audit-upper')).getByRole('button', { name: 'Скачать CSV текущей страницы' })).toBeInTheDocument()
         expect(within(screen.getByTestId('audit-viewport')).getByRole('table')).toBeInTheDocument()
         expect(within(screen.getByTestId('audit-footer')).getByLabelText('Пагинация аудита')).toBeInTheDocument()
@@ -123,6 +123,7 @@ describe('AdminAuditPageView — форма и рабочая область', (
         mount({ events: [], showTable: false })
         expect(screen.getByText('Событий не найдено')).toBeInTheDocument()
         expect(screen.queryByRole('table')).not.toBeInTheDocument()
+        expect(screen.queryByTestId('audit-scroll-region')).not.toBeInTheDocument()
         expect(screen.queryByRole('button', { name: 'Скачать CSV текущей страницы' })).not.toBeInTheDocument()
     })
 
@@ -149,6 +150,6 @@ describe('AdminAuditPageView — форма и рабочая область', (
 
     it('не отображает организационный фильтр пользователю без SUPER_ADMIN', () => {
         mount({ superAdmin: false })
-        expect(screen.queryByLabelText(/Целевая организация/)).not.toBeInTheDocument()
+        expect(screen.queryByLabelText(/Организация/)).not.toBeInTheDocument()
     })
 })

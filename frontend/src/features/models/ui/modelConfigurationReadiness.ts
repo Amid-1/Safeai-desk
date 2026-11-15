@@ -34,6 +34,9 @@ export function modelConfigurationReadiness(
     })
 
     const blockers: string[] = []
+    if (!policy.configured) {
+        blockers.push('Правила организации ещё не настроены. AI-запросы блокируются до настройки доступа.')
+    }
     if (!runtime.enabled) {
         blockers.push('Подключённая модель отключена в настройках сервера.')
     }

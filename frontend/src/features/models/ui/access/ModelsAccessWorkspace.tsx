@@ -15,8 +15,8 @@ export function ModelsAccessWorkspace({ controller }: { controller: AdminModelsC
             <header className="models-section-heading models-section-heading--actions">
                 <div>
                     <span className="models-eyebrow">ОРГАНИЗАЦИИ И ОГРАНИЧЕНИЯ</span>
-                    <h2 id="models-access-title">Доступ организаций</h2>
-                    <p>Выберите организацию для просмотра её правил. Настройки других организаций доступны только SUPER_ADMIN.</p>
+                    <h2 id="models-access-title">Правила использования AI</h2>
+                    <p>{isSuperAdmin ? 'Выберите организацию и настройте её разрешённые модели, лимиты и защиту данных.' : 'Настройте разрешённые модели, лимиты, бюджет и защиту данных для вашей организации.'}</p>
                 </div>
                 <button type="button" className="btn-primary" disabled={mutationPending}
                     onClick={() => setPolicyModalOpen(true)}>Изменить правила</button>

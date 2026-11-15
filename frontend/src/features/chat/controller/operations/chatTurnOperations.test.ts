@@ -184,6 +184,19 @@ describe('Контракт отправки и idempotency', () => {
 })
 
 describe('Классификация ошибок отправки', () => {
+    it('показывает понятную причину блокировки и номер решения без повтора POST', async () => {
+        const h = harness()
+        const id = 'e933230e-1ef2-47e5-ab06-4b67adb82393'
+        await h.failure.handleSendFailure(pending(), new ApiError(
+            'AI model route отклонён политикой SafeAI: MODEL_NOT_ALLOWED. decisionId=' + id,
+            { code: 'FORBIDDEN' }, 403,
+        ))
+        expect(h.sendError).toContain('Модель не разрешена для вашей организации')
+        expect(h.sendError).toContain(id)
+        expect(h.pendingTurns[IDS.chat]?.status).toBe('FAILED')
+        expect(h.reconcilePendingTurn).not.toHaveBeenCalled()
+        expect(sendMock).not.toHaveBeenCalled()
+    })
     it('явный отказ авторизации не маскируется как неопределённая отправка', async () => {
         const h = harness()
         await h.failure.handleSendFailure(

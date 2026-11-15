@@ -30,7 +30,7 @@ export default function AuditFilters({
         <section className="card form-card audit-filters" aria-labelledby="audit-filters-title">
             <h2 id="audit-filters-title">Найти события</h2>
             <p className="muted audit-filters__subtitle">
-                Уточните тип события, участника или период.
+                Выберите событие, сотрудника или период. Поиск охватывает весь доступный журнал.
             </p>
             <div className="form">
                 <AuditEventTypeFields
@@ -61,12 +61,28 @@ export default function AuditFilters({
                     onFilterChange={onFilterChange} onDatePreset={onDatePreset}
                     activePreset={activePreset} setActivePreset={setActivePreset}
                 />
+                <details className="audit-advanced-filters" open={draftFilter.actorEmail ? true : undefined}>
+                    <summary>Расширенные фильтры{draftFilter.actorEmail ? ' · активны' : ''}</summary>
+                    <label>Поиск по email в истории
+                        <input type="search" value={draftFilter.actorEmail} maxLength={320}
+                            disabled={loading} placeholder="Например, admin@company.ru"
+                            onChange={(event) => {
+                                const actorEmail = event.target.value
+                                onFilterChange((current) => ({ ...current, actorEmail }))
+                            }} />
+                        <small>Полный email или его начало. Учитывается адрес на момент события, даже если он изменился.</small>
+                    </label>
+                </details>
                 <AuditSubmitActions
                     directoriesLoading={directoriesLoading} filterError={filterError}
                     filtersDirty={filtersDirty} loading={loading}
                     onApply={onApply} onReset={onReset}
                     setActivePreset={setActivePreset}
-                    clearEventTypeSearch={() => setEventTypeSearch('')}
+                    clearEventTypeSearch={() => {
+                        setEventTypeSearch('')
+                        scheduleActorSearch('')
+                        scheduleOrganizationSearch('')
+                    }}
                 />
             </div>
         </section>

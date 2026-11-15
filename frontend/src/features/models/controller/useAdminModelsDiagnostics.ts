@@ -7,9 +7,7 @@ import type { Dispatch, SetStateAction } from 'react'
 import { getModelRouteDecision, probeRuntimeModel } from '../../../entities/model/api/modelApi'
 import type { ModelRouteDecision, RuntimeModelProbe } from '../../../entities/model/api/modelApi'
 import { getApiErrorMessage } from '../../../shared/api/http'
-
-const UUID_PATTERN =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+import { MODEL_DECISION_ID_PATTERN } from '../../../shared/lib/modelRouteDenial'
 
 export function useAdminModelsDiagnostics(
     isSuperAdmin: boolean,
@@ -76,17 +74,19 @@ export function useAdminModelsDiagnostics(
         setRoutePending(false)
     }, [])
 
-    const handleRouteLookup =
-        useCallback(async () => {
-            const decisionId =
-                routeDecisionId.trim()
+    const lookupRouteDecision =
+        useCallback(async (value: string) => {
+            const decisionId = value.trim()
+            routeControllerRef.current?.abort()
+            setRouteDecisionId(value)
 
             setRouteDecision(null)
             setRouteError('')
 
-            if (!UUID_PATTERN.test(decisionId)) {
+            if (!MODEL_DECISION_ID_PATTERN.test(decisionId)) {
+                setRoutePending(false)
                 setRouteError(
-                    'Введите корректный ID решения (UUID).',
+                    'Введите номер решения из журнала событий, а не идентификатор пользователя.',
                 )
                 return
             }
@@ -117,7 +117,9 @@ export function useAdminModelsDiagnostics(
                     setRoutePending(false)
                 }
             }
-        }, [routeDecisionId])
+        }, [])
+    const handleRouteLookup = useCallback(() => lookupRouteDecision(routeDecisionId),
+        [lookupRouteDecision, routeDecisionId])
 
     return {
         routeDecisionId,
@@ -129,5 +131,6 @@ export function useAdminModelsDiagnostics(
         runtimeProbePending,
         handleRuntimeProbe,
         handleRouteLookup,
+        lookupRouteDecision,
     }
 }

@@ -19,7 +19,7 @@ function renderFilters() {
     const onReset = vi.fn()
     render(<AuditFilters
         draftFilter={filter}
-        eventTypes={['USER_LOGIN_FAILED', 'KNOWLEDGE_DOCUMENT_DOWNLOADED', 'USER_CREATED']}
+        eventTypes={['USER_LOGIN_FAILED', 'KNOWLEDGE_DOCUMENT_DOWNLOADED', 'USER_CREATED', 'MODEL_ROUTE_DENIED']}
         organizations={[]}
         actors={[]}
         superAdmin={false}
@@ -41,15 +41,25 @@ function renderFilters() {
 }
 
 describe('AuditFilters production UX', () => {
-    it('filters an accessible grouped native selector without requesting events', () => {
+    it('filters accessible autocomplete suggestions without requesting events', () => {
         const { onApply } = renderFilters()
-        fireEvent.change(screen.getByLabelText('Поиск типа события'), {
+        fireEvent.change(screen.getByLabelText('Событие'), {
             target: { value: 'Скачан документ' },
         })
-        const select = screen.getByLabelText('Тип события') as HTMLSelectElement
-        expect(select.querySelector('optgroup[label="Базы знаний и документы"]')).not.toBeNull()
-        expect(select.querySelector('option[value="KNOWLEDGE_DOCUMENT_DOWNLOADED"]')).not.toBeNull()
-        expect(select.querySelector('option[value="USER_LOGIN_FAILED"]')).toBeNull()
+        expect(screen.getByRole('option', { name: /Базы знаний и документы.*Скачан документ/i })).toBeInTheDocument()
+        expect(screen.queryByRole('option', { name: /Неудачная попытка входа/i })).not.toBeInTheDocument()
+        expect(onApply).not.toHaveBeenCalled()
+    })
+
+    it('finds blocked AI requests using the old title without ё and selects by keyboard', () => {
+        const { onFilterChange, onApply } = renderFilters()
+        const input = screen.getByRole('combobox', { name: 'Событие' })
+        fireEvent.change(input, { target: { value: 'маршрут модели отклонен' } })
+        expect(screen.getByRole('option', { name: /AI-запрос заблокирован/ })).toBeInTheDocument()
+        fireEvent.keyDown(input, { key: 'ArrowDown' })
+        fireEvent.keyDown(input, { key: 'ArrowDown' })
+        fireEvent.keyDown(input, { key: 'Enter' })
+        expect(onFilterChange.mock.calls[0][0](filter)).toMatchObject({ eventType: 'MODEL_ROUTE_DENIED' })
         expect(onApply).not.toHaveBeenCalled()
     })
 
@@ -59,15 +69,16 @@ describe('AuditFilters production UX', () => {
         fireEvent.click(sevenDays)
         expect(sevenDays).toHaveAttribute('aria-pressed', 'true')
         expect(onDatePreset).toHaveBeenCalledWith('last7Days')
-        fireEvent.change(screen.getByLabelText('Дата с'), {
+        fireEvent.change(screen.getByLabelText('Начало периода'), {
             target: { value: '2026-10-02' },
         })
         expect(sevenDays).toHaveAttribute('aria-pressed', 'false')
     })
 
-    it('explains draft filters and keeps the email prefix filter visible', () => {
+    it('explains draft filters and preserves historical email search in advanced filters', () => {
         renderFilters()
         expect(screen.getByText(/результаты еще не обновлены/)).toBeInTheDocument()
-        expect(screen.getByLabelText('Email инициатора или префикс')).toBeInTheDocument()
+        fireEvent.click(screen.getByText('Расширенные фильтры'))
+        expect(screen.getByLabelText(/Поиск по email в истории/)).toBeInTheDocument()
     })
 })

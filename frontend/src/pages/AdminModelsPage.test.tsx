@@ -232,7 +232,7 @@ describe('AdminModelsPage', () => {
         expect(screen.getByRole('tab', { name: 'Каталог' })).toHaveAttribute('aria-selected', 'true')
         expect(screen.getByRole('region', { name: 'Таблица каталога моделей' })).toBeInTheDocument()
         fireEvent.click(screen.getByRole('tab', { name: 'Доступ' }))
-        expect(screen.getByRole('heading', { name: 'Доступ организаций' })).toBeInTheDocument()
+        expect(screen.getByRole('heading', { name: 'Правила использования AI' })).toBeInTheDocument()
         expect(screen.queryByRole('region', { name: 'Таблица каталога моделей' })).not.toBeInTheDocument()
         expect(runtimeMock).toHaveBeenCalledTimes(1)
         expect(policyMock).toHaveBeenCalledTimes(1)
@@ -246,7 +246,7 @@ describe('AdminModelsPage', () => {
 
         expect(
             await screen.findByText(
-                'Модели и доступ',
+                'Управление AI',
             ),
         ).toBeInTheDocument()
 
@@ -267,15 +267,13 @@ describe('AdminModelsPage', () => {
 
         expect(screen.getByText('Каталог изменяет SUPER_ADMIN.'))
             .toBeInTheDocument()
-        fireEvent.click(screen.getByRole('button', {name: 'Создать модель'}))
-        expect(screen.getByText(/Создание и изменение версий каталога доступно только SUPER_ADMIN/))
-            .toHaveAttribute('role', 'status')
+        expect(screen.queryByRole('button', {name: 'Создать модель'})).not.toBeInTheDocument()
         expect(screen.queryByRole('dialog', {name: 'Модель каталога'}))
             .not.toBeInTheDocument()
         fireEvent.click(screen.getByRole('tab', { name: 'Обзор' }))
         fireEvent.click(screen.getByText(/Предварительная проверка совместимости/))
         expect(screen.getByRole('heading', {name: 'Проверка доступности модели'})).toBeInTheDocument()
-        expect(screen.getByText('Нужна проверка запроса')).toBeInTheDocument()
+        expect(screen.getAllByText(/Правила не настроены/).length).toBeGreaterThan(0)
 
         expect(
             screen.queryByRole(
@@ -292,7 +290,7 @@ describe('AdminModelsPage', () => {
         render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
 
         await screen.findByText(
-            'Модели и доступ',
+            'Управление AI',
         )
 
         expect(runtimeMock)
@@ -330,11 +328,11 @@ describe('AdminModelsPage', () => {
 
         expect(
             await screen.findByText(
-                'Модели и доступ',
+                'Управление AI',
             ),
         ).toBeInTheDocument()
 
-        expect(screen.getAllByText('Не настроены').length).toBeGreaterThan(0)
+        expect(screen.getAllByText(/Правила не настроены|Не настроены/).length).toBeGreaterThan(0)
         fireEvent.click(screen.getByRole('tab', { name: 'Каталог' }))
         expect(screen.getByText('Каталог моделей пока пуст')).toBeInTheDocument()
 
@@ -502,7 +500,7 @@ describe('AdminModelsPage', () => {
 
         fireEvent.change(
             screen.getByLabelText(
-                'ID решения',
+                'Номер решения безопасности',
             ),
             {
                 target: {
@@ -520,7 +518,7 @@ describe('AdminModelsPage', () => {
 
         expect(
             await screen.findByText(
-                'Некорректный идентификатор решения. Укажите UUID из журнала аудита.',
+                'Введите номер решения из журнала событий, а не идентификатор пользователя.',
             ),
         ).toBeInTheDocument()
 

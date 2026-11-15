@@ -8,7 +8,7 @@ import { CATALOG_PANEL_MIN_HEIGHT, useCatalogPanelHeight } from './useCatalogPan
 export function ModelsCatalogWorkspace({ controller }: { controller: AdminModelsController }) {
     const { catalog, effectiveCatalog, runtime, isSuperAdmin, mutationPending,
         handleImportRuntime, setCatalogModal, setHistoryModalEntry,
-        catalogPermissionNotice, setCatalogPermissionNotice, importError } = controller
+        importError } = controller
     const {
         regionRef,
         height,
@@ -30,14 +30,11 @@ export function ModelsCatalogWorkspace({ controller }: { controller: AdminModels
                     <h2 id="models-catalog-title">Каталог моделей</h2>
                     <p>Последняя сохранённая и действующая версии могут различаться. История доступна для каждой модели.</p>
                 </div>
-                {catalog.length > 0 && <div className="models-section-actions">
+                {isSuperAdmin && catalog.length > 0 && <div className="models-section-actions">
                     {isSuperAdmin && <button type="button" className="secondary-button" disabled={mutationPending}
                         onClick={() => { void handleImportRuntime() }}>Добавить подключённую модель в каталог</button>}
-                    <button type="button" className={isSuperAdmin ? 'btn-primary' : 'secondary-button'} disabled={mutationPending}
-                        onClick={() => {
-                            if (!isSuperAdmin) { setCatalogPermissionNotice(true); return }
-                            setCatalogModal({ base: null })
-                        }}>Создать модель</button>
+                    <button type="button" className="btn-primary" disabled={mutationPending}
+                        onClick={() => setCatalogModal({ base: null })}>Создать модель</button>
                 </div>}
             </header>
             {importError && <div className="models-mutation-error" role="alert">
@@ -47,10 +44,6 @@ export function ModelsCatalogWorkspace({ controller }: { controller: AdminModels
             </div>}
             {!isSuperAdmin && <p className="models-catalog-permission-hint" role="note">
                 <strong>Каталог изменяет SUPER_ADMIN.</strong> Администратор организации может просматривать версии и изменять правила своей организации.
-            </p>}
-            {catalogPermissionNotice && !isSuperAdmin && <p role="status" className="models-notice">
-                Создание и изменение версий каталога доступно только SUPER_ADMIN.
-                Администратор организации может менять правила своей организации.
             </p>}
 
             {/* Размер меняется только на десктопе; на телефоне таблица преобразуется в полные карточки. */}

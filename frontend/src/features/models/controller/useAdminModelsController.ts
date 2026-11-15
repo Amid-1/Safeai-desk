@@ -122,7 +122,7 @@ export function useAdminModelsController() {
     const {
         routeDecisionId, handleRouteDecisionIdChange, routeDecision,
         routePending, routeError, runtimeProbe, runtimeProbePending,
-        handleRuntimeProbe, handleRouteLookup,
+        handleRuntimeProbe, handleRouteLookup, lookupRouteDecision,
     } = useAdminModelsDiagnostics(isSuperAdmin, setError)
 
 
@@ -460,6 +460,7 @@ export function useAdminModelsController() {
         handleOrganizationSearch,
         handleRuntimeProbe,
         handleRouteLookup,
+        lookupRouteDecision,
     }
 }
 

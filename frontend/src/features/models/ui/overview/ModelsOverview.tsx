@@ -8,7 +8,7 @@ export function ModelsOverview({ controller, navigate }: {
     controller: AdminModelsController
     navigate: (section: ModelsSection) => void
 }) {
-    const { runtime, policy, catalog, effectiveCatalog, selectedOrganizationName, setPolicyModalOpen } = controller
+    const { runtime, policy, catalog, effectiveCatalog, selectedOrganizationName, setPolicyModalOpen, isSuperAdmin } = controller
     if (!runtime || !policy) return null
     const readiness = modelConfigurationReadiness(runtime, effectiveCatalog, policy)
     return (
@@ -16,14 +16,14 @@ export function ModelsOverview({ controller, navigate }: {
             <div className="models-section-heading">
                 <div>
                     <span className="models-eyebrow">ОБЩАЯ КАРТИНА</span>
-                    <h2>Состояние моделей</h2>
-                    <p>Здесь отображается состояние конфигурации, а не гарантия выполнения конкретного AI-запроса.</p>
+                    <h2>Доступ сотрудников к AI</h2>
+                    <p>Проверьте настройки вашей организации. Окончательный доступ определяется сервером для каждого запроса.</p>
                 </div>
             </div>
-            <section className="models-overview-stats" aria-label="Ключевые показатели">
+            <section className={'models-overview-stats' + (isSuperAdmin ? '' : ' models-overview-stats--tenant')} aria-label="Ключевые показатели">
                 <div><span>Подключённая модель</span><strong>{runtime.model}</strong><small>{runtime.enabled ? 'Включена' : 'Отключена'}</small></div>
-                <div><span>Каталог</span><strong>{effectiveCatalog.length} действующих версий</strong><small>Всего сохранённых записей: {catalog.length}</small></div>
-                <div><span>Правила доступа</span><strong>{policy.configured ? `Версия ${policy.version}` : 'Не настроены'}</strong><small>{selectedOrganizationName ?? policy.organizationId}</small></div>
+                {isSuperAdmin && <div><span>Каталог</span><strong>{effectiveCatalog.length} действующих версий</strong><small>Всего сохранённых записей: {catalog.length}</small></div>}
+                <div><span>Доступ к AI</span><strong>{!policy.configured ? 'Правила не настроены' : readiness.blockers.length ? 'Требует внимания' : 'Требует проверки'}</strong><small>{selectedOrganizationName ?? 'Ваша организация'}</small></div>
                 <div><span>Проверка соединения</span><strong>{runtime.healthStatus === 'AVAILABLE' ? 'Доступна' : runtime.healthStatus === 'UNAVAILABLE' ? 'Недоступна' : 'Не подтверждена'}</strong><small>Проверка запускается отдельно</small></div>
             </section>
             {/* Security-relevant blockers remain visible when the advisory details are collapsed. */}
@@ -39,8 +39,8 @@ export function ModelsOverview({ controller, navigate }: {
                     organizationName={selectedOrganizationName} onOpenPolicy={() => setPolicyModalOpen(true)} />
             </details>
             <div className="models-section-links" aria-label="Перейти к управлению">
+                <button type="button" className="secondary-button" onClick={() => navigate('access')}>Правила использования AI</button>
                 <button type="button" className="secondary-button" onClick={() => navigate('catalog')}>Каталог моделей</button>
-                <button type="button" className="secondary-button" onClick={() => navigate('access')}>Доступ организаций</button>
                 <button type="button" className="secondary-button" onClick={() => navigate('diagnostics')}>Проверки и диагностика</button>
             </div>
             <details className="models-guide">

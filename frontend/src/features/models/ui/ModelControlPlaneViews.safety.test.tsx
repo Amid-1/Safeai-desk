@@ -192,7 +192,10 @@ describe('CatalogTable: последняя и действующая верси�
 describe('RouteDecisionEvidence: точность доказательств', () => {
     it('показывает provenance версии v3, хэш и безопасные decimal-строки', () => {
         render(<RouteDecisionEvidence decision={routeDecision} />)
-        expect(screen.getByText('Доказательства маршрутизации V48')).toBeInTheDocument()
+        const details = screen.getByText('Технические сведения решения').closest('details')!
+        expect(details).not.toHaveAttribute('open')
+        expect(screen.queryByText(/V48/)).not.toBeInTheDocument()
+        fireEvent.click(screen.getByText('Технические сведения решения'))
         expect(screen.getByText('v3')).toBeInTheDocument()
         expect(screen.getByText('UTF8_STRUCTURAL_UNITS_V2')).toBeInTheDocument()
         expect(screen.getByText('512')).toBeInTheDocument()
@@ -210,8 +213,9 @@ describe('RouteDecisionEvidence: точность доказательств', (
         }} />)
         expect(screen.getByText('Неизвестно')).toBeInTheDocument()
         expect(screen.getAllByText('Не применялся', {exact:false}).length).toBeGreaterThan(0)
-        expect(screen.getByText('Неизвестна', {exact:false})).toBeInTheDocument()
-        expect(screen.getByText(/Отклонено · Невозможно надёжно проверить месячный бюджет/)).toBeInTheDocument()
+        expect(within(screen.getByText('Месячный бюджет').closest('div')!).getByText('Неизвестна', {exact:false})).toBeInTheDocument()
+        expect(screen.getByText('Отклонён')).toBeInTheDocument()
+        expect(screen.getByText('Причина блокировки')).toBeInTheDocument()
     })
 
     it('отображает исторические решения без придуманного provenance v3', () => {
@@ -220,6 +224,22 @@ describe('RouteDecisionEvidence: точность доказательств', (
             decisionIntegrityVersion:2,
         }} />)
         expect(screen.getByText('v2')).toBeInTheDocument()
-        expect(screen.getByText('Историческое решение V1/V2')).toBeInTheDocument()
+        expect(screen.getByText('Не зафиксирован в историческом решении')).toBeInTheDocument()
+    })
+
+    it('отличает отсутствие политики от запрета настроенной модели и непройденной проверки бюджета', () => {
+        const earlyDenial: ModelRouteDecision = { ...routeDecision, outcome: 'DENIED', reason: 'MODEL_NOT_ALLOWED',
+            selectedModelKey: null, selectedCatalogVersion: null, selectedCatalogEntryId: null,
+            selectedProvider: null, selectedProviderModelId: null, estimatedInputTokens: null,
+            estimatedOutputTokens: null, estimatedMaxCostUsd: null, monthlyCostState: 'NOT_EVALUATED',
+            monthlyCostKnown: false, monthlyBudgetUsd: null, budgetEnforcement: null, pricingComplete: false }
+        const { rerender } = render(<RouteDecisionEvidence decision={earlyDenial} />)
+        expect(screen.getByText('Правила доступа к AI не были настроены.')).toBeInTheDocument()
+        expect(screen.getByText('Модель не выбрана')).toBeInTheDocument()
+        expect(screen.getByText('Не рассчитывалась')).toBeInTheDocument()
+        expect(screen.getByText('Проверка не выполнялась')).toBeInTheDocument()
+        rerender(<RouteDecisionEvidence decision={{ ...earlyDenial, policyId: policy.id, policyVersion: 1 }} />)
+        expect(screen.queryByText('Правила доступа к AI не были настроены.')).not.toBeInTheDocument()
+        expect(screen.getByText(/Модель не разрешена для вашей организации/)).toBeInTheDocument()
     })
 })

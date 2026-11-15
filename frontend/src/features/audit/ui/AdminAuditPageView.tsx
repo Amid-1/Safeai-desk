@@ -47,12 +47,7 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
         changePage,
     } = controller
 
-    return (
-        <div className="page audit-page">
-            <ResizableScrollRegion
-                storageKey="safeai:audit-events-height"
-                label="журнал событий"
-                upper={
+    const upper = (
                     <div className="audit-page__upper">
                         <header className="audit-page__header page-hero page-hero--audit">
                             <div className="audit-page__heading">
@@ -61,7 +56,7 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
                                 </span>
 
                                 <h1>
-                                    Аудит событий
+                                    Журнал событий
                                 </h1>
 
                                 <p className="muted audit-page__intro">
@@ -214,7 +209,14 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
                                 </div>
                             )}
                     </div>
-                }
+    )
+
+    return (
+        <div className="page audit-page">
+            {showTable ? <ResizableScrollRegion
+                storageKey="safeai:audit-events-height"
+                label="журнал событий"
+                upper={upper}
                 footer={
                     showTable
                         ? (
@@ -248,6 +250,7 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
                 {showTable
                     && (
                         <AuditTable
+                            superAdmin={superAdmin}
                             events={
                                 events
                             }
@@ -259,7 +262,7 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
                             }
                         />
                     )}
-            </ResizableScrollRegion>
+            </ResizableScrollRegion> : upper}
 
             {selectedEvent
                 && (

@@ -86,7 +86,7 @@ describe('AuditActor', () => {
 
         expect(
             screen.getByText(
-                /Исторический инициатор/,
+                /Пользователь без имени/,
             ),
         ).toBeInTheDocument()
     })
@@ -129,10 +129,10 @@ describe('AuditActor historical identity actions', () => {
                 actorUserId: '11111111-1111-1111-1111-111111111111',
             }} />,
         )
-        expect(screen.getByText(/Имя инициатора не сохранено/)).toBeInTheDocument()
+        expect(screen.getByText(/Имя пользователя не сохранено/)).toBeInTheDocument()
         expect(screen.getByTitle('11111111-1111-1111-1111-111111111111'))
             .toBeInTheDocument()
-        expect(screen.getByRole('button', { name: 'Скопировать полный UUID инициатора' }))
+        expect(screen.getByRole('button', { name: 'Скопировать идентификатор пользователя' }))
             .toBeInTheDocument()
     })
 })

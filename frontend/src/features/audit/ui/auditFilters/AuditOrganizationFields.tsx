@@ -28,8 +28,7 @@ export function AuditOrganizationFields({
     return (
                     <>
                         <label className="audit-filter-field audit-filter-field--organization-search">
-                            Поиск целевой
-                            организации
+                            Найти организацию
 
                             <input
                                 type="search"
@@ -57,7 +56,7 @@ export function AuditOrganizationFields({
                         </label>
 
                         <label className="audit-filter-field audit-filter-field--organization">
-                            Целевая организация
+                            Организация
 
                             <select
                                 value={

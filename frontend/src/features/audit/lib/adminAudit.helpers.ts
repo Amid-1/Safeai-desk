@@ -294,6 +294,9 @@ export function applyAuditDatePreset(
             case 'last30Days':
                 return 30
 
+            case 'last90Days':
+                return 90
+
             case 'last365Days':
                 return 365
         }
