@@ -1,3 +1,4 @@
+// frontend/src/features/chat/controller/ChatArchiveModal.test.tsx
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../../shared/api/http'

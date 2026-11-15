@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.DriverManager;
+import java.util.function.Function;
 
 /** Одноразовая команда миграции, без запуска Spring, HTTP и фоновых задач. */
 public final class DatabaseMigrationMain {
@@ -17,11 +18,15 @@ public final class DatabaseMigrationMain {
     }
 
     public static void main(String[] args) throws Exception {
+        run(args, System::getenv);
+    }
+
+    static void run(String[] args, Function<String, String> environment) throws Exception {
         if (args.length != 0 && !(args.length == 1 && "ci-v85".equals(args[0]))) {
             throw new IllegalArgumentException("Unexpected migration arguments");
         }
-        String url = required("SAFEAI_MIGRATION_JDBC_URL");
-        String password = Files.readString(Path.of(required("SAFEAI_MIGRATION_PASSWORD_FILE"))).strip();
+        String url = required(environment, "SAFEAI_MIGRATION_JDBC_URL");
+        String password = Files.readString(Path.of(required(environment, "SAFEAI_MIGRATION_PASSWORD_FILE"))).strip();
         if (password.isEmpty()) {
             throw new IllegalStateException("Empty migration password");
         }
@@ -86,8 +91,8 @@ public final class DatabaseMigrationMain {
         }
     }
 
-    private static String required(String name) {
-        String value = System.getenv(name);
+    private static String required(Function<String, String> environment, String name) {
+        String value = environment.apply(name);
         if (value == null || value.isBlank()) {
             throw new IllegalStateException("Missing " + name);
         }
