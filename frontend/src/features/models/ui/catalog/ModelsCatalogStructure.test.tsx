@@ -21,6 +21,7 @@ describe('каталог: структура, мобильная расклад�
         const headers = ['Модель','Подключение','Статус каталога','Лимиты',
             'Возможности каталога','Стоимость','Политика данных','Действует с','Действия']
         expect(screen.getAllByRole('columnheader')).toHaveLength(headers.length)
+        expect(screen.getAllByRole('columnheader').every((header) => header.getAttribute('scope') === 'col')).toBe(true)
         expect(Array.from(container.querySelectorAll('tbody td')).map((cell) => cell.getAttribute('data-label')))
             .toEqual(headers)
         fireEvent.click(screen.getByRole('button', {name: 'История версий'}))

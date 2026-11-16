@@ -18,8 +18,6 @@ export function ModelsAccessWorkspace({ controller }: { controller: AdminModelsC
                     <h2 id="models-access-title">Правила использования AI</h2>
                     <p>{isSuperAdmin ? 'Выберите организацию и настройте её разрешённые модели, лимиты и защиту данных.' : 'Настройте разрешённые модели, лимиты, бюджет и защиту данных для вашей организации.'}</p>
                 </div>
-                <button type="button" className="btn-primary" disabled={mutationPending}
-                    onClick={() => setPolicyModalOpen(true)}>Изменить правила</button>
             </header>
             <div className="models-access-grid">
                 <PolicyCard policy={policy} catalog={catalog} effectiveCatalog={effectiveCatalog}
@@ -36,6 +34,7 @@ export function ModelsAccessWorkspace({ controller }: { controller: AdminModelsC
                         setSelectedOrganization({ id: organization.id, name: organization.name })
                         setOrganizationResults([])
                     }}
+                    editDisabled={mutationPending}
                     onEdit={() => setPolicyModalOpen(true)} />
             </div>
         </section>

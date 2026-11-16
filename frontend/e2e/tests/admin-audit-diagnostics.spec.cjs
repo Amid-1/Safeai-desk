@@ -111,7 +111,7 @@ test('audit modal preserves controls and opens historical decision directly', as
   await modal.getByRole('link', { name: 'Открыть диагностику запроса' }).click()
   await expect(page).toHaveURL(new RegExp('decisionId=' + decisionId))
   await expect(page.getByText('Правила доступа к AI не были настроены.')).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Проверка решения по запросу' })).toBeInViewport()
+  await expect(page.getByRole('heading', { name: 'Диагностика запроса' })).toBeInViewport()
   const technical = page.getByText('UTF8_STRUCTURAL_UNITS_V2', { exact: true })
   await expect(technical).toBeHidden()
   await page.getByText('Технические сведения решения', { exact: true }).click()

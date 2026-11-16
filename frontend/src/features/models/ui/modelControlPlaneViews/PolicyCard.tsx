@@ -10,6 +10,24 @@ import type { OrganizationDirectoryItem } from '../../../../entities/organizatio
 import {formatUsd} from '../../../../shared/lib/format'
 import { StatusPill, InfoHint } from './viewPresentation'
 import { policyAccessSummary, policyDataRequirements, policyTokenLimits } from './viewPresentationLabels'
+import { useState } from 'react'
+import { ModelIcon } from '../ModelIcon'
+
+function OrganizationIdentifier({ value }: { value: string }) {
+    const [message, setMessage] = useState('')
+    async function copy() {
+        try {
+            await navigator.clipboard.writeText(value)
+            setMessage('UUID скопирован')
+        } catch {
+            setMessage('Не удалось скопировать. Выделите UUID вручную.')
+        }
+    }
+    return <div className="models-org-identifier"><code>{value}</code>
+        <button type="button" className="models-copy-icon" aria-label="Копировать UUID организации" title="Копировать UUID организации" onClick={() => { void copy() }}><ModelIcon name="copy" /></button>
+        {message && <small role="status">{message}</small>}
+    </div>
+}
 
 export function PolicyCard({
     policy,
@@ -28,6 +46,7 @@ export function PolicyCard({
     onOrganizationSearch,
     onOrganizationSelect,
     onEdit,
+    editDisabled = false,
 }: {
     policy: OrganizationModelPolicy
     catalog: ModelCatalogEntry[]
@@ -45,13 +64,19 @@ export function PolicyCard({
     onOrganizationSearch: () => void | Promise<void>
     onOrganizationSelect: (organization: OrganizationDirectoryItem) => void
     onEdit: () => void
+    editDisabled?: boolean
 }) {
     const defaultEntry =
         policy.defaultModelKey
-            ? catalog.find(
+            ? effectiveCatalog.find(
                 (entry) => entry.modelKey === policy.defaultModelKey,
             ) ?? null
             : null
+    const savedDefaultEntry = policy.defaultModelKey
+        ? catalog.find((entry) => entry.modelKey === policy.defaultModelKey)
+        : null
+    const constraintsActive = policy.configured && policy.enabled
+    const restrictionState = (configured: boolean) => constraintsActive && configured ? 'configured' : 'neutral'
 
     const undeclaredRuntimeModels = policy.enabled && policy.requireNoTraining
         ? effectiveCatalog.filter((entry) =>
@@ -86,12 +111,20 @@ export function PolicyCard({
                 />
             </div>
 
+            {!policy.configured && <p className="models-policy-state-note models-policy-state-note--warning" role="note">
+                Правила ещё не созданы. Сервер блокирует AI-запросы организации до настройки доступа.
+            </p>}
+            {policy.configured && !policy.enabled && <p className="models-policy-state-note" role="note">
+                Правила отключены. Ниже показаны сохранённые параметры; дополнительные ограничения этой версии не применяются.
+                Проверки подключения и каталога остаются обязательными.
+            </p>}
+
             <div className="models-policy-organization-summary">
-                <span>Организация</span>
+                <span className="models-inline-icon"><ModelIcon name="building" />Организация</span>
                 <strong>
                     {organizationName ?? 'Название загружается…'}
                 </strong>
-                <code>{organizationId}</code>
+                <OrganizationIdentifier key={organizationId} value={organizationId} />
             </div>
 
             {isSuperAdmin && (
@@ -167,11 +200,12 @@ export function PolicyCard({
 
             <dl className="models-kv-grid">
                 <div>
-                    <dt>Модель по умолчанию</dt>
+                    <dt><ModelIcon name="cpu" />Модель по умолчанию</dt>
                     <dd>
-                        {policy.defaultModelKey
-                            ?? 'Подключённая модель'}
+                        {defaultEntry?.displayName ?? policy.defaultModelKey
+                            ?? runtime.model}
                     </dd>
+                    {!policy.defaultModelKey && <small>Подключённая модель · {runtime.provider}</small>}
                     {defaultEntry && (
                         <small>
                             {defaultEntry.provider}
@@ -179,12 +213,15 @@ export function PolicyCard({
                             {defaultEntry.providerModelId}
                         </small>
                     )}
+                    {policy.defaultModelKey && !defaultEntry && (
+                        <small>{savedDefaultEntry ? 'Нет действующей версии' : 'Модель отсутствует в каталоге'}</small>
+                    )}
                 </div>
 
-                <div>
+                <div data-restriction={restrictionState(Boolean(policy.allowModelKeys.length || policy.denyModelKeys.length))}>
                     <dt>
                         <span className="models-label-row">
-                            Списки доступа
+                            <ModelIcon name="list" />Списки доступа
                             <InfoHint text="Если список разрешённых пуст, доступны все модели, которые не запрещены явно и проходят остальные проверки правил и настроек подключения." />
                         </span>
                     </dt>
@@ -198,8 +235,8 @@ export function PolicyCard({
                     )}
                 </div>
 
-                <div>
-                    <dt>Стоимость запроса</dt>
+                <div data-restriction={restrictionState(policy.maxRequestCostUsd !== null)}>
+                    <dt><ModelIcon name="wallet" />Стоимость запроса</dt>
                     <dd>
                         {policy.maxRequestCostUsd === null
                             ? 'Без лимита'
@@ -207,8 +244,8 @@ export function PolicyCard({
                     </dd>
                 </div>
 
-                <div>
-                    <dt>Бюджет на месяц</dt>
+                <div data-restriction={restrictionState(policy.monthlyBudgetUsd !== null)}>
+                    <dt><ModelIcon name="budget" />Бюджет на месяц</dt>
                     <dd>
                         {policy.monthlyBudgetUsd === null
                             ? 'Не задан'
@@ -223,15 +260,15 @@ export function PolicyCard({
                     </small>
                 </div>
 
-                <div>
-                    <dt>Требования к данным</dt>
+                <div data-restriction={restrictionState(policy.requireCompletePricing || policy.requireNoTraining || policy.requireZeroDataRetention)}>
+                    <dt><ModelIcon name="shield" />Требования безопасности и стоимости</dt>
                     <dd>
                         {policyDataRequirements(policy)}
                     </dd>
                 </div>
 
-                <div>
-                    <dt>Лимиты токенов</dt>
+                <div data-restriction={restrictionState(policy.maxInputTokens !== null || policy.maxOutputTokens !== null)}>
+                    <dt><ModelIcon name="gauge" />Лимиты токенов</dt>
                     <dd>
                         {policyTokenLimits(policy)}
                     </dd>
@@ -268,6 +305,7 @@ export function PolicyCard({
                 <button
                     type="button"
                     className="btn-primary models-policy-action"
+                    disabled={editDisabled}
                     onClick={onEdit}
                 >
                     {policy.configured

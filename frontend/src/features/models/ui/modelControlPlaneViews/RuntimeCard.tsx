@@ -9,6 +9,7 @@ import type {
 import {formatDateTime} from '../../../../shared/lib/format'
 import { StatusPill, InfoHint } from './viewPresentation'
 import { runtimeModeLabel, runtimeHealthLabel, runtimeCapabilities, pricingStatusLabel, retentionLabel, probeTone, probeLabel } from './viewPresentationLabels'
+import { ModelIcon } from '../ModelIcon'
 
 export function RuntimeCard({
     runtime,
@@ -54,7 +55,7 @@ export function RuntimeCard({
                 <div>
                     <dt>
                         <span className="models-label-row">
-                            Провайдер / модель
+                            <ModelIcon name="server" />Провайдер / модель
                             <InfoHint text="Модель, физически настроенная на сервере. Правила организации не изменяют это подключение." />
                         </span>
                     </dt>
@@ -69,7 +70,7 @@ export function RuntimeCard({
                 <div>
                     <dt>
                         <span className="models-label-row">
-                            Режим подключения
+                            <ModelIcon name="network" />Режим подключения
                             <InfoHint text="Способ подключения модели к провайдеру. Он не зависит от правил организаций." />
                         </span>
                     </dt>
@@ -82,21 +83,23 @@ export function RuntimeCard({
                 </div>
 
                 <div>
-                    <dt>Проверка подключения</dt>
+                    <dt><ModelIcon name="activity" />Проверка подключения</dt>
                     <dd>
                         {runtimeHealthLabel(runtime, probe)}
                     </dd>
                     <small>
                         {probe
                             ? `${formatDateTime(probe.checkedAt)} · ${probe.latencyMs.toLocaleString('ru-RU')} мс`
-                            : 'Отдельная проверка подключения ещё не запускалась'}
+                            : runtime.healthStatus === 'NOT_PROBED'
+                                ? 'Результат проверки отсутствует'
+                                : 'Статус получен от сервера'}
                     </small>
                 </div>
 
                 <div>
                     <dt>
                         <span className="models-label-row">
-                            Лимиты токенов
+                            <ModelIcon name="gauge" />Лимиты токенов
                             <InfoHint text="Максимальный вход и выход физически настроенной модели." />
                         </span>
                     </dt>
@@ -111,7 +114,7 @@ export function RuntimeCard({
                 <div>
                     <dt>
                         <span className="models-label-row">
-                            Поддерживаемые возможности
+                            <ModelIcon name="layers" />Поддерживаемые возможности
                             <InfoHint text="Перечислены возможности подключённой модели. Запись в каталоге сама по себе не активирует дополнительные функции." />
                         </span>
                     </dt>
@@ -120,7 +123,7 @@ export function RuntimeCard({
                 </div>
 
                 <div>
-                    <dt>Стоимость</dt>
+                    <dt><ModelIcon name="wallet" />Стоимость</dt>
                     <dd>
                         {pricingStatusLabel(runtime.pricingStatus)}
                     </dd>
@@ -131,7 +134,7 @@ export function RuntimeCard({
                 </div>
 
                 <div>
-                    <dt>Условия хранения данных</dt>
+                    <dt><ModelIcon name="shield" />Условия хранения данных</dt>
                     <dd>
                         {retentionLabel(runtime.dataRetentionStatus)}
                     </dd>
@@ -143,7 +146,7 @@ export function RuntimeCard({
                 <div>
                     <dt>
                         <span className="models-label-row">
-                            Запись в каталоге
+                            <ModelIcon name="database" />Запись в каталоге
                             <InfoHint text="Действующая версия каталога, совпадающая с подключённым провайдером и моделью." />
                         </span>
                     </dt>
@@ -176,6 +179,9 @@ export function RuntimeCard({
                     </button>
                 </div>
             )}
+            {!canProbe && <p className="models-diagnostics-permission" role="note">
+                Запуск технической проверки соединения доступен только SUPER_ADMIN. Текущая конфигурация доступна для просмотра.
+            </p>}
 
             {probe && (
                 <div

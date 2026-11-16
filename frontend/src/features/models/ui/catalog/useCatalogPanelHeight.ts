@@ -48,10 +48,11 @@ export function readCatalogPanelHeight(storage: Pick<Storage, 'getItem'>): numbe
     }
 }
 
-export function useCatalogPanelHeight(): {
+export function useCatalogPanelHeight(contentRevision = 0): {
     regionRef: RefObject<HTMLDivElement | null>
     height: number
     maxHeight: number
+    hasOverflow: boolean
     onPointerDown: (event: PointerEvent<HTMLDivElement>) => void
     onPointerMove: (event: PointerEvent<HTMLDivElement>) => void
     onPointerUp: (event: PointerEvent<HTMLDivElement>) => void
@@ -69,6 +70,8 @@ export function useCatalogPanelHeight(): {
         }
     })
     const [maxHeight, setMaxHeight] = useState(CATALOG_PANEL_MAX_HEIGHT)
+    const [hasOverflow, setHasOverflow] = useState(false)
+    const [dragging, setDragging] = useState(false)
     const height = clampCatalogPanelHeight(preferredHeight ?? maxHeight, maxHeight)
 
     const measure = useCallback(() => {
@@ -76,6 +79,7 @@ export function useCatalogPanelHeight(): {
         if (!region || typeof window === 'undefined') return
         const next = catalogPanelMaxHeight(region.getBoundingClientRect().top, window.innerHeight)
         setMaxHeight((old) => old === next ? old : next)
+        setHasOverflow(region.scrollHeight > region.clientHeight + 1)
     }, [])
 
     useLayoutEffect(() => {
@@ -83,13 +87,18 @@ export function useCatalogPanelHeight(): {
         window.addEventListener('resize', measure)
         const observer = typeof ResizeObserver === 'undefined'
             ? null : new ResizeObserver(measure)
-        // Changes to the heading or an error message can move the table down.
-        if (regionRef.current?.parentElement) observer?.observe(regionRef.current.parentElement)
+        // Observe content as well as the workspace: a replacement catalog,
+        // heading or error can change the available space or overflow.
+        const region = regionRef.current
+        if (region?.parentElement?.parentElement) observer?.observe(region.parentElement.parentElement)
+        if (region) observer?.observe(region)
+        if (region?.firstElementChild) observer?.observe(region.firstElementChild)
         return () => {
             window.removeEventListener('resize', measure)
             observer?.disconnect()
         }
-    }, [measure])
+    }, [measure, contentRevision])
+    useLayoutEffect(() => { measure() }, [height, measure])
 
     function persist(value: number) {
         const next = clampCatalogPanelHeight(value, maxHeight)
@@ -105,15 +114,17 @@ export function useCatalogPanelHeight(): {
         if (event.button !== 0 || dragRef.current) return
         dragRef.current = { pointerId: event.pointerId, startY: event.clientY,
             startHeight: height, startPreference: preferredHeight, currentHeight: height }
+        setDragging(true)
         event.currentTarget.setPointerCapture?.(event.pointerId)
+        event.currentTarget.focus()
         event.preventDefault()
     }
 
     function onPointerMove(event: PointerEvent<HTMLDivElement>) {
         const drag = dragRef.current
         if (!drag || drag.pointerId !== event.pointerId) return
-        // This is a handle ABOVE the table: dragging upward expands it.
-        const next = clampCatalogPanelHeight(drag.startHeight + drag.startY - event.clientY, maxHeight)
+        // The handle is below the table: dragging downward expands it.
+        const next = clampCatalogPanelHeight(drag.startHeight + event.clientY - drag.startY, maxHeight)
         drag.currentHeight = next
         setPreferredHeight(next)
     }
@@ -122,6 +133,7 @@ export function useCatalogPanelHeight(): {
         const drag = dragRef.current
         if (!drag || drag.pointerId !== event.pointerId) return
         dragRef.current = null
+        setDragging(false)
         if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
             event.currentTarget.releasePointerCapture(event.pointerId)
         }
@@ -130,8 +142,8 @@ export function useCatalogPanelHeight(): {
     }
 
     function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-        const next = event.key === 'ArrowUp' ? height + KEYBOARD_STEP
-            : event.key === 'ArrowDown' ? height - KEYBOARD_STEP
+        const next = event.key === 'ArrowUp' ? height - KEYBOARD_STEP
+            : event.key === 'ArrowDown' ? height + KEYBOARD_STEP
                 : event.key === 'Home' ? CATALOG_PANEL_MIN_HEIGHT
                     : event.key === 'End' ? maxHeight : null
         if (next === null) return
@@ -140,7 +152,9 @@ export function useCatalogPanelHeight(): {
     }
 
     return {
-        regionRef, height, maxHeight,
+        // Keep the handle mounted throughout a manual resize, including when
+        // the last row becomes visible, so pointer capture is not interrupted.
+        regionRef, height, maxHeight, hasOverflow: hasOverflow || dragging,
         onPointerDown, onPointerMove,
         onPointerUp: (event) => finishDrag(event, true),
         onPointerCancel: (event) => finishDrag(event, false),

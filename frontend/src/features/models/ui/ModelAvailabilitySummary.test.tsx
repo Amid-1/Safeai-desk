@@ -87,6 +87,7 @@ describe('Model Control Plane configuration summary (non-authoritative)', () => 
     it('does not claim a model is executable just because runtime and catalog match', () => {
         expect(modelConfigurationReadiness(runtime, [model], policy)).toEqual({
             compatibleCount: 1,
+            allowedCount: 1,
             policyEnabled: true,
             runtimeEnabled: true,
             blockers: [],

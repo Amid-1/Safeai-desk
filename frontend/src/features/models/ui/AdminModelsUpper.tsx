@@ -6,15 +6,17 @@ export function AdminModelsUpper({ runtime }: { runtime: RuntimeModelStatus }) {
     return (
         <header className="models-hero models-sections-hero">
             <div className="models-hero__content">
-                <span className="models-eyebrow">SAFEAI DESK / УПРАВЛЕНИЕ</span>
+                <span className="models-eyebrow">МОДЕЛИ И ПОЛИТИКИ ДОСТУПА</span>
                 <h1>Управление AI</h1>
-                <p>Настройте доступ сотрудников к AI, ограничения и защиту данных.</p>
+                <p>Каталог моделей, правила организаций и диагностика запросов.</p>
             </div>
             <div className="models-runtime-badge" aria-label="Подключённая модель">
-                <span>Сейчас настроена модель</span>
+                <span>Подключение на сервере</span>
                 <strong>{runtime.provider} · {runtime.model}</strong>
-                {runtime.provider === 'mock' && <small>Тестовая модель — демонстрационный режим</small>}
-                <small>{runtime.enabled ? 'Включена в настройках' : 'Отключена в настройках'}</small>
+                <small className={runtime.enabled ? 'models-runtime-state is-enabled' : 'models-runtime-state is-disabled'}>
+                    {runtime.enabled ? 'Включена в настройках' : 'Отключена в настройках'}
+                    {runtime.provider === 'mock' && ' · Тестовая модель'}
+                </small>
             </div>
         </header>
     )

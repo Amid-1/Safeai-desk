@@ -1,6 +1,7 @@
 // frontend/src/features/models/ui/AdminModelsPageView.tsx
 // Композиция вкладок и модальных окон. Запросы и RBAC принадлежат feature-контроллеру.
 import { useSearchParams } from 'react-router-dom'
+import { useLayoutEffect, useRef } from 'react'
 import { ErrorState, LoadingState } from '../../../shared/ui/StateBlock'
 import type { AdminModelsController } from '../controller/useAdminModelsController'
 import { AdminModelsUpper } from './AdminModelsUpper'
@@ -18,12 +19,16 @@ import { ModelPolicyModal } from './ModelPolicyModal'
 export function AdminModelsPageView({ controller }: { controller: AdminModelsController }) {
     const [params, setParams] = useSearchParams()
     const section = parseModelsSection(params.get('section'))
+    const pageRef = useRef<HTMLDivElement>(null)
     const { currentUser, loading, loadedOrganizationId, runtime, policy, error,
         targetOrganizationId, catalog, effectiveCatalog, mutationPending,
         selectedOrganizationName, setPolicyModalOpen, catalogModal, setCatalogModal,
         historyModalEntry, setHistoryModalEntry, policyModalOpen, catalogByKey,
         handleCreateCatalogVersion, handleCreatePolicyVersion, handlePreviewPolicy,
         notice } = controller
+    useLayoutEffect(() => {
+        if (pageRef.current) pageRef.current.scrollTop = 0
+    }, [section, loading])
 
     function navigate(next: ModelsSection) {
         if (next === section) return
@@ -51,7 +56,7 @@ export function AdminModelsPageView({ controller }: { controller: AdminModelsCon
     )
 
     return (
-        <div className="page models-page models-page--sections">
+        <div ref={pageRef} className="page models-page models-page--sections">
             <AdminModelsUpper runtime={runtime} />
             <AdminModelsNavigation section={section} onSelect={navigate} />
             {error && <div className="models-page-alert"><ErrorState message={error} variant="inline" /></div>}

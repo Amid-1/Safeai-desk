@@ -4,8 +4,25 @@
 import type { ModelCatalogEntry, RuntimeModelStatus } from '../../../../entities/model/api/modelApi'
 import {formatDateTime} from '../../../../shared/lib/format'
 import { StatusPill } from './viewPresentation'
-import { lifecycleTone, lifecycleLabel, catalogSourceLabel, catalogCapabilities, pricingStatusLabel, retentionLabel, trainingUseLabel } from './viewPresentationLabels'
+import { lifecycleTone, lifecycleLabel, catalogSourceLabel, pricingStatusLabel, retentionLabel, trainingUseLabel } from './viewPresentationLabels'
 import type { StatusTone } from './viewPresentationLabels'
+import { ModelIcon } from '../ModelIcon'
+import type { ModelIconName } from '../ModelIcon'
+
+function CatalogCapabilities({ entry }: { entry: ModelCatalogEntry }) {
+    const modalities = [...new Set([...entry.inputModalities, ...entry.outputModalities])]
+    const modalityLabels = { TEXT: 'Текст', IMAGE: 'Изображения', AUDIO: 'Аудио' }
+    const modalityIcons: Record<string, ModelIconName> = { TEXT: 'text', IMAGE: 'image', AUDIO: 'audio' }
+    const capabilityLabels = { TOOLS: 'Инструменты', VISION: 'Распознавание изображений', STRUCTURED_OUTPUT: 'Структурированный ответ' }
+    const capabilityIcons: Record<string, ModelIconName> = { TOOLS: 'tools', VISION: 'image', STRUCTURED_OUTPUT: 'code' }
+    return <div className="models-capabilities">
+        {modalities.map(value => <span key={value} title={`${modalityLabels[value]}: ${entry.inputModalities.includes(value) ? 'вход' : ''}${entry.inputModalities.includes(value) && entry.outputModalities.includes(value) ? ' / ' : ''}${entry.outputModalities.includes(value) ? 'выход' : ''}`}>
+            <ModelIcon name={modalityIcons[value]} />{modalityLabels[value]}
+        </span>)}
+        {entry.capabilities.map(value => <span key={value}><ModelIcon name={capabilityIcons[value]} />{capabilityLabels[value]}</span>)}
+        {!modalities.length && !entry.capabilities.length && <small>Не заявлены</small>}
+    </div>
+}
 
 export function CatalogTable({
     entries,
@@ -26,15 +43,15 @@ export function CatalogTable({
         <table className="models-catalog-table">
             <thead>
                 <tr>
-                    <th>Модель</th>
+                    <th scope="col">Модель</th>
                     <th scope="col">Подключение</th>
-                    <th>Статус каталога</th>
-                    <th>Лимиты</th>
-                    <th>Возможности каталога</th>
-                    <th>Стоимость</th>
-                    <th>Политика данных</th>
-                    <th>Действует с</th>
-                    <th>Действия</th>
+                    <th scope="col">Статус каталога</th>
+                    <th scope="col">Лимиты</th>
+                    <th scope="col">Возможности каталога</th>
+                    <th scope="col">Стоимость</th>
+                    <th scope="col">Политика данных</th>
+                    <th scope="col">Действует с</th>
+                    <th scope="col">Действия</th>
                 </tr>
             </thead>
 
@@ -62,14 +79,9 @@ export function CatalogTable({
                         entry.provider === runtime.provider
                         && entry.providerModelId === runtime.model
 
-                    const routeEligibleLifecycle =
-                        entry.lifecycle === 'ACTIVE'
-                        || entry.lifecycle === 'DEPRECATED'
-
-                    const executableByCurrentRuntime =
-                        isEffectiveVersion
-                        && routeEligibleLifecycle
-                        && runtimeMatches
+                    const effectiveRuntimeMatches = effectiveEntry !== null
+                        && effectiveEntry.provider === runtime.provider
+                        && effectiveEntry.providerModelId === runtime.model
 
                     const effectiveStateLabel =
                         isEffectiveVersion
@@ -84,26 +96,18 @@ export function CatalogTable({
                     return (
                         <tr key={entry.id}>
                             <td data-label="Модель">
-                                <strong>{entry.displayName}</strong>
+                                <strong className="models-catalog-model-name"><ModelIcon name="cpu" />{entry.displayName}</strong>
                                 <code>{entry.modelKey}</code>
 
                                 <div className="models-catalog-version-flags">
-                                    <StatusPill
+                                    {isEffectiveVersion ? <StatusPill tone="success" label={`Последняя и действующая · v${entry.version}`} /> : <StatusPill
                                         tone="neutral"
                                         label={`Последняя сохраненная · v${entry.version}`}
-                                    />
-
-                                    {isEffectiveVersion && (
-                                        <StatusPill
-                                            tone="success"
-                                            label={`Действующая · v${entry.version}`}
-                                        />
-                                    )}
+                                    />}
+                                    {!isEffectiveVersion && effectiveEntry && <StatusPill tone="success" label={`Действующая · v${effectiveEntry.version}`} />}
                                 </div>
 
                                 <small>
-                                    Запись каталога v{entry.version}
-                                    {' · '}
                                     {catalogSourceLabel(entry.source)}
                                 </small>
                             </td>
@@ -124,14 +128,15 @@ export function CatalogTable({
                                     label={
                                         runtimeMatches
                                             ? 'Совпадает с подключением'
-                                            : 'Подключённая модель отличается'
+                                            : 'Не совпадает с подключением'
                                     }
                                 />
 
-                                {executableByCurrentRuntime && (
+                                {scheduled && effectiveEntry && (
                                     <small>
-                                        Действующая версия физически
-                                        совместима с подключённой моделью
+                                        Действующая v{effectiveEntry.version}: {effectiveRuntimeMatches
+                                            ? 'совпадает с подключением'
+                                            : 'не совпадает с подключением'}
                                     </small>
                                 )}
                             </td>
@@ -144,14 +149,12 @@ export function CatalogTable({
                             </td>
 
                             <td data-label="Лимиты">
-                                {entry.maxInputTokens.toLocaleString('ru-RU')}
-                                {' / '}
-                                {entry.maxOutputTokens.toLocaleString('ru-RU')}
-                                <small>вход / выход</small>
+                                <div className="models-token-pair"><span><small>Вход</small><strong>{entry.maxInputTokens.toLocaleString('ru-RU')}</strong></span>
+                                    <span><small>Выход</small><strong>{entry.maxOutputTokens.toLocaleString('ru-RU')}</strong></span></div>
                             </td>
 
                             <td data-label="Возможности каталога">
-                                {catalogCapabilities(entry)}
+                                <CatalogCapabilities entry={entry} />
                                 {entry.capabilities.length > 0 && (
                                     <small>
                                         Сведения каталога; фактическое исполнение
@@ -218,7 +221,7 @@ export function CatalogTable({
                                             onOpenHistory(entry)
                                         }}
                                     >
-                                        История версий
+                                        <ModelIcon name="history" />История версий
                                     </button>
 
                                     {canEdit && (

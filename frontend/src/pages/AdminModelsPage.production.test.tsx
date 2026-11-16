@@ -239,10 +239,10 @@ describe('AdminModelsPage — контрактные и регрессионны
         vi.mocked(getModelRouteDecision).mockResolvedValueOnce(decision)
         await loadPage()
         fireEvent.click(screen.getByRole('tab', { name: 'Диагностика' }))
-        fireEvent.change(screen.getByLabelText('Номер решения безопасности'), {
+        fireEvent.change(screen.getByLabelText('Идентификатор решения безопасности (UUID)'), {
             target: { value: ROUTE_ID },
         })
-        fireEvent.click(screen.getByRole('button', { name: 'Проверить' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Найти решение' }))
         expect(await screen.findByText(`SHA-256: ${'b'.repeat(64)}`))
             .toBeInTheDocument()
         expect(getModelRouteDecision).toHaveBeenCalledWith(ROUTE_ID, {
@@ -255,9 +255,9 @@ describe('AdminModelsPage — контрактные и регрессионны
         vi.mocked(getModelRouteDecision).mockReturnValue(request.promise)
         await loadPage()
         fireEvent.click(screen.getByRole('tab', { name: 'Диагностика' }))
-        const input = screen.getByLabelText('Номер решения безопасности')
+        const input = screen.getByLabelText('Идентификатор решения безопасности (UUID)')
         fireEvent.change(input, { target: { value: ROUTE_ID } })
-        fireEvent.click(screen.getByRole('button', { name: 'Проверить' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Найти решение' }))
         await waitFor(() => expect(getModelRouteDecision).toHaveBeenCalledTimes(1))
         const signal = vi.mocked(getModelRouteDecision).mock.calls[0]?.[1]?.signal
         fireEvent.change(input, { target: { value: 'другой запрос' } })
@@ -266,7 +266,7 @@ describe('AdminModelsPage — контрактные и регрессионны
         await waitFor(() => {
             expect(screen.queryByText('Ответ старого запроса')).not.toBeInTheDocument()
         })
-        expect(screen.getByRole('button', { name: 'Проверить' })).not.toBeDisabled()
+        expect(screen.getByRole('button', { name: 'Найти решение' })).not.toBeDisabled()
     })
 
     it('открывает диагностику из журнала и проверяет именно номер решения', async () => {
@@ -275,7 +275,7 @@ describe('AdminModelsPage — контрактные и регрессионны
             <AdminModelsPage />
         </MemoryRouter>)
         await waitFor(() => expect(getModelRouteDecision).toHaveBeenCalledWith(ROUTE_ID, { signal: expect.any(AbortSignal) }))
-        expect(screen.getByLabelText('Номер решения безопасности')).toHaveValue(ROUTE_ID)
+        expect(screen.getByLabelText('Идентификатор решения безопасности (UUID)')).toHaveValue(ROUTE_ID)
     })
 
     it('не публикует частично обновлённые latest/effective после неудачного refresh', async () => {
@@ -296,8 +296,8 @@ describe('AdminModelsPage — контрактные и регрессионны
         expect(await screen.findByText(/повторно добавлять модель не нужно/i))
             .toBeInTheDocument()
         // Обе таблицы остаются на предыдущем согласованном срезе.
-        expect(screen.getByText('Последняя сохраненная · v1')).toBeInTheDocument()
-        expect(screen.queryByText('Последняя сохраненная · v2')).not.toBeInTheDocument()
+        expect(screen.getByText('Последняя и действующая · v1')).toBeInTheDocument()
+        expect(screen.queryByText('Последняя и действующая · v2')).not.toBeInTheDocument()
     })
 
     it('показывает результат ошибки POST и позволяет безопасно повторить после завершения', async () => {
@@ -328,7 +328,7 @@ describe('AdminModelsPage — контрактные и регрессионны
         )
         await loadPage()
         fireEvent.click(screen.getByRole('tab', { name: 'Доступ' }))
-        fireEvent.click(screen.getByRole('button', { name: 'Изменить правила' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Настроить правила' }))
         fireEvent.click(screen.getByRole('button', { name: 'Сохранить правила' }))
         expect(await screen.findByText(/Ответ сервера относится к другой организации/))
             .toBeInTheDocument()

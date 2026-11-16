@@ -51,6 +51,7 @@ export function modelConfigurationReadiness(
 
     return {
         compatibleCount: compatible.length,
+        allowedCount: allowed.length,
         policyEnabled: policy.enabled,
         runtimeEnabled: runtime.enabled,
         blockers,

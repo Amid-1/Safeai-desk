@@ -238,6 +238,35 @@ describe('AdminModelsPage', () => {
         expect(policyMock).toHaveBeenCalledTimes(1)
     })
 
+    it('карточки обзора доступны ADMIN и переводят в каталог без нового запроса', async () => {
+        authMock.currentUser = currentUser('ADMIN')
+        render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
+        fireEvent.click(await screen.findByRole('button', { name: /Каталог моделей.*Моделей: 1/ }))
+        expect(screen.getByRole('tab', { name: 'Каталог' })).toHaveAttribute('aria-selected', 'true')
+        expect(screen.queryByRole('button', { name: 'Создать модель' })).not.toBeInTheDocument()
+        expect(catalogMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('фильтрует каталог по имени, провайдеру и статусу последней версии без повторных GET', async () => {
+        authMock.currentUser = currentUser('ADMIN')
+        catalogMock.mockResolvedValueOnce([CATALOG_ENTRY, {
+            ...CATALOG_ENTRY, id: '22222222-2222-4222-8222-222222222222',
+            modelKey: 'other:other-model', displayName: 'Other Model', provider: 'other', providerModelId: 'other-model', lifecycle: 'DISABLED',
+        }])
+        render(<MemoryRouter initialEntries={['/admin/models?section=catalog']}><AdminModelsPage /></MemoryRouter>)
+        const search = await screen.findByRole('searchbox', { name: 'Поиск модели' })
+        fireEvent.change(search, { target: { value: 'OTHER' } })
+        expect(screen.getByText('Other Model')).toBeInTheDocument()
+        expect(screen.queryByText(CATALOG_ENTRY.displayName, { exact: true })).not.toBeInTheDocument()
+        fireEvent.change(screen.getByLabelText('Провайдер'), { target: { value: 'mock' } })
+        expect(screen.getByText('Модели не найдены')).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Сбросить' }))
+        fireEvent.change(screen.getByLabelText('Статус последней версии'), { target: { value: 'DISABLED' } })
+        expect(screen.getByText('Other Model')).toBeInTheDocument()
+        expect(screen.getByText(/Показано: 1 из 2/)).toBeInTheDocument()
+        expect(catalogMock).toHaveBeenCalledTimes(1)
+    })
+
     it('ADMIN видит подключённую модель и правила, но не может менять глобальный каталог', async () => {
         authMock.currentUser =
             currentUser('ADMIN')
@@ -271,9 +300,13 @@ describe('AdminModelsPage', () => {
         expect(screen.queryByRole('dialog', {name: 'Модель каталога'}))
             .not.toBeInTheDocument()
         fireEvent.click(screen.getByRole('tab', { name: 'Обзор' }))
-        fireEvent.click(screen.getByText(/Предварительная проверка совместимости/))
-        expect(screen.getByRole('heading', {name: 'Проверка доступности модели'})).toBeInTheDocument()
-        expect(screen.getAllByText(/Правила не настроены/).length).toBeGreaterThan(0)
+        expect(screen.getByRole('heading', {name: 'Совместимость конфигурации'})).toBeInTheDocument()
+        const summary = screen.getByText('Предварительная проверка совместимости')
+        fireEvent.click(summary)
+        expect(summary.closest('details')).not.toHaveAttribute('open')
+        fireEvent.click(summary)
+        expect(screen.getByRole('heading', {name: 'Совместимость конфигурации'})).toBeInTheDocument()
+        expect(screen.getAllByText('Не настроены').length).toBeGreaterThan(0)
 
         expect(
             screen.queryByRole(
@@ -467,13 +500,16 @@ describe('AdminModelsPage', () => {
         ).toBeInTheDocument()
     })
 
-    it('каталог предоставляет собственный viewport и доступную ручку высоты без перекрытия остальной страницы', async () => {
+    it('каталог предоставляет собственный viewport с естественной высотой без лишней ручки', async () => {
         authMock.currentUser = currentUser('ADMIN')
         render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
         await screen.findByRole('tab', { name: 'Каталог' })
         fireEvent.click(screen.getByRole('tab', { name: 'Каталог' }))
-        expect(screen.getByRole('region', { name: 'Таблица каталога моделей' })).toBeInTheDocument()
-        expect(screen.getByRole('separator', { name: 'Изменить высоту таблицы каталога' })).toBeInTheDocument()
+        const viewport = screen.getByRole('region', { name: 'Таблица каталога моделей' })
+        expect(viewport).toBeInTheDocument()
+        expect(viewport.style.height).toBe('')
+        expect(viewport.style.maxHeight).toMatch(/^\d+px$/)
+        expect(screen.queryByRole('separator', { name: 'Изменить высоту таблицы каталога' })).not.toBeInTheDocument()
     })
 
     it('показывает окно правил по явной кнопке и закрывает его крестиком', async () => {
@@ -481,7 +517,7 @@ describe('AdminModelsPage', () => {
         render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
         await screen.findByRole('tab', { name: 'Доступ' })
         fireEvent.click(screen.getByRole('tab', { name: 'Доступ' }))
-        fireEvent.click(screen.getByRole('button', {name: 'Изменить правила'}))
+        fireEvent.click(screen.getByRole('button', {name: 'Настроить правила'}))
         expect(screen.getByRole('dialog', {name: 'Правила использования моделей'}))
             .toBeInTheDocument()
         fireEvent.click(screen.getByRole('button', {name: 'Закрыть окно'}))
@@ -500,7 +536,7 @@ describe('AdminModelsPage', () => {
 
         fireEvent.change(
             screen.getByLabelText(
-                'Номер решения безопасности',
+                'Идентификатор решения безопасности (UUID)',
             ),
             {
                 target: {
@@ -512,7 +548,7 @@ describe('AdminModelsPage', () => {
         fireEvent.click(
             screen.getByRole(
                 'button',
-                {name: 'Проверить'},
+                {name: 'Найти решение'},
             ),
         )
 

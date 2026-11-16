@@ -164,12 +164,12 @@ describe('ModelControlPlaneViews semantics', () => {
         ).toBeInTheDocument()
 
         expect(
-            screen.getByText('Последняя сохраненная · v1'),
+            screen.getByText('Последняя и действующая · v1'),
         ).toBeInTheDocument()
 
         expect(
-            screen.getByText('Действующая · v1'),
-        ).toBeInTheDocument()
+            screen.queryByText('Действующая · v1'),
+        ).not.toBeInTheDocument()
 
         expect(
             screen.getByText('Действует сейчас'),

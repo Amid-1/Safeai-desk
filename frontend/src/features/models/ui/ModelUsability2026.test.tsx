@@ -45,7 +45,7 @@ describe('Модели: понятный и безопасный интерфе�
             organizationName="SafeAI Platform"
             onOpenPolicy={onOpenPolicy}
         />)
-        expect(screen.getByRole('heading', {name: 'Проверка доступности модели'})).toBeInTheDocument()
+        expect(screen.getByRole('heading', {name: 'Совместимость конфигурации'})).toBeInTheDocument()
         expect(screen.getByText('Нужна проверка запроса')).toBeInTheDocument()
         expect(screen.getByText(/Окончательный доступ определяется сервером/)).toBeInTheDocument()
         // Три сводные карточки не должны быть ложными кнопками.
@@ -75,5 +75,36 @@ describe('Модели: понятный и безопасный интерфе�
         render(<PolicyCard {...policyProps()} isSuperAdmin={false} />)
         expect(screen.queryByRole('searchbox', {name: 'Проверить другую организацию'}))
             .not.toBeInTheDocument()
+    })
+
+    it('копирует полный UUID выбранной организации', async () => {
+        const writeText = vi.fn().mockResolvedValue(undefined)
+        vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
+        try {
+            render(<PolicyCard {...policyProps()} isSuperAdmin={false} />)
+            fireEvent.click(screen.getByRole('button', { name: 'Копировать UUID организации' }))
+            expect(await screen.findByText('UUID скопирован')).toBeInTheDocument()
+            expect(writeText).toHaveBeenCalledWith(policy.organizationId)
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it('различает отсутствие правил и сохранённую отключённую версию', () => {
+        const { rerender } = render(<PolicyCard {...policyProps()} />)
+        expect(screen.getByText(/Сервер блокирует AI-запросы/)).toBeInTheDocument()
+        rerender(<PolicyCard {...policyProps()} policy={{ ...policy, configured: true, version: 2, enabled: false }} />)
+        expect(screen.queryByText(/Сервер блокирует AI-запросы/)).not.toBeInTheDocument()
+        expect(screen.getByText(/дополнительные ограничения этой версии не применяются/)).toBeInTheDocument()
+        expect(screen.getAllByRole('button', { name: 'Изменить правила' })).toHaveLength(1)
+    })
+
+    it('для модели по умолчанию показывает параметры действующей версии, а не будущей', () => {
+        render(<PolicyCard {...policyProps()}
+            policy={{ ...policy, configured: true, enabled: true, defaultModelKey: entry.modelKey }}
+            catalog={[{ ...entry, providerModelId: 'future-model', version: 2 }]}
+            effectiveCatalog={[entry]} />)
+        expect(screen.getByText('mock / mock-safeai')).toBeInTheDocument()
+        expect(screen.queryByText(/future-model/)).not.toBeInTheDocument()
     })
 })

@@ -16,6 +16,7 @@ function Harness() {
     const {
         regionRef,
         height,
+        hasOverflow,
         onPointerDown,
         onPointerMove,
         onPointerUp,
@@ -29,7 +30,7 @@ function Harness() {
                 tabIndex={0} onPointerDown={onPointerDown} onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp} onPointerCancel={onPointerCancel}
                 onKeyDown={onKeyDown} onDoubleClick={onDoubleClick} />
-            <div ref={regionRef} data-testid="viewport" style={{height: height}} />
+            <div ref={regionRef} data-testid="viewport" data-overflow={hasOverflow} style={{maxHeight: height}} />
         </div>
     )
 }
@@ -40,6 +41,20 @@ beforeEach(() => {
 })
 
 describe('Resizable catalog viewport', () => {
+    it('only reports a resize affordance when content overflows even with a saved preference', () => {
+        window.localStorage.setItem(CATALOG_PANEL_STORAGE_KEY, '500')
+        const scrollHeight = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(200)
+        vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(200)
+        render(<Harness />)
+        const viewport = screen.getByTestId('viewport')
+        expect(viewport).toHaveAttribute('data-overflow', 'false')
+        scrollHeight.mockReturnValue(800)
+        fireEvent(window, new Event('resize'))
+        expect(viewport).toHaveAttribute('data-overflow', 'true')
+        scrollHeight.mockReturnValue(200)
+        fireEvent(window, new Event('resize'))
+        expect(viewport).toHaveAttribute('data-overflow', 'false')
+    })
     it('clamps to available viewport height without clipping short layouts', () => {
         expect(catalogPanelMaxHeight(400, 900)).toBe(416)
         expect(catalogPanelMaxHeight(900, 700)).toBe(CATALOG_PANEL_MIN_HEIGHT)
@@ -65,7 +80,7 @@ describe('Resizable catalog viewport', () => {
         render(<Harness />)
         const separator = screen.getByRole('separator', {name:'Высота каталога'})
         const initial = Number(separator.getAttribute('aria-valuenow'))
-        fireEvent.keyDown(separator, { key:'ArrowDown' })
+        fireEvent.keyDown(separator, { key:'ArrowUp' })
         const shorter = Number(separator.getAttribute('aria-valuenow'))
         expect(shorter).toBeLessThan(initial)
         expect(window.localStorage.getItem(CATALOG_PANEL_STORAGE_KEY)).toBe(String(shorter))
@@ -78,15 +93,15 @@ describe('Resizable catalog viewport', () => {
         expect(separator).toHaveAttribute('aria-valuenow', String(initial))
     })
 
-    it('dragging the top handle down makes the viewport smaller; persists only on release', () => {
+    it('dragging the bottom handle up makes the viewport smaller; persists only on release', () => {
         render(<Harness />)
         const separator = screen.getByRole('separator', {name:'Высота каталога'})
         const initial = Number(separator.getAttribute('aria-valuenow'))
-        fireEvent.pointerDown(separator, { pointerId: 5, clientY: 100, button: 0 })
-        fireEvent.pointerMove(separator, { pointerId: 5, clientY: 160 })
+        fireEvent.pointerDown(separator, { pointerId: 5, clientY: 160, button: 0 })
+        fireEvent.pointerMove(separator, { pointerId: 5, clientY: 100 })
         expect(Number(separator.getAttribute('aria-valuenow'))).toBe(initial - 60)
         expect(window.localStorage.getItem(CATALOG_PANEL_STORAGE_KEY)).toBeNull()
-        fireEvent.pointerUp(separator, { pointerId: 5, clientY: 160 })
+        fireEvent.pointerUp(separator, { pointerId: 5, clientY: 100 })
         expect(window.localStorage.getItem(CATALOG_PANEL_STORAGE_KEY)).toBe(String(initial - 60))
     })
 

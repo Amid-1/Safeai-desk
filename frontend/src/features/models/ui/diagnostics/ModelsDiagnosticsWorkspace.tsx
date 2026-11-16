@@ -3,7 +3,8 @@ import type { AdminModelsController } from '../../controller/useAdminModelsContr
 import { RuntimeCard, RouteDecisionEvidence } from '../ModelControlPlaneViews'
 import { ErrorState } from '../../../../shared/ui/StateBlock'
 import { useEffect, useRef } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
+import { ModelIcon } from '../ModelIcon'
 
 export function ModelsDiagnosticsWorkspace({ controller }: { controller: AdminModelsController }) {
     const { runtime, effectiveCatalog, runtimeProbe, runtimeProbePending, isSuperAdmin,
@@ -18,7 +19,9 @@ export function ModelsDiagnosticsWorkspace({ controller }: { controller: AdminMo
     useEffect(() => {
         if (linkedDecisionId && routeDecisionId.trim().toLowerCase() === linkedDecisionId.toLowerCase()
             && (routeDecision || routeError)) {
-            decisionSectionRef.current?.scrollIntoView?.({ block: 'start' })
+            const target = decisionSectionRef.current
+            const viewport = target?.closest<HTMLElement>('.models-page--sections')
+            if (target && viewport) viewport.scrollTop += target.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 12
         }
     }, [linkedDecisionId, routeDecisionId, routeDecision, routeError])
     if (!runtime) return null
@@ -30,24 +33,28 @@ export function ModelsDiagnosticsWorkspace({ controller }: { controller: AdminMo
                 <p>Проверьте текущее подключение модели или найдите сохранённое решение по конкретному запросу.</p>
             </header>
             <div className="models-diagnostics-runtime">
-                <p className="models-diagnostics-context">Текущая конфигурация модели. Она может отличаться от настроек на момент исторического запроса.</p>
+                <p className="models-diagnostics-context">Текущая конфигурация сервера — не снимок настроек на момент исторического запроса.</p>
                 <RuntimeCard runtime={runtime} effectiveCatalog={effectiveCatalog}
                     probe={runtimeProbe} probePending={runtimeProbePending}
                     canProbe={isSuperAdmin} onProbe={() => { void handleRuntimeProbe() }} />
             </div>
             <div className="models-diagnostics-decision" ref={decisionSectionRef}>
-                <h3>Проверка решения по запросу</h3>
-                <p>Откройте диагностику из события в журнале или введите номер решения безопасности. Идентификатор пользователя для этой проверки не подходит.</p>
+                <span className="models-eyebrow">ИСТОРИЯ РЕШЕНИЙ</span>
+                <div className="models-decision-heading"><h3><ModelIcon name="history" />Диагностика запроса</h3>
+                    <Link className="models-audit-link" to="/admin/audit">Открыть журнал аудита <ModelIcon name="arrow" /></Link></div>
+                <p>Найдите сохранённое решение сервера по конкретному запросу: какая модель была выбрана или почему запрос был отклонён. Новая проверка не запускается.</p>
                 <form className="models-evidence-search" onSubmit={(event) => {
                     event.preventDefault(); void handleRouteLookup()
                 }}>
-                    <label htmlFor="models-route-decision-id">Номер решения безопасности</label>
+                    <label htmlFor="models-route-decision-id">Идентификатор решения безопасности (UUID)</label>
                     <input id="models-route-decision-id" type="text" autoComplete="off" inputMode="text" spellCheck={false}
+                        aria-describedby="models-decision-id-hint"
                         value={routeDecisionId} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                         onChange={(event) => handleRouteDecisionIdChange(event.target.value)} />
-                    <button type="submit" disabled={routePending}>
-                        {routePending ? 'Проверяем...' : 'Проверить'}
+                    <button className="btn-primary" type="submit" disabled={routePending || !routeDecisionId.trim()}>
+                        <ModelIcon name="search" />{routePending ? 'Поиск...' : 'Найти решение'}
                     </button>
+                    <small id="models-decision-id-hint">UUID находится в деталях события маршрутизации в журнале аудита. Оттуда можно сразу открыть диагностику.</small>
                 </form>
                 {routeError && <ErrorState message={routeError} variant="inline" />}
                 {routeDecision && <RouteDecisionEvidence key={routeDecision.id} decision={routeDecision} />}
