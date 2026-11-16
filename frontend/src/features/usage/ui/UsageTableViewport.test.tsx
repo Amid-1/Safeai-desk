@@ -1,3 +1,4 @@
+// frontend/src/features/usage/ui/UsageTableViewport.test.tsx
 import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { UsageTableViewport } from './UsageTableViewport'

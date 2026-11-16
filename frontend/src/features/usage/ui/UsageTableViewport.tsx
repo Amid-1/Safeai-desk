@@ -1,3 +1,4 @@
+// frontend/src/features/usage/ui/UsageTableViewport.tsx
 import { useEffect, useRef, useState, type CSSProperties, type PropsWithChildren } from 'react'
 
 const MIN_HEIGHT = 120
