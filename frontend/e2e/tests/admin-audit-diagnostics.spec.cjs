@@ -66,7 +66,7 @@ for (const width of [1440, 760]) {
       await field.scrollIntoViewIfNeeded()
       const closed = await field.boundingBox()
       const layout = [page.locator('.audit-filters'), page.locator('.audit-date-presets'),
-        page.locator('.audit-table-card'), page.getByRole('button', { name: 'Показать события' })]
+        page.locator('.audit-table-card'), page.getByRole('button', { name: 'Показать события', exact: true })]
       const before = await Promise.all(layout.map(element => element.boundingBox()))
       await field.click()
       const list = page.getByRole('listbox', { name, exact: true })
@@ -90,7 +90,7 @@ for (const width of [1440, 760]) {
     }
     await page.getByRole('combobox', { name: 'Событие', exact: true }).click()
     await page.getByRole('option', { name: /Выход пользователя/ }).click()
-    await page.getByRole('button', { name: 'Показать события' }).click()
+    await page.getByRole('button', { name: 'Показать события', exact: true }).click()
     await expect(page.getByText('Событий не найдено')).toBeVisible()
     await expect(page.getByRole('separator', { name: /журнал событий/ })).toHaveCount(0)
     await expect(page.getByRole('table')).toHaveCount(0)

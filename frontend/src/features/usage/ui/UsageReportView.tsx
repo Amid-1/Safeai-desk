@@ -187,31 +187,31 @@ export function UsageRows({
             <table className="admin-table usage-table">
                 <thead>
                     <tr>
-                        <th>
+                        <th scope="col">
                             Пользователь
                         </th>
 
-                        <th>
+                        <th scope="col">
                             Модель
                         </th>
 
-                        <th>
+                        <th scope="col">
                             Входные токены
                         </th>
 
-                        <th>
+                        <th scope="col">
                             Выходные токены
                         </th>
 
-                        <th>
+                        <th scope="col">
                             Всего подтверждено
                         </th>
 
-                        <th>
+                        <th scope="col">
                             Известная стоимость
                         </th>
 
-                        <th>
+                        <th scope="col">
                             Полнота учёта
                         </th>
                     </tr>
@@ -249,27 +249,27 @@ export function UsageRows({
             <table className="admin-table usage-table">
                 <thead>
                     <tr>
-                        <th>
+                        <th scope="col">
                             Пользователь
                         </th>
 
-                        <th>
+                        <th scope="col">
                             Входные токены
                         </th>
 
-                        <th>
+                        <th scope="col">
                             Выходные токены
                         </th>
 
-                        <th>
+                        <th scope="col">
                             Всего подтверждено
                         </th>
 
-                        <th>
+                        <th scope="col">
                             Известная стоимость
                         </th>
 
-                        <th>
+                        <th scope="col">
                             Полнота учёта
                         </th>
                     </tr>
@@ -307,27 +307,27 @@ export function UsageRows({
             <table className="admin-table usage-table">
                 <thead>
                     <tr>
-                        <th>
+                        <th scope="col">
                             Модель
                         </th>
 
-                        <th>
+                        <th scope="col">
                             Входные токены
                         </th>
 
-                        <th>
+                        <th scope="col">
                             Выходные токены
                         </th>
 
-                        <th>
+                        <th scope="col">
                             Всего подтверждено
                         </th>
 
-                        <th>
+                        <th scope="col">
                             Известная стоимость
                         </th>
 
-                        <th>
+                        <th scope="col">
                             Полнота учёта
                         </th>
                     </tr>
@@ -362,27 +362,27 @@ export function UsageRows({
         <table className="admin-table usage-table">
             <thead>
                 <tr>
-                    <th>
+                    <th scope="col">
                         Дата
                     </th>
 
-                    <th>
+                    <th scope="col">
                         Входные токены
                     </th>
 
-                    <th>
+                    <th scope="col">
                         Выходные токены
                     </th>
 
-                    <th>
+                    <th scope="col">
                         Всего подтверждено
                     </th>
 
-                    <th>
+                    <th scope="col">
                         Известная стоимость
                     </th>
 
-                    <th>
+                    <th scope="col">
                         Полнота учёта
                     </th>
                 </tr>
