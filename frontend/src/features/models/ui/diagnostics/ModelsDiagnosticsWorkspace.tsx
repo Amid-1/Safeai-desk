@@ -19,9 +19,9 @@ export function ModelsDiagnosticsWorkspace({ controller }: { controller: AdminMo
     useEffect(() => {
         if (linkedDecisionId && routeDecisionId.trim().toLowerCase() === linkedDecisionId.toLowerCase()
             && (routeDecision || routeError)) {
-            const target = decisionSectionRef.current
-            const viewport = target?.closest<HTMLElement>('.models-page--sections')
-            if (target && viewport) viewport.scrollTop += target.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 12
+            // Models uses the document scroll on this route. Native scrolling also
+            // handles a nested scroll container if the shell layout changes.
+            decisionSectionRef.current?.scrollIntoView?.({ block: 'start', inline: 'nearest', behavior: 'instant' })
         }
     }, [linkedDecisionId, routeDecisionId, routeDecision, routeError])
     if (!runtime) return null

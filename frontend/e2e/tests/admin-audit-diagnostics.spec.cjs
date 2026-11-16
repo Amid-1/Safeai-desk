@@ -111,11 +111,28 @@ test('audit modal preserves controls and opens historical decision directly', as
   await modal.getByRole('link', { name: 'Открыть диагностику запроса' }).click()
   await expect(page).toHaveURL(new RegExp('decisionId=' + decisionId))
   await expect(page.getByText('Правила доступа к AI не были настроены.')).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Диагностика запроса' })).toBeInViewport()
+  await expect(page.getByLabel('Идентификатор решения безопасности (UUID)')).toHaveValue(decisionId)
+  const heading = page.getByRole('heading', { name: 'Диагностика запроса' })
+  await expect(heading).toBeInViewport({ ratio: 1 })
+  await expect.poll(async () => (await heading.boundingBox()).y -
+    (await page.locator('.topbar').boundingBox()).height).toBeGreaterThanOrEqual(0)
   const technical = page.getByText('UTF8_STRUCTURAL_UNITS_V2', { exact: true })
   await expect(technical).toBeHidden()
   await page.getByText('Технические сведения решения', { exact: true }).click()
   await expect(technical).toBeVisible()
+})
+
+test('direct historical decision link scrolls below the sticky header on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  const response = page.waitForResponse(r => new NodeURL(r.url()).pathname === `/api/admin/models/route-decisions/${decisionId}`)
+  await page.goto(`/admin/models?section=diagnostics&decisionId=${decisionId}`)
+  expect((await response).ok()).toBeTruthy()
+  await expect(page.getByLabel('Идентификатор решения безопасности (UUID)')).toHaveValue(decisionId)
+  await expect(page.getByText('Правила доступа к AI не были настроены.')).toBeVisible()
+  const heading = page.getByRole('heading', { name: 'Диагностика запроса' })
+  await expect(heading).toBeInViewport({ ratio: 1 })
+  await expect.poll(async () => (await heading.boundingBox()).y -
+    (await page.locator('.topbar').boundingBox()).height).toBeGreaterThanOrEqual(0)
 })
 
 test('clicking the actor filters the whole journal via server without leaving audit', async ({ page }) => {

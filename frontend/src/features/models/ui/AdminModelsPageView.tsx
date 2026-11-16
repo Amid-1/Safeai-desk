@@ -28,6 +28,8 @@ export function AdminModelsPageView({ controller }: { controller: AdminModelsCon
         notice } = controller
     useLayoutEffect(() => {
         if (pageRef.current) pageRef.current.scrollTop = 0
+        // The Models route is not a viewport workspace: its scroll owner is the document.
+        if (document.scrollingElement) document.scrollingElement.scrollTop = 0
     }, [section, loading])
 
     function navigate(next: ModelsSection) {

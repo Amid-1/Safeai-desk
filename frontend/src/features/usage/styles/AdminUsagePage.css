@@ -112,7 +112,8 @@
 .usage-chart-select { display: grid; gap: 4px; font-size: 14px; color: #43536a; font-weight: 650; }
 .usage-chart-select select { max-width: 100%; min-height: 36px; padding: 5px 8px; border: 1px solid #cedaeb; border-radius: 8px; background: white; }
 #usage-daily-chart-content { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.usage-chart-viewport { flex: 1 0 auto; height: clamp(200px,28vh,320px); min-height: 200px; min-width: 0; width: 100%; }
+/* Keep the daily plot compact, like the breakdown plots; expanded mode uses the report's remaining height. */
+.usage-chart-viewport { flex: 1 0 auto; height: clamp(200px,22vh,250px); min-height: 200px; min-width: 0; width: 100%; }
 .usage-chart-note { flex: 0 0 auto; }
 .usage-page--expanded .usage-results-panel { flex: 1 1 0; }
 .usage-page--expanded .usage-data-viewport { flex: 1 1 0; }
