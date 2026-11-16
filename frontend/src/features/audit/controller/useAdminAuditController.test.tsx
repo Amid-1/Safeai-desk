@@ -137,6 +137,35 @@ describe('useAdminAuditController — контракты фильтров', () =
         expect(result.current.filterError).toBe('')
     })
 
+    it('быстрый фильтр инициатора сохраняет период и целевую организацию, снимает тип и email', () => {
+        setRole(true)
+        const actorEvent = {
+            id: OTHER_ID, targetOrganizationId: OTHER_ID, targetOrganizationName: null,
+            actorUserId: TENANT_ID, actorOrganizationId: OTHER_ID, actorEmail: 'historical@test.ru',
+            actorDisplayName: 'Историческое имя', eventType: 'USER_CREATED', details: {},
+            detailsInvalid: false, detailsTruncated: false, createdAt: '2026-10-19T00:00:00Z',
+        }
+        eventsMock.mockReturnValue({ events: [actorEvent], loading: false, error: '',
+            pageResponse: {content: [actorEvent], page: 0, size: 50, totalPages: 1, totalElements: 1} })
+        window.history.replaceState({}, '', `/admin/audit?targetOrganizationId=${OTHER_ID}&dateFrom=2026-10-01&dateTo=2026-10-20&eventType=USER_CREATED&actorEmail=old%40test.ru&page=2`)
+        const { result } = renderHook(useAdminAuditController)
+        act(() => result.current.filterByActor(TENANT_ID))
+        expect(result.current.draftFilter).toMatchObject({ actorUserId: TENANT_ID, eventType: '', actorEmail: '', targetOrganizationId: OTHER_ID, dateFrom: '2026-10-01', dateTo: '2026-10-20' })
+        expect(eventsMock).toHaveBeenLastCalledWith(expect.objectContaining({ page: 0, filter: expect.objectContaining({ actorUserId: TENANT_ID, eventType: undefined, actorEmail: undefined, targetOrganizationId: OTHER_ID }) }))
+        expect(window.location.search).toContain(`actorUserId=${TENANT_ID}`)
+        expect(result.current.filtersDirty).toBe(false)
+        expect(result.current.actors).toContainEqual(expect.objectContaining({ actorUserId: TENANT_ID, actorEmail: 'historical@test.ru' }))
+    })
+
+    it('не применяет быстрый фильтр поверх несохранённого черновика', () => {
+        const { result } = renderHook(useAdminAuditController)
+        act(() => result.current.setDraftFilter({ ...result.current.draftFilter, eventType: 'USER_CREATED' }))
+        const prevRequest = eventsMock.mock.lastCall?.[0]
+        act(() => result.current.filterByActor(TENANT_ID))
+        expect(result.current.filtersDirty).toBe(true)
+        expect(eventsMock.mock.lastCall?.[0]).toEqual(prevRequest)
+    })
+
     it('меняет только черновик при выборе пресета до нажатия «Применить»', () => {
         const { result } = renderHook(useAdminAuditController)
         // Changing a draft rerenders the hook, but must not change GET args.

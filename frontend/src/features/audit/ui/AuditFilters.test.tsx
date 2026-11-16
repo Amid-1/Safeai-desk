@@ -78,7 +78,7 @@ describe('AuditFilters production UX', () => {
     it('explains draft filters and preserves historical email search in advanced filters', () => {
         renderFilters()
         expect(screen.getByText(/результаты еще не обновлены/)).toBeInTheDocument()
-        fireEvent.click(screen.getByText('Расширенные фильтры'))
+        fireEvent.click(screen.getByText('Дополнительные фильтры'))
         expect(screen.getByLabelText(/Поиск по email в истории/)).toBeInTheDocument()
     })
 })

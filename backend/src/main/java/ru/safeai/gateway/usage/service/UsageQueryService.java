@@ -286,6 +286,65 @@ public class UsageQueryService {
                 usageQueryRepository.findSummary(criteria, buildPlan(range), pageable));
     }
 
+    private UsageQueryCriteria userCriteria(
+            UUID organizationId, UUID userId, UsageDateRange range, String model,
+            SafeAiUserPrincipal currentUser
+    ) {
+        requireCurrentUser(currentUser);
+        Objects.requireNonNull(userId, "userId не должен быть null");
+        if (organizationId != null) {
+            requireOrganizationAccess(organizationId, currentUser);
+        }
+        return new UsageQueryCriteria(range.from(), range.to(),
+                organizationId == null ? scope(currentUser) : organizationId,
+                userId, normalizeModel(model));
+    }
+
+    public Slice<UsageSummaryResponse> getUsageSummaryForUser(
+            UUID organizationId, UUID userId, Instant dateFrom, Instant dateTo, String model,
+            Pageable pageable, SafeAiUserPrincipal currentUser
+    ) {
+        requirePageable(pageable);
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
+        UsageQueryCriteria criteria = userCriteria(organizationId, userId, range, model, currentUser);
+        return reportExecutor.execute("summary", () ->
+                usageQueryRepository.findSummary(criteria, buildPlan(range), pageable));
+    }
+
+    public Slice<UsageUserSummaryResponse> getUsageUsersForUser(
+            UUID organizationId, UUID userId, Instant dateFrom, Instant dateTo, String model,
+            Pageable pageable, SafeAiUserPrincipal currentUser
+    ) {
+        requirePageable(pageable);
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
+        UsageQueryCriteria criteria = userCriteria(organizationId, userId, range, model, currentUser);
+        return reportExecutor.execute("users", () ->
+                usageQueryRepository.findUsers(criteria, buildPlan(range), pageable));
+    }
+
+    public List<UsageModelSummaryResponse> getUsageModelsForUser(
+            UUID organizationId, UUID userId, Instant dateFrom, Instant dateTo, String model,
+            SafeAiUserPrincipal currentUser
+    ) {
+        requireCurrentUser(currentUser);
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
+        UsageQueryCriteria criteria = userCriteria(organizationId, userId, range, model, currentUser);
+        return reportExecutor.execute("models", () ->
+                usageQueryRepository.findModels(criteria, buildPlan(range)));
+    }
+
+    public List<UsageDailySummaryResponse> getUsageDailyForUser(
+            UUID organizationId, UUID userId, Instant dateFrom, Instant dateTo, String model,
+            SafeAiUserPrincipal currentUser
+    ) {
+        requireCurrentUser(currentUser);
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
+        requireBoundedDailyRange(range);
+        UsageQueryCriteria criteria = userCriteria(organizationId, userId, range, model, currentUser);
+        return reportExecutor.execute("daily", () ->
+                usageQueryRepository.findDaily(criteria, buildPlan(range)));
+    }
+
     public UsageDataQualityResponse getDataQuality(
             Instant dateFrom, Instant dateTo, SafeAiUserPrincipal currentUser
     ) {

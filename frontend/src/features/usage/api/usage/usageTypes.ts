@@ -13,6 +13,7 @@ export type UsageDateRangeFilter = {
 export type UsageSummaryFilter =
     UsageDateRangeFilter & {
         model?: string
+        userId?: string
     }
 
 export type UsageCoverage = {

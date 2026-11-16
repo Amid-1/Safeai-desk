@@ -9,7 +9,7 @@ export function reportTitle(
 ): string {
     switch (tab) {
         case 'users':
-            return 'Расход по сотрудникам'
+            return 'Расход по пользователям'
 
         case 'models':
             return 'Расход по моделям'
@@ -18,7 +18,7 @@ export function reportTitle(
             return 'Динамика использования'
 
         default:
-            return 'Детальная сводка'
+            return 'Детализация расходов'
     }
 }
 
@@ -27,7 +27,7 @@ export function reportDescription(
 ): string {
     switch (tab) {
         case 'users':
-            return 'Суммарные токены и стоимость для каждого сотрудника.'
+            return 'Суммарные токены и стоимость для каждого пользователя.'
 
         case 'models':
             return 'Сравнение объёма и стоимости используемых AI-моделей.'
@@ -36,7 +36,7 @@ export function reportDescription(
             return 'Изменение расхода токенов и стоимости по календарным дням.'
 
         default:
-            return 'Использование с разбивкой по сотрудникам и моделям.'
+            return 'Расход токенов и стоимость в разрезе пользователей и AI-моделей за выбранный период.'
     }
 }
 

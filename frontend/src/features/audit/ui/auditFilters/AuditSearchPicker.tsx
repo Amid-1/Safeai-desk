@@ -121,7 +121,7 @@ export function AuditSearchPicker({ label, placeholder, query, onQueryChange, va
                     id={id + '-option-' + index} aria-selected={item.value === value} tabIndex={-1}
                     className={index === active ? 'is-active' : ''}
                     onMouseDown={(event) => event.preventDefault()} onClick={() => choose(item.value)}>
-                    {item.group && <small>{item.group}</small>}<span>{item.label}</span>
+                    {item.group && <small className={items[index - 1]?.group === item.group ? 'audit-group-repeated' : undefined}>{item.group}</small>}<span>{item.label}</span>
                 </button>)}
             </div>
         </div>, document.body)}

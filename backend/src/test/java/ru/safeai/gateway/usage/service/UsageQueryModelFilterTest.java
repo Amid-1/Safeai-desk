@@ -65,6 +65,33 @@ class UsageQueryModelFilterTest {
     }
 
     @Test
+    void subjectUserFilterPreservesTenantForEveryReport() {
+        UUID subject = UUID.randomUUID();
+        var admin = principal("ROLE_ADMIN");
+        var page = PageRequest.of(0, 50);
+        service.getUsageSummaryForUser(null, subject, FROM, TO, "mock-safeai", page, admin);
+        service.getUsageUsersForUser(null, subject, FROM, TO, "mock-safeai", page, admin);
+        service.getUsageModelsForUser(null, subject, FROM, TO, "mock-safeai", admin);
+        service.getUsageDailyForUser(null, subject, FROM, TO, "mock-safeai", admin);
+        var criteria = new UsageQueryCriteria(FROM, TO, TENANT, subject, "mock-safeai");
+        verify(repository).findSummary(org.mockito.ArgumentMatchers.eq(criteria), any(), any());
+        verify(repository).findUsers(org.mockito.ArgumentMatchers.eq(criteria), any(), any());
+        verify(repository).findModels(org.mockito.ArgumentMatchers.eq(criteria), any());
+        verify(repository).findDaily(org.mockito.ArgumentMatchers.eq(criteria), any());
+        assertThatThrownBy(() -> service.getUsageDailyForUser(
+                OTHER, subject, FROM, TO, null, admin))
+                .isInstanceOf(ForbiddenOperationException.class);
+    }
+
+    @Test
+    void subjectUserFilterRetainsExplicitSuperAdminTenant() {
+        UUID subject = UUID.randomUUID();
+        service.getUsageModelsForUser(OTHER, subject, FROM, TO, null, principal("ROLE_SUPER_ADMIN"));
+        verify(repository).findModels(org.mockito.ArgumentMatchers.eq(
+                new UsageQueryCriteria(FROM, TO, OTHER, subject, null)), any());
+    }
+
+    @Test
     void filtersUsersInTenantBeforePaging() {
         when(repository.findUsers(any(), any(), any())).thenReturn(new SliceImpl<>(List.of()));
         service.getUsageByUsers(FROM, TO, "mock-safeai", PageRequest.of(0, 50), principal("ROLE_ADMIN"));

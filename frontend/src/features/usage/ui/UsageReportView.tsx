@@ -58,7 +58,7 @@ export function UsageReportFooter({
         tab === 'models'
             ? 'Все модели показаны'
             : tab === 'daily'
-                ? 'Все дни показаны'
+                ? 'Все дни с записями'
                 : 'Все записи показаны'
 
     if (
@@ -153,9 +153,21 @@ export function UsageReportFooter({
 export function UsageRows({
     tab,
     rows,
+    onInspectModel,
+    onInspectUser,
+    appliedModel,
+    appliedUserId,
+    onInspectDay,
+    drilldownDisabled = false,
 }: {
     tab: UsageReportTab
     rows: UsageRowsType
+    onInspectModel?: (model: string) => void
+    onInspectUser?: (userId: string, email: string) => void
+    appliedModel?: string
+    appliedUserId?: string
+    onInspectDay?: (date: string) => void
+    drilldownDisabled?: boolean
 }) {
     if (
         rows.length === 0
@@ -184,15 +196,15 @@ export function UsageRows({
                         </th>
 
                         <th>
-                            Вход
+                            Входные токены
                         </th>
 
                         <th>
-                            Выход
+                            Выходные токены
                         </th>
 
                         <th>
-                            Всего
+                            Всего подтверждено
                         </th>
 
                         <th>
@@ -200,7 +212,7 @@ export function UsageRows({
                         </th>
 
                         <th>
-                            Качество данных
+                            Полнота учёта
                         </th>
                     </tr>
                 </thead>
@@ -218,6 +230,9 @@ export function UsageRows({
                                     }
                                     showUser
                                     showModel
+                                    onInspectModel={row.model === appliedModel ? undefined : onInspectModel}
+                                    onInspectUser={row.userId === appliedUserId ? undefined : onInspectUser}
+                                    drilldownDisabled={drilldownDisabled}
                                 />
                             ),
                         )
@@ -239,15 +254,15 @@ export function UsageRows({
                         </th>
 
                         <th>
-                            Вход
+                            Входные токены
                         </th>
 
                         <th>
-                            Выход
+                            Выходные токены
                         </th>
 
                         <th>
-                            Всего
+                            Всего подтверждено
                         </th>
 
                         <th>
@@ -255,7 +270,7 @@ export function UsageRows({
                         </th>
 
                         <th>
-                            Качество данных
+                            Полнота учёта
                         </th>
                     </tr>
                 </thead>
@@ -274,6 +289,8 @@ export function UsageRows({
                                         row
                                     }
                                     showUser
+                                    onInspectUser={onInspectUser}
+                                    drilldownDisabled={drilldownDisabled}
                                 />
                             ),
                         )
@@ -295,15 +312,15 @@ export function UsageRows({
                         </th>
 
                         <th>
-                            Вход
+                            Входные токены
                         </th>
 
                         <th>
-                            Выход
+                            Выходные токены
                         </th>
 
                         <th>
-                            Всего
+                            Всего подтверждено
                         </th>
 
                         <th>
@@ -311,7 +328,7 @@ export function UsageRows({
                         </th>
 
                         <th>
-                            Качество данных
+                            Полнота учёта
                         </th>
                     </tr>
                 </thead>
@@ -330,6 +347,8 @@ export function UsageRows({
                                         row
                                     }
                                     showModel
+                                    onInspectModel={onInspectModel}
+                                    drilldownDisabled={drilldownDisabled}
                                 />
                             ),
                         )
@@ -348,15 +367,15 @@ export function UsageRows({
                     </th>
 
                     <th>
-                        Вход
+                        Входные токены
                     </th>
 
                     <th>
-                        Выход
+                        Выходные токены
                     </th>
 
                     <th>
-                        Всего
+                        Всего подтверждено
                     </th>
 
                     <th>
@@ -364,7 +383,7 @@ export function UsageRows({
                     </th>
 
                     <th>
-                        Качество данных
+                        Полнота учёта
                     </th>
                 </tr>
             </thead>
@@ -381,11 +400,14 @@ export function UsageRows({
                                 }
                             >
                                 <td>
-                                    {
-                                        formatIsoDate(
-                                            row.usageDate,
-                                        )
-                                    }
+                                    {onInspectDay ? (
+                                        <button type="button" className="usage-drilldown"
+                                            disabled={drilldownDisabled}
+                                            title="Открыть детализацию за этот день UTC"
+                                            onClick={() => onInspectDay(row.usageDate)}>
+                                            {formatIsoDate(row.usageDate)} →
+                                        </button>
+                                    ) : formatIsoDate(row.usageDate)}
                                 </td>
 
                                 <UsageAmountCells
@@ -406,35 +428,49 @@ function UsageSummaryRow({
     row,
     showUser = false,
     showModel = false,
+    onInspectModel,
+    onInspectUser,
+    drilldownDisabled = false,
 }: {
     row:
         UsageAmounts
         & {
             userEmail?: string
+            userId?: string
             model?: string
         }
     showUser?: boolean
     showModel?: boolean
+    onInspectModel?: (model: string) => void
+    onInspectUser?: (userId: string, email: string) => void
+    drilldownDisabled?: boolean
 }) {
     return (
         <tr>
             {showUser
                 && (
                     <td>
-                        {
-                            row.userEmail
-                            ?? '—'
-                        }
+                        {onInspectUser && row.userId ? <button type="button" className="usage-drilldown"
+                            disabled={drilldownDisabled} title="Открыть детализацию по пользователю"
+                            onClick={() => onInspectUser(row.userId!, row.userEmail ?? row.userId!)}>
+                            {row.userEmail ?? row.userId} →
+                        </button> : <span className="usage-user-label">
+                            {row.userEmail ?? '—'}
+                        </span>}
                     </td>
                 )}
 
             {showModel
                 && (
                     <td>
-                        {
-                            row.model
-                            ?? '—'
-                        }
+                        {onInspectModel && row.model ? (
+                            <button type="button" className="usage-drilldown"
+                                disabled={drilldownDisabled}
+                                title="Открыть детализацию по этой модели"
+                                onClick={() => onInspectModel(row.model!)}>
+                                {row.model} →
+                            </button>
+                        ) : row.model ?? '—'}
                     </td>
                 )}
 
@@ -480,7 +516,7 @@ function UsageAmountCells({
                 {row.partialTotalTokens !== '0'
                     && (
                         <div className="muted">
-                            + известно из partial:
+                            Отдельно из неполных ответов:
                             {' '}
                             {
                                 formatCount(
@@ -501,7 +537,7 @@ function UsageAmountCells({
                 {row.coverage.pricingComplete === false
                     && (
                         <div className="muted">
-                            Это только известная часть стоимости.
+                            Не все цены известны. Ноль не означает бесплатно.
                         </div>
                     )}
             </td>
@@ -533,7 +569,7 @@ function CoverageView({
         coverage.pricingComplete === true
             ? 'Стоимость рассчитана'
             : coverage.pricingComplete === false
-                ? 'Стоимость рассчитана частично'
+                ? 'Не все цены известны'
                 : 'Полнота стоимости неизвестна'
 
     const details = [

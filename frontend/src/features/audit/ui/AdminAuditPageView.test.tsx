@@ -68,7 +68,7 @@ function mount(overrides: Partial<AdminAuditController> = {}) {
         searchActors: vi.fn().mockResolvedValue(undefined),
         searchOrganizations: vi.fn().mockResolvedValue(undefined),
         setDraftFilter: vi.fn(), setSelectedEvent: vi.fn(),
-        applyDatePreset: vi.fn(), applyFilters: vi.fn(), resetFilters: vi.fn(),
+        applyDatePreset: vi.fn(), applyFilters: vi.fn(), filterByActor: vi.fn(), resetFilters: vi.fn(),
         retryLoad: vi.fn(), changePage: vi.fn(),
         ...overrides,
     }
@@ -138,6 +138,26 @@ describe('AdminAuditPageView — форма и рабочая область', (
         const data = mount()
         fireEvent.click(screen.getByRole('button', { name: 'Подробнее' }))
         expect(data.setSelectedEvent).toHaveBeenCalledWith(EVENT)
+    })
+
+    it('фильтрует по историческому UUID инициатора, не открывая карточку пользователя', () => {
+        const actorUserId = '11111111-1111-4111-8111-111111111111'
+        const data = mount({ events: [{ ...EVENT, actorUserId }, { ...EVENT, id: actorUserId }] })
+        expect(screen.getByRole('columnheader', { name: 'Пользователь / система' })).toBeInTheDocument()
+        expect(screen.getByRole('heading', { name: 'Результаты поиска 130' })).toBeInTheDocument()
+        const buttons = screen.getAllByRole('button', { name: 'Показать события: admin@example.com' })
+        expect(buttons).toHaveLength(1)
+        fireEvent.click(buttons[0])
+        expect(data.filterByActor).toHaveBeenCalledWith(actorUserId)
+        expect(data.setSelectedEvent).not.toHaveBeenCalled()
+    })
+
+    it('не позволяет быстрому фильтру потерять неприменённые изменения', () => {
+        const data = mount({ filtersDirty: true, events: [{ ...EVENT, actorUserId: '11111111-1111-4111-8111-111111111111' }] })
+        const button = screen.getByRole('button', { name: 'Показать события: admin@example.com' })
+        expect(button).toBeDisabled()
+        fireEvent.click(button)
+        expect(data.filterByActor).not.toHaveBeenCalled()
     })
 
     it('открывает детали выбранного события и передаёт закрытие контроллеру', () => {

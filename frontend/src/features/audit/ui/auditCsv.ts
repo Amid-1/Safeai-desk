@@ -6,12 +6,13 @@ import { formatDateTime } from '../../../shared/lib/format'
 /** Exports only the audit events currently rendered in the page. */
 export function downloadAuditCsv(events: AuditEvent[]): void {
     const rows = [
-        ['Дата и время', 'Целевая организация', 'ID организации', 'Инициатор', 'ID инициатора', 'Тип события', 'Код события', 'ID события'],
+        ['Дата и время', 'Целевая организация', 'ID организации', 'Пользователь / система', 'ID пользователя', 'Тип события', 'Код события', 'ID события'],
         ...events.map((event) => [
             formatDateTime(event.createdAt),
             event.targetOrganizationName ?? '',
             event.targetOrganizationId,
-            event.actorEmail ?? event.actorDisplayName ?? 'Система/исторический инициатор',
+            event.actorEmail ?? event.actorDisplayName ?? (event.actorUserId ? 'Пользователь без имени'
+                : event.eventType === 'USER_LOGIN_FAILED' ? 'Пользователь не установлен' : 'Система'),
             event.actorUserId ?? '',
             getAuditEventTypeLabel(event.eventType),
             event.eventType,

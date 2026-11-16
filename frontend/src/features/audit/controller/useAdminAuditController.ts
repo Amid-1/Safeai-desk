@@ -275,12 +275,22 @@ export function useAdminAuditController() {
     ])
 
     function applyFilters() {
+        applyDraftFilter(draftFilter)
+    }
+
+    function filterByActor(actorUserId: string) {
+        // Do not discard unsubmitted edits or allow actions on stale results.
+        if (!actorUserId || filtersDirty || effectiveLoading) return
+        applyDraftFilter({ ...appliedDraftFilter, actorUserId, eventType: '', actorEmail: '' })
+    }
+
+    function applyDraftFilter(next: AuditDraftFilter) {
         setFilterError('')
 
         try {
             const normalized =
                 toAuditEventFilter(
-                    draftFilter,
+                    next,
                     superAdmin,
                 )
 
@@ -412,13 +422,25 @@ export function useAdminAuditController() {
     const showTable =
         events.length > 0
 
+    // The directory is paginated/searchable; a selected historical actor may be
+    // absent. Reuse its already authorized event snapshot for the selected label.
+    const selectedActorSnapshot = draftFilter.actorUserId && !actors.some(actor => actor.actorUserId === draftFilter.actorUserId)
+        ? events.find(event => event.actorUserId === draftFilter.actorUserId)
+        : undefined
+    const visibleActors = selectedActorSnapshot ? [...actors, {
+        actorUserId: selectedActorSnapshot.actorUserId,
+        actorOrganizationId: selectedActorSnapshot.actorOrganizationId,
+        actorEmail: selectedActorSnapshot.actorEmail,
+        actorDisplayName: selectedActorSnapshot.actorDisplayName,
+    }] : actors
+
     return {
         superAdmin,
         selectedEvent,
         draftFilter,
         eventTypes,
         organizations,
-        actors,
+        actors: visibleActors,
         directoriesLoading,
         eventTypesError,
         organizationsError,
@@ -437,6 +459,7 @@ export function useAdminAuditController() {
         setSelectedEvent,
         applyDatePreset,
         applyFilters,
+        filterByActor,
         resetFilters,
         retryLoad,
         changePage,

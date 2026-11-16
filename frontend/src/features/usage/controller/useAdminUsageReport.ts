@@ -73,6 +73,7 @@ export function useAdminUsageReport() {
         useState(initial.draft.model)
     const [draftOrganizationId, setDraftOrganizationId] =
         useState(initial.draft.organizationId)
+    const [draftUserId, setDraftUserId] = useState(initial.draft.userId ?? '')
 
     const [appliedDateFrom, setAppliedDateFrom] =
         useState(initial.draft.dateFrom)
@@ -82,6 +83,8 @@ export function useAdminUsageReport() {
         useState(initial.draft.model)
     const [appliedOrganizationId, setAppliedOrganizationId] =
         useState(initial.draft.organizationId)
+    const [appliedUserId, setAppliedUserId] = useState(initial.draft.userId ?? '')
+    const [userLabel, setUserLabel] = useState<{ id: string; email: string } | null>(null)
 
     const [reloadToken, setReloadToken] =
         useState(0)
@@ -148,6 +151,7 @@ export function useAdminUsageReport() {
         dateFrom: appliedDateFrom,
         dateTo: appliedDateTo,
         model: appliedModel,
+        filterUserId: appliedUserId,
         organizationId:
             appliedOrganizationId,
         isSuperAdmin,
@@ -158,7 +162,6 @@ export function useAdminUsageReport() {
         value: string,
     ) {
         setDraftDateFrom(value)
-        setDraftModel('')
         setFilterError('')
     }
 
@@ -166,7 +169,6 @@ export function useAdminUsageReport() {
         value: string,
     ) {
         setDraftDateTo(value)
-        setDraftModel('')
         setFilterError('')
     }
 
@@ -182,25 +184,36 @@ export function useAdminUsageReport() {
         _option: UsageFilterOption | null,
     ) {
         setDraftOrganizationId(value)
+        setDraftUserId('')
         organizations.setQuery('')
         setDraftModel('')
         setFilterError('')
     }
 
-    function applyFilters() {
+    const filtersDirty = draftDateFrom !== appliedDateFrom
+        || draftDateTo !== appliedDateTo
+        || draftModel !== appliedModel
+        || draftUserId !== appliedUserId
+        || (isSuperAdmin && draftOrganizationId !== appliedOrganizationId)
+
+    function applyFilters(
+        draft = {
+            dateFrom: draftDateFrom,
+            dateTo: draftDateTo,
+            model: draftModel,
+            organizationId: draftOrganizationId,
+            userId: draftUserId,
+        },
+        nextTab = tab,
+    ) {
         try {
             const normalized = toUsageFilter(
-                {
-                    dateFrom: draftDateFrom,
-                    dateTo: draftDateTo,
-                    model: draftModel,
-                    organizationId:
-                        draftOrganizationId,
-                },
+                draft,
                 isSuperAdmin,
             )
 
             setFilterError('')
+            setTab(nextTab)
             setPage(0)
             setDraftDateFrom(
                 normalized.draft.dateFrom,
@@ -226,9 +239,11 @@ export function useAdminUsageReport() {
             setAppliedOrganizationId(
                 normalized.organizationId,
             )
+            setDraftUserId(normalized.draft.userId ?? '')
+            setAppliedUserId(normalized.draft.userId ?? '')
 
             updateUrl({
-                tab,
+                tab: nextTab,
                 page: 0,
                 dateFrom:
                     normalized.draft.dateFrom,
@@ -238,6 +253,7 @@ export function useAdminUsageReport() {
                     normalized.draft.model,
                 organizationId:
                     normalized.organizationId,
+                userId: normalized.draft.userId,
             })
         } catch (validationError) {
             setFilterError(
@@ -245,6 +261,45 @@ export function useAdminUsageReport() {
                     ? validationError.message
                     : 'Некорректные параметры отчёта.',
             )
+        }
+    }
+
+    const applied = {
+        dateFrom: appliedDateFrom, dateTo: appliedDateTo, model: appliedModel,
+        organizationId: appliedOrganizationId, userId: appliedUserId,
+    }
+
+    function inspectModel(model: string) {
+        if (filtersDirty || query.loading) return
+        if (tab === 'summary' && model === appliedModel) return
+        applyFilters({...applied, model}, 'summary')
+    }
+
+    function inspectUser(userId: string, email: string) {
+        if (filtersDirty || query.loading) return
+        if (tab === 'summary' && userId === appliedUserId) return
+        setUserLabel({ id: userId, email })
+        applyFilters({...applied, userId}, 'summary')
+    }
+
+    function inspectDay(date: string) {
+        if (filtersDirty || query.loading) return
+        applyFilters({...applied, dateFrom: date, dateTo: date}, 'summary')
+    }
+
+    function clearFilter(filter: 'period' | 'model' | 'user' | 'organization') {
+        if (filtersDirty || query.loading) return
+        const defaults = createDefaultUsageDraftFilter()
+        if (filter === 'period') {
+            applyFilters({...applied, dateFrom: defaults.dateFrom, dateTo: defaults.dateTo})
+        } else if (filter === 'model') {
+            applyFilters({...applied, model: ''})
+        } else if (filter === 'user') {
+            setUserLabel(null)
+            applyFilters({...applied, userId: ''})
+        } else {
+            organizations.setQuery('')
+            applyFilters({...applied, organizationId: ''})
         }
     }
 
@@ -257,6 +312,9 @@ export function useAdminUsageReport() {
         setDraftDateTo(defaults.dateTo)
         setDraftModel('')
         setDraftOrganizationId('')
+        setDraftUserId('')
+        setAppliedUserId('')
+        setUserLabel(null)
         organizations.setQuery('')
         setAppliedDateFrom(defaults.dateFrom)
         setAppliedDateTo(defaults.dateTo)
@@ -277,6 +335,9 @@ export function useAdminUsageReport() {
     function selectTab(
         nextTab: UsageReportTab,
     ) {
+        if (appliedUserId && appliedUserLabel) {
+            setUserLabel({ id: appliedUserId, email: appliedUserLabel })
+        }
         setTab(nextTab)
         setPage(0)
 
@@ -286,6 +347,7 @@ export function useAdminUsageReport() {
             dateFrom: appliedDateFrom,
             dateTo: appliedDateTo,
             model: appliedModel,
+            userId: appliedUserId,
             organizationId: isSuperAdmin
                 ? appliedOrganizationId
                 : '',
@@ -308,6 +370,7 @@ export function useAdminUsageReport() {
             dateFrom: appliedDateFrom,
             dateTo: appliedDateTo,
             model: appliedModel,
+            userId: appliedUserId,
             organizationId: isSuperAdmin
                 ? appliedOrganizationId
                 : '',
@@ -338,6 +401,12 @@ export function useAdminUsageReport() {
                 : 'Все организации'
             : 'Моя организация'
 
+    const matchingUser = query.rows.find(row =>
+        'userId' in row && row.userId === appliedUserId && 'userEmail' in row)
+    const appliedUserLabel = matchingUser && 'userEmail' in matchingUser
+        ? matchingUser.userEmail
+        : userLabel?.id === appliedUserId ? userLabel.email : appliedUserId
+
     return {
         tab,
         page,
@@ -347,13 +416,13 @@ export function useAdminUsageReport() {
         loading: query.loading,
         error: query.error,
         filterError,
-        filtersDirty: draftDateFrom !== appliedDateFrom
-            || draftDateTo !== appliedDateTo
-            || draftModel !== appliedModel
-            || (isSuperAdmin && draftOrganizationId !== appliedOrganizationId),
+        filtersDirty,
         appliedModel,
         appliedDateFrom,
         appliedDateTo,
+        appliedOrganizationId,
+        appliedUserId,
+        appliedUserLabel,
         isSuperAdmin,
         scopeLabel,
 
@@ -383,7 +452,11 @@ export function useAdminUsageReport() {
         changeDraftDateTo,
         changeDraftModel,
         changeDraftOrganization,
-        applyFilters,
+        applyFilters: () => applyFilters(),
+        inspectModel,
+        inspectUser,
+        inspectDay,
+        clearFilter,
         resetFilters,
         selectTab,
         goToPage,

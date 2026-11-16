@@ -1,446 +1,125 @@
 // frontend/src/features/usage/ui/AdminUsageControls.tsx
-
-import { useLayoutEffect, useRef, useState } from 'react'
-import type { ChangeEvent, ReactNode } from 'react'
-import {
-    EmptyState,
-    ErrorState,
-    LoadingState,
-} from '../../../shared/ui/StateBlock'
-import {
-    UsageFilterCombobox,
-} from './UsageFilterCombobox'
-import type {
-    UsageFilterOption,
-} from './UsageFilterCombobox'
-import {
-    TabButton,
-} from './UsageReportView'
-import {
-    reportDescription,
-    reportTitle,
-} from '../lib/adminUsage.helpers'
-import type {
-    UsageReportTab,
-} from '../lib/adminUsage.helpers'
+import { UsageFilterCombobox, type UsageFilterOption } from './UsageFilterCombobox'
+import { TabButton } from './UsageReportView'
+import { formatIsoDate, type UsageReportTab } from '../lib/adminUsage.helpers'
 
 type AdminUsageControlsProps = {
     tab: UsageReportTab
     isSuperAdmin: boolean
     scopeLabel: string
-
     draftDateFrom: string
     draftDateTo: string
     draftModel: string
     draftOrganizationId: string
     draftOrganizationName: string
-
     organizationOptions: UsageFilterOption[]
     organizationSearchPending: boolean
     organizationSearchError: string
     modelPickerOptions: UsageFilterOption[]
     modelOptionsLoading: boolean
     modelOptionsError: string
-
     filterError: string
     filtersDirty: boolean
     appliedModel: string
     appliedDateFrom: string
     appliedDateTo: string
+    appliedUserId?: string
+    appliedUserLabel?: string
+    appliedOrganizationId?: string
+    onClearFilter?: (filter: 'period' | 'model' | 'user' | 'organization') => void
     loading: boolean
-    error: string
-    showEmptyReport: boolean
-    summaryContent?: ReactNode
-    canExpandResults?: boolean
-    onExpandResults?: () => void
-    onRestoreFilters?: () => void
-
+    filtersOpen: boolean
+    onToggleFilters: () => void
     onDateFromChange: (value: string) => void
     onDateToChange: (value: string) => void
     onModelChange: (value: string) => void
     onOrganizationQueryChange: (value: string) => void
-    onOrganizationChange: (
-        value: string,
-        option: UsageFilterOption | null,
-    ) => void
+    onOrganizationChange: (value: string, option: UsageFilterOption | null) => void
     onApplyFilters: () => void
     onResetFilters: () => void
     onSelectTab: (tab: UsageReportTab) => void
-    onReload: () => void
 }
 
-export function AdminUsageControls({
-    tab,
-    isSuperAdmin,
-    scopeLabel,
-    draftDateFrom,
-    draftDateTo,
-    draftModel,
-    draftOrganizationId,
-    draftOrganizationName,
-    organizationOptions,
-    organizationSearchPending,
-    organizationSearchError,
-    modelPickerOptions,
-    modelOptionsLoading,
-    modelOptionsError,
-    filterError,
-    filtersDirty,
-    appliedModel,
-    appliedDateFrom,
-    appliedDateTo,
-    loading,
-    error,
-    showEmptyReport,
-    summaryContent,
-    canExpandResults = false,
-    onExpandResults,
-    onRestoreFilters,
-    onDateFromChange,
-    onDateToChange,
-    onModelChange,
-    onOrganizationQueryChange,
-    onOrganizationChange,
-    onApplyFilters,
-    onResetFilters,
-    onSelectTab,
-    onReload,
-}: AdminUsageControlsProps) {
-    const contentRef = useRef<HTMLDivElement>(null)
-    const [compact, setCompact] = useState(false)
-
-    // Observe the split pane, not the browser window. The pane may be
-    // resized by dragging without changing the viewport dimensions.
-    useLayoutEffect(() => {
-        const content = contentRef.current
-        const pane = content?.closest('.resizable-scroll-region__upper')
-        if (!(pane instanceof HTMLElement)) return
-        const measure = () => {
-            const height = pane.getBoundingClientRect().height
-            // Keep full controls in the DOM: only their presentation changes.
-            setCompact(height > 0 && height < 220)
-        }
-        measure()
-        if (typeof ResizeObserver === 'undefined') {
-            window.addEventListener('resize', measure)
-            return () => window.removeEventListener('resize', measure)
-        }
-        const observer = new ResizeObserver(measure)
-        observer.observe(pane)
-        return () => observer.disconnect()
-    }, [])
-
+export function AdminUsageControls(p: AdminUsageControlsProps) {
+    const period = p.appliedDateFrom === p.appliedDateTo
+        ? formatIsoDate(p.appliedDateFrom)
+        : `${formatIsoDate(p.appliedDateFrom)} — ${formatIsoDate(p.appliedDateTo)}`
+    const chip = (label: string, filter: 'period' | 'model' | 'user' | 'organization', action: string) =>
+        <span className="usage-filter-chip">{label}
+            {p.onClearFilter && <button type="button" aria-label={action} title={action}
+                disabled={p.filtersDirty || p.loading} onClick={() => p.onClearFilter?.(filter)}>×</button>}
+        </span>
     return (
-        <div
-            className="usage-page__upper"
-            ref={contentRef}
-            data-compact={compact ? 'true' : 'false'}
-        >
-            <div className="usage-compact-rail" hidden={!compact}>
-                <div className="usage-compact-rail__summary">
-                    <strong>Использование AI · {reportTitle(tab)}</strong>
-                    <span>{appliedDateFrom} — {appliedDateTo} UTC · {scopeLabel}</span>
-                </div>
-                <nav
-                    className="usage-compact-rail__tabs"
-                    role="tablist"
-                    aria-label="Переключить отчет в расширенной области"
-                >
-                    {([
-                        ['summary', 'Сводка'],
-                        ['users', 'По пользователям'],
-                        ['models', 'По моделям'],
-                        ['daily', 'По дням'],
-                    ] as const).map(([name, label]) => (
-                        <TabButton
-                            key={name}
-                            active={tab === name}
-                            onClick={() => onSelectTab(name)}
-                        >
-                            {label}
-                        </TabButton>
-                    ))}
-                </nav>
-                {onRestoreFilters && (
-                    <button
-                        className="secondary-button usage-compact-rail__restore"
-                        type="button"
-                        onClick={onRestoreFilters}
-                    >
-                        Показать фильтры
-                    </button>
-                )}
-            </div>
-            <header className="usage-page__header page-hero page-hero--usage">
+        <div className="usage-page__upper">
+            <header className="usage-dashboard-header">
                 <div>
-                    <span className="page-hero__eyebrow">
-                        Стоимость и прозрачность
-                    </span>
-
-                    <h1>
-                        Использование AI
-                    </h1>
-
-                    <p className="muted">
-                        Контролируйте расход токенов, стоимость и качество данных.
-                    </p>
+                    <span className="usage-eyebrow">АНАЛИТИКА И СТОИМОСТЬ</span>
+                    <h1>Использование AI</h1>
                 </div>
-
-                <div
-                    className="usage-scope"
-                    aria-label="Область отчёта"
-                >
-                    <span className="usage-scope__label">
-                        Отчёт
-                    </span>
-
-                    <strong>
-                        {scopeLabel}
-                    </strong>
+                <div className="usage-scope" aria-label="Область отчёта">
+                    <span>Область отчёта</span><strong>{p.scopeLabel}</strong>
                 </div>
             </header>
-
-            <section
-                className="card usage-filters"
-                aria-labelledby="usage-filters-title"
-            >
-                <div className="usage-section-heading">
-                    <div>
-                        <h2 id="usage-filters-title">
-                            Период и фильтры
-                        </h2>
-
-                        <p className="muted">
-                            Календарные дни UTC (00:00–24:00). Начальная и конечная даты включены в отчёт.
-                        </p>
+            <section className="usage-filters" aria-label="Период и фильтры">
+                <div className="usage-filter-bar">
+                    <div className="usage-applied-filters" aria-label="Применённые фильтры">
+                        <strong>Период и фильтры</strong>
+                        {chip(period, 'period', 'Сбросить период до последних 30 дней')}
+                        {p.appliedModel ? chip(p.appliedModel, 'model', 'Сбросить фильтр по модели') : <span>Все модели</span>}
+                        {p.appliedUserId && chip(p.appliedUserLabel || p.appliedUserId, 'user', 'Сбросить фильтр по пользователю')}
+                        {p.isSuperAdmin && p.appliedOrganizationId && chip(p.scopeLabel, 'organization', 'Сбросить фильтр по организации')}
+                        <span title="Календарные дни UTC, обе даты включены">UTC</span>
                     </div>
+                    <button type="button" className="secondary-button" aria-expanded={p.filtersOpen}
+                        aria-controls="usage-filter-editor" onClick={p.onToggleFilters}>
+                        {p.filtersOpen ? 'Свернуть фильтры' : 'Изменить фильтры'}
+                    </button>
                 </div>
-
-                <div className="usage-filter-grid">
-                    <label>
-                        С
-
-                        <input
-                            type="date"
-                            value={draftDateFrom}
-                            onChange={(event: ChangeEvent<HTMLInputElement>) => {
-                                onDateFromChange(
-                                    event.target.value,
-                                )
-                            }}
-                        />
-                    </label>
-
-                    <label>
-                        По
-
-                        <input
-                            type="date"
-                            value={draftDateTo}
-                            onChange={(event: ChangeEvent<HTMLInputElement>) => {
-                                onDateToChange(
-                                    event.target.value,
-                                )
-                            }}
-                        />
-                    </label>
-
-                    <UsageFilterCombobox
-                            id="usage-model-filter"
-                            label="Модель"
-                            value={draftModel}
-                            options={modelPickerOptions}
-                            placeholder="Все модели"
-                            searchPlaceholder="Найти модель"
-                            emptyMessage="В выбранном периоде модели не найдены."
-                            maxQueryLength={100}
-                            loading={modelOptionsLoading}
-                            error={modelOptionsError}
-                            helperText="Фильтр применяется сервером ко всем четырем видам отчета. Список моделей соответствует указанному периоду и организации."
-                            onChange={(value) => {
-                                onModelChange(value)
-                            }}
-                    />
-
-                    {isSuperAdmin && (
-                        <UsageFilterCombobox
-                            id="usage-organization-filter"
-                            label="Организация"
-                            value={draftOrganizationId}
-                            selectedLabel={
-                                draftOrganizationId
-                                    ? draftOrganizationName
-                                        || draftOrganizationId
-                                    : 'Все организации'
-                            }
-                            options={organizationOptions}
-                            placeholder="Все организации"
+                <div id="usage-filter-editor" className="usage-filter-editor" hidden={!p.filtersOpen}>
+                    <div className={`usage-filter-grid${p.isSuperAdmin ? ' usage-filter-grid--org' : ''}`}>
+                        <label>Начало периода
+                            <input type="date" value={p.draftDateFrom}
+                                onChange={event => p.onDateFromChange(event.target.value)} />
+                        </label>
+                        <label>Конец периода
+                            <input type="date" value={p.draftDateTo}
+                                onChange={event => p.onDateToChange(event.target.value)} />
+                        </label>
+                        <UsageFilterCombobox id="usage-model-filter" label="Модель"
+                            value={p.draftModel} options={p.modelPickerOptions}
+                            placeholder="Все модели" searchPlaceholder="Найти модель"
+                            emptyMessage="В выбранном периоде модели не найдены." maxQueryLength={100}
+                            loading={p.modelOptionsLoading} error={p.modelOptionsError}
+                            onChange={p.onModelChange} />
+                        {p.isSuperAdmin && <UsageFilterCombobox id="usage-organization-filter" label="Организация"
+                            value={p.draftOrganizationId}
+                            selectedLabel={p.draftOrganizationId ? p.draftOrganizationName || p.draftOrganizationId : 'Все организации'}
+                            options={p.organizationOptions} placeholder="Все организации"
                             searchPlaceholder="Найти по названию или UUID"
-                            emptyMessage="Организации по запросу не найдены."
-                            maxQueryLength={255}
-                            loading={organizationSearchPending}
-                            error={organizationSearchError}
-                            filterLocally={false}
-                            helperText="Выберите организацию по названию или UUID. В запрос автоматически передаётся её UUID."
-                            onQueryChange={
-                                onOrganizationQueryChange
-                            }
-                            onChange={
-                                onOrganizationChange
-                            }
-                        />
-                    )}
-                </div>
-
-                {filterError && (
-                    <div
-                        className="error"
-                        role="alert"
-                    >
-                        {filterError}
+                            emptyMessage="Организации по запросу не найдены." maxQueryLength={255}
+                            loading={p.organizationSearchPending} error={p.organizationSearchError}
+                            filterLocally={false} onQueryChange={p.onOrganizationQueryChange}
+                            onChange={p.onOrganizationChange} />}
                     </div>
-                )}
-
-                <div className="usage-filter-actions">
-                    {filtersDirty && (
-                        <span role="status" className="usage-filter-dirty">
-                            Фильтры изменены — результаты еще не обновлены.
-                        </span>
-                    )}
-                    <button
-                        type="button"
-                        disabled={loading}
-                        onClick={onApplyFilters}
-                    >
-                        Показать
-                    </button>
-
-                    <button
-                        type="button"
-                        className="secondary-button"
-                        disabled={loading}
-                        onClick={onResetFilters}
-                    >
-                        Последние 30 дней
-                    </button>
-                </div>
-            </section>
-
-            <section
-                className="usage-report"
-                aria-labelledby="usage-report-title"
-            >
-                <div
-                    className="usage-tabs"
-                    role="tablist"
-                    aria-label="Вид отчёта"
-                >
-                    <TabButton
-                        active={tab === 'summary'}
-                        onClick={() => {
-                            onSelectTab('summary')
-                        }}
-                    >
-                        Сводка
-                    </TabButton>
-
-                    <TabButton
-                        active={tab === 'users'}
-                        onClick={() => {
-                            onSelectTab('users')
-                        }}
-                    >
-                        По пользователям
-                    </TabButton>
-
-                    <TabButton
-                        active={tab === 'models'}
-                        onClick={() => {
-                            onSelectTab('models')
-                        }}
-                    >
-                        По моделям
-                    </TabButton>
-
-                    <TabButton
-                        active={tab === 'daily'}
-                        onClick={() => {
-                            onSelectTab('daily')
-                        }}
-                    >
-                        По дням
-                    </TabButton>
-                </div>
-
-                <div className="usage-report-heading">
-                    <div className="usage-report-heading__title">
-                    <h2 id="usage-report-title">
-                        {reportTitle(tab)}
-                    </h2>
-
-                    <p className="muted">
-                        {reportDescription(tab)}
-                    </p>
-                    {tab === 'daily' && (
-                        <p className="usage-chart-discovery">
-                            Ниже фильтров отображаются KPI и график «Динамика по дням UTC»; таблица с точными значениями сохранена.
-                        </p>
-                    )}
+                    <div className="usage-filter-actions">
+                        <small>Календарные дни UTC. Обе даты включены.</small>
+                        <button type="button" disabled={p.loading} onClick={p.onApplyFilters}>Показать отчёт</button>
+                        <button type="button" className="secondary-button" disabled={p.loading}
+                            onClick={p.onResetFilters}>Сбросить · 30 дней</button>
                     </div>
-                    {canExpandResults && onExpandResults && (
-                        <button
-                            type="button"
-                            className="secondary-button usage-expand-results"
-                            onClick={onExpandResults}
-                            title="Развернуть результаты почти до навигации; фильтры можно вернуть одним нажатием"
-                        >
-                            Развернуть результаты
-                        </button>
-                    )}
                 </div>
-
-                <div className="usage-applied-filters" aria-label="Примененные фильтры">
-                    <span>Период UTC: {appliedDateFrom} — {appliedDateTo}</span>
-                    <span>Модель: {appliedModel || 'Все модели'}</span>
-                    <span>Область: {scopeLabel}</span>
-                </div>
-
-                <span
-                    className="resizable-scroll-region__upper-boundary-marker"
-                    data-resizable-upper-boundary
-                    aria-hidden="true"
-                />
-
-                {summaryContent}
-
-                {loading && (
-                    <LoadingState
-                        message="Загрузка статистики использования..."
-                    />
-                )}
-
-                {!loading && error && (
-                    <ErrorState
-                        title="Ошибка загрузки"
-                        message={error}
-                        action={(
-                            <button
-                                type="button"
-                                onClick={onReload}
-                            >
-                                Повторить
-                            </button>
-                        )}
-                    />
-                )}
-
-                {showEmptyReport && (
-                    <EmptyState
-                        title="За этот период использования нет"
-                        message="Данные появятся после завершённых обращений к AI. Выберите другой период или покажите последние 30 дней."
-                    />
-                )}
+                {p.filtersDirty && <p className="usage-filter-dirty" role="status">
+                    Фильтры изменены — показан последний применённый отчёт.
+                </p>}
+                {p.filterError && <p className="usage-export-error" role="alert">{p.filterError}</p>}
             </section>
+            <nav className="usage-tabs" role="tablist" aria-label="Вид отчёта">
+                {([
+                    ['summary', 'Детализация'], ['users', 'По пользователям'],
+                    ['models', 'По моделям'], ['daily', 'По дням'],
+                ] as const).map(([name, label]) => <TabButton key={name} active={p.tab === name}
+                    onClick={() => p.onSelectTab(name)}>{label}</TabButton>)}
+            </nav>
         </div>
     )
 }

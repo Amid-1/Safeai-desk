@@ -89,6 +89,9 @@ final class UsageFactQueryBuilder {
             UsageQueryPlan plan,
             boolean includeDate
     ) {
+        // Organization rollups have no user dimension. When a user is selected,
+        // use user-model rollups and the same tenant restriction for live facts.
+        boolean includeUser = criteria.userId() != null;
         MapSqlParameterSource parameters =
                 baseParameters(criteria);
 
@@ -112,7 +115,7 @@ final class UsageFactQueryBuilder {
             appendRollupScope(
                     where,
                     criteria,
-                    false
+                    includeUser
             );
 
             fragments.add(
@@ -141,8 +144,10 @@ final class UsageFactQueryBuilder {
                             r.unpriced_message_count,
                             r.pricing_failed_message_count,
                             r.pricing_not_applicable_message_count
-                            from usage_daily_org_model_rollups r
                             """
+                            + (includeUser
+                            ? "from usage_daily_user_model_rollups r join users u on u.id = r.user_id\n"
+                            : "from usage_daily_org_model_rollups r\n")
                             + where
             );
         }
@@ -444,7 +449,7 @@ final class UsageFactQueryBuilder {
             appendLiveScope(
                     where,
                     criteria,
-                    false
+                    criteria.userId() != null
             );
 
             String usageDate = includeDate
@@ -487,6 +492,9 @@ final class UsageFactQueryBuilder {
                             + """
                              from chat_messages m
                             """
+                            + (criteria.userId() != null
+                            ? "join chat_sessions s on s.id = m.session_id\njoin users u on u.id = s.user_id\n"
+                            : "")
                             + where
                             + "\n"
                             + groupBy

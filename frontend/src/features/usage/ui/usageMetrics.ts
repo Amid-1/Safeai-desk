@@ -29,6 +29,7 @@ export function summarizeUsageRows(rows: readonly UsageAmounts[]) {
     let completeRows = 0
     let pricedRows = 0
     let unknownCostRows = 0
+    let incompleteCostRows = 0
     const knownCosts: string[] = []
     const currencies = new Set<string>()
 
@@ -39,6 +40,7 @@ export function summarizeUsageRows(rows: readonly UsageAmounts[]) {
         partial += BigInt(row.partialTotalTokens)
         if (row.coverage.usageComplete === true
             && row.coverage.pricingComplete === true) completeRows += 1
+        if (row.coverage.pricingComplete !== true) incompleteCostRows += 1
         if (row.costUsd !== null) {
             knownCosts.push(row.costUsd)
             currencies.add(row.currency)
@@ -55,6 +57,7 @@ export function summarizeUsageRows(rows: readonly UsageAmounts[]) {
         completeRows,
         pricedRows,
         unknownCostRows,
+        incompleteCostRows,
         currency: currencies.size === 1 ? [...currencies][0] : null,
         knownCost: currencies.size <= 1 ? sumDecimalAmounts(knownCosts) : null,
         rowCount: rows.length,

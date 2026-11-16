@@ -1,9 +1,10 @@
 // frontend/src/features/usage/ui/UsageDailyChart.test.tsx
 import { fireEvent, render, screen } from '@testing-library/react'
-import type { PropsWithChildren } from 'react'
+import { useState, type ComponentProps, type PropsWithChildren } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import type { UsageDailySummary } from '../api/usageApi'
-import { UsageDailyChart } from './UsageDailyChart'
+import { UsageDailyChart, type UsageDailyMetric } from './UsageDailyChart'
+import { buildDailySeries } from './usageDailyChartData'
 
 // JSDOM cannot measure ResponsiveContainer reliably. Mock only chart primitives;
 // retain accessible controls, real chart selection logic and exact input rows.
@@ -45,10 +46,15 @@ const day: UsageDailySummary = {
     costUsd: '0', currency: 'USD', coverage,
 }
 
+function DailyChart(props: Omit<ComponentProps<typeof UsageDailyChart>, 'metric' | 'onMetricChange'>) {
+    const [metric, setMetric] = useState<UsageDailyMetric>('tokens')
+    return <UsageDailyChart {...props} metric={metric} onMetricChange={setMetric} />
+}
+
 describe('UsageDailyChart', () => {
     it('shows an accessible chart and switches metrics without changing rows', () => {
         const rows = [day]
-        render(<UsageDailyChart rows={rows} />)
+        render(<DailyChart rows={rows} />)
         expect(screen.getByRole('region', { name: 'График использования AI по дням' })).toBeTruthy()
         expect(screen.getByText('Входные токены')).toBeTruthy()
         expect(screen.getByText('Выходные токены')).toBeTruthy()
@@ -63,12 +69,28 @@ describe('UsageDailyChart', () => {
     })
 
     it('does not render an imprecise bar when token counts exceed JS safe integers', () => {
-        render(<UsageDailyChart rows={[{
+        render(<DailyChart rows={[{
             ...day,
             inputTokens: '9007199254740993',
             outputTokens: '1',
             totalTokens: '9007199254740994',
         }]} />)
         expect(screen.getByRole('status').textContent).toContain('слишком велики')
+        fireEvent.change(screen.getByLabelText('Показатель'), { target: { value: 'cost' } })
+        expect(screen.queryByRole('status')).not.toBeInTheDocument()
+        expect(screen.getByRole('region').querySelector('.usage-chart-viewport')).toBeInTheDocument()
+    })
+
+    it('preserves calendar gaps without manufacturing zero-cost or zero-token records', () => {
+        const data = buildDailySeries([day], '2026-09-26', '2026-09-28')
+        expect(data.map(item => [item.date, item.total, item.cost])).toEqual([
+            ['26.09.2026', null, null], ['27.09.2026', 269, 0], ['28.09.2026', null, null],
+        ])
+    })
+
+    it('renders only the metric control, leaving view switching to the dashboard', () => {
+        render(<DailyChart rows={[day]} />)
+        expect(screen.getByLabelText('Показатель')).toHaveValue('tokens')
+        expect(screen.queryByRole('button')).not.toBeInTheDocument()
     })
 })

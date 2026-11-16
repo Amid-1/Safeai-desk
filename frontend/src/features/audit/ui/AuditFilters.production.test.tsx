@@ -70,7 +70,7 @@ describe('AuditFilters — production regression', () => {
         const props = createProps()
         const { container } = render(<AuditFilters {...props} />)
         const viewportHeight = vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(800)
-        for (const name of ['Событие', 'Кто выполнил действие']) {
+        for (const name of ['Событие', 'Пользователь']) {
             const field = screen.getByRole('combobox', { name })
             const anchor = field.parentElement!
             let top = 120
@@ -106,7 +106,7 @@ describe('AuditFilters — production regression', () => {
         fireEvent.change(screen.getByPlaceholderText('Название или UUID'), {
             target: { value: 'Клиент' },
         })
-        fireEvent.change(screen.getByPlaceholderText('Имя или email сотрудника'), {
+        fireEvent.change(screen.getByPlaceholderText('Имя или email пользователя'), {
             target: { value: 'admin@' },
         })
         await act(async () => { vi.advanceTimersByTime(300) })
@@ -120,7 +120,7 @@ describe('AuditFilters — production regression', () => {
         vi.useFakeTimers()
         const initial = createProps({ superAdmin: true })
         const { rerender } = render(<AuditFilters {...initial} />)
-        fireEvent.change(screen.getByPlaceholderText('Имя или email сотрудника'), {
+        fireEvent.change(screen.getByPlaceholderText('Имя или email пользователя'), {
             target: { value: 'новый' },
         })
         const newCallback = vi.fn().mockResolvedValue(undefined)
@@ -134,7 +134,7 @@ describe('AuditFilters — production regression', () => {
     it('не открывает фильтр организаций администратору без SUPER_ADMIN', () => {
         render(<AuditFilters {...createProps({ superAdmin: false })} />)
         expect(screen.queryByText('Организация')).not.toBeInTheDocument()
-        expect(screen.getByLabelText('Кто выполнил действие')).toBeInTheDocument()
+        expect(screen.getByLabelText('Пользователь')).toBeInTheDocument()
     })
 
     it('не теряет выбранные UUID при обновлении справочника', () => {
@@ -143,7 +143,7 @@ describe('AuditFilters — production regression', () => {
             draftFilter: draft({ targetOrganizationId: ORGANIZATION_ID, actorUserId: ACTOR_ID }),
         })} />)
         expect(screen.getByLabelText('Организация')).toHaveValue(ORGANIZATION_ID)
-        expect(screen.getByLabelText('Кто выполнил действие')).toHaveValue('Пользователь без имени (' + ACTOR_ID + ')')
+        expect(screen.getByLabelText('Пользователь')).toHaveValue('Пользователь без имени (' + ACTOR_ID + ')')
         expect(screen.getByText(/Название недоступно/)).toBeInTheDocument()
     })
 
@@ -160,7 +160,7 @@ describe('AuditFilters — production regression', () => {
             ],
         })} />)
         const org = screen.getByLabelText('Организация') as HTMLSelectElement
-        const actor = screen.getByLabelText('Кто выполнил действие')
+        const actor = screen.getByLabelText('Пользователь')
         expect(org.querySelectorAll(`option[value="${ORGANIZATION_ID}"]`)).toHaveLength(1)
         fireEvent.focus(actor)
         expect(screen.getAllByRole('option', { name: /admin@test.ru — Тест/ })).toHaveLength(1)
@@ -185,7 +185,7 @@ describe('AuditFilters — production regression', () => {
         vi.useFakeTimers()
         const props = createProps({ superAdmin: true, draftFilter: draft({ targetOrganizationId: ORGANIZATION_ID }) })
         render(<AuditFilters {...props} />)
-        fireEvent.change(screen.getByPlaceholderText('Имя или email сотрудника'), {
+        fireEvent.change(screen.getByPlaceholderText('Имя или email пользователя'), {
             target: { value: 'test@company.ru' },
         })
         await act(async () => { vi.advanceTimersByTime(300) })
@@ -198,7 +198,7 @@ describe('AuditFilters — production regression', () => {
         const props = createProps({ superAdmin: true })
         const mounted = render(<AuditFilters {...props} />)
         fireEvent.change(screen.getByPlaceholderText('Название или UUID'), { target: { value: 'Компания' } })
-        fireEvent.change(screen.getByPlaceholderText('Имя или email сотрудника'), { target: { value: 'admin' } })
+        fireEvent.change(screen.getByPlaceholderText('Имя или email пользователя'), { target: { value: 'admin' } })
         mounted.unmount()
         await act(async () => { vi.advanceTimersByTime(1_000) })
         expect(props.onActorSearch).not.toHaveBeenCalled()

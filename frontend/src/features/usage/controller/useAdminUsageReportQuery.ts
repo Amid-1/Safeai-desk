@@ -40,6 +40,7 @@ type UseAdminUsageReportQueryInput = {
     dateFrom: string
     dateTo: string
     model: string
+    filterUserId?: string
     organizationId: string
     isSuperAdmin: boolean
     reloadToken: number
@@ -54,6 +55,7 @@ export function useAdminUsageReportQuery({
     dateFrom,
     dateTo,
     model,
+    filterUserId,
     organizationId,
     isSuperAdmin,
     reloadToken,
@@ -67,6 +69,7 @@ export function useAdminUsageReportQuery({
             dateFrom,
             dateTo,
             model,
+            filterUserId,
             isSuperAdmin
                 ? organizationId
                 : '',
@@ -77,6 +80,7 @@ export function useAdminUsageReportQuery({
             dateTo,
             isSuperAdmin,
             model,
+            filterUserId,
             organizationId,
             page,
             reloadToken,
@@ -119,6 +123,7 @@ export function useAdminUsageReportQuery({
                         dateFrom,
                         dateTo,
                         model,
+                        userId: filterUserId,
                         organizationId,
                     },
                     isSuperAdmin,
@@ -179,6 +184,7 @@ export function useAdminUsageReportQuery({
         dateFrom,
         dateTo,
         enabled,
+        filterUserId,
         isSuperAdmin,
         model,
         organizationId,

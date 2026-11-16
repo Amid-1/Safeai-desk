@@ -222,7 +222,7 @@ function useAuditDirectories(
                         setActorsError(
                             getApiErrorMessage(
                                 error,
-                                'Справочник инициаторов временно недоступен. Фильтрация по UUID и email остаётся доступна.',
+                                'Справочник пользователей временно недоступен. Фильтрация по UUID и email остаётся доступна.',
                             ),
                         )
                     }

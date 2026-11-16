@@ -1,229 +1,123 @@
 // frontend/src/features/usage/ui/AdminUsageWorkspace.tsx
-// Представление отчёта: отображение строк, экспорт, графики и рабочая область.
-
-import ResizableScrollRegion
-    from '../../../shared/ui/ResizableScrollRegion'
-import {
-    AdminUsageControls,
-} from './AdminUsageControls'
-import {
-    UsageReportFooter,
-    UsageRows,
-} from './UsageReportView'
-import {
-    useAdminUsageReport,
-} from '../controller/useAdminUsageReport'
 import { useState } from 'react'
-import { useUsageWorkspace } from '../controller/useUsageWorkspace'
+import { UsageTableViewport } from './UsageTableViewport'
+import { AdminUsageControls } from './AdminUsageControls'
+import { UsageReportFooter, UsageRows } from './UsageReportView'
+import { useAdminUsageReport } from '../controller/useAdminUsageReport'
+import { reportTitle, reportDescription } from '../lib/adminUsage.helpers'
 import type { UsageDailySummary } from '../api/usageApi'
 import { UsageKpis } from './UsageKpis'
-import { UsageDailyChart } from './UsageDailyChart'
+import { UsageDailyChart, type UsageDailyMetric } from './UsageDailyChart'
 import { UsageBreakdownChart } from './UsageBreakdownChart'
 import { downloadUsageCsv } from './usageCsv'
+import { EmptyState, ErrorState, LoadingState } from '../../../shared/ui/StateBlock'
 
 export function AdminUsageWorkspace() {
     const report = useAdminUsageReport()
+    const [view, setView] = useState<'table' | 'chart'>('table')
+    const [filtersOpen, setFiltersOpen] = useState(false)
+    const [expanded, setExpanded] = useState(false)
+    const [dailyMetric, setDailyMetric] = useState<UsageDailyMetric>('tokens')
     const [exportError, setExportError] = useState('')
-    const showReportRows =
-        !report.loading
-        && !report.error
-        && report.rows.length > 0
+    const hasRows = !report.loading && !report.error && report.rows.length > 0
+    const hasMore = report.hasPrevious || report.hasNext
+    const paged = report.tab === 'summary' || report.tab === 'users'
+    const chartExpanded = view === 'chart' && expanded && hasRows
+    const dataKey = JSON.stringify([
+        report.tab, report.page, report.appliedDateFrom, report.appliedDateTo,
+        report.appliedModel, report.appliedUserId, report.appliedOrganizationId, view,
+    ])
 
-    const showEmptyReport =
-        !report.loading
-        && !report.error
-        && report.rows.length === 0
-
-    const {
-        focusedResults, pageRef, resultsRef, showLowerRequest, showUpperRequest,
-        fittedResultsHeight, onWorkspacePointerDownCapture, onWorkspaceKeyDownCapture,
-        expandResults, restoreFilters,
-    } = useUsageWorkspace({ showReportRows, tab: report.tab, rowsLength: report.rows.length })
-
-    const viewportResetKey = [
-        report.tab,
-        report.page,
-        report.appliedDateFrom,
-        report.appliedDateTo,
-        report.appliedModel,
-        report.scopeLabel,
-    ].join('|')
+    function exportCsv() {
+        try {
+            downloadUsageCsv(report.tab, report.rows)
+            setExportError('')
+        } catch {
+            setExportError('Не удалось создать CSV. Попробуйте повторно.')
+        }
+    }
 
     return (
-        <div
-            ref={pageRef}
-            onPointerDownCapture={onWorkspacePointerDownCapture}
-            onKeyDownCapture={onWorkspaceKeyDownCapture}
-            className={focusedResults
-                ? 'page usage-page usage-page--focused'
-                : 'page usage-page usage-page--flow'}
-        >
-            <ResizableScrollRegion
-                storageKey="safeai:usage-report-height:v4"
-                label="область результатов использования AI"
-                showLowerRequest={showLowerRequest}
-                showUpperRequest={showUpperRequest}
-                viewportResetKey={viewportResetKey}
-                upper={(
-                    <AdminUsageControls
-                        tab={report.tab}
-                        isSuperAdmin={
-                            report.isSuperAdmin
-                        }
-                        scopeLabel={
-                            report.scopeLabel
-                        }
-                        draftDateFrom={
-                            report.draftDateFrom
-                        }
-                        draftDateTo={
-                            report.draftDateTo
-                        }
-                        draftModel={
-                            report.draftModel
-                        }
-                        draftOrganizationId={
-                            report.draftOrganizationId
-                        }
-                        draftOrganizationName={
-                            report.draftOrganizationName
-                        }
-                        organizationOptions={
-                            report.organizationOptions
-                        }
-                        organizationSearchPending={
-                            report.organizationSearchPending
-                        }
-                        organizationSearchError={
-                            report.organizationSearchError
-                        }
-                        modelPickerOptions={
-                            report.modelPickerOptions
-                        }
-                        modelOptionsLoading={
-                            report.modelOptionsLoading
-                        }
-                        modelOptionsError={
-                            report.modelOptionsError
-                        }
-                        filterError={
-                            report.filterError
-                        }
-                        filtersDirty={report.filtersDirty}
-                        appliedModel={report.appliedModel}
-                        appliedDateFrom={report.appliedDateFrom}
-                        appliedDateTo={report.appliedDateTo}
-                        loading={report.loading}
-                        error={report.error}
-                        showEmptyReport={
-                            showEmptyReport
-                        }
-                        onDateFromChange={
-                            report.changeDraftDateFrom
-                        }
-                        onDateToChange={
-                            report.changeDraftDateTo
-                        }
-                        onModelChange={
-                            report.changeDraftModel
-                        }
-                        onOrganizationQueryChange={
-                            report.setOrganizationQuery
-                        }
-                        onOrganizationChange={
-                            report.changeDraftOrganization
-                        }
-                        onApplyFilters={
-                            report.applyFilters
-                        }
-                        onResetFilters={
-                            report.resetFilters
-                        }
-                        onSelectTab={
-                            report.selectTab
-                        }
-                        onReload={report.reload}
-                        canExpandResults={showReportRows}
-                        onExpandResults={expandResults}
-                        onRestoreFilters={restoreFilters}
-                    />
-                )}
-                autoFitHeight={fittedResultsHeight}
-                footer={
-                    showReportRows
-                        ? (
-                            <UsageReportFooter
-                                tab={report.tab}
-                                rowsCount={
-                                    report.rows.length
-                                }
-                                page={report.page}
-                                hasPrevious={
-                                    report.hasPrevious
-                                }
-                                hasNext={
-                                    report.hasNext
-                                }
-                                loading={
-                                    report.loading
-                                }
-                                onPageChange={
-                                    report.goToPage
-                                }
-                            />
-                        )
-                        : null
-                }
-                lowerClassName="card table-card usage-report-card"
-                viewportClassName="usage-table-scroll"
-                defaultHeight={370}
-                minHeight={170}
-                maxHeight={4096}
-                minUpperHeight={92}
-            >
-                {showReportRows ? (
-                    <div ref={resultsRef} className="usage-report-results">
-                        <div className="usage-report-insights">
-
-                                <UsageKpis rows={report.rows} tab={report.tab} />
-                                {report.tab === 'daily' ? (
-                                    <UsageDailyChart rows={report.rows as UsageDailySummary[]} />
-                                ) : (
-                                    <UsageBreakdownChart
-                                        tab={report.tab}
-                                        rows={report.rows}
-                                    />
-                                )}
-                                <div className="usage-export-toolbar">
-                                    <div>
-                                        <strong>Экспорт результатов</strong>
-                                        <small>
-                                            {report.tab === 'summary' || report.tab === 'users'
-                                                ? 'Только загруженная страница (до 50 строк).'
-                                                : 'Все строки текущего ограниченного отчета.'}
-                                            {report.filtersDirty && ' Не применяется измененный черновик фильтров.'}
-                                        </small>
-                                    </div>
-                                    <button type="button" className="secondary-button" onClick={() => {
-                                        try {
-                                            downloadUsageCsv(report.tab, report.rows)
-                                            setExportError('')
-                                        } catch {
-                                            setExportError('Не удалось создать CSV. Попробуйте повторно.')
-                                        }
-                                    }}>
-                                        Скачать CSV
-                                    </button>
-                                </div>
-                                {exportError && <p role="alert" className="usage-export-error">{exportError}</p>}
-                        </div>
-                        <UsageRows
-                            tab={report.tab}
-                            rows={report.rows}
-                        />
+        <div className={`page usage-page${chartExpanded ? ' usage-page--expanded' : ''}`}
+            onKeyDown={event => {
+                if (event.key === 'Escape' && chartExpanded && !event.defaultPrevented) setExpanded(false)
+            }}>
+            <AdminUsageControls
+                tab={report.tab} isSuperAdmin={report.isSuperAdmin} scopeLabel={report.scopeLabel}
+                draftDateFrom={report.draftDateFrom} draftDateTo={report.draftDateTo}
+                draftModel={report.draftModel} draftOrganizationId={report.draftOrganizationId}
+                draftOrganizationName={report.draftOrganizationName}
+                organizationOptions={report.organizationOptions}
+                organizationSearchPending={report.organizationSearchPending}
+                organizationSearchError={report.organizationSearchError}
+                modelPickerOptions={report.modelPickerOptions}
+                modelOptionsLoading={report.modelOptionsLoading} modelOptionsError={report.modelOptionsError}
+                filterError={report.filterError} filtersDirty={report.filtersDirty}
+                appliedModel={report.appliedModel} appliedDateFrom={report.appliedDateFrom}
+                appliedDateTo={report.appliedDateTo} loading={report.loading}
+                appliedUserId={report.appliedUserId} appliedUserLabel={report.appliedUserLabel}
+                appliedOrganizationId={report.appliedOrganizationId} onClearFilter={report.clearFilter}
+                filtersOpen={filtersOpen}
+                onToggleFilters={() => setFiltersOpen(open => !open)}
+                onDateFromChange={report.changeDraftDateFrom}
+                onDateToChange={report.changeDraftDateTo}
+                onModelChange={report.changeDraftModel}
+                onOrganizationQueryChange={report.setOrganizationQuery}
+                onOrganizationChange={report.changeDraftOrganization}
+                onApplyFilters={() => { setExportError(''); report.applyFilters() }}
+                onResetFilters={() => { setExportError(''); report.resetFilters() }}
+                onSelectTab={tab => { setExportError(''); report.selectTab(tab) }}
+            />
+            <UsageKpis rows={hasRows ? report.rows : []} tab={report.tab}
+                hasMore={hasMore} appliedModel={report.appliedModel} />
+            <section className={`usage-results-panel usage-results-panel--${view}`} aria-labelledby="usage-report-title">
+                <div className="usage-results-toolbar">
+                    <div className="usage-results-heading">
+                        <h2 id="usage-report-title">{reportTitle(report.tab)}</h2>
+                        <p>{reportDescription(report.tab)}</p>
                     </div>
-                ) : null}
-            </ResizableScrollRegion>
+                    <div className="usage-results-actions">
+                        <div className="usage-view-switch" role="group" aria-label="Представление отчёта">
+                            <button type="button" aria-pressed={view === 'table'}
+                                onClick={() => { setView('table'); setExpanded(false) }}>Таблица</button>
+                            <button type="button" aria-pressed={view === 'chart'}
+                                onClick={() => setView('chart')}>График</button>
+                        </div>
+                        <button type="button" className="secondary-button" disabled={!hasRows}
+                            title={paged ? 'До 50 строк текущей страницы' : 'Все строки текущего ограниченного отчёта'}
+                            onClick={exportCsv}>{paged ? 'Скачать CSV страницы' : 'Скачать CSV отчёта'}</button>
+                        {view === 'chart' && <button type="button" className="secondary-button"
+                            disabled={!hasRows} title={chartExpanded ? 'Обычный размер графика' : 'Увеличить область графика'}
+                            aria-pressed={chartExpanded} onClick={() => setExpanded(value => !value)}>
+                            {chartExpanded ? 'Свернуть' : 'Развернуть'}
+                        </button>}
+                    </div>
+                </div>
+                {exportError && <p role="alert" className="usage-export-error">{exportError}</p>}
+                <UsageTableViewport key={dataKey} table={view === 'table'} hasRows={hasRows} loading={report.loading}>
+                    {report.loading ? <LoadingState message="Загрузка отчёта…" />
+                        : report.error ? <ErrorState title="Ошибка загрузки" message={report.error}
+                            action={<button type="button" onClick={report.reload}>Повторить</button>} />
+                        : !hasRows ? <EmptyState title="За этот период использования нет"
+                            message="Данные появятся после завершённых обращений к AI. Выберите другой период." />
+                        : view === 'table' ? <UsageRows tab={report.tab} rows={report.rows}
+                            onInspectModel={report.inspectModel} onInspectDay={report.inspectDay}
+                            onInspectUser={report.inspectUser} appliedModel={report.appliedModel}
+                            appliedUserId={report.appliedUserId}
+                            drilldownDisabled={report.filtersDirty || report.loading} />
+                        : report.tab === 'daily' ? <UsageDailyChart rows={report.rows as UsageDailySummary[]}
+                            dateFrom={report.appliedDateFrom} dateTo={report.appliedDateTo}
+                            metric={dailyMetric} onMetricChange={setDailyMetric} />
+                        : <UsageBreakdownChart tab={report.tab} rows={report.rows} hasMore={hasMore} />}
+                </UsageTableViewport>
+                <footer className="usage-results-footer">
+                    {!report.loading && !report.error && (hasRows || hasMore)
+                        ? <UsageReportFooter tab={report.tab} rowsCount={report.rows.length}
+                            page={report.page} hasPrevious={report.hasPrevious} hasNext={report.hasNext}
+                            loading={report.loading} onPageChange={page => { setExportError(''); report.goToPage(page) }} />
+                        : <span className="usage-footer-status">{report.loading ? 'Загрузка…' : report.error ? 'Отчёт недоступен' : 'Нет записей'}</span>}
+                </footer>
+            </section>
         </div>
     )
 }

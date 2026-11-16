@@ -483,6 +483,31 @@ class UsageControllerSecurityTest {
     }
 
     @Test
+    void userFilterBindsUuidAndPreservesExplicitOrganization() throws Exception {
+        var principal = superAdminPrincipal();
+        when(usageQueryService.getUsageSummaryForUser(
+                eq(ORGANIZATION_ID), eq(USER_ID), eq(DATE_FROM), eq(DATE_TO),
+                eq("mock-safeai"), any(Pageable.class), eq(principal)))
+                .thenReturn(new SliceImpl<>(List.of(),
+                        org.springframework.data.domain.PageRequest.of(0, 50), false));
+        mockMvc.perform(get("/api/admin/usage/by-organization/{organizationId}", ORGANIZATION_ID)
+                        .param("userId", USER_ID.toString())
+                        .param("dateFrom", DATE_FROM.toString())
+                        .param("dateTo", DATE_TO.toString())
+                        .param("model", "mock-safeai")
+                        .with(authentication(authToken(principal))))
+                .andExpect(status().isOk());
+        verify(usageQueryService).getUsageSummaryForUser(
+                eq(ORGANIZATION_ID), eq(USER_ID), eq(DATE_FROM), eq(DATE_TO),
+                eq("mock-safeai"), any(Pageable.class), eq(principal));
+
+        mockMvc.perform(get("/api/admin/usage/daily")
+                        .param("userId", "invalid-uuid")
+                        .with(authentication(authToken(principal))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void userEndpointUsesCanonicalPath()
             throws Exception {
         SafeAiUserPrincipal principal =

@@ -42,6 +42,7 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
         setSelectedEvent,
         applyDatePreset,
         applyFilters,
+        filterByActor,
         resetFilters,
         retryLoad,
         changePage,
@@ -175,22 +176,17 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
                         {showTable
                             && (
                                 <div className="audit-table-card__toolbar">
-                                    <p>
-                                        Показана страница
-                                        {' '}
-                                        {
-                                            pageResponse.page
-                                            + 1
-                                        }
-                                        .
-                                        {' '}
-                                        CSV содержит только события этой страницы.
-                                        {filtersDirty && (
-                                            <span className="audit-csv-unapplied">
-                                                {' '}Не примененные изменения фильтров в файл не входят.
-                                            </span>
-                                        )}
-                                    </p>
+                                    <div className="audit-results-summary">
+                                        <h2>Результаты поиска <span>{pageResponse.totalElements.toLocaleString('ru-RU')}</span></h2>
+                                        <p>Нажмите на пользователя, чтобы увидеть его события за выбранный период.
+                                            {' '}CSV содержит только события этой страницы.
+                                            {filtersDirty && (
+                                                <span className="audit-csv-unapplied">
+                                                    {' '}Не примененные изменения фильтров в файл не входят.
+                                                </span>
+                                            )}
+                                        </p>
+                                    </div>
 
                                     <button
                                         type="button"
@@ -260,6 +256,8 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
                             onOpenDetails={
                                 setSelectedEvent
                             }
+                            onFilterActor={filterByActor}
+                            actorFilterDisabled={effectiveLoading || filtersDirty}
                         />
                     )}
             </ResizableScrollRegion> : upper}

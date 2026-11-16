@@ -4,6 +4,7 @@ import jakarta.validation.constraints.Size;
 import org.springframework.format.annotation.DateTimeFormat;
 
 import java.time.Instant;
+import java.util.UUID;
 
 public record UsageDateModelFilter(
         @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
@@ -13,8 +14,13 @@ public record UsageDateModelFilter(
         Instant dateTo,
 
         @Size(max = 100)
-        String model
+        String model,
+        UUID userId
 ) {
+    public UsageDateModelFilter(Instant dateFrom, Instant dateTo, String model) {
+        this(dateFrom, dateTo, model, null);
+    }
+
     public String normalizedModel() {
         return model == null || model.isBlank()
                 ? null

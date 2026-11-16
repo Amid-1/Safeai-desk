@@ -24,6 +24,7 @@ export type UsageDraftFilter = {
     dateTo: string
     model: string
     organizationId: string
+    userId?: string
 }
 
 export type UsageUrlState = {
@@ -45,6 +46,7 @@ export type UsageUrlValues = {
     dateTo: string
     model: string
     organizationId: string
+    userId?: string
 }
 
 export const MAX_USAGE_RANGE_DAYS = 366
@@ -104,6 +106,7 @@ export function readUsageUrlState(
 
     const requestedDateFrom = params.get('dateFrom') ?? ''
     const requestedDateTo = params.get('dateTo') ?? ''
+    const userId = safeNormalizeOptionalUuid(params.get('userId') ?? '')
 
     let dateFrom = fallback.dateFrom
     let dateTo = fallback.dateTo
@@ -129,6 +132,7 @@ export function readUsageUrlState(
         draft: {
             dateFrom,
             dateTo,
+            ...(userId ? { userId } : {}),
             model: safeNormalizeModel(
                 params.get('model') ?? '',
             ),
@@ -145,10 +149,12 @@ export function toUsageFilter(
     draft: UsageDraftFilter,
     superAdmin: boolean,
 ): NormalizedUsageFilter {
+    const userId = normalizeOptionalUuid(draft.userId ?? '')
     const normalized: UsageDraftFilter = {
         dateFrom: draft.dateFrom.trim(),
         dateTo: draft.dateTo.trim(),
         model: normalizeModel(draft.model),
+        ...(userId ? { userId } : {}),
         organizationId: superAdmin
             ? normalizeOptionalUuid(
                 draft.organizationId,
@@ -178,6 +184,7 @@ export function toUsageFilter(
                 normalized.dateTo,
             ),
             model: normalized.model || undefined,
+            ...(userId ? { userId } : {}),
         },
         organizationId: normalized.organizationId,
     }
@@ -219,10 +226,12 @@ export function buildUsageSearchParams(
         next.set('page', String(values.page))
     }
 
-    // Preserve the summary-only model filter while the user inspects another
-    // tab so switching views never silently loses a deliberate selection.
+    // All views share the same applied filters.
     if (values.model) {
         next.set('model', values.model)
+    }
+    if (values.userId) {
+        next.set('userId', values.userId)
     }
 
     if (values.organizationId) {

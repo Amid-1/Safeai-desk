@@ -109,4 +109,17 @@ describe('admin usage helpers', () => {
         expect(params.get('model'))
             .toBe('gpt-example')
     })
+
+    it('validates and restores the subject UUID without changing tenant scope', () => {
+        const userId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+        const values = {
+            tab: 'daily' as const, page: 0, dateFrom: '2026-11-01', dateTo: '2026-11-16',
+            model: 'mock-safeai', organizationId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', userId,
+        }
+        const state = readUsageUrlState(buildUsageSearchParams(values).toString(), false)
+        expect(state.draft.userId).toBe(userId)
+        expect(state.draft.organizationId).toBe('')
+        expect(toUsageFilter(state.draft, false).filter.userId).toBe(userId)
+        expect(readUsageUrlState('userId=bad-id', false).draft.userId).toBeUndefined()
+    })
 })

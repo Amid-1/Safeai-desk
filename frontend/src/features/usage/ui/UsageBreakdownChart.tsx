@@ -1,5 +1,5 @@
 // frontend/src/features/usage/ui/UsageBreakdownChart.tsx
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import {
     Bar,
     BarChart,
@@ -16,7 +16,7 @@ import {
 import type { BreakdownReportTab } from './usageBreakdownChartData'
 
 const TITLES: Record<BreakdownReportTab, string> = {
-    summary: 'Расход токенов по сотрудникам и моделям',
+    summary: 'Расход токенов по пользователям и моделям',
     users: 'Расход токенов по пользователям',
     models: 'Расход токенов по моделям',
 }
@@ -24,17 +24,17 @@ const TITLES: Record<BreakdownReportTab, string> = {
 type Props = {
     tab: BreakdownReportTab
     rows: readonly UsageAmounts[]
+    hasMore?: boolean
 }
 
 /** One chart from the report's existing rows; never an unscoped API request. */
-export function UsageBreakdownChart({ tab, rows }: Props) {
-    const [expanded, setExpanded] = useState(true)
+export function UsageBreakdownChart({ tab, rows, hasMore = tab !== 'models' }: Props) {
     const result = useMemo(
         () => buildUsageBreakdownChartData(tab, rows),
         [tab, rows],
     )
     const label = TITLES[tab]
-    const height = Math.max(156, Math.min(620, 65 + result.shownRows * 52))
+    const height = Math.max(180, 44 + result.shownRows * 58)
 
     return (
         <section className="usage-breakdown-chart" aria-label={label}>
@@ -42,22 +42,13 @@ export function UsageBreakdownChart({ tab, rows }: Props) {
                 <div>
                     <h3>{label}</h3>
                     <p>
-                        Подтвержденные входные и выходные токены.
-                        {tab === 'models'
-                            ? ' По всем строкам ограниченного отчета.'
-                            : ' Только по загруженной странице, не по всей организации.'}
+                        Подтверждённые входные и выходные токены.
+                        {hasMore
+                            ? ' Только на текущей странице отчёта.'
+                            : ' По выбранным фильтрам.'}
                     </p>
                 </div>
-                <button
-                    type="button"
-                    aria-expanded={expanded}
-                    aria-controls="usage-breakdown-chart-content"
-                    onClick={() => setExpanded(value => !value)}
-                >
-                    {expanded ? 'Свернуть график' : 'Показать график'}
-                </button>
             </div>
-            {expanded && (
                 <div id="usage-breakdown-chart-content">
                     {!result.available ? (
                         <p role="status" className="usage-breakdown-chart__warning">
@@ -68,7 +59,7 @@ export function UsageBreakdownChart({ tab, rows }: Props) {
                         <>
                             <div className="usage-breakdown-chart__plot" role="group"
                                  aria-label={`${label}. Данные подтвержденных токенов текущего отчета.`}>
-                                <div style={{ minWidth: 540, height }}>
+                                <div className="usage-breakdown-chart__frame" style={{ minHeight: height }}>
                                     <ResponsiveContainer width="100%" height="100%">
                                         <BarChart
                                             data={result.data}
@@ -76,18 +67,20 @@ export function UsageBreakdownChart({ tab, rows }: Props) {
                                             margin={{ top: 4, right: 20, bottom: 3, left: 4 }}
                                             barGap={2}
                                             barCategoryGap="23%"
+                                            maxBarSize={28}
                                         >
-                                            <CartesianGrid strokeDasharray="3 3" horizontal={false}/>
-                                            <XAxis type="number" allowDecimals={false}/>
+                                            <CartesianGrid stroke="#dce5f2" strokeDasharray="3 3" horizontal={false}/>
+                                            <XAxis type="number" allowDecimals={false} tick={{fontSize: 14, fill: '#405572'}}/>
                                             <YAxis type="category" dataKey="label"
-                                                   width={182} tick={{ fontSize: 12 }}
-                                                   tickFormatter={(value: string) => value.length > 25
-                                                       ? `${value.slice(0, 24)}…` : value}/>
-                                            <Tooltip/>
+                                                   width={264} tick={{ fontSize: 14, fill: '#405572' }}
+                                                   tickFormatter={(value: string) => value.length > 32
+                                                       ? `${value.slice(0, 31)}…` : value}/>
+                                            <Tooltip cursor={{fill: '#eef3ff'}}
+                                                     contentStyle={{borderRadius: 10, borderColor: '#dbe5f4'}}/>
                                             <Bar dataKey="input" name="Входные токены"
-                                                 fill="#4d92ef" radius={[0, 5, 5, 0]} isAnimationActive={false}/>
+                                                 fill="#356de8" radius={[0, 5, 5, 0]} isAnimationActive={false}/>
                                             <Bar dataKey="output" name="Выходные токены"
-                                                 fill="#58bd7c" radius={[0, 5, 5, 0]} isAnimationActive={false}/>
+                                                 fill="#169f8d" radius={[0, 5, 5, 0]} isAnimationActive={false}/>
                                         </BarChart>
                                     </ResponsiveContainer>
                                 </div>
@@ -105,7 +98,6 @@ export function UsageBreakdownChart({ tab, rows }: Props) {
                         </>
                     )}
                 </div>
-            )}
         </section>
     )
 }

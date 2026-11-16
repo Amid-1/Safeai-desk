@@ -61,7 +61,7 @@ for (const width of [1440, 760]) {
     await page.setViewportSize({ width, height: 900 })
     await page.goto('/admin/audit')
     await expect(page.getByRole('button', { name: 'Подробнее' })).toBeVisible()
-    for (const name of ['Событие', 'Кто выполнил действие']) {
+    for (const name of ['Событие', 'Пользователь']) {
       const field = page.getByRole('combobox', { name, exact: true })
       await field.scrollIntoViewIfNeeded()
       const closed = await field.boundingBox()
@@ -103,7 +103,7 @@ test('audit modal preserves controls and opens historical decision directly', as
   await page.getByRole('button', { name: 'Подробнее' }).click()
   const modal = page.getByRole('dialog')
   const closeTop = modal.getByRole('button', { name: 'Закрыть окно' })
-  await modal.getByText('Технические подробности').click()
+  await modal.getByText('Сведения для технической поддержки').click()
   const headerBefore = await closeTop.boundingBox()
   await modal.locator('.modal-body').evaluate(element => { element.scrollTop = element.scrollHeight })
   expect(Math.abs((await closeTop.boundingBox()).y - headerBefore.y)).toBeLessThan(3)
@@ -117,3 +117,46 @@ test('audit modal preserves controls and opens historical decision directly', as
   await page.getByText('Технические сведения решения', { exact: true }).click()
   await expect(technical).toBeVisible()
 })
+
+test('clicking the actor filters the whole journal via server without leaving audit', async ({ page }) => {
+  await page.goto('/admin/audit?eventType=MODEL_ROUTE_DENIED')
+  const actorButton = page.getByRole('button', { name: 'Показать события: admin@example.test' })
+  await expect(actorButton).toBeVisible()
+  const response = page.waitForResponse(r => {
+    const url = new NodeURL(r.url())
+    return url.pathname === '/api/admin/audit-events' && url.searchParams.get('userId') === userId
+  })
+  await actorButton.click()
+  const requestUrl = new NodeURL((await response).url())
+  expect(requestUrl.searchParams.has('eventType')).toBeFalsy()
+  await expect(page).toHaveURL(new RegExp('actorUserId=' + userId))
+  await expect(page.getByRole('combobox', { name: 'Пользователь' })).toHaveValue(/admin@example.test/)
+})
+
+for (const width of [1280, 390]) {
+  test(`audit support report never overlaps its event identifier at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 })
+    await page.goto('/admin/audit')
+    await page.getByRole('button', { name: 'Подробнее' }).click()
+    const modal = page.getByRole('dialog')
+    await expect(modal.locator('.audit-json')).toBeHidden()
+    await modal.getByText('Сведения для технической поддержки').click()
+    const support = modal.locator('.audit-technical-details')
+    const button = support.getByRole('button', { name: 'Копировать данные для поддержки' })
+    await expect(support.getByRole('button')).toHaveCount(1)
+    const identifier = support.locator('.audit-support-list code')
+    await button.scrollIntoViewIfNeeded()
+    const value = await identifier.boundingBox()
+    const control = await button.boundingBox()
+    expect(value.y + value.height <= control.y + 1).toBeTruthy()
+    await button.focus()
+    await identifier.click()
+    const after = await button.boundingBox()
+    expect(Math.abs(after.x - control.x)).toBeLessThan(2)
+    await expect(modal.locator('.audit-json')).toBeHidden()
+    await modal.getByText('Диагностический отчёт (JSON)').click()
+    await expect(modal.locator('.audit-json')).toBeVisible()
+    expect(await modal.locator('.modal-body').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBeTruthy()
+    await expect(modal.getByRole('button', { name: 'Закрыть', exact: true })).toBeInViewport()
+  })
+}

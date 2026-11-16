@@ -11,11 +11,17 @@ import type {
 type AuditActorProps = {
     event: AuditEvent
     showIds?: boolean
+    hideIds?: boolean
+    onFilterActor?: () => void
+    filterDisabled?: boolean
 }
 
 function AuditActor({
     event,
     showIds = false,
+    hideIds = false,
+    onFilterActor,
+    filterDisabled = false,
 }: AuditActorProps) {
     const [copyStatus, setCopyStatus] = useState('')
 
@@ -50,7 +56,7 @@ function AuditActor({
     if (isSystem) {
         return (
             <span className="audit-identity__system">
-                Система
+                {event.eventType === 'USER_LOGIN_FAILED' ? 'Пользователь не установлен' : 'Система'}
             </span>
         )
     }
@@ -76,13 +82,20 @@ function AuditActor({
 
     return (
         <div className="audit-actor audit-identity">
-            <strong
+            {onFilterActor && event.actorUserId ? (
+                <button type="button" className="audit-identity__primary audit-actor-link"
+                    disabled={filterDisabled}
+                    title={filterDisabled ? 'Сначала примените фильтры или дождитесь загрузки' : 'Показать события пользователя за выбранный период'}
+                    aria-label={'Показать события: ' + primaryText} onClick={onFilterActor}>
+                    {primaryText}
+                </button>
+            ) : <strong
                 className={
                     'audit-identity__primary'
                 }
             >
                 {primaryText}
-            </strong>
+            </strong>}
 
             {!hasReadableIdentity && (
                 <span className="audit-identity__historical-note">
@@ -100,7 +113,7 @@ function AuditActor({
                 </span>
             )}
 
-            {(showIds || !hasReadableIdentity)
+            {!hideIds && (showIds || !hasReadableIdentity)
                 && event.actorUserId
                 && (
                     <span
@@ -125,7 +138,7 @@ function AuditActor({
                     </span>
                 )}
 
-            {showIds
+            {!hideIds && showIds
                 && event.actorOrganizationId
                 && (
                     <span

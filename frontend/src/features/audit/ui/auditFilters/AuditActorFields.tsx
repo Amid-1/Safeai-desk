@@ -23,7 +23,7 @@ export function AuditActorFields({ draftFilter, actors, loading, directoriesLoad
             : actor.actorEmail || actor.actorDisplayName || 'Пользователь без имени (' + actor.actorUserId + ')',
     }))
     return <>
-        <AuditSearchPicker label="Кто выполнил действие" placeholder="Имя или email сотрудника"
+        <AuditSearchPicker label="Пользователь" placeholder="Имя или email пользователя"
             allLabel="Все пользователи и системные события" query={actorQuery}
             onQueryChange={onActorQueryChange} value={draftFilter.actorUserId}
             options={options} disabled={loading} pending={directoriesLoading}

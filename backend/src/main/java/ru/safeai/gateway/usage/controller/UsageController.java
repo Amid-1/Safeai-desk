@@ -43,7 +43,11 @@ public class UsageController {
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
         return PagedResponse.from(
-                usageQueryService.getUsageSummary(
+                filter.userId() != null
+                        ? usageQueryService.getUsageSummaryForUser(null, filter.userId(),
+                                filter.dateFrom(), filter.dateTo(), filter.normalizedModel(),
+                                pageRequest.toPageable(), currentUser)
+                        : usageQueryService.getUsageSummary(
                         filter.dateFrom(),
                         filter.dateTo(),
                         filter.normalizedModel(),
@@ -60,7 +64,11 @@ public class UsageController {
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
         return PagedResponse.from(
-                usageQueryService.getUsageByUsers(
+                filter.userId() != null
+                        ? usageQueryService.getUsageUsersForUser(null, filter.userId(),
+                                filter.dateFrom(), filter.dateTo(), filter.normalizedModel(),
+                                pageRequest.toPageable(), currentUser)
+                        : usageQueryService.getUsageByUsers(
                         filter.dateFrom(),
                         filter.dateTo(),
                         filter.normalizedModel(),
@@ -75,6 +83,10 @@ public class UsageController {
             @Valid @ModelAttribute UsageDateModelFilter filter,
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
+        if (filter.userId() != null) {
+            return usageQueryService.getUsageModelsForUser(null, filter.userId(),
+                    filter.dateFrom(), filter.dateTo(), filter.normalizedModel(), currentUser);
+        }
         return usageQueryService.getUsageByModels(
                 filter.dateFrom(),
                 filter.dateTo(),
@@ -91,7 +103,11 @@ public class UsageController {
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
         return PagedResponse.from(
-                usageQueryService.getUsageByUsersForOrganization(
+                filter.userId() != null
+                        ? usageQueryService.getUsageUsersForUser(organizationId, filter.userId(),
+                                filter.dateFrom(), filter.dateTo(), filter.normalizedModel(),
+                                pageRequest.toPageable(), currentUser)
+                        : usageQueryService.getUsageByUsersForOrganization(
                         organizationId,
                         filter.dateFrom(),
                         filter.dateTo(),
@@ -108,6 +124,10 @@ public class UsageController {
             @Valid @ModelAttribute UsageDateModelFilter filter,
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
+        if (filter.userId() != null) {
+            return usageQueryService.getUsageModelsForUser(organizationId, filter.userId(),
+                    filter.dateFrom(), filter.dateTo(), filter.normalizedModel(), currentUser);
+        }
         return usageQueryService.getUsageByModelsForOrganization(
                 organizationId,
                 filter.dateFrom(),
@@ -123,6 +143,10 @@ public class UsageController {
             @Valid @ModelAttribute UsageDateModelFilter filter,
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
+        if (filter.userId() != null) {
+            return usageQueryService.getUsageDailyForUser(null, filter.userId(),
+                    filter.dateFrom(), filter.dateTo(), filter.normalizedModel(), currentUser);
+        }
         return usageQueryService.getUsageDaily(
                 filter.dateFrom(),
                 filter.dateTo(),
@@ -137,6 +161,10 @@ public class UsageController {
             @Valid @ModelAttribute UsageDateModelFilter filter,
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
+        if (filter.userId() != null) {
+            return usageQueryService.getUsageDailyForUser(organizationId, filter.userId(),
+                    filter.dateFrom(), filter.dateTo(), filter.normalizedModel(), currentUser);
+        }
         return usageQueryService.getUsageDailyForOrganization(
                 organizationId,
                 filter.dateFrom(),
@@ -173,7 +201,11 @@ public class UsageController {
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
         return PagedResponse.from(
-                usageQueryService.getUsageByOrganizationId(
+                filter.userId() != null
+                        ? usageQueryService.getUsageSummaryForUser(organizationId, filter.userId(),
+                                filter.dateFrom(), filter.dateTo(), filter.normalizedModel(),
+                                pageRequest.toPageable(), currentUser)
+                        : usageQueryService.getUsageByOrganizationId(
                         organizationId,
                         filter.dateFrom(),
                         filter.dateTo(),

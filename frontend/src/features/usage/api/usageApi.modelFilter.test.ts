@@ -1,7 +1,7 @@
 // frontend/src/features/usage/api/usageApi.modelFilter.test.ts
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { apiRequest } from '../../../shared/api/http'
-import { getUsageSummary, getUsageByUsers, getUsageByModels, getUsageDaily,
+import { getUsageSummary, getUsageByUsers, getUsageByModels, getUsageDaily, getUsageByOrganization,
     getOrganizationUsageUsers, getOrganizationUsageModels, getOrganizationUsageDaily } from './usageApi'
 
 vi.mock('../../../shared/api/http', async (importOriginal) => {
@@ -9,14 +9,16 @@ vi.mock('../../../shared/api/http', async (importOriginal) => {
     return {...actual, apiRequest: vi.fn()}
 })
 const org = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
-const filter = {dateFrom: '2026-10-01T00:00:00Z', dateTo: '2026-10-20T00:00:00Z', model: 'mock-safeai'}
+const userId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+const filter = {dateFrom: '2026-10-01T00:00:00Z', dateTo: '2026-10-20T00:00:00Z', model: 'mock-safeai', userId}
 
 beforeEach(() => { vi.clearAllMocks() })
 
 describe('server-side usage model filter for every report', () => {
-    it('sends exact model in seven report variants', async () => {
+    it('sends exact model and user in eight report variants', async () => {
         vi.mocked(apiRequest).mockResolvedValue({content: [], page: 0, size: 50, first: true, last: true, hasNext: false, hasPrevious: false})
         await getUsageSummary(0, 50, filter)
+        await getUsageByOrganization(org, 0, 50, filter)
         await getUsageByUsers(0, 50, filter)
         await getOrganizationUsageUsers(org, 0, 50, filter)
         vi.mocked(apiRequest).mockResolvedValue([])
@@ -24,10 +26,11 @@ describe('server-side usage model filter for every report', () => {
         await getUsageDaily(filter)
         await getOrganizationUsageModels(org, filter)
         await getOrganizationUsageDaily(org, filter)
-        expect(vi.mocked(apiRequest).mock.calls).toHaveLength(7)
+        expect(vi.mocked(apiRequest).mock.calls).toHaveLength(8)
         for (const [path] of vi.mocked(apiRequest).mock.calls) {
             const url = new URL(String(path), 'http://localhost')
             expect(url.searchParams.get('model')).toBe('mock-safeai')
+            expect(url.searchParams.get('userId')).toBe(userId)
         }
     })
 })

@@ -140,6 +140,7 @@ async function getUsagePage<T>(
         dateFrom: normalizeOptionalString(filter.dateFrom),
         dateTo: normalizeOptionalString(filter.dateTo),
         model: normalizeOptionalString(filter.model),
+        userId: filter.userId ? uuidPathSegment(filter.userId) : undefined,
     })
 
     const response = await apiRequest<unknown>(
@@ -218,6 +219,7 @@ async function getUsageArray<T>(
         dateFrom: normalizeOptionalString(filter.dateFrom),
         dateTo: normalizeOptionalString(filter.dateTo),
         model: normalizeOptionalString(filter.model),
+        userId: filter.userId ? uuidPathSegment(filter.userId) : undefined,
     })
 
     const response = await apiRequest<unknown>(
