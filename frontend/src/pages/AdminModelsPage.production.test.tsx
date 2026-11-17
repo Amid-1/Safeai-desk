@@ -24,6 +24,7 @@ import {
 } from '../test/fixtures/modelControlPlaneTestFixtures'
 import AdminModelsPage from './AdminModelsPage'
 import { MemoryRouter } from 'react-router-dom'
+import { ApiError } from '../shared/api/http'
 
 const auth = vi.hoisted(() => ({ currentUser: null as AuthUser | null }))
 vi.mock('../features/auth/state/useAuth', () => ({ useAuth: () => auth }))
@@ -89,6 +90,12 @@ function configureApi() {
         updatedAt: '2026-09-01T00:00:00Z',
     } as Awaited<ReturnType<typeof getOrganizationDetails>>))
     vi.mocked(searchOrganizationDirectory).mockResolvedValue([])
+}
+
+function configureCatalogWithoutRuntime() {
+    const entry = createModelCatalogEntry({modelKey: 'mock:other', providerModelId: 'other', displayName: 'Other model'})
+    vi.mocked(getModelCatalog).mockResolvedValue([entry])
+    vi.mocked(getEffectiveModelCatalog).mockResolvedValue([entry])
 }
 
 async function loadPage() {
@@ -280,6 +287,7 @@ describe('AdminModelsPage — контрактные и регрессионны
 
     it('не публикует частично обновлённые latest/effective после неудачного refresh', async () => {
         auth.currentUser = user('SUPER_ADMIN')
+        configureCatalogWithoutRuntime()
         await loadPage()
         vi.mocked(importRuntimeModelCatalog).mockResolvedValueOnce(
             createModelCatalogEntry({ version: 2 }),
@@ -302,6 +310,7 @@ describe('AdminModelsPage — контрактные и регрессионны
 
     it('показывает результат ошибки POST и позволяет безопасно повторить после завершения', async () => {
         auth.currentUser = user('SUPER_ADMIN')
+        configureCatalogWithoutRuntime()
         vi.mocked(importRuntimeModelCatalog).mockRejectedValueOnce(new Error('POST rejected'))
         await loadPage()
         fireEvent.click(screen.getByRole('tab', { name: 'Каталог' }))
@@ -313,6 +322,57 @@ describe('AdminModelsPage — контрактные и регрессионны
         expect(screen.getByRole('tab', { name: 'Каталог' })).toHaveAttribute('aria-selected', 'true')
         await waitFor(() => expect(button).not.toBeDisabled())
         expect(importRuntimeModelCatalog).toHaveBeenCalledTimes(1)
+    })
+
+    it.each(['MANUAL', 'MIGRATED', 'RUNTIME_IMPORT'] as const)(
+        'не предлагает повторный импорт существующей версии %s',
+        async source => {
+            auth.currentUser = user('SUPER_ADMIN')
+            const entry = createModelCatalogEntry({ source, version: 2 })
+            vi.mocked(getModelCatalog).mockResolvedValue([entry])
+            // Даже если версия ещё не вступила в силу, ключ уже занят.
+            vi.mocked(getEffectiveModelCatalog).mockResolvedValue([])
+            await loadPage()
+            fireEvent.click(screen.getByRole('tab', { name: 'Каталог' }))
+            const button = screen.getByRole('button', {name: 'Подключённая модель уже в каталоге'})
+            expect(button).toBeDisabled()
+            expect(screen.getByText(/mock-safeai уже добавлена в каталог \(версия 2\)/)).toBeInTheDocument()
+            fireEvent.click(button)
+            expect(importRuntimeModelCatalog).not.toHaveBeenCalled()
+            expect(screen.getByRole('button', {name: 'Новая версия'})).toBeEnabled()
+        },
+    )
+
+    it('перезагружает каталог при конкурентном добавлении, не показывает технический конфликт', async () => {
+        auth.currentUser = user('SUPER_ADMIN')
+        configureCatalogWithoutRuntime()
+        await loadPage()
+        const registered = createModelCatalogEntry({source: 'MANUAL', version: 2})
+        vi.mocked(importRuntimeModelCatalog).mockRejectedValueOnce(
+            new ApiError('source=MANUAL, version=2; import-runtime governance', {code: 'CONFLICT'}, 409),
+        )
+        vi.mocked(getModelCatalog).mockResolvedValueOnce([registered])
+        vi.mocked(getEffectiveModelCatalog).mockResolvedValueOnce([registered])
+        fireEvent.click(screen.getByRole('tab', { name: 'Каталог' }))
+        fireEvent.click(screen.getByRole('button', {name: 'Добавить подключённую модель в каталог'}))
+        expect(await screen.findByRole('button', {name: 'Подключённая модель уже в каталоге'})).toBeDisabled()
+        expect(screen.queryByText(/source=MANUAL|governance/)).not.toBeInTheDocument()
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+        expect(importRuntimeModelCatalog).toHaveBeenCalledTimes(1)
+    })
+
+    it('блокирует добавление отключённой модели даже при пустом каталоге', async () => {
+        auth.currentUser = user('SUPER_ADMIN')
+        vi.mocked(getRuntimeModelStatus).mockResolvedValue(createRuntimeModelStatus({enabled: false}))
+        vi.mocked(getModelCatalog).mockResolvedValue([])
+        vi.mocked(getEffectiveModelCatalog).mockResolvedValue([])
+        await loadPage()
+        fireEvent.click(screen.getByRole('tab', {name: 'Каталог'}))
+        const button = screen.getByRole('button', {name: 'Добавить подключённую модель в каталог'})
+        expect(button).toBeDisabled()
+        expect(screen.getByText(/Подключённая модель отключена в настройках сервера/)).toBeInTheDocument()
+        fireEvent.click(button)
+        expect(importRuntimeModelCatalog).not.toHaveBeenCalled()
     })
 
     it('запрещает показывать политику чужого tenant из ответа после сохранения', async () => {
@@ -373,6 +433,7 @@ describe('AdminModelsPage — контрактные и регрессионны
 
     it('не отправляет второй импорт Runtime, пока первый POST не завершён', async () => {
         auth.currentUser = user('SUPER_ADMIN')
+        configureCatalogWithoutRuntime()
         const pending = deferred<ReturnType<typeof createModelCatalogEntry>>()
         vi.mocked(importRuntimeModelCatalog).mockReturnValueOnce(pending.promise)
         await loadPage()

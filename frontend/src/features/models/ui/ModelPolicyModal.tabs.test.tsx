@@ -133,10 +133,10 @@ describe('ModelPolicyModal: раздельные вкладки и единый 
         expect(screen.getByText('Сведения о стоимости неполные')).toBeVisible()
         expect(screen.getByText('Отсутствие хранения данных не подтверждено')).toBeVisible()
     })
-    it('показывает компактный статус с раскрываемой справкой и без ручки перетаскивания', () => {
+    it('показывает компактный статус с раскрываемой справкой и ручкой перетаскивания', () => {
         render(view())
         const dialog = screen.getByRole('dialog', {name: 'Настройка правил использования моделей'})
-        expect(dialog.querySelector('[data-modal-drag-handle]')).toBeNull()
+        expect(dialog.querySelector('[data-modal-drag-handle="true"]')).toBeInTheDocument()
         expect(dialog.querySelectorAll('[data-modal-resize-handle]')).toHaveLength(8)
 
         const help = screen.getByText('О настройках').closest('details')!
@@ -150,6 +150,29 @@ describe('ModelPolicyModal: раздельные вкладки и единый 
         expect(screen.getByRole('checkbox', {name: 'Правила включены'})).toBeChecked()
         fireEvent.click(tab('Бюджет'))
         expect(screen.getByRole('checkbox', {name: 'Правила включены'})).toBeChecked()
+    })
+
+    it('перемещает окно за заголовок и сохраняет введённый бюджет', () => {
+        vi.stubGlobal('innerWidth', 1920)
+        vi.stubGlobal('innerHeight', 1200)
+        try {
+            render(view())
+            fireEvent.click(tab('Бюджет'))
+            fireEvent.change(screen.getByLabelText('Месячный бюджет, USD'), {target: {value: '20'}})
+            const dialog = screen.getByRole('dialog', {name: 'Настройка правил использования моделей'})
+            const header = screen.getByRole('heading', {name: 'Настройка правил использования моделей'})
+            const left = Number.parseFloat(dialog.style.left)
+            const top = Number.parseFloat(dialog.style.top)
+            fireEvent.pointerDown(header, {pointerId: 1, button: 0, clientX: 800, clientY: 250})
+            fireEvent.pointerMove(header, {pointerId: 1, clientX: 880, clientY: 290})
+            fireEvent.pointerUp(header, {pointerId: 1})
+            expect(dialog.style.left).toBe(`${left + 80}px`)
+            expect(dialog.style.top).toBe(`${top + 40}px`)
+            expect(screen.getByLabelText('Месячный бюджет, USD')).toHaveValue('20')
+            expect(document.body).not.toHaveClass('modal-dragging')
+        } finally {
+            vi.unstubAllGlobals()
+        }
     })
 
     it('отображает пять логических вкладок, и скрытые панели не доступны для навигации', () => {

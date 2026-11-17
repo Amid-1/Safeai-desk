@@ -127,7 +127,7 @@ function ModelPolicyModalSession(props: ModelPolicyModalProps) {
             size="lg"
             className="models-policy-modal"
             resize={POLICY_MODAL_RESIZE}
-            dragEnabled={false}
+            dragEnabled
         >
             <form
                 id={formId}

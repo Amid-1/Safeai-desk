@@ -2,12 +2,11 @@
 // ============================================================
 // frontend/src/features/models/ui/catalogVersion/CatalogDataSection.tsx
 // ============================================================
-import type { ModelRetentionStatus, ModelTrainingUseStatus, ModelPricingStatus } from '../../../../entities/model/api/modelApi'
-import { MODEL_RETENTION_STATUSES, MODEL_TRAINING_USE_STATUSES, MODEL_PRICING_STATUSES } from '../../../../entities/model/api/modelApi'
+import type { ModelRetentionStatus, ModelTrainingUseStatus } from '../../../../entities/model/api/modelApi'
+import { MODEL_RETENTION_STATUSES, MODEL_TRAINING_USE_STATUSES } from '../../../../entities/model/api/modelApi'
 import type { CatalogSectionProps } from './catalogSectionTypes'
-import { RETENTION_LABELS, TRAINING_LABELS, PRICING_LABELS } from './catalogLabels'
+import { RETENTION_LABELS, TRAINING_LABELS } from './catalogLabels'
 import { SectionHeading } from './catalogPresentation'
-import { normalizeDraftForPricingStatus } from '../modelControlPlaneSupport'
 
 export function CatalogDataSection({draft, setDraft}: CatalogSectionProps) {
     return (
@@ -18,8 +17,8 @@ export function CatalogDataSection({draft, setDraft}: CatalogSectionProps) {
                         ].join(' ')}
                     >
                         <SectionHeading
-                            title="Данные и использование"
-                            hint="Хранение данных, использование для обучения и статус стоимости."
+                            title="Безопасность данных"
+                            hint="Условия хранения данных и их использования для обучения."
                             tone="success"
                         />
 
@@ -94,38 +93,6 @@ export function CatalogDataSection({draft, setDraft}: CatalogSectionProps) {
                                 </select>
                             </label>
 
-                            <label>
-                                Статус стоимости
-                                <select
-                                    value={draft.pricingStatus}
-                                    onChange={(event) => {
-                                        const pricingStatus =
-                                            (
-                                                event.target.value as ModelPricingStatus
-                                            )
-
-                                        setDraft((current) =>
-                                            normalizeDraftForPricingStatus(
-                                                {
-                                                    ...current,
-                                                    pricingStatus,
-                                                },
-                                            ),
-                                        )
-                                    }}
-                                >
-                                    {MODEL_PRICING_STATUSES.map(
-                                        (value) => (
-                                            <option
-                                                key={value}
-                                                value={value}
-                                            >
-                                                {PRICING_LABELS[value]}
-                                            </option>
-                                        ),
-                                    )}
-                                </select>
-                            </label>
                         </div>
                     </section>
     )

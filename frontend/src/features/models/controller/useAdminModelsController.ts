@@ -21,7 +21,7 @@ import type {
     OrganizationModelPolicy,
     RuntimeModelStatus,
 } from '../../../entities/model/api/modelApi'
-import { getApiErrorMessage } from '../../../shared/api/http'
+import { ApiError, getApiErrorMessage } from '../../../shared/api/http'
 import { useAdminModelsOrganizationSearch } from './useAdminModelsOrganizationSearch'
 import { useAdminModelsDiagnostics } from './useAdminModelsDiagnostics'
 import { getOrganizationDetails } from '../../../entities/organization/api/organizationApi'
@@ -266,6 +266,15 @@ export function useAdminModelsController() {
                 ),
             ), [catalog])
 
+    // Import uses the canonical runtime key, not only effective/active entries.
+    // A scheduled, archived or manually managed version also reserves that key.
+    const runtimeCatalogKey = runtime
+        ? `${runtime.provider.trim()}:${runtime.model.trim()}`.toLowerCase()
+        : null
+    const runtimeCatalogEntry = runtimeCatalogKey
+        ? catalogByKey.get(runtimeCatalogKey) : undefined
+    const runtimeImportBlocked = !runtime?.enabled || Boolean(runtimeCatalogEntry)
+
     const refreshCatalog =
         useCallback(async () => {
             // Оба среза должны быть успешно прочитаны. Нельзя отображать
@@ -276,11 +285,12 @@ export function useAdminModelsController() {
             ])
             setCatalog(latest)
             setEffectiveCatalog(effective)
+            return latest
         }, [])
 
     const handleImportRuntime =
         useCallback(async () => {
-            if (mutationInFlightRef.current || !isSuperAdmin) {
+            if (mutationInFlightRef.current || !isSuperAdmin || runtimeImportBlocked) {
                 return
             }
             mutationInFlightRef.current = true
@@ -294,12 +304,26 @@ export function useAdminModelsController() {
                 imported =
                     await importRuntimeModelCatalog()
             } catch (failure) {
-                setImportError(getApiErrorMessage(
-                    failure,
-                    'Не удалось добавить подключённую модель в каталог.',
-                ))
-                mutationInFlightRef.current = false
-                setMutationPending(false)
+                try {
+                    // Another administrator may have registered the model since
+                    // the last GET. Never expose internal conflict diagnostics.
+                    if (failure instanceof ApiError && failure.status === 409) {
+                        const latest = await refreshCatalog()
+                        if (latest.some(entry => entry.modelKey === runtimeCatalogKey)) {
+                            return
+                        }
+                        setImportError('Каталог или настройки подключения изменились. Проверьте подключение модели и обновите страницу.')
+                    } else if (failure instanceof ApiError && failure.status === 403) {
+                        setImportError('Недостаточно прав для добавления модели в каталог.')
+                    } else {
+                        setImportError('Не удалось выполнить добавление. Обновите страницу и проверьте, появилась ли модель в каталоге, прежде чем повторить.')
+                    }
+                } catch {
+                    setImportError('Каталог мог измениться. Не удалось обновить список моделей. Перезагрузите страницу перед повторной попыткой.')
+                } finally {
+                    mutationInFlightRef.current = false
+                    setMutationPending(false)
+                }
                 return
             }
 
@@ -317,7 +341,7 @@ export function useAdminModelsController() {
                 mutationInFlightRef.current = false
                 setMutationPending(false)
             }
-        }, [refreshCatalog, isSuperAdmin])
+        }, [refreshCatalog, isSuperAdmin, runtimeImportBlocked, runtimeCatalogKey])
 
     const handleCreateCatalogVersion =
         useCallback(async (
@@ -427,6 +451,8 @@ export function useAdminModelsController() {
         error,
         notice,
         importError,
+        runtimeCatalogEntry,
+        runtimeImportBlocked,
         catalogPermissionNotice,
         setCatalogPermissionNotice,
         catalogModal,

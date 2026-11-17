@@ -12,7 +12,7 @@ import { CATALOG_PANEL_MIN_HEIGHT, useCatalogPanelHeight } from './useCatalogPan
 export function ModelsCatalogWorkspace({ controller }: { controller: AdminModelsController }) {
     const { catalog, effectiveCatalog, runtime, isSuperAdmin, mutationPending,
         handleImportRuntime, setCatalogModal, setHistoryModalEntry,
-        importError } = controller
+        importError, runtimeCatalogEntry, runtimeImportBlocked } = controller
     const [query, setQuery] = useState('')
     const [provider, setProvider] = useState('')
     const [lifecycle, setLifecycle] = useState('')
@@ -37,6 +37,11 @@ export function ModelsCatalogWorkspace({ controller }: { controller: AdminModels
         onDoubleClick,
     } = useCatalogPanelHeight(visibleEntries.length)
     if (!runtime) return null
+    const runtimeIdentityMatches = runtimeCatalogEntry?.provider === runtime.provider.trim().toLowerCase()
+        && runtimeCatalogEntry.providerModelId === runtime.model.trim()
+    const importLabel = runtimeCatalogEntry
+        ? runtimeIdentityMatches ? 'Подключённая модель уже в каталоге' : 'Ключ модели уже занят'
+        : 'Добавить подключённую модель в каталог'
 
     return (
         <section className="models-section-stack models-catalog-workspace" aria-labelledby="models-catalog-title">
@@ -47,16 +52,26 @@ export function ModelsCatalogWorkspace({ controller }: { controller: AdminModels
                     <p>Последняя сохранённая и действующая версии могут различаться. История доступна для каждой модели.</p>
                 </div>
                 {isSuperAdmin && catalog.length > 0 && <div className="models-section-actions">
-                    <button type="button" className="secondary-button" disabled={mutationPending}
-                        onClick={() => { void handleImportRuntime() }}>Добавить подключённую модель в каталог</button>
+                    <button type="button" className="secondary-button" disabled={mutationPending || runtimeImportBlocked}
+                        aria-describedby={runtimeImportBlocked ? 'models-runtime-import-hint' : undefined}
+                        onClick={() => { void handleImportRuntime() }}>{importLabel}</button>
                     <button type="button" className="btn-primary" disabled={mutationPending}
                         onClick={() => setCatalogModal({ base: null })}>Создать модель</button>
                 </div>}
             </header>
-            {importError && <div className="models-mutation-error" role="alert">
+            {isSuperAdmin && runtimeImportBlocked && <p id="models-runtime-import-hint" className="models-catalog-permission-hint">
+                {runtimeCatalogEntry ? <>
+                    <strong>{runtimeIdentityMatches
+                        ? `${runtimeCatalogEntry.displayName} уже добавлена в каталог (версия ${runtimeCatalogEntry.version}).`
+                        : 'Ключ подключённой модели уже используется другой записью каталога.'}</strong>
+                    {' '}{runtimeIdentityMatches
+                        ? 'Чтобы изменить параметры, нажмите «Новая версия». Предыдущие версии сохранятся.'
+                        : 'Проверьте идентификаторы модели в настройках сервера и каталоге.'}
+                </> : 'Подключённая модель отключена в настройках сервера. Включите её перед добавлением в каталог.'}
+            </p>}
+            {importError && !runtimeCatalogEntry && <div className="models-mutation-error" role="alert">
                 <strong>Не удалось добавить подключённую модель в каталог</strong>
                 <p>{importError}</p>
-                <p>Если версия уже создана вручную, откройте её историю и создайте новую версию. Существующие данные не изменены.</p>
             </div>}
             {!isSuperAdmin && <p className="models-catalog-permission-hint" role="note">
                 <ModelIcon name="shield" /> <strong>Каталог изменяет суперадминистратор.</strong> Администратор организации может просматривать версии и изменять правила своей организации.
@@ -79,6 +94,7 @@ export function ModelsCatalogWorkspace({ controller }: { controller: AdminModels
                 role="region" aria-label="Таблица каталога моделей" tabIndex={0}
                 style={visibleEntries.length > 0 ? { maxHeight: `${height}px` } : undefined}>
                 {catalog.length === 0 ? <CatalogEmptyState isSuperAdmin={isSuperAdmin} mutationPending={mutationPending}
+                    importBlocked={runtimeImportBlocked}
                     onImportRuntime={() => { void handleImportRuntime() }} onCreateModel={() => setCatalogModal({ base: null })} />
                     : visibleEntries.length === 0 ? <div className="models-filter-empty"><ModelIcon name="search" /><strong>Модели не найдены</strong><span>Измените поиск или сбросьте фильтры.</span></div>
                     : <CatalogTable entries={visibleEntries} effectiveEntries={effectiveCatalog} runtime={runtime}

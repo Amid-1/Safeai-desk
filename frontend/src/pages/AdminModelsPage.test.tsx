@@ -208,6 +208,9 @@ function stubLoadedState() {
 // без мокирования бизнес-контроллера или модальных окон.
 async function openCatalogAsSuperAdmin(): Promise<HTMLElement> {
     authMock.currentUser = currentUser('SUPER_ADMIN')
+    const other = {...CATALOG_ENTRY, modelKey: 'mock:other', providerModelId: 'other', displayName: 'Other model'}
+    catalogMock.mockResolvedValue([other])
+    effectiveCatalogMock.mockResolvedValue([other])
 
     render(
         <MemoryRouter initialEntries={['/admin/models']}>

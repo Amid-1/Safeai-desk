@@ -3,10 +3,20 @@
 // frontend/src/features/models/ui/ModelCatalogVersionModal.production.test.tsx
 // ============================================================
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ComponentProps } from 'react'
 import { ModelCatalogVersionModal } from './ModelCatalogVersionModal'
 import { createModelCatalogEntry, createRuntimeModelStatus } from '../../../test/fixtures/modelControlPlaneTestFixtures'
+import { getRubBudgetQuote, moscowBudgetDate } from '../../../entities/model/api/modelApi'
+
+vi.mock('../../../entities/model/api/modelApi', async (importOriginal) => ({
+    ...await importOriginal<typeof import('../../../entities/model/api/modelApi')>(),
+    getRubBudgetQuote: vi.fn(),
+}))
+
+function selectTab(name: string) {
+    fireEvent.click(screen.getByRole('tab', {name}))
+}
 
 function createProps(overrides: Partial<ComponentProps<typeof ModelCatalogVersionModal>> = {}) {
     return {
@@ -27,6 +37,12 @@ function submitForm() {
 }
 
 describe('ModelCatalogVersionModal — production regression', () => {
+    beforeEach(() => {
+        vi.mocked(getRubBudgetQuote).mockReset().mockResolvedValue({
+            rubPerUsd: '82.5143', quoteDate: moscowBudgetDate(),
+            effectiveDate: moscowBudgetDate(), fetchedAt: new Date().toISOString(), source: 'CBR',
+        })
+    })
     afterEach(() => { vi.restoreAllMocks() })
 
     it('создаёт неизменяемую первую версию с параметрами текущего Runtime', async () => {
@@ -114,10 +130,13 @@ describe('ModelCatalogVersionModal — production regression', () => {
     it('показывает ошибку валидации и не вызывает API', () => {
         const props = createProps()
         render(<ModelCatalogVersionModal {...props} />)
+        selectTab('Лимиты')
         fireEvent.change(screen.getByLabelText('Входные токены, максимум'), { target: { value: '0' } })
+        selectTab('Основные данные')
         submitForm()
         expect(props.onSubmit).not.toHaveBeenCalled()
         expect(screen.getByText(/Максимум входных токенов/)).toBeInTheDocument()
+        expect(screen.getByRole('tab', {name: 'Лимиты'})).toHaveAttribute('aria-selected', 'true')
     })
 
     it('показывает ошибку POST и позволяет повторить после завершённой ошибки', async () => {
@@ -133,12 +152,14 @@ describe('ModelCatalogVersionModal — production regression', () => {
     it('проверяет ограничения, JSON тарификации и не отправляет некорректный черновик', () => {
         const props = createProps()
         render(<ModelCatalogVersionModal {...props} />)
+        selectTab('Тарификация')
         fireEvent.change(screen.getByLabelText(/JSON-параметры/), {
             target: { value: 'не JSON' },
         })
         submitForm()
         expect(props.onSubmit).not.toHaveBeenCalled()
         expect(screen.getByRole('alert')).toHaveTextContent(/JSON-объектом/)
+        expect(document.querySelector('details.models-form__advanced')).toHaveAttribute('open')
     })
 
     it('сохраняет черновик без потерь при изменении всех основных данных', async () => {
@@ -152,6 +173,7 @@ describe('ModelCatalogVersionModal — production regression', () => {
         fireEvent.change(screen.getByLabelText('ID модели у провайдера'), {
             target: { value: 'next' },
         })
+        selectTab('Лимиты')
         fireEvent.change(screen.getByLabelText('Входные токены, максимум'), {
             target: { value: '32000' },
         })
@@ -171,6 +193,7 @@ describe('ModelCatalogVersionModal — production regression', () => {
     it('различает неизвестную и нулевую стоимость при переключении тарификации', async () => {
         const props = createProps()
         render(<ModelCatalogVersionModal {...props} />)
+        selectTab('Тарификация')
         fireEvent.change(screen.getByLabelText('Статус стоимости'), { target: { value: 'UNPRICED' } })
         expect(screen.getByLabelText('Все варианты тарификации известны')).toBeDisabled()
         submitForm()
@@ -184,16 +207,84 @@ describe('ModelCatalogVersionModal — production regression', () => {
     it('сохраняет поля всех пяти секций и не разрешает IMAGE как выходную модальность', () => {
         render(<ModelCatalogVersionModal {...createProps()} />)
         for (const heading of [
-            'Основные данные', 'Лимиты', 'Данные и использование',
-            'Возможности и типы данных', 'Тарификация',
+            'Основные данные', 'Лимиты', 'Безопасность данных',
+            'Возможности модели', 'Тарификация',
         ]) {
+            selectTab(heading)
             expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument()
+            expect(screen.getAllByRole('tabpanel')).toHaveLength(1)
         }
         const fieldsets = [...document.querySelectorAll('fieldset')]
         const output = fieldsets.find((item) => item.querySelector('legend')?.textContent === 'Выходные данные')
         expect(output).toBeDefined()
         expect(output?.textContent).not.toContain('Изображения')
         expect(screen.getByText(/Неизвестная стоимость не считается нулевой/)).toBeInTheDocument()
+    })
+
+    it('сохраняет точные USD-тарифы, показывает RUB только в интерфейсе и не загружает курс до вкладки', async () => {
+        const base = createModelCatalogEntry({inputUsdPer1mTokens: '0.000000000000', outputUsdPer1mTokens: '0.000000000000'})
+        const props = createProps({base, catalogByKey: new Map([[base.modelKey, base]])})
+        render(<ModelCatalogVersionModal {...props} />)
+        expect(getRubBudgetQuote).not.toHaveBeenCalled()
+        selectTab('Тарификация')
+        expect(await screen.findByText('1 USD = 82,5143 RUB')).toBeInTheDocument()
+        expect(screen.getByLabelText('Входные токены, USD / 1 млн')).toHaveValue('0')
+        expect(document.querySelector('details.models-form__advanced')).not.toHaveAttribute('open')
+        fireEvent.change(screen.getByLabelText('Статус стоимости'), {target: {value: 'CONFIGURED'}})
+        fireEvent.change(screen.getByLabelText('Версия тарифа'), {target: {value: 'new-rate'}})
+        fireEvent.change(screen.getByLabelText('Входные токены, USD / 1 млн'), {target: {value: '2,50'}})
+        fireEvent.change(screen.getByLabelText('Выходные токены, USD / 1 млн'), {target: {value: '10'}})
+        expect(screen.getByText('≈ 206,29 ₽')).toBeInTheDocument()
+        expect(screen.getByText('≈ 825,14 ₽')).toBeInTheDocument()
+        selectTab('Безопасность данных')
+        expect(screen.queryByRole('combobox', {name: 'Статус стоимости'})).not.toBeInTheDocument()
+        selectTab('Тарификация')
+        expect(screen.getByLabelText('Входные токены, USD / 1 млн')).toHaveValue('2.50')
+        submitForm()
+        await waitFor(() => expect(props.onSubmit).toHaveBeenCalledOnce())
+        const payload = vi.mocked(props.onSubmit).mock.calls[0]![0]
+        expect(payload).toMatchObject({inputUsdPer1mTokens: '2.50', outputUsdPer1mTokens: '10'})
+        expect(Object.keys(payload).some(key => /rub|quote|rate/i.test(key))).toBe(false)
+    })
+
+    it('не блокирует сохранение USD, если курс недоступен, и даёт обновить курс', async () => {
+        vi.mocked(getRubBudgetQuote).mockRejectedValueOnce(new Error('offline'))
+        const props = createProps()
+        render(<ModelCatalogVersionModal {...props} />)
+        selectTab('Тарификация')
+        expect(await screen.findByText('Курс недоступен. Тарифы можно сохранить в USD.')).toBeInTheDocument()
+        submitForm()
+        await waitFor(() => expect(props.onSubmit).toHaveBeenCalledOnce())
+        fireEvent.click(screen.getByRole('button', {name: 'Обновить курс'}))
+        expect(await screen.findByText('1 USD = 82,5143 RUB')).toBeInTheDocument()
+    })
+
+    it('не применяет вчерашний курс и отменяет запрос при закрытии', async () => {
+        vi.mocked(getRubBudgetQuote).mockResolvedValueOnce({
+            rubPerUsd: '82.5143', quoteDate: '2000-01-01', effectiveDate: '2000-01-01',
+            fetchedAt: '2000-01-01T12:00:00Z', source: 'CBR',
+        })
+        const {unmount} = render(<ModelCatalogVersionModal {...createProps()} />)
+        selectTab('Тарификация')
+        expect(await screen.findByText('Курс недоступен. Тарифы можно сохранить в USD.')).toBeInTheDocument()
+        expect(screen.queryByText('1 USD = 82,5143 RUB')).not.toBeInTheDocument()
+        vi.mocked(getRubBudgetQuote).mockImplementationOnce(() => new Promise(() => {}))
+        fireEvent.click(screen.getByRole('button', {name: 'Обновить курс'}))
+        const signal = vi.mocked(getRubBudgetQuote).mock.calls.at(-1)?.[0]
+        expect(signal?.aborted).toBe(false)
+        unmount()
+        expect(signal?.aborted).toBe(true)
+    })
+
+    it('переключает вкладки клавиатурой без потери черновика', () => {
+        render(<ModelCatalogVersionModal {...createProps()} />)
+        const tab = screen.getByRole('tab', {name: 'Основные данные'})
+        fireEvent.change(screen.getByLabelText('Название'), {target: {value: 'Моя модель'}})
+        fireEvent.keyDown(tab, {key: 'End'})
+        expect(screen.getByRole('tab', {name: 'Возможности модели'})).toHaveFocus()
+        fireEvent.keyDown(screen.getByRole('tab', {name: 'Возможности модели'}), {key: 'Home'})
+        expect(tab).toHaveFocus()
+        expect(screen.getByLabelText('Название')).toHaveValue('Моя модель')
     })
 
     it('не закрывает форму при нажатии на фон', () => {
