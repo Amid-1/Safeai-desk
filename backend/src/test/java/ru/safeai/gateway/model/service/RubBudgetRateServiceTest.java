@@ -76,6 +76,38 @@ class RubBudgetRateServiceTest {
         assertThat(calls.get()).isEqualTo(1);
     }
 
+    @Test void malformedBudgetsAreRejectedBeforeAnyExternalRateLookup() {
+        var service = new RubBudgetRateService(CLOCK, day -> {
+            throw new AssertionError("Invalid input must not trigger an external request");
+        });
+        for (String rate : new String[]{"0", "-1", "0.000000001", "10000000000"}) {
+            assertThatThrownBy(() -> service.resolve(request("5", null, rate, DAY, null), null))
+                    .isInstanceOf(BadRequestException.class);
+        }
+        for (String amount : new String[]{"-0.000000000001", "0.0000000000001",
+                "1000000000000000000"}) {
+            assertThatThrownBy(() -> service.resolve(request(amount, null, "90", DAY, null), null))
+                    .isInstanceOf(BadRequestException.class);
+            assertThatThrownBy(() -> service.resolve(request(null, amount, "90", DAY, null), null))
+                    .isInstanceOf(BadRequestException.class);
+        }
+        assertThatThrownBy(() -> service.resolve(request(null, null, "90", DAY, null), null))
+                .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test void validRubAmountWithUnrepresentableUsdConversionFailsClosed() {
+        BigDecimal tinyRate = new BigDecimal("0.00000001");
+        var service = new RubBudgetRateService(CLOCK,
+                day -> new CbrUsdRateSource.Rate(EFFECTIVE, tinyRate));
+        String largestAmount = "999999999999999999.999999999999";
+        assertThatThrownBy(() -> service.resolve(
+                request(largestAmount, null, tinyRate.toPlainString(), DAY, null), null))
+                .isInstanceOf(BadRequestException.class);
+        assertThatThrownBy(() -> service.resolve(
+                request(null, largestAmount, tinyRate.toPlainString(), DAY, null), null))
+                .isInstanceOf(BadRequestException.class);
+    }
+
     @Test void unchangedHistoricalBudgetDoesNotNeedExternalSource() {
         var saved = new RubBudgetSnapshot(new BigDecimal("5"), null, RATE, DAY.minusDays(1),
                 EFFECTIVE, NOW.minusSeconds(86400));
@@ -95,6 +127,9 @@ class RubBudgetRateServiceTest {
         assertThat(CbrUsdRateSource.parse(valid.getBytes(StandardCharsets.UTF_8), DAY).rubPerUsd())
                 .isEqualByComparingTo(RATE);
         for (String bad : new String[] {"<!DOCTYPE ValCurs SYSTEM 'file:///etc/passwd'>" + valid,
+                valid.replace("</Valute>", ""),
+                "<!DOCTYPE ValCurs [<!ENTITY xxe SYSTEM 'file:///etc/passwd'>]>"
+                        + valid.replace("90,0000", "&xxe;"),
                 valid.replace("16.11.2026", "18.11.2026"), valid.replace("16.11.2026", "01.10.2026"),
                 valid.replace("840", "999"), valid.replace("90,0000", "0,0000"),
                 valid.replace("<Nominal>1", "<Nominal>2")}) {

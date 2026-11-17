@@ -10,17 +10,18 @@
 [![Java](https://img.shields.io/badge/Java-21-007396)](backend/pom.xml)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-backend-6DB33F)](backend/pom.xml)
 [![PostgreSQL][postgres-badge]](backend/src/main/resources/db/migration)
-[![Flyway](https://img.shields.io/badge/Flyway-V1%E2%80%93V90-CC0200)](backend/src/main/resources/db/migration)
+[![Flyway](https://img.shields.io/badge/Flyway-V1%E2%80%93V92-CC0200)](backend/src/main/resources/db/migration)
 [![React](https://img.shields.io/badge/React%20%2B%20TypeScript-frontend-149ECA)](frontend/package.json)
 
-> **Редакция документа:** 14 ноября 2026 года. **Схема:** Flyway V1–V90.
+> **Редакция документа:** 17 ноября 2026 года. **Схема:** Flyway V1–V92.
 >
-> **Источник:** переданный README, полный комплект SQL V1–V90 и ранее проверенные
-> backend-модули `chat`, `knowledge`, `model`, `ai`. Репозиторий:
+> **Источник:** переданный README, доступный комплект SQL V1–V92, актуальный
+> срез исходников и пакеты изменений 17.11.2026 (Model Control Plane,
+> Provider Data Assurance, RUB budgets, Catalog Pricing и V92). Репозиторий:
 > [`Amid-1/Safeai-desk`](https://github.com/Amid-1/Safeai-desk).
 >
 > **Статус:** production-oriented, pre-1.0. Документ описывает реализованные
-> механизмы и требуемые проверки, но не утверждает, что миграции V85–V90
+> механизмы и требуемые проверки, но не утверждает, что миграции V85–V92
 > применены к рабочей БД или весь релиз прошёл CI/production acceptance.
 >
 > **Особо опасные операции:** стирание Chat/Knowledge по умолчанию выключено.
@@ -55,7 +56,7 @@
 23. [Модуль `knowledge`](#модуль-knowledge)
 24. [Безопасное удаление Knowledge — V78–V90](#безопасное-удаление-knowledge--v78v90)
 25. [Ключевые backend contracts](#ключевые-backend-contracts)
-26. [Database / Flyway V1–V90](#database--flyway-v1v90)
+26. [Database / Flyway V1–V92](#database--flyway-v1v92)
 27. [Observability и operational jobs](#observability-и-operational-jobs)
 28. [Тестирование](#тестирование)
 29. [Local development](#local-development)
@@ -67,7 +68,7 @@
 35. [Главное правило дальнейшей эволюции](#главное-правило-дальнейшей-эволюции)
 36. [Передача контекста в новый AI-чат](#передача-контекста-в-новый-ai-чат)
 37. [План следующего этапа](#план-следующего-этапа)
-38. [Релизный контроль V73–V90](#релизный-контроль-v73v90)
+38. [Релизный контроль V73–V92](#релизный-контроль-v73v92)
 <!-- TOC:END -->
 
 ---
@@ -76,8 +77,9 @@
 
 - Изменяется **только README.md**. SQL, Spring/React исходники, конфигурация,
   secrets и история Git не затрагиваются.
-- Комплект SQL V1–V90 проверен по приложенному архиву; подтверждения запуска
-  Flyway/Testcontainers для V85–V90 в материалах нет.
+- Комплект SQL V1–V92 представлен в доступном срезе; V91/V92 сверены с SQL и
+  связанными backend-тестами. Frontend-изменения, отсутствующие в частичном
+  срезе дерева, описаны по подготовленным патчам, а не по live deployment.
 - Разделы с упоминанием 31.10.2026 и PR #8 описывают **исторические** прогоны;
   они не подтверждают состояние текущего checkout или production.
 - Реальные `@ConditionalOnProperty`, API и frontend wiring должны проверяться
@@ -134,7 +136,7 @@ Identity
 
 ## Текущее состояние
 
-Схемы **V1–V90 представлены целиком**: 90 последовательных SQL-миграций
+Схемы **V1–V92 представлены целиком**: 92 последовательные SQL-миграции
 и файл `V87__chat_archive_owner_online_index.sql.conf`. Само наличие файлов
 не доказывает успешного `migrate`, `validate` или прохождения интеграционных тестов.
 
@@ -142,7 +144,7 @@ Identity
 ChatTurn и provider attempt evidence, модельное управление, квоты/учёт затрат,
 Knowledge/RAG, аудит и контролируемое стирание содержимого.
 
-**Новые границы V85–V90:**
+**Новые границы V85–V92:**
 
 - **V85:** durable RAG execution permits и lease каждого физического provider attempt;
   контекст и источники нельзя молча использовать после принятия удаления.
@@ -154,16 +156,41 @@ Knowledge/RAG, аудит и контролируемое стирание со�
   после commit, повторяемая публикация в immutable S3-журнал, dual-control recovery.
 - **V90:** прямой `DELETE` Knowledge chunks для приложения закрыт, GC вызывает
   ограниченную `SECURITY DEFINER`-функцию после перехода generation в `COLLECTING`.
+- **V91:** альтернативный ввод лимитов в RUB; неизменяемый снимок курса ЦБ
+  и точный консервативный пересчёт в USD в каждой версии политики.
+- **V92:** запрет `NaN` для всех USD-бюджетов и бесконечных дат/времени
+  в RUB evidence; проверка существующих строк без переписывания истории.
+
+**Функциональные изменения 17.11.2026 (не все требуют SQL):**
+
+- Model Control Plane: раздельные рабочие области обзора, каталога, доступа и диагностики,
+  история версий, редактирование правил и non-binding preview; ADMIN работает
+  в своей организации, SUPER_ADMIN управляет глобальным каталогом.
+- Provider Data Assurance: независимые подтверждения no-training и ZDR,
+  привязанные к фактическому подключению и сроку действия; отдельные
+  проверки external embeddings/OCR.
+- Catalog-only pricing: единственный источник тарифов чат-моделей —
+  версионированный PostgreSQL Model Catalog; статический YAML pricing удалён.
+- Бюджеты USD/RUB: строковый десятичный API, BigDecimal/BigInt/NUMERIC,
+  фиксированная котировка на версию правил; действующие лимиты не зависят
+  от последующих сетевых запросов к ЦБ.
+- PostgreSQL supply chain и least privilege: раздельные bootstrap/migrator/app
+  identities, отдельный migration service и release-controlled image digest;
+  никакого автоматического изменения существующего volume.
 
 **Исторический baseline:** для PR #8 (`fdcff62`) отдельно фиксировался зелёный
 набор из 2259 тестов и 27 PostgreSQL/Redis IT. На 31 октября 2026 года был
 успешно проверен clean Flyway V1–V84 на Testcontainers PostgreSQL 16.15,
 но полный suite того среза содержал один ошибочный тестовый сценарий.
-**Эти результаты не относятся автоматически к V85–V90.**
+**Эти результаты не относятся автоматически к V85–V92.**
 
-Текущая локальная рабочая ветка, состояние `git status`, live PostgreSQL и
-frontend в полном объёме в этой поставке не подтверждены. Проверки перед
-развёртыванием описаны в конце README. Никакие secrets и окружения не меняются.
+**Последние предоставленные логи 17.11.2026:** общий backend-прогон —
+2722 теста, 0 failures, 1 error (runtime wire contract fixture), 5 skipped;
+целевой прогон после V92 — 28 тестов, 0 failures, 1 error (создание тестового
+пользователя без роли). Подготовлены исправления обоих fixtures, включая
+атомарное создание пользователя и роли с повторной проверкой V20.
+Повторный зелёный Maven-прогон после последнего исправления не предоставлен.
+Ни один из этих результатов не подтверждает production deploy.
 
 ### Identity / Security
 
@@ -232,6 +259,10 @@ frontend в полном объёме в этой поставке не подт
 - max input/output envelope;
 - max request cost preflight;
 - monthly budget preflight;
+- RUB input и immutable CBR quote evidence V91, USD-only enforcement;
+- V92 finite numeric/date constraints;
+- общий критерий verified catalog pricing для preview, reservation, display и settlement;
+- независимые provider-data confirmations, проверяемые перед provider dispatch;
 - route-time `actual / reserved / unknown` commitment evidence;
 - explicit monthly cost state;
 - pricing/data requirements;
@@ -324,7 +355,7 @@ frontend в полном объёме в этой поставке не подт
 ---
 
 
-### Хронология последних миграций V73–V90
+### Хронология последних миграций V73–V92
 
 Ниже указано назначение версий, а не факт установки в production.
 
@@ -348,6 +379,8 @@ frontend в полном объёме в этой поставке не подт
 | V88 | Валидация chat CHECK и индекса V87. |
 | V89 | Knowledge worker, commit outbox, dual-control recovery. |
 | V90 | Least-privilege Generation GC через SQL-функцию. |
+| V91 | RUB budget input, immutable CBR quote evidence и точный USD ceiling. |
+| V92 | Запрет NaN USD-лимитов и бесконечных дат/времени RUB evidence. |
 
 **Frontend:** функции удаления Knowledge и чатов зависят от соответствующих
 backend capability/status API. UI не является границей безопасности.
@@ -558,13 +591,13 @@ Spring bean graph, затем выбрать допустимую границу
 ### Backend
 
 - Java 21 baseline;
-- Spring Boot;
+- Spring Boot 4.1.1 (parent в актуальном `backend/pom.xml`);
 - Spring Web MVC;
 - Spring Security;
 - Spring Data JPA / Hibernate;
 - Spring JDBC;
 - Bean Validation;
-- PostgreSQL 16 family;
+- PostgreSQL 16 family; release-controlled candidate PostgreSQL 16.15 + pgvector 0.8.7;
 - Flyway;
 - Redis;
 - Maven Wrapper;
@@ -628,7 +661,7 @@ SafeAI-Desk/
 │   ├── docs/config/                    # documentation examples, NOT auto-loaded
 │   └── src/
 │       ├── main/java/ru/safeai/gateway/  # modular monolith
-│       ├── main/resources/db/migration/  # immutable Flyway V1..V90
+│       ├── main/resources/db/migration/  # immutable Flyway V1..V92
 │       ├── main/resources/db/local-migration/
 │       ├── main/resources/application*.yml
 │       ├── main/resources/logback-spring.xml
@@ -655,7 +688,7 @@ SafeAI-Desk/
 │   │   ├── deploy-prod.sh
 │   │   └── ...                          # build/backup/restore/secret scripts
 │   ├── postgres/ / nginx/ / host-nginx/
-│   ├── config/pricing.yml.example
+│   ├── config/                         # runtime config, без статического pricing.yml
 │   ├── secrets/jwt-keys.yml.example
 │   └── systemd/                        # backup timer/service
 ├── docs/
@@ -756,7 +789,7 @@ backend/
 │
 ├── src/main/resources/
 │   ├── db/
-│   │   ├── migration/         # V1 ... V90 (90 SQL, подробнее ниже)
+│   │   ├── migration/         # V1 ... V92 (92 SQL, подробнее ниже)
 │   │   └── local-migration/   # local-only seed
 │   │
 │   ├── application.yml
@@ -776,7 +809,7 @@ backend/
 #### Подробная структура backend и Flyway
 
 Дерево объединяет исторический baseline и файлы, обнаруженные в предоставленных
-архивах и подготовленных материалах V73–V90. Это не результат `ls` актуальной рабочей
+архивах и подготовленных материалах V73–V92. Это не результат `ls` полной рабочей
 ветки и не подтверждает коммит, успешную миграцию либо запуск worker.
 
 ```text
@@ -904,7 +937,9 @@ backend/
 │   │       │       ├── V87__chat_archive_owner_online_index.sql.conf
 │   │       │       ├── V88__chat_erasure_validate_constraints.sql
 │   │       │       ├── V89__knowledge_erasure_reconciliation_and_fencing.sql
-│   │       │       └── V90__knowledge_generation_gc_least_privilege.sql
+│   │       │       ├── V90__knowledge_generation_gc_least_privilege.sql
+│   │       │       ├── V91__organization_model_policy_rub_budget.sql
+│   │       │       └── V92__organization_model_policy_budget_finite_values.sql
 │   │       │
 │   │       │   └── README_DB.md              # документация DB; структура db/
 │   │       │
@@ -1058,10 +1093,15 @@ ADMIN не должен:
 | Возможность | USER | ADMIN | SUPER_ADMIN |
 |---|---:|---:|---:|
 | Runtime status | — | read | read |
+| Runtime metadata probe | — | — | execute |
 | Global catalog | — | read | read/write |
+| Catalog version history | — | read | read |
 | Import runtime → catalog | — | — | write |
 | Own organization policy | — | read/write | read/write |
 | Other organization policy | — | — | read/write |
+| Own organization policy preview | — | read-only simulation | read-only simulation |
+| Other organization policy preview | — | — | read-only simulation |
+| Official RUB quote | — | read | read |
 | Own route evidence | — | read | read |
 | Other tenant route evidence | — | — | read |
 
@@ -1382,7 +1422,8 @@ Public response не должен содержать:
 | Erasure monitoring regression | `infra/prometheus/tests/knowledge-erasure.test.yml` |
 | Production env template | `backend/.env.prod.example` (commit разрешён) |
 | Production host env | `backend/.env.prod` (**не** коммитить) |
-| Pricing / secrets на host | `/etc/safeai/config/pricing.yml`, `/etc/safeai/secrets/` |
+| Chat pricing | `public.model_catalog_entries` (версионированный PostgreSQL-каталог) |
+| Secrets на host | `/etc/safeai/secrets/`; JWT structured config и deployment env |
 | Документационные примеры | `backend/docs/config/`, `infra/config/*.example`, `infra/secrets/*.example` |
 
 Файлы `backend/deploy/prometheus/*` — **legacy** с точки зрения актуального
@@ -1633,6 +1674,16 @@ OpenAI/Anthropic configuration включает:
 - provider-specific flags/version.
 
 Production provider URLs проходят strict HTTPS/host validation.
+
+Статический `safeai.ai.pricing.*` и монтирование legacy `pricing.yml` удалены
+из актуального pricing-патча. `validate-prod.sh` не требует этот файл.
+Ротация тарифа выполняется созданием audited catalog version, не изменением
+конфигурации контейнера. Исторический host-файл не удаляется автоматически.
+
+Для доказательств no-training/ZDR используется `ProviderDataAssuranceProperties`.
+Точные канонические переменные и порядок их заполнения — в
+`docs/security/provider-data-assurance.md` и актуальных конфигурационных шаблонах.
+Не записывать ключи, отпечатки подключения и договорные evidence в публичный README.
 
 ### Knowledge
 
@@ -3380,7 +3431,8 @@ model/
 │   ├── ModelPolicyPreviewController
 │   ├── ModelRouteDecisionController
 │   ├── ModelRuntimeController
-│   └── OrganizationModelPolicyController
+│   ├── OrganizationModelPolicyController
+│   └── RubBudgetRateController
 ├── domain/
 │   ├── BudgetEnforcement
 │   ├── ModelBudgetCommitmentSnapshot
@@ -3400,6 +3452,7 @@ model/
 │   ├── MonthlyCommitmentState
 │   ├── MonthlyCostState
 │   ├── OrganizationModelPolicy
+│   ├── RubBudgetSnapshot
 │   ├── RuntimeModelProbeResult
 │   └── RuntimeModelProbeStatus
 ├── dto/
@@ -3410,15 +3463,18 @@ model/
 │   ├── ModelPolicyPreviewResponse
 │   ├── ModelRouteDecisionResponse
 │   ├── OrganizationModelPolicyResponse
+│   ├── RubBudgetInput
+│   ├── RubBudgetResponse
 │   ├── RuntimeModelProbeResponse
 │   ├── RuntimeModelStatusResponse
-│   ├──  RuntimeModelStatusWireResponse
+│   ├── RuntimeModelStatusWireResponse
 │   └── StrictPolicyTokenLimitDeserializer
 ├── exception/
 │   ├── ModelRouteDeniedException
 │   └── ModelRouteEnvelopeExceededException
 ├── pricing/
-│   ├── VersionedCatalogPricingResolver
+│   ├── CatalogPricingEligibility
+│   └── VersionedCatalogPricingResolver
 ├── repository/
 │   ├── JdbcTextArrayReader
 │   ├── ModelCatalogRepository
@@ -3428,6 +3484,7 @@ model/
 │   └── OrganizationModelPolicyRepository
 └── service/
     ├── AnthropicRuntimeModelHealthProbe
+    ├── CbrUsdRateSource
     ├── DatabaseTimestampNormalizer
     ├── MockRuntimeModelHealthProbe
     ├── ModelCatalogAuditDetails
@@ -3456,6 +3513,7 @@ model/
     ├── OrganizationModelPolicyRules
     ├── OrganizationModelPolicyService
     ├── ProviderDataDispatchGuard
+    ├── RubBudgetRateService
     ├── RuntimeModelHealthProbe
     ├── RuntimeModelProbeHttpSupport
     ├── RuntimeModelProbeService
@@ -3493,11 +3551,31 @@ target.
 - `ModelCatalogRepository` читает точный `pricing_scheme` и сохраняет его вместе с
   immutable catalog entry; нельзя подменять exact version текущей latest-версией.
 
-**Регрессионный риск:** в представленном `ModelCatalogService.importRuntime()`
-используется compatibility constructor `ModelCatalogEntry` без явного `pricingScheme`.
-Необходимо проверить `FREE` / `CONFIGURED` / `UNPRICED`, равенство повторных
-runtime imports и точное ограничение V66. Не объявлять это исправленным только
-на основании изменения доменной записи или README.
+**Актуальный контракт import-runtime (17.11.2026):** внешний runtime первоначально
+импортируется как `UNPRICED`, поскольку runtime projection не является источником
+цен. Только локальный `mock:mock-safeai` получает явную `FREE` запись; mock
+запрещён в production. Повторный импорт не переписывает историческую
+`RUNTIME_IMPORT` версию и не заменяет ручную или мигрированную запись.
+Настройка проверенного тарифа — отдельное создание новой audited catalog version.
+Предыдущий риск implicit CONFIGURED import закрыт в текущей реализации;
+полная регрессия на PostgreSQL остаётся обязательной.
+
+#### Единый источник тарифов
+
+- `public.model_catalog_entries` — единственный источник цен чат-моделей.
+- `CatalogPricingEligibility.verified()` — единый fail-closed критерий для
+  reservation, policy preview, runtime display и settlement.
+- `FREE` требует полного нулевого тарифа; `CONFIGURED` — полных неотрицательных
+  базовых ставок, хотя бы одной ненулевой ставки, непустой pricing version,
+  поддерживаемой `FLAT_TOKEN_V1` и пустого `extraPricingJson` (`{}`).
+- Optional cache rates не могут быть отрицательными; отсутствие обязательной
+  ставки для фактического provider usage делает расчёт недоказуемым.
+- Legacy/unsupported/incomplete pricing остаётся `UNPRICED`. Нулевую цену
+  нельзя использовать как замену неизвестной.
+- Удалены `ModelPricingProperties`, `ModelPricingService`,
+  `StaticConfigurationPricingResolver`, их статические YAML-настройки и
+  production pricing example. Архитектурный тест защищает единственный
+  production `PricingResolver`: `VersionedCatalogPricingResolver`.
 
 
 Catalog entry — immutable/append-only snapshot.
@@ -3555,6 +3633,7 @@ Policy append-only/versioned.
 - max output envelope;
 - max request cost;
 - monthly budget;
+- ввод USD или RUB (V91), без смешивания валют в одном запросе policy;
 - `SOFT / HARD`;
 - require complete pricing;
 - require no training;
@@ -3570,6 +3649,62 @@ DB canonicality hardening:
 всё».
 После V65 новый strict integrity-v3 decision без policy может существовать только как явное
 `DENIED / MODEL_NOT_ALLOWED` unconfigured evidence; physical execution такой row не авторизует.
+
+#### Рублёвые бюджеты и фиксированная котировка — V91/V92
+
+USD остаётся единственной валютой route enforcement, reservation, settlement,
+monthly commitment и usage analytics. RUB — альтернативный способ задать два
+потолка, не отдельный счёт, не банковский баланс и не валюта расчётов провайдера.
+
+| Поле policy | PostgreSQL type / смысл |
+| --- | --- |
+| `max_request_cost_rub` | `numeric(30,12)`, необязательный лимит запроса |
+| `monthly_budget_rub` | `numeric(30,12)`, необязательный месячный лимит |
+| `rub_per_usd` | `numeric(18,8)`, официальный RUB за 1 USD |
+| `rub_quote_date` | `date`, московская дата получения |
+| `rub_effective_date` | `date`, дата действия официального курса |
+| `rub_fetched_at` | `timestamptz`, точный момент получения |
+
+`RubBudgetSnapshot` хранит immutable evidence; `RubBudgetInput` /
+`RubBudgetResponse` — DTO. `OrganizationModelPolicyRepository` сохраняет
+все шесть колонок вместе с версией, а audit details включают источник CBR.
+Старые USD-only политики сохраняют все шесть значений NULL.
+
+Конвертация: `USD = RUB / RUB_PER_USD`, scale 12, округление вниз для
+неотрицательных чисел. Java — `BigDecimal.divide(rate, 12, RoundingMode.DOWN)`;
+PostgreSQL — точный `div(rub * 1000000000000, rate) * 0.000000000001`;
+frontend — fixed-scale BigInt. При условном курсе 90: 5 RUB →
+0.055555555555 USD; 10 000 RUB → 111.111111111111 USD. Это пример, не текущий курс.
+NULL и 0 имеют разные смыслы. SQL V91 сверяет каждую пару RUB/USD через
+`IS NOT DISTINCT FROM`; limit не может увеличиться из-за округления.
+
+`CbrUsdRateSource` получает официальную котировку исключительно с фиксированного
+HTTPS endpoint `https://www.cbr.ru/scripts/XML_daily.asp?date_req=ДД/ММ/ГГГГ`.
+Connect timeout 4 s, read timeout 5 s, предел 128 KiB; redirects, DTD, external
+entities/schema и XInclude запрещены. Tenant data, prompts и credentials не
+отправляются в этот запрос. JAXP XML parsing в JVM не требует SQL XML-привилегий.
+
+`RubBudgetRateService` использует per-process single-flight daily cache по
+`Europe/Moscow`; effective date может отставать до 14 дней. При ошибке —
+30-second cooldown, без fallback на выдуманный/вчерашний курс. Quote API:
+`GET /api/admin/models/policies/rub-quote`, ADMIN/SUPER_ADMIN,
+`Cache-Control: no-store`. Ошибка получения: HTTP 503
+`BUDGET_RATE_UNAVAILABLE`; устаревший или несовпадающий курс: HTTP 409.
+Клиентская котировка служит только сверкой с серверной, не источником цены.
+
+При изменении RUB-потолка новая версия требует котировку текущего московского
+дня; под блокировкой при сохранении повторно проверяются optimistic version и
+дата. При изменении только доступа, токенов и требований к данным неизменённый
+RUB snapshot переносится без пересчёта, даже если курс теперь другой.
+Уже применённый USD ceiling действует и при недоступности ЦБ; ввод USD
+не зависит от сетевого запроса к ЦБ. Monthly accounting period остаётся UTC.
+
+V92 дополнительно запрещает NaN даже в USD-only политиках и `infinity`/
+`-infinity` для quote/effective/fetched/created timestamps рублёвых политик.
+V91 продолжает контролировать полноту и согласованность evidence; numeric typmod
+запрещает бесконечные денежные значения и переполнение. Обе новые CHECK V92
+валидируются сразу на всех строках, ошибочную историю нельзя исправлять молча.
+Append-only guard V45 защищает сохранённую котировку от UPDATE/DELETE.
 
 ### Route decision
 
@@ -3689,6 +3824,39 @@ ERROR
 
 Probe — point-in-time check, а не SLA monitoring.
 
+`GET /api/admin/models/runtime` возвращает sanitized
+`RuntimeModelStatusWireResponse` через `currentWithCatalogPricing()`.
+Money fields — точные decimal strings; API не раскрывает ключи, provider URL,
+connection fingerprint или evidence secrets. Runtime price — только projection
+единственной подходящей effective ACTIVE/DEPRECATED catalog entry; при
+неоднозначности или непроверенном тарифе — UNPRICED. Metadata-only
+`POST /api/admin/models/runtime/probe` доступен SUPER_ADMIN, не выполняет
+генерацию и не доказывает доступность billing или inference.
+
+### Provider Data Assurance — независимые факты no-training и ZDR
+
+Catalog metadata сама по себе не подтверждает договорные условия реального
+подключения. `ProviderDataAssuranceProperties`, `ProviderDataEvidence`,
+`ProviderDataDispatchGuard` и `AiDataAssurancePort` связывают governance
+с фактической конфигурацией provider/connection и сроком подтверждения
+(не более 90 суток). No-training и ZDR — разные требования и отдельные evidence.
+
+- Требуемые подтверждения проверяются при routing и перед каждой physical
+  отправкой, в том числе повторной попыткой.
+- Ротация API key, смена подключения/конфигурации, просрочка или отсутствие
+  доказательства приводят к fail-closed при соответствующем требовании.
+- OpenAI `store=true` несовместим с требованием ZDR.
+- Для внешних embeddings и OCR предусмотрены отдельные обязательные
+  подтверждения, независимые от tenant policy чат-модели.
+- Операторский evidence — подтверждение проверенного договора и конфигурации,
+  не гарантия фактического поведения удалённого сервера; API и audit не
+  раскрывают credentials и fingerprints.
+
+Контракт и operational setup: `docs/security/provider-data-assurance.md`,
+`infra/scripts/provider-data-fingerprint.py`,
+`infra/scripts/test-provider-data-evidence.sh` и обязательный release workflow
+`provider-data-assurance.yml`. Нельзя придумывать evidence ради прохождения gate.
+
 ---
 
 ## Модуль `ai`
@@ -3760,13 +3928,10 @@ ai/
 │   ├── PricingStatus
 │   └── UsageStatus
 ├── pricing/
-│   ├── ModelPricingProperties
 │   ├── ModelPricingScheme
-│   ├── ModelPricingService
 │   ├── PricingResolver
-│   ├── PricingResult
-│   ├── StaticConfigurationPricingResolver
-│   └── VersionedCatalogPricingResolver
+│   └── PricingResult
+│
 ├── provider/
 │   ├── anthropic/
 │   │   ├── AnthropicProperties
@@ -4032,9 +4197,10 @@ Legacy `CONFIGURED` pricing после migration не должен автома�
 governed path обязан fail closed, пока новая audited catalog version не выберет поддерживаемую
 scheme.
 
-`StaticConfigurationPricingResolver` остаётся compatibility/dev path, а governed resolution должен
-использовать
-versioned catalog evidence.
+`VersionedCatalogPricingResolver` — единственный pricing resolver и для
+governed provider adapters, и для mock path. Static YAML resolver удалён.
+Без operation identity нет доказанной стоимости; mock не является обходом
+проверки exact catalog evidence.
 
 ### Usage / response evidence
 
@@ -4812,6 +4978,13 @@ executor и внутренних БД-ограничений; оно **не** о
   receipt outbox, dual-control retention recheck.
 - **V90**. SQL: `V90__knowledge_generation_gc_least_privilege.sql`; Назначение: отозвать прямой
   app DELETE на chunks; единственный штатный GC выполняет fenced `SECURITY DEFINER`-функция.
+- **V91**. SQL: `V91__organization_model_policy_rub_budget.sql`; Назначение:
+  альтернативный RUB input и неизменяемый снимок котировки в organization model policy;
+  относится к финансовому governance, не расширяет право на Knowledge erasure.
+- **V92**. SQL: `V92__organization_model_policy_budget_finite_values.sql`; Назначение:
+  дополнительная проверка конечности USD-бюджетов и RUB dates/timestamps;
+  не изменяет V78–V90 и destructive permissions.
+  
 
 
 V78: после принятия durable document operation состояние документа монотонно;
@@ -5138,19 +5311,25 @@ GET /api/admin/usage/physical-attempts/reconciliation
 
 ```http
 GET  /api/admin/models/runtime
+POST /api/admin/models/runtime/probe
 
 GET  /api/admin/models/catalog
 GET  /api/admin/models/catalog/effective
+GET  /api/admin/models/catalog/versions
 POST /api/admin/models/catalog
 POST /api/admin/models/catalog/import-runtime
 
 GET  /api/admin/models/policies/{organizationId}
 POST /api/admin/models/policies/{organizationId}
+POST /api/admin/models/policies/{organizationId}/preview
+GET  /api/admin/models/policies/rub-quote
 
 GET  /api/admin/models/route-decisions/{decisionId}
 ```
 
-Runtime availability probe — отдельная administrative operation в `ModelRuntimeController`.
+Runtime availability probe — отдельная SUPER_ADMIN operation в `ModelRuntimeController`.
+Quote read — ADMIN/SUPER_ADMIN, preview — non-binding; создание policy
+по-прежнему подчиняется server-side tenant scope и expected version.
 
 ### Knowledge Bases
 
@@ -5272,7 +5451,7 @@ Answer Passport читается по chat/turn identity через `AnswerPassp
 
 ---
 
-## Database / Flyway V1–V90
+## Database / Flyway V1–V92
 
 Production migrations:
 
@@ -5497,8 +5676,8 @@ plaintext in newly created retrieval runs на отдельном PostgreSQL с�
 - **`V87`**
   - **Назначение:** Nontransactional CREATE INDEX CONCURRENTLY for archived chat owner lookup. Migration .sql.conf
     forces executeInTransaction=false.
-- **`V87`**
-  - **Назначение:**
+  - **Сопутствующий файл:** `V87__chat_archive_owner_online_index.sql.conf`
+    задаёт nontransactional execution; не является отдельной миграцией.
 - **`V88`**
   - **Назначение:** Validate NOT VALID chat erasure CHECK and verify V87 index is VALID/READY.
 - **`V89`**
@@ -5507,11 +5686,24 @@ plaintext in newly created retrieval runs на отдельном PostgreSQL с�
 - **`V90`**
   - **Назначение:** Generation GC via SECURITY DEFINER fenced SQL function. App direct DELETE from
     knowledge_document_chunks revoked.
+- **`V91`**
+  - **Назначение:** Organization model policy RUB budget input. Шесть nullable
+    колонок для двух RUB ceilings и CBR quote evidence в append-only
+    `organization_model_policies`. Старые USD-only policies неизменны.
+    `chk_model_policy_rub_budget_v91` проверяет completeness, положительный
+    конечный курс, nonnegative budgets, 14-day effective-date window,
+    московскую дату получения, timeline до `created_at`, точный консервативный
+    USD conversion с scale 12 и NULL-safe matching.
+- **`V92`**
+  - **Назначение:** Additive financial evidence hardening. Validated
+    `chk_model_policy_usd_finite_v92` запрещает NaN обеих USD-сумм, включая
+    legacy USD-only; `chk_model_policy_rub_dates_finite_v92` запрещает
+    infinity/-infinity для четырёх дат/времени RUB-backed policy.
+    Existing V45/V91 guards, checksums и исторические snapshots сохранены.
 
+### V85–V92: порядок применения и эксплуатационные зависимости
 
-### V85–V90: порядок применения и эксплуатационные зависимости
-
-Для чистого окружения последовательно применять **V1 → V90**. Для
+Для чистого окружения последовательно применять **V1 → V92**. Для
 заполненной БД выполнять upgrade с первой отсутствующей версии
 после backup/restore и проверки `flyway_schema_history`; нельзя удалять
 старые версии или менять SQL ради совпадения checksums.
@@ -5531,12 +5723,19 @@ plaintext in newly created retrieval runs на отдельном PostgreSQL с�
 6. **V90** требует установленный и включённый V57 chunk GC trigger;
    Java `KnowledgeGenerationGc` должен перейти на constrained function,
    иначе старый direct `DELETE` закономерно перестанет работать.
+7. **V91** добавляет nullable money/quote evidence без backfill USD-only строк.
+   Обновлённый backend требует V91; новый frontend и backend выпускать
+   согласованно. Для RUB input нужен TLS egress до `www.cbr.ru:443`.
+8. **V92** валидирует существующие финансовые rows; предварительно проверить
+   NaN и non-finite RUB dates. Нельзя удалять или переписывать повреждённые
+   версии, отключать immutable triggers или исправлять checksum ради upgrade.
+   Успешный upgrade обязан сохранить исторические USD/RUB snapshots.
 
 Для V86–V90 проверять не только `GRANT/REVOKE` в SQL, но и фактические
 `has_table_privilege`, `has_function_privilege`, `session_user`, роль
 владельца таблиц, наследование, публичные grants и pre-existing defaults.
 
-### V78–V90 — эволюция жизненного цикла удаления
+### V78–V92 — эволюция жизненного цикла удаления и финансового governance
 
 - **V78**. Durable schema / DB enforcement: `knowledge_document_deletions_v78`, документ `AVAILABLE/DELETING`,
   immutable intent, запрет поздней публикации; Java и внешний эффект: Приём операции, без физического удаления при
@@ -5567,6 +5766,12 @@ plaintext in newly created retrieval runs на отдельном PostgreSQL с�
   Knowledge worker, DB receipts, dual review.
 - **V90**. Durable schema / DB enforcement: Protected schema and release fences; Java и внешний эффект: SQL-fenced
   Generation GC; no app direct DELETE chunks.
+- **V91**. Durable schema / DB enforcement: immutable RUB quote and exact USD
+  equivalence; Java и внешний эффект: CBR quote service, server-side currency
+  validation, BigDecimal conversion, policy audit, USD/RUB editor.
+- **V92**. Durable schema / DB enforcement: validated monetary NaN and temporal
+  infinity rejection; Java и внешний эффект: finite-value, overflow,
+  immutability и sequential-upgrade regression tests, без смены erasure flow.
 
 
 V78–V81 образуют document-erasure фундамент, V82 добавляет удаление всей базы,
@@ -5575,7 +5780,8 @@ V83 — контролируемое операторское продолжен
 feature flags и операторский runbook приведены в главе
 [«Безопасное удаление Knowledge — V78–V90»](#безопасное-удаление-knowledge--v78v90).
 
-**Порядок миграций строго последовательный:** V78 → V79 → … → V90.
+**Порядок миграций строго последовательный:** V78 → V79 → … → V92;
+V91/V92 относятся к policy budgets, не к destructive erasure.
 V80/V82 выполняют identity backfill и validated FK переходы; V84 регистрирует
 триггеры и audit types без физического удаления. На populated PostgreSQL нужны
 backup, preflight существующих данных, проверка ограничений и остановка старых
@@ -5692,6 +5898,8 @@ V1–V72 → V73 Organization → V74 Usage → V75 Audit → V76 Retrieval priv
        → V88
        → V89
        → V90
+       → V91
+       → V92
 ```
 
 Это последовательность **номеров Flyway**, а не инструкция вручную запускать
@@ -5703,10 +5911,59 @@ V1–V72 → V73 Organization → V74 Usage → V75 Audit → V76 Retrieval priv
 этот номер уже занят миграцией организаций.
 
 В исторически проверенном `main` (PR #8) было подтверждено наличие V1–V72.
-В исторических архивах от 28–31.10.2026 были V73–V84, а в текущем
-приложенном SQL-архиве представлены V1–V90. Это **не** подтверждает
-применение V85–V90 к текущей PostgreSQL.
+В исторических архивах от 28–31.10.2026 были V73–V84, а в доступном текущем
+SQL-срезе представлены V1–V92. Это **не** подтверждает
+применение V85–V92 к текущей PostgreSQL.
 Истину об установке даёт `flyway_schema_history`.
+
+### V91 — Organization model policy RUB budget
+
+Файл: `V91__organization_model_policy_rub_budget.sql`.
+
+- **Схема:** шесть nullable колонок на существующей versioned policy, без
+  UPDATE, DELETE, новых таблиц или изменения ролей.
+- **Инвариант:** либо все RUB-поля NULL, либо положительный курс с полной
+  датированной котировкой и хотя бы одним RUB ceiling. Negative/NaN RUB и
+  rate запрещены; USD pairs совпадают с exact floor to 12 decimals.
+- **Временные границы:** effective date от quote date - 14 до quote date;
+  fetched-at по Москве соответствует quote date, fetched-at <= created_at.
+- **Приложение:** `RubBudgetRateService`, `CbrUsdRateSource`,
+  `RubBudgetSnapshot`, policy DTO/repository и audit; canonical USD enforcement
+  сохраняется. Quote cache в памяти, applied quote — в immutable policy.
+- **Совместимость:** старые USD-only rows остаются без RUB evidence; новые
+  лимиты хранятся точными числами, а не floating point.
+
+### V92 — Finite budget values
+
+Файл: `V92__organization_model_policy_budget_finite_values.sql`.
+
+- **Схема:** два новых validated CHECK и комментарии к ним; V91 не меняется.
+- **USD:** NaN запрещён для `max_request_cost_usd` и `monthly_budget_usd`,
+  поскольку PostgreSQL numeric NaN проходит простую проверку >= 0.
+- **RUB:** `isfinite()` проверяет `rub_quote_date`, `rub_effective_date`,
+  `rub_fetched_at` и `created_at`, если присутствует `rub_per_usd`.
+- **Совместимость:** сохранены NULL, валидный ноль, single-ceiling policies и
+  исторические котировки; constrained numeric уже отклоняет ±Infinity
+  и целочисленное переполнение. Существующие CHECK V45/V91 не заменены.
+- **Upgrade safety:** при нарушении существующих данных миграция должна
+  завершиться ошибкой, а не переписать immutable record.
+
+Перед V92 на V91-стенде выполнить read-only preflight (сводка количества
+аномальных строк, без вывода tenant evidence):
+
+```sql
+SELECT
+    count(*) FILTER (WHERE max_request_cost_usd = 'NaN'::numeric
+                          OR monthly_budget_usd = 'NaN'::numeric) AS usd_nan,
+    count(*) FILTER (WHERE rub_per_usd IS NOT NULL AND NOT (
+        isfinite(rub_quote_date) AND isfinite(rub_effective_date)
+        AND isfinite(rub_fetched_at) AND isfinite(created_at)
+    )) AS rub_nonfinite_dates
+FROM public.organization_model_policies;
+```
+
+Оба счётчика должны быть нулевыми. Ненулевой результат — NO-GO до
+отдельно согласованного remediation с сохранением аудиторских доказательств.
 
 ### V77 — безопасный backfill исторических чатов
 
@@ -6110,7 +6367,7 @@ cd backend
 
 ### Карта размещения backend-тестов
 
-Дерево baseline `backend/src/test/java/ru/safeai/gateway/` содержит следующие Java-файлы
+Историческое дерево baseline `backend/src/test/java/ru/safeai/gateway/` содержало следующие Java-файлы
 тестовых пакетов (количество **файлов**, а не JUnit test cases):
 
 | Пакет | Java-файлов | Что проверять при изменениях |
@@ -6130,6 +6387,8 @@ cd backend
 
 Также в корне test package находятся `SafeaiBackendApplicationTests`, utility
 `PasswordHashGenerator`, а в `testsupport` — `AbstractPostgresIntegrationTest`.
+Это историческая инвентаризация, не текущие количества; новые Model/AI,
+architecture, migration, security и Knowledge tests описаны отдельными матрицами.
 Для `identity` на этом срезе отдельной папки с тестами нет; его порт проверяется
 в тестах потребителей/реализации. Выборочное добавление dedicated ArchUnit identity rule
 закроет пробел в проверке направленности зависимостей.
@@ -6316,8 +6575,13 @@ cd backend
 
 ### Архитектурные регрессии и CI
 
-Текущий пакет `architecture` содержит **один** ArchUnit test. Следующие архитектурные правила
-добавляются отдельными PR, только после проверки реальных dependencies/allowed edges.
+Пакет `architecture` вырос после исторического PR #8: кроме
+`CommonDependencyArchitectureTest`, актуальный срез содержит
+`AiModelKnowledgeBoundaryArchitectureTest`, `ModelChatBoundaryArchitectureTest`,
+`AuditUserBoundaryArchitectureTest`, `KnowledgeChatBoundaryArchitectureTest`
+и `OrganizationUserBoundaryArchitectureTest`.
+В том числе контролируется единственный production PricingResolver.
+Новые правила добавляются отдельными PR после проверки реальных dependencies/allowed edges.
 Без новых тестов в `common` нельзя возвращать `JwtService`, auth exceptions или BCrypt
 configuration.
 
@@ -6337,8 +6601,69 @@ npm run check
 ```
 
 `npm run check` выполняет lint, Vitest и build (с проверкой typecheck/production bundle).
-Команды приведены как воспроизводимые проверки; успешный frontend run **не подтвержден** данным
-срезом.
+Команды приведены как воспроизводимые проверки. В подготовке Catalog Pricing
+зафиксирован успешный отдельный frontend CI (1387 тестов в 145 файлах);
+это не подтверждение всей сборки V92 или текущего локального HEAD.
+
+### Целевые регрессии V91–V92 и Catalog Pricing
+
+```bash
+cd backend
+./mvnw -Dtest=FlywaySequentialUpgradeIT,ModelControlPlanePostgresIntegrationTest,RubBudgetRateServiceTest test
+./mvnw -Dtest=OrganizationModelPolicyServiceTest,PolicyNumericRequestTest,ModelControllerContractTest,ModelCatalogPricingSchemeTest,VersionedCatalogPricingResolverTest,RuntimeModelStatusServiceTest test
+./mvnw clean verify
+```
+
+Если штатный Maven Wrapper недоступен, использовать локальный `mvn` с JDK 21.
+Testcontainers требует запущенный Docker. Не заменять реальный PostgreSQL
+тестом на H2 и не отключать constraints.
+
+| Проверяемый контракт | Обязательные сценарии |
+| --- | --- |
+| V91 RUB evidence | USD-only, RUB-only, single ceiling, null/zero; неполная котировка и несовпадающие суммы |
+| V92 financial finite values | NaN в USD/RUB/курсе, ±Infinity numeric и dates/timestamps, отрицательный/нулевой курс, overflow |
+| Date / quote consistency | будущая или старше 14 дней effective date, московская дата, fetched-at позже created-at, смена суток, устаревшая quote |
+| Exact money | scale 12, down-rounding, rounding up rejected, точность BigDecimal/BigInt/NUMERIC |
+| Append-only | UPDATE/DELETE policy и сохранённого RUB snapshot запрещены; historical evidence неизменно после V92 |
+| Source failure | timeout, oversized/malformed XML, XXE/DTD, неправильная USD definition, cooldown, no stale fallback; USD работает независимо |
+| Sequential upgrade | test V0 и V1–V92 по одной миграции, schema OID и exact Flyway history, validated CHECK, повторный migrate no-op |
+| Role integrity | actor fixture: organization/user/ADMIN/policies в одной транзакции; roleless INSERT и DELETE последней роли после V92 обязаны отклоняться |
+| Catalog pricing | verified FREE vs CONFIGURED/UNPRICED, отсутствие/неверная operation identity, кеширование токенов OpenAI/Anthropic, ambiguous runtime projection |
+| API/UI | sanitized runtime wire model, strict numeric fields, RUB quote mismatch, stale preview, tenant access и history |
+
+`FlywaySequentialUpgradeIT` создаёт populated USD/RUB versions после V91,
+сверяет обе сохранённые версии после V92, проверяет все шесть RUB-колонок через
+`information_schema` и обе validated V92 constraints. Fixture использует
+`TransactionTemplate` на том же DataSource, потому что V20 требует роль у
+пользователя при commit, а V24 ограничивает её единственность.
+Исправление теста не затрагивает production SQL; SQLResolve suppression
+локальна для staged V91 INSERT, реальные DB-проверки сохранены и усилены.
+
+Успешный запуск последнего исправления V92 на рабочей машине ещё требуется.
+В среде подготовки Maven не дошёл до компиляции из-за отсутствующего parent
+Spring Boot 4.1.1 и недоступности Docker; синтаксическая проверка и применение
+патча не эквивалентны полному Maven regression.
+
+### CI/CD — coverage, security и performance evidence
+
+Backend: JUnit/Surefire, opt-in Failsafe topology tests, JaCoCo 0.8.16;
+frontend: TypeScript, ESLint, Vitest coverage gate, production bundle
+verification, Playwright smoke/regression. Actions Summary не заменяет
+blocking thresholds; baseline нельзя понижать из-за регрессии.
+
+Provider-data-assurance workflow выполняет targeted backend/frontend tests
+и standalone operator fingerprint self-check. Prepared Performance CI
+проверяет реальные PostgreSQL usage queries, EXPLAIN ANALYZE и boundary
+erasure batches с `-Dsafeai.usage.performance=true`; verifier не принимает
+отсутствующие, пропущенные или упавшие обязательные scenarios. Release
+publish должен зависеть от обоих gates, а не от одного из них. В частичном
+срезе workflow не представлены все файлы этого объединения; проверка
+актуального checkout через infra security policy и CI обязательна.
+
+Docker CI и production release сканируют backend/Nginx/PostgreSQL;
+production deploy использует утверждённые immutable image digests.
+Coverage, performance, provider assurance и security gates независимы;
+ни один нельзя отключить ради успешной сборки.
 
 ### Дополнительная регрессия V73–V76
 
@@ -6376,8 +6701,8 @@ npm run check
 Перед серьёзным deployment:
 
 ```text
-fresh V1 → V84 (только на disposable PostgreSQL/pgvector)
-populated upgrade V72 → V84; порядок/lock-timeouts; Flyway checksum
+fresh V1 → V92 (только на disposable PostgreSQL/pgvector)
+populated upgrades V72 → V92, V84 → V92 и V91 → V92; порядок/lock-timeouts; Flyway checksum
 Flyway history validation
 critical index validity check
 backend clean test
@@ -6392,6 +6717,8 @@ ChatTurn chronological CHECK constraints under Testcontainers clock
 ChatTurn recovery
 AI physical attempt recovery/reconciliation
 Model route binding
+Catalog-only verified pricing, RUB quote and V92 finite-value constraints
+V20/V24 role presence and immutable V91 evidence after upgrade
 Knowledge generation publication/GC
 backup/restore drill
 ```
@@ -6427,6 +6754,12 @@ cd backend
 export SPRING_PROFILES_ACTIVE=local
 export REDIS_PASSWORD='local-redis-password'
 
+# Задайте в локальном environment/configtree отдельные credentials:
+# SPRING_DATASOURCE_USERNAME=safeai_app
+# SPRING_DATASOURCE_PASSWORD
+# SPRING_FLYWAY_USER=safeai_migrator
+# SPRING_FLYWAY_PASSWORD
+# bootstrap безопасно выполняется заранее; не использовать DBA как runtime login.
 # Текущий JWT contract использует RSA key ring.
 # Перед запуском задайте через environment/configtree:
 # SAFEAI_JWT_ISSUER
@@ -6444,6 +6777,8 @@ cd backend
 set SPRING_PROFILES_ACTIVE=local
 set REDIS_PASSWORD=local-redis-password
 
+REM Требуются отдельные SPRING_DATASOURCE_USERNAME/PASSWORD
+REM и SPRING_FLYWAY_USER/PASSWORD, как в macOS/Linux примере выше.
 REM Текущий JWT contract использует RSA key ring.
 REM Перед запуском задайте SAFEAI_JWT_ISSUER, SAFEAI_JWT_ACTIVE_KEY_ID,
 REM SAFEAI_JWT_PUBLIC_KEY и SAFEAI_JWT_PRIVATE_KEY через environment/configtree.
@@ -6522,9 +6857,58 @@ Production Knowledge требует:
 
 - applied migrations immutable;
 - `clean` disabled;
-- concurrent-index migration behavior протестирован;
-- production role имеет необходимые extension/index privileges;
+- V1–V92; concurrent-index behavior проверяется в sequential regression;
+- Flyway работает отдельным migrator login; app не получает DDL/ownership;
 - `pgvector` доступен до применения Knowledge vector migrations.
+
+### PostgreSQL image, DB identities и release gates
+
+Текущий `infra/postgres/Dockerfile` — release-controlled Ubuntu 24.04 Noble
+candidate: PostgreSQL 16.15, pgvector 0.8.7 собирается против той же PostgreSQL
+ABI; gosu 1.20 собирается Go 1.27.3, pinned source commits и base image digests.
+Официальные entrypoint scripts берутся из pinned pgvector image, не
+копируются Debian runtime libraries. Проверяется минимальная исправленная
+Ubuntu версия libxml2 и отсутствие missing shared libraries.
+Local Compose может использовать отдельный upstream PostgreSQL 16/pgvector
+image, а production — только утверждённый release digest.
+
+Три базовые PostgreSQL identities: bootstrap (DBA, обычно `safeai`),
+`safeai_migrator` (Flyway/schema owner) и `safeai_app` (runtime DML,
+least privilege). Не использовать одну роль для всех трёх задач. Worker и
+operator roles V86–V89 дополнительно изолированы; application не наследует
+их destructive permissions.
+
+Production Compose: `postgres` → `db-bootstrap` → `db-migrate` →
+backend. `db-bootstrap` вызывает `10-create-app-roles.sh`, роли и grants
+проверяются через catalog; `db-migrate` запускает отдельный
+`DatabaseMigrationMain`. Runtime backend имеет `SPRING_FLYWAY_ENABLED=false`.
+Secrets bootstrap/migrator/app не переиспользуются.
+
+Release pipeline собирает/сканирует PostgreSQL вместе с backend и Nginx,
+публикует image digests; deploy workflow проверяет approved PostgreSQL digest.
+Trivy v0.76.2: CRITICAL блокирует даже без исправления
+(`ignore-unfixed: false`), отдельно проверяются fixable HIGH/CRITICAL.
+Диагностические JSON/SARIF/SBOM и итоговые gates не взаимозаменяемы.
+Нельзя подменять образ сканирования другим тегом, игнорировать весь CVE класс
+или ослаблять gate для получения green CI.
+
+До замены существующего PostgreSQL volume обязательны inventory, backup,
+restore rehearsal, проверки collations, pgvector/HNSW, row counts, constraints,
+Flyway history и ACL. `infra/postgres/PRODUCTION-EXECUTION.md`,
+`README-restore-rehearsal.md`, `rehearse-restore.sh` и
+`infra/scripts/test-runtime-acl.sh` — release/runbook sources.
+Это описывает реализованный deployment contract, не утверждает миграцию
+production на Noble или успешное изменение существующего volume.
+
+### V91–V92 и Catalog Pricing: финансовый rollout
+
+Применить V91/V92 штатным migrator до старта нового backend, проверить
+валидность CHECK и сохранение исторических policies. Перед включением RUB
+input подтвердить TLS egress к ЦБ; USD path должен работать и при его outage.
+При catalog-only переходе проверить наличие effective audited tariffs:
+старый pricing.yml не является fallback. Не выдавать UNPRICED за FREE.
+Новый frontend, backend и policy DTO выпускаются согласованно; rollback
+бинарника не требует удаления колонок или ручного rollback SQL.
 
 ### V78–V90: controlled destructive erasure rollout — NO-GO без отдельной приёмки
 
@@ -6632,13 +7016,17 @@ Redirect following с credentials запрещён.
 searchable Knowledge publication — `V63`, physical response vs protocol rejection — `V66`,
 а Chat/Audit evidence получил дополнительные DB backstops в `V67/V68`.
 
-### P0 до production — release validation V72–V90, deletion safety и мониторинг
+### P0 до production — release validation V72–V92, deletion safety и мониторинг
 
 - Исторический PR #8: 2259 tests и 27/27 PostgreSQL/Redis; отдельный
   V82 `clean verify` также сообщался как успешный. Его точное количество тестов
   следует брать из вывода того прогона, не переносить на V83/V84.
-- После объединения V83/V84 нужен новый `./mvnw clean verify`, frontend CI,
-  upgrade rehearsal populated V77→V84 и S3/MinIO/Object Lock + live-SIGKILL matrix.
+- После объединения V91/V92 и изменения каталога нужен новый
+  `./mvnw clean verify`, frontend CI, populated V84→V92 и V91→V92 upgrade,
+  а также S3/MinIO/Object Lock + live-SIGKILL matrix для erasure.
+- Свежий release gate должен подтвердить V92 constraints, role-presence
+  regression, RUB quote lifecycle, catalog-only pricing и provider assurance;
+  последние предоставленные Maven-логи не зелёные.
 - `BLOCKED_BY_RETENTION` защищён от произвольного изменения. V89 допускает
   только двухоператорный review-based возврат к повторной проверке Object Lock;
   нельзя делать plain `UPDATE state` или пропускать новый S3 purge.
@@ -6735,7 +7123,8 @@ semantics, но это ещё не бухгалтерский/invoice settlement
 
 - provider invoice import/reconciliation;
 - immutable settlement periods;
-- currency/FX policy;
+- полноценная multi-currency/invoice FX policy (V91 фиксирует лишь курс
+  ввода бюджетных потолков; не пересчитывает invoice или исторические расходы);
 - credits/discounts/taxes;
 - adjustments;
 - dispute workflow;
@@ -6942,6 +7331,60 @@ V84 затрагивает `useKnowledgeDeletionController.ts` и историю
 и не расширяют доступ к destructive DELETE. Источником фактических связей и
 контрактов остаётся `frontend/src` текущей рабочей копии.
 
+### Model Control Plane UI — актуальные изменения 17.11.2026
+
+Административная страница моделей организована как четыре адресуемые
+рабочие области: **Обзор**, **Каталог**, **Доступ**, **Диагностика**.
+Выбранная секция восстанавливается при навигации; клавиатурная навигация
+использует tablist semantics. Обзор отражает configured runtime/effective
+catalog, а не динамическое переключение provider.
+
+- Каталог: latest/effective различаются, scheduled версии не становятся
+  активными раньше effectiveFrom. История сохраняет immutable версии.
+  При неоднозначном runtime match не выбирается произвольная модель.
+- Доступ: шесть карточек открывают соответствующие параметры редактора;
+  ADMIN видит только собственную организацию. SUPER_ADMIN управляет
+  глобальным каталогом и выбирает допустимый tenant.
+- Диагностика: preview и metadata probe инициируются явно, открытие вкладки
+  не вызывает проверку автоматически; probe — только SUPER_ADMIN.
+- Редактор: пять вкладок `access / limits / budget / data / preview`.
+  Default model, allow/deny lists, max input/output, SOFT/HARD budget,
+  pricing/no-training/ZDR requirements имеют отдельные объяснения.
+  Preview не резервирует бюджет и не гарантирует будущий ALLOWED.
+  UI не позволяет сохранить неизменённые существующие правила; для
+  включённой policy требуется актуальная проверка, полная блокировка требует
+  явного подтверждения, изменения инвалидируют preview.
+- Числовые поля: положительные целые токены до 2147483647 или NULL;
+  денежные строки до 18 целых и 12 дробных цифр, точка/запятая;
+  ноль не равен NULL. Ошибки всех вкладок блокируют проверку/сохранение.
+- Бюджет: переключатель USD/RUB, официальный quote и его даты, точные USD
+  equivalents; `modelBudgetFx.ts` использует BigInt, а не Number.
+  При переключении USD → RUB сохраняется исходный USD ceiling, если
+  это представимо; обновление курса сохраняет RUB amount, но изменяет USD
+  equivalent до явного сохранения. Неизменённый historical quote не обновляется
+  автоматически. При unavailable quote новые RUB limits недоступны, USD
+  остаётся доступным.
+- Runtime card показывает стоимость по каталогу, а не по статическому
+  pricing.yml. Unknown tariff отображается UNPRICED, не FREE; цены
+  передаются как decimal strings.
+
+Ключевые компоненты и тесты в подготовленных изменениях:
+`AdminModelsNavigation.tsx`, `modelsNavigationState.ts`,
+`ModelsCatalogWorkspace.tsx`, `ModelsAccessWorkspace.tsx`,
+`ModelCatalogHistoryModal.tsx`, `ModelPolicyModal.tsx`,
+`modelPolicyModal/PolicyBudgetCurrency.tsx`,
+`modelPolicyModal/useModelPolicyModalController.ts`,
+`modelControlPlaneViews/RuntimeCard.tsx`;
+`entities/model/api/model/modelBudgetFx.ts`, `modelPolicyParsers.ts`,
+`modelClient.ts` и соответствующие regression tests.
+Frontend API parsers сохраняют exact-money contract. Все UI ограничения
+дополнены серверной валидацией/RBAC; они не являются самостоятельной
+security boundary.
+
+Проверка frontend в отдельных пакетах изменений прошла, но браузерные
+Playwright-сценарии требуют проверки на рабочей машине/CI. Не считать
+подтверждённой визуальную desktop/mobile приёмку только по unit tests.
+
 #### Локальные проверки frontend
 
 ```bash
@@ -7069,7 +7512,7 @@ Base:        main / origin/main
 Main HEAD:   fdcff62fc32131474cbc2639b1fa636edffd45bc (merge PR #8)
 Java:        21
 Spring Boot: 4.1.1
-DB:          PostgreSQL; historical main V1–V72; current SQL snapshot V1–V90
+DB:          PostgreSQL; historical main V1–V72; current SQL snapshot V1–V92
 Structure:   modular monolith; common, identity, auth, user, organization,
              ratelimit, audit, usage, chat, model, ai, knowledge
 PRs merged:  #1–#8; latest adds ArchUnit 1.5.1 architecture rule for common
@@ -7141,9 +7584,11 @@ Spring wiring, database triggers и concurrency.
 
 ## План следующего этапа
 
-**Ближайший функциональный приоритет — production-like приёмка V85–V90:**
+**Ближайший функциональный приоритет — production-like приёмка V85–V92:**
 реальные PostgreSQL-роли, S3 Object Lock, commit receipts после DB commit,
 retention recovery с двумя разными DB login, Chat batch boundaries и V90 GC.
+Отдельно — непрерывная финансовая матрица V91/V92, role-safe sequential
+fixture, provider-data assurance, каталоговый pricing, preview и RUB UI.
 До отдельного GO все destructive flags остаются выключенными.
 
 
@@ -7194,12 +7639,14 @@ retention recovery с двумя разными DB login, Chat batch boundaries 
 
 ---
 
-**Редакция 14.11.2026:** сохранена предметная документация модулей и исторический
-baseline, добавлены контракты V85–V90, разделение worker SQL-ролей и
-проверки релиза. Live deployment и текущее состояние Git HEAD не заявляются.
+**Редакция 17.11.2026:** сохранена предметная документация модулей и исторический
+baseline; актуализированы V1–V92, model governance, RUB budgets,
+provider evidence, catalog-only pricing, PostgreSQL supply chain,
+разделение SQL-ролей и release/test gates.
+Live deployment и итоговый зелёный CI не заявляются.
 ---
 
-## Релизный контроль V73–V90
+## Релизный контроль V73–V92
 
 Этот checklist задаёт **условия выпуска**, не отчёт об успешном выполнении.
 Не запускайте destructive SQL и тесты стирания на production PostgreSQL.
@@ -7214,13 +7661,16 @@ git diff --check
 git diff --stat
 git diff --cached --stat
 
-# Проверить число и имена SQL V1–V90 и единственный .conf для V87.
+# Проверить число и имена SQL V1–V92 и .conf для V87.
 find backend/src/main/resources/db/migration -maxdepth 1 \
   -name 'V*.sql' -print | LC_ALL=C sort
 
 for f in infra/scripts/*.sh; do bash -n "$f" || exit 1; done
 bash infra/scripts/check-config-topology.sh
 bash infra/scripts/check-prometheus-config.sh
+python3 .github/scripts/check-infra-security-policy.py
+python3 -m unittest discover -s .github/scripts -p 'test_infra_security_policy.py'
+bash infra/scripts/test-provider-data-evidence.sh
 
 # Только в подготовленном окружении, без запуска deployment.
 # docker compose --env-file backend/.env.prod \
@@ -7257,6 +7707,23 @@ SELECT conname, convalidated
 FROM pg_constraint
 WHERE conname = 'chk_chat_erasure_state_v86';
 
+SELECT conname, convalidated
+FROM pg_constraint
+WHERE conrelid = 'public.organization_model_policies'::regclass
+  AND conname IN ('chk_model_policy_rub_budget_v91',
+                  'chk_model_policy_usd_finite_v92',
+                  'chk_model_policy_rub_dates_finite_v92')
+ORDER BY conname;
+
+SELECT column_name, data_type, numeric_precision, numeric_scale
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name = 'organization_model_policies'
+  AND column_name IN ('max_request_cost_rub', 'monthly_budget_rub',
+                      'rub_per_usd', 'rub_quote_date',
+                      'rub_effective_date', 'rub_fetched_at')
+ORDER BY column_name;
+
 SELECT to_regclass('public.knowledge_rag_execution_permits_v85'),
        to_regclass('public.chat_erasure_operations_v86'),
        to_regclass('public.knowledge_erasure_commit_outbox_v89'),
@@ -7275,12 +7742,15 @@ SELECT has_function_privilege(
 
 Ожидается, что `app_can_direct_delete_chunks = false`,
 `app_can_use_fenced_generation_gc = true`, а индекс V87 `indisvalid = true`
-и `indisready = true`. Наличие ограничений и функций не заменяет тесты
+и `indisready = true`. Все три V91/V92 CHECK должны существовать и быть
+validated; запрос к information_schema должен вернуть шесть колонок.
+Наличие ограничений и функций не заменяет тесты
 на **реальной** отдельной app/worker/operator роли.
 
 #### Необходимая интеграционная матрица
 
-- Fresh V1–V90 и populated upgrade V84 → V90 с checksum verification.
+- Fresh V1–V92 и populated upgrades V84 → V92, V91 → V92 с checksum verification;
+  отдельный sequential test V0 (test-only) → V92.
 - Отрицательные проверки SQL login/GUC, inherited grants и `SECURITY DEFINER`.
 - Раздельные worker JDBC URLs и запрет переиспользования app credentials.
 - Chat 0/1/99/100/101/10 000/10 001 и legacy retrieval query limits.
@@ -7291,6 +7761,11 @@ SELECT has_function_privilege(
 - Dual-control recovery: две независимые роли, одинаковые ticket/evidence,
   stale timestamp и отказ при несовпадении.
 - V90 GC при `COLLECTING`, запрет direct app `DELETE`, сохранение V57 guards.
+- V91 exact RUB/USD pairing, missing quote, stale date, no FX fallback.
+- V92 NaN, ±Infinity, overflow, immutability, validated constraints и
+  V20/V24 role presence после upgrade.
+- Catalog-only pricing и provider-data evidence, negative dispatch, preview
+  и runtime wire contract; проверка approved PostgreSQL image digest и CI scans.
 - Audit outbox: atomicity, retry, dead letter, immutable provenance.
 - Replica/multi-worker concurrency, leases/fencing, backup/restore drills.
 - Frontend regression, Prometheus scrape, Alertmanager delivery, CI artifacts.

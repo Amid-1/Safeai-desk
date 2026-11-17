@@ -46,7 +46,7 @@ function ModelPolicyModalSession(props: ModelPolicyModalProps) {
         formId, isDirty, previewPending, handlePreview, handleSubmit,
         requestClose, activeSection, setActiveSection,
         formError, versionMessage, draft, currentPreview, policyPreview, previewError,
-        policyChangedExternally, canSaveChanges, invalidNumericSection,
+        policyChangedExternally, canSaveChanges, invalidNumericSection, ratePending,
     } = control
 
     const previewStatus = policyPreviewState({currentPreview, policyPreview, previewPending, previewError})
@@ -73,6 +73,7 @@ function ModelPolicyModalSession(props: ModelPolicyModalProps) {
                         Исправьте значения во вкладке «{invalidNumericSection === 'limits' ? 'Лимиты' : 'Бюджет'}»
                     </span>
                 )}
+                {ratePending && <span className="models-policy-modal__check-indicator">Получаем курс Банка России</span>}
                 {draft.enabled && canSaveChanges && !currentPreview && !invalidNumericSection && (
                     <span className="models-policy-modal__check-indicator">Требуется актуальная проверка</span>
                 )}
@@ -82,7 +83,7 @@ function ModelPolicyModalSession(props: ModelPolicyModalProps) {
             </div>
             <button
                 type="button"
-                disabled={pending || previewPending || policyChangedExternally || invalidNumericSection !== null}
+                disabled={pending || previewPending || ratePending || policyChangedExternally || invalidNumericSection !== null}
                 onClick={() => {
                     void handlePreview()
                 }}
@@ -93,7 +94,7 @@ function ModelPolicyModalSession(props: ModelPolicyModalProps) {
                 type="submit"
                 form={formId}
                 className="btn-primary"
-                disabled={pending || previewPending || policyChangedExternally || !canSaveChanges || invalidNumericSection !== null
+                disabled={pending || previewPending || ratePending || policyChangedExternally || !canSaveChanges || invalidNumericSection !== null
                     || (draft.enabled && (!currentPreview || (currentPreview.wouldLockOutOrganization && !control.lockoutAcknowledged)))}
             >
                 {pending ? 'Сохраняем...' : 'Сохранить правила'}

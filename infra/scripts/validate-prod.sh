@@ -34,7 +34,7 @@ export SAFEAI_RUNTIME_ENV_FILE="$env_file"
 
 required_variables=(
     SAFEAI_BACKEND_IMAGE SAFEAI_NGINX_IMAGE SAFEAI_PROMETHEUS_IMAGE POSTGRES_IMAGE REDIS_IMAGE
-    SAFEAI_PUBLIC_BIND SAFEAI_SECRETS_DIR SAFEAI_CONFIG_DIR SAFEAI_SECRET_GID
+    SAFEAI_PUBLIC_BIND SAFEAI_SECRETS_DIR SAFEAI_SECRET_GID
     POSTGRES_DB POSTGRES_BOOTSTRAP_USER SAFEAI_DB_MIGRATOR_USER SAFEAI_DB_APP_USER
     SAFEAI_AI_PROVIDER SAFEAI_KNOWLEDGE_EMBEDDING_PROVIDER
     SAFEAI_CORS_ALLOWED_ORIGINS SAFEAI_JWT_ISSUER SAFEAI_KNOWLEDGE_STORAGE_ENDPOINT
@@ -78,14 +78,6 @@ for name in SAFEAI_BACKEND_IMAGE SAFEAI_NGINX_IMAGE SAFEAI_PROMETHEUS_IMAGE POST
     [[ "${!name}" =~ @sha256:[0-9a-fA-F]{64}$ ]] || fail "$name must be pinned to a 64-hex SHA256 digest"
 done
 
-pricing_file="$SAFEAI_CONFIG_DIR/pricing.yml"
-[[ -f "$pricing_file" && ! -L "$pricing_file" ]] || fail "Missing/unsafe pricing config: $pricing_file"
-pricing_uid="$(stat -c '%u' "$pricing_file")"
-pricing_mode="$(stat -c '%a' "$pricing_file")"
-[[ "$pricing_uid" == 0 ]] || fail "Pricing config must be owned by root"
-(( (8#$pricing_mode & 8#022) == 0 )) || fail "Pricing config must not be writable by group/other"
-! grep -Eq 'REPLACE_(WITH|ME)' "$pricing_file" || fail "Pricing config has placeholders"
-
 secret_files=(
     postgres_bootstrap_password db_migrator_password db_app_password
     redis_password jwt-keys.yml rate_limit_hmac_secret
@@ -118,7 +110,8 @@ case "$SAFEAI_AI_PROVIDER" in
     *) fail "Production provider must be openai or anthropic" ;;
 esac
 [[ -n "$selected_model" && -s "$provider_secret" ]] || fail "Selected provider model or secret missing"
-grep -Fq -- "$selected_model" "$pricing_file" || fail "Selected provider model absent in pricing config"
+# Catalog pricing is validated by the runtime against the immutable route.
+# Fresh databases must remain bootstrappable before an administrator sets a tariff.
 
 case "${SAFEAI_KNOWLEDGE_EMBEDDING_PROVIDER:-}" in
     openai)

@@ -37,6 +37,10 @@ const friendlyFields: Readonly<Record<string, string>> = {
     denyModelKeyCount: 'Запрещённых моделей', maxInputTokens: 'Лимит входных токенов',
     maxOutputTokens: 'Лимит выходных токенов', maxRequestCostUsd: 'Лимит стоимости запроса, USD',
     monthlyBudgetUsd: 'Месячный бюджет, USD', requireNoTraining: 'Запрет обучения на данных',
+    maxRequestCostRub: 'Лимит стоимости запроса, RUB', monthlyBudgetRub: 'Месячный бюджет, RUB',
+    budgetRubPerUsd: 'Рублей за 1 USD', budgetRateQuoteDate: 'Дата котировки',
+    budgetRateEffectiveDate: 'Дата начала действия курса', budgetRateFetchedAt: 'Время получения курса',
+    budgetRateSource: 'Источник курса', budgetInputCurrency: 'Валюта ввода бюджета',
     requireZeroDataRetention: 'Требование отсутствия хранения данных',
     oldName: 'Прежнее название', newName: 'Новое название', chunkCount: 'Число фрагментов',
 }

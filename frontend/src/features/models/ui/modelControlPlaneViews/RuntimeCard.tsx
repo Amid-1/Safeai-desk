@@ -187,13 +187,16 @@ export function RuntimeCard({
                 </div>
 
                 <div>
-                    <dt><ModelIcon name="wallet" />Стоимость</dt>
+                    <dt><ModelIcon name="wallet" />Стоимость по каталогу</dt>
                     <dd>
                         {pricingStatusLabel(runtime.pricingStatus)}
                     </dd>
                     <small>
                         {runtime.pricingVersion
-                            ?? 'Версия стоимости не указана'}
+                            ? `Версия тарифа: ${runtime.pricingVersion}`
+                            : runtime.pricingStatus === 'UNPRICED'
+                                ? 'Нет единственного подтверждённого действующего тарифа'
+                                : 'Тариф подтверждён записью каталога'}
                     </small>
                     {(runtime.inputUsdPer1mTokens !== null || runtime.outputUsdPer1mTokens !== null) && <small>
                         Вход: {runtime.inputUsdPer1mTokens ?? 'не заявлено'} · выход: {runtime.outputUsdPer1mTokens ?? 'не заявлено'} USD / 1 млн токенов

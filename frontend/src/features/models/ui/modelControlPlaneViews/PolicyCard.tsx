@@ -16,6 +16,12 @@ import { ModelIcon } from '../ModelIcon'
 import type { ModelIconName } from '../ModelIcon'
 import type { PolicyEditorTarget } from '../modelPolicyModal/policyFormTabsConfig'
 
+function formatRub(value: string) {
+    const [whole, fraction = ''] = value.split('.')
+    const decimals = fraction.replace(/0+$/, '')
+    return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0')}${decimals ? ',' + decimals : ''} ₽`
+}
+
 function PolicyTile({icon, title, value, detail, target, restriction, disabled, onEdit}: {
     icon: ModelIconName; title: string; value: ReactNode; detail?: ReactNode
     target: PolicyEditorTarget; restriction?: string; disabled: boolean
@@ -235,14 +241,14 @@ export function PolicyCard({
                     restriction={restrictionState(policy.maxInputTokens !== null || policy.maxOutputTokens !== null)}
                     disabled={editDisabled} onEdit={onEdit} />
                 <PolicyTile icon="wallet" title="Лимит стоимости запроса" target="requestCost"
-                    value={policy.maxRequestCostUsd === null ? 'Без лимита' : formatUsd(policy.maxRequestCostUsd)}
-                    detail="Максимальная расчётная стоимость одного запроса"
+                    value={policy.rubBudget?.maxRequestCostRub != null ? formatRub(policy.rubBudget.maxRequestCostRub) : policy.maxRequestCostUsd === null ? 'Без лимита' : formatUsd(policy.maxRequestCostUsd)}
+                    detail={policy.rubBudget?.maxRequestCostRub != null ? `${policy.maxRequestCostUsd} USD · фиксированный курс` : 'Максимальная расчётная стоимость одного запроса'}
                     restriction={restrictionState(policy.maxRequestCostUsd !== null)}
                     disabled={editDisabled} onEdit={onEdit} />
                 <PolicyTile icon="budget" title="Месячный бюджет" target="monthlyBudget"
-                    value={policy.monthlyBudgetUsd === null ? 'Не задан' : formatUsd(policy.monthlyBudgetUsd)}
+                    value={policy.rubBudget?.monthlyBudgetRub != null ? formatRub(policy.rubBudget.monthlyBudgetRub) : policy.monthlyBudgetUsd === null ? 'Не задан' : formatUsd(policy.monthlyBudgetUsd)}
                     detail={policy.monthlyBudgetUsd === null ? 'Контроль бюджета выключен'
-                        : policy.budgetEnforcement === 'HARD' ? 'Жёсткий контроль: блокировка превышения' : 'Мягкий контроль: фиксация превышения'}
+                        : <>{policy.rubBudget?.monthlyBudgetRub != null && <>{policy.monthlyBudgetUsd} USD · фиксированный курс<br/></>}{policy.budgetEnforcement === 'HARD' ? 'Жёсткий контроль: блокировка превышения' : 'Мягкий контроль: фиксация превышения'}</>}
                     restriction={restrictionState(policy.monthlyBudgetUsd !== null)}
                     disabled={editDisabled} onEdit={onEdit} />
                 <PolicyTile icon="shield" title="Требования к данным и стоимости" target="data"

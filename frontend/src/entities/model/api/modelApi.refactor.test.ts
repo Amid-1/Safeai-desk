@@ -161,6 +161,7 @@ describe('modelApi: совместимость после декомпозици
             'getModelCatalog', 'getEffectiveModelCatalog',
             'createModelCatalogVersion', 'importRuntimeModelCatalog',
             'getOrganizationModelPolicy',
+            'getRubBudgetQuote', 'rubToUsd', 'usdToRub', 'budgetMoneyEqual', 'moscowBudgetDate',
             'createOrganizationModelPolicyVersion',
             'previewOrganizationModelPolicy', 'getModelRouteDecision',
             'parseRuntimeModelStatus', 'parseRuntimeModelProbe',

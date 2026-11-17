@@ -15,6 +15,8 @@ import type {ModelPolicyModalProps} from './policyModalTypes'
 import {POLICY_EDITOR_TARGETS} from './policyFormTabsConfig'
 import type {PolicyTab} from './policyFormTabsConfig'
 import {validatePolicyNumericFields} from '../modelControlPlane/policyNumericFields'
+import {budgetMoneyEqual, moscowBudgetDate} from '../../../../entities/model/api/modelApi'
+import {parsePolicyMoney} from '../modelControlPlane/policyNumericFields'
 
 type ModelPolicyModalControllerInput = Pick<ModelPolicyModalProps,
     'policy' | 'organizationId' | 'effectiveCatalog' | 'runtime' | 'pending' | 'onClose' | 'onPreview' | 'onSubmit' | 'initialTarget'
@@ -31,6 +33,11 @@ function policyContentFingerprint(draft: PolicyDraft): string | null {
             denyModelKeys: [...request.denyModelKeys].sort(),
             maxRequestCostUsd: decimal(request.maxRequestCostUsd),
             monthlyBudgetUsd: decimal(request.monthlyBudgetUsd),
+            ...(request.rubBudget ? {rubBudget: {...request.rubBudget,
+                maxRequestCostRub: decimal(request.rubBudget.maxRequestCostRub),
+                monthlyBudgetRub: decimal(request.rubBudget.monthlyBudgetRub),
+                rubPerUsd: decimal(request.rubBudget.rubPerUsd),
+            }} : {}),
         })
     } catch {
         return null
@@ -62,6 +69,7 @@ export function useModelPolicyModalController({
     // Защищаем запросы от повторных действий до следующего обновления React.
     const previewInFlightRef = useRef(false)
     const submitInFlightRef = useRef(false)
+    const [ratePending, setRatePending] = useState(false)
 
     const formId =
         useId()
@@ -292,7 +300,23 @@ export function useModelPolicyModalController({
     const isDirty = draftFingerprint !== initialDraftFingerprint
         && (contentFingerprint === null || contentFingerprint !== initialContentFingerprint)
     const canSaveChanges = !policy.configured || isDirty
-    const numericErrors = useMemo(() => validatePolicyNumericFields(draft), [draft])
+    const numericErrors = validatePolicyNumericFields(draft)
+    if (draft.rubQuote && draft.rubQuote.quoteDate !== moscowBudgetDate()
+        && !numericErrors.maxRequestCostUsd && !numericErrors.monthlyBudgetUsd) {
+        const max = parsePolicyMoney(draft.maxRequestCostUsd, 'Лимит')
+        const monthly = parsePolicyMoney(draft.monthlyBudgetUsd, 'Бюджет')
+        const saved = policy.rubBudget
+        const unchanged = saved && saved.quoteDate === draft.rubQuote.quoteDate
+            && saved.effectiveDate === draft.rubQuote.effectiveDate
+            && budgetMoneyEqual(saved.rubPerUsd, draft.rubQuote.rubPerUsd)
+            && budgetMoneyEqual(saved.maxRequestCostRub, max)
+            && budgetMoneyEqual(saved.monthlyBudgetRub, monthly)
+        if (!unchanged && (max !== null || monthly !== null)) {
+            const message = 'Для изменения рублёвого бюджета получите актуальный курс.'
+            if (max !== null) numericErrors.maxRequestCostUsd = message
+            if (monthly !== null) numericErrors.monthlyBudgetUsd = message
+        }
+    }
     const invalidNumericSection = numericErrors.maxInputTokens || numericErrors.maxOutputTokens
         ? 'limits' : numericErrors.maxRequestCostUsd || numericErrors.monthlyBudgetUsd
             ? 'budget' : null
@@ -378,7 +402,7 @@ export function useModelPolicyModalController({
         }
 
     const handlePreview = async () => {
-        if (pending || previewInFlightRef.current || submitInFlightRef.current) {
+        if (pending || ratePending || previewInFlightRef.current || submitInFlightRef.current) {
             return
         }
         const request = buildCurrentRequest()
@@ -451,7 +475,7 @@ export function useModelPolicyModalController({
     }
 
     const handleSubmit = async () => {
-        if (!canSaveChanges || pending || previewInFlightRef.current || submitInFlightRef.current) {
+        if (!canSaveChanges || pending || ratePending || previewInFlightRef.current || submitInFlightRef.current) {
             return
         }
         const request = buildCurrentRequest()
@@ -538,7 +562,7 @@ export function useModelPolicyModalController({
         undeclaredTrainingModels, activationWarning,
         serverConfirmedTrainingLockout, serverTrainingRejectedModelKeys,
         isDirty, canSaveChanges, requestClose, handlePreview, handleSubmit,
-        numericErrors, invalidNumericSection,
+        numericErrors, invalidNumericSection, ratePending, setRatePending,
         versionMessage, rulesStatusLabel, rulesStatusHint,
     }
 }

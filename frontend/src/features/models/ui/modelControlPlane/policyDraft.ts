@@ -27,9 +27,14 @@ export function createPolicyDraft(
                 ? ''
                 : String(policy.maxOutputTokens),
         maxRequestCostUsd:
-            policy.maxRequestCostUsd ?? '',
+            policy.rubBudget ? policy.rubBudget.maxRequestCostRub ?? '' : policy.maxRequestCostUsd ?? '',
         monthlyBudgetUsd:
-            policy.monthlyBudgetUsd ?? '',
+            policy.rubBudget ? policy.rubBudget.monthlyBudgetRub ?? '' : policy.monthlyBudgetUsd ?? '',
+        ...(policy.rubBudget ? {rubQuote: {
+            rubPerUsd: policy.rubBudget.rubPerUsd, quoteDate: policy.rubBudget.quoteDate,
+            effectiveDate: policy.rubBudget.effectiveDate, fetchedAt: policy.rubBudget.fetchedAt,
+            source: policy.rubBudget.source,
+        }} : {}),
         budgetEnforcement:
             policy.budgetEnforcement,
         requireCompletePricing:
@@ -97,6 +102,13 @@ export function buildPolicyRequest(
         )
     }
 
+    const maxCost = parsePolicyMoney(draft.maxRequestCostUsd, 'Максимальная стоимость запроса')
+    const monthly = parsePolicyMoney(draft.monthlyBudgetUsd, 'Месячный бюджет')
+    const rubBudget = draft.rubQuote && (maxCost !== null || monthly !== null) ? {
+        maxRequestCostRub: maxCost, monthlyBudgetRub: monthly,
+        rubPerUsd: draft.rubQuote.rubPerUsd, quoteDate: draft.rubQuote.quoteDate,
+        effectiveDate: draft.rubQuote.effectiveDate,
+    } : undefined
     return {
         expectedPreviousVersion,
         enabled: draft.enabled,
@@ -113,16 +125,9 @@ export function buildPolicyRequest(
                 draft.maxOutputTokens,
                 'Максимум выходных токенов',
             ),
-        maxRequestCostUsd:
-            parsePolicyMoney(
-                draft.maxRequestCostUsd,
-                'Максимальная стоимость запроса',
-            ),
-        monthlyBudgetUsd:
-            parsePolicyMoney(
-                draft.monthlyBudgetUsd,
-                'Месячный бюджет',
-            ),
+        maxRequestCostUsd: rubBudget ? null : maxCost,
+        monthlyBudgetUsd: rubBudget ? null : monthly,
+        ...(rubBudget ? {rubBudget} : {}),
         budgetEnforcement:
             draft.budgetEnforcement,
         requireCompletePricing:

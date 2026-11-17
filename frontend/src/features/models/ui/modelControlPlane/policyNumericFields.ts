@@ -1,6 +1,7 @@
 // frontend/src/features/models/ui/modelControlPlane/policyNumericFields.ts
 import type {PolicyDraft} from './modelTypes'
 import {parseOptionalDecimal} from './modelValues'
+import {rubToUsd} from '../../../../entities/model/api/modelApi'
 
 export const MAX_POLICY_TOKEN_LIMIT = 2_147_483_647
 
@@ -37,6 +38,9 @@ export function validatePolicyNumericFields(draft: PolicyDraft): Partial<Record<
             const parser = field === 'maxInputTokens' || field === 'maxOutputTokens'
                 ? parsePolicyTokenLimit : parsePolicyMoney
             parser(draft[field], POLICY_NUMERIC_LABELS[field])
+            if (draft.rubQuote && (field === 'maxRequestCostUsd' || field === 'monthlyBudgetUsd')) {
+                rubToUsd(parsePolicyMoney(draft[field], POLICY_NUMERIC_LABELS[field]), draft.rubQuote.rubPerUsd)
+            }
         } catch (error) {
             errors[field] = error instanceof Error ? error.message : 'Некорректное значение.'
         }

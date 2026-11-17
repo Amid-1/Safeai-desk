@@ -24,10 +24,10 @@ services:
       SPRING_FLYWAY_PASSWORD: ""
       SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/${POSTGRES_DB:?POSTGRES_DB is required}"
 
-      # pricing.yml is non-secret deployment config. jwt-keys.yml is a secret
-      # structured Spring config file, not a scalar configtree entry.
+      # jwt-keys.yml is a secret structured Spring config file, not a
+      # scalar configtree entry. Model tariffs live in the versioned catalog.
       SPRING_CONFIG_ADDITIONAL_LOCATION: >-
-        file:/run/config/pricing.yml,file:/run/secrets/jwt-keys.yml
+        file:/run/secrets/jwt-keys.yml
 
       SAFEAI_DB_APP_USER: "${SAFEAI_DB_APP_USER:?SAFEAI_DB_APP_USER is required}"
       SAFEAI_DB_MIGRATOR_USER: ""
@@ -71,12 +71,6 @@ services:
         target: SAFEAI_KNOWLEDGE_STORAGE_SECRET_KEY
       - source: jwt_keys
         target: jwt-keys.yml
-
-    volumes:
-      - type: bind
-        source: "${SAFEAI_CONFIG_DIR:?SAFEAI_CONFIG_DIR is required}/pricing.yml"
-        target: /run/config/pricing.yml
-        read_only: true
 
     user: "10001:10001"
 

@@ -155,6 +155,21 @@ export type RuntimeModelProbe = {
     message: string
 }
 
+export type RubBudgetQuote = {
+    rubPerUsd: string
+    quoteDate: string
+    effectiveDate: string
+    fetchedAt: string
+    source: 'CBR'
+}
+
+export type RubBudgetInput = Pick<RubBudgetQuote, 'rubPerUsd' | 'quoteDate' | 'effectiveDate'> & {
+    maxRequestCostRub: string | null
+    monthlyBudgetRub: string | null
+}
+
+export type RubBudgetSnapshot = RubBudgetQuote & Pick<RubBudgetInput, 'maxRequestCostRub' | 'monthlyBudgetRub'>
+
 export type OrganizationModelPolicy = {
     configured: boolean
     id: string | null
@@ -168,6 +183,7 @@ export type OrganizationModelPolicy = {
     maxOutputTokens: number | null
     maxRequestCostUsd: string | null
     monthlyBudgetUsd: string | null
+    rubBudget?: RubBudgetSnapshot
     budgetEnforcement: BudgetEnforcement
     requireCompletePricing: boolean
     requireNoTraining: boolean
@@ -249,6 +265,7 @@ export type CreateOrganizationModelPolicyVersionRequest = {
     maxOutputTokens: number | null
     maxRequestCostUsd: string | null
     monthlyBudgetUsd: string | null
+    rubBudget?: RubBudgetInput
     budgetEnforcement: BudgetEnforcement
     requireCompletePricing: boolean
     requireNoTraining: boolean

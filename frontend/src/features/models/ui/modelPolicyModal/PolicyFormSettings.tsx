@@ -6,10 +6,19 @@ import type {ModelPolicyModalProps} from './policyModalTypes'
 import {DefaultModelSelector} from '../ModelPolicyModelSelectors'
 import type {Ref} from 'react'
 import type {PolicyNumericField} from '../modelControlPlane/policyNumericFields'
-import {BUDGET_ENFORCEMENTS} from '../../../../entities/model/api/modelApi'
+import {BUDGET_ENFORCEMENTS, rubToUsd} from '../../../../entities/model/api/modelApi'
 import type {BudgetEnforcement} from '../../../../entities/model/api/modelApi'
 import { InfoHint } from './policyModalPresentation'
 import { budgetEnforcementLabel } from './policyModalLabels'
+import {PolicyBudgetCurrency} from './PolicyBudgetCurrency'
+import {parsePolicyMoney} from '../modelControlPlane/policyNumericFields'
+import type {PolicyDraft} from '../modelControlPlane/modelTypes'
+
+function budgetUsdEquivalent(value: string, quote: PolicyDraft['rubQuote']): string | null {
+    if (!quote) return null
+    try { return rubToUsd(parsePolicyMoney(value, 'Сумма'), quote.rubPerUsd) }
+    catch { return null }
+}
 
 type Props = {
     control: ModelPolicyModalController
@@ -36,6 +45,7 @@ function PolicyNumericInput({control, field, label, idSuffix, section, pending, 
     const id = `${control.formId}-${idSuffix}`
     const error = control.numericErrors[field]
     const value = control.draft[field]
+    const equivalent = section === 'budget' ? budgetUsdEquivalent(value, control.draft.rubQuote) : null
     const aboveRuntime = runtimeLimit !== undefined && !error && !!value.trim()
         && Number(value) > runtimeLimit
     return (
@@ -63,6 +73,9 @@ function PolicyNumericInput({control, field, label, idSuffix, section, pending, 
                 <small id={`${id}-runtime`}>Лимит подключения: {runtimeLimit.toLocaleString('ru-RU')}</small>
             )}
             <small id={`${id}-hint`}>{hint}</small>
+            {equivalent !== null && !error && <small className="models-policy-fx__equivalent">
+                Расчётный лимит: <strong>{equivalent.replace('.', ',')} USD</strong>
+            </small>}
             {error && <small id={`${id}-error`} className="models-policy-form__numeric-error" aria-live="polite">{error}</small>}
             {aboveRuntime && (
                 <small id={`${id}-warning`} className="models-policy-form__numeric-warning">
@@ -75,6 +88,7 @@ function PolicyNumericInput({control, field, label, idSuffix, section, pending, 
 
 export function PolicyFormSettings({control, catalog, effectiveCatalog, runtime, pending, section}: Props) {
     const {formId, draft, limitsControlRef, budgetControlRef, setDraft} = control
+    const {ratePending, setRatePending} = control
     return (
         <div className={`models-policy-form__settings-grid models-policy-form__settings-grid--${section}`}
              id={section === 'limits' ? `${formId}-limits` : undefined}
@@ -171,12 +185,13 @@ export function PolicyFormSettings({control, catalog, effectiveCatalog, runtime,
             )}
             {section === 'budget' && (
                 <>
+                    <PolicyBudgetCurrency control={control} pending={pending} onLoadingChange={setRatePending}/>
                     <PolicyNumericInput control={control} field="maxRequestCostUsd" idSuffix="request-cost"
-                        section="budget" label="Лимит на один запрос, USD" pending={pending}
+                        section="budget" label={`Лимит на один запрос, ${draft.rubQuote ? 'RUB' : 'USD'}`} pending={pending || ratePending}
                         placeholder="Без лимита"
                         hint="Максимальная расчётная стоимость запроса, например 0,05. Пустое поле — без лимита."/>
                     <PolicyNumericInput control={control} field="monthlyBudgetUsd" idSuffix="monthly-budget"
-                        section="budget" label="Месячный бюджет, USD" pending={pending}
+                        section="budget" label={`Месячный бюджет, ${draft.rubQuote ? 'RUB' : 'USD'}`} pending={pending || ratePending}
                         placeholder="Не задан"
                         hint="Бюджет организации на календарный месяц (UTC), например 100,00. Пустое поле — не задан."/>
                     <label id={`${formId}-budget`} data-policy-block="budget" className="models-policy-form__setting-field models-policy-form__setting-field--budget">
@@ -190,7 +205,7 @@ export function PolicyFormSettings({control, catalog, effectiveCatalog, runtime,
                         </select>
                     </label>
                     <p className="models-policy-form__field-explainer models-policy-form__full-row">
-                        Суммы в долларах США (USD). Допустимы точка или запятая, до 18 цифр до разделителя
+                        {draft.rubQuote ? 'Суммы в рублях (RUB), конвертация в USD с округлением вниз до 12 знаков.' : 'Суммы в долларах США (USD).'} Допустимы точка или запятая, до 18 цифр до разделителя
                         и до 12 после него, без разделителей тысяч. Ноль — установленный нулевой лимит.
                     </p>
                         {!draft.monthlyBudgetUsd.trim() && (

@@ -46,8 +46,7 @@ jobs:
           set -Eeuo pipefail
           temp_dir="$(mktemp -d)"
           trap 'rm -rf "$temp_dir"' EXIT
-          mkdir -p "$temp_dir/config" "$temp_dir/secrets"
-          cp infra/config/pricing.yml.example "$temp_dir/config/pricing.yml"
+          mkdir -p "$temp_dir/secrets"
 
           python3 - "$temp_dir" <<'PY'
           from pathlib import Path
@@ -62,7 +61,6 @@ jobs:
               "SAFEAI_PROMETHEUS_IMAGE": "prom/prometheus:v3.5.0",
               "POSTGRES_IMAGE": "ghcr.io/example/safeai-postgres@sha256:" + "a" * 64,
               "REDIS_IMAGE": "redis:8-alpine",
-              "SAFEAI_CONFIG_DIR": str(root / "config"),
               "SAFEAI_SECRETS_DIR": str(root / "secrets"),
               "SAFEAI_JWT_ISSUER": "https://safeai.example.test",
               "SAFEAI_CORS_ALLOWED_ORIGINS": "https://safeai.example.test",
