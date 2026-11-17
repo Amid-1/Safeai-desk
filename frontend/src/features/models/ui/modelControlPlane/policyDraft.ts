@@ -4,7 +4,7 @@ import type {
 } from '../../../../entities/model/api/modelApi'
 import type { PolicyDraft } from './modelTypes'
 import { parseModelKeyList, normalizeModelKey } from './modelKeys'
-import { parseOptionalPositiveInteger, parseOptionalDecimal } from './modelValues'
+import { parsePolicyTokenLimit, parsePolicyMoney } from './policyNumericFields'
 
 
 export function createPolicyDraft(
@@ -104,22 +104,22 @@ export function buildPolicyRequest(
         denyModelKeys,
         defaultModelKey,
         maxInputTokens:
-            parseOptionalPositiveInteger(
+            parsePolicyTokenLimit(
                 draft.maxInputTokens,
                 'Максимум входных токенов',
             ),
         maxOutputTokens:
-            parseOptionalPositiveInteger(
+            parsePolicyTokenLimit(
                 draft.maxOutputTokens,
                 'Максимум выходных токенов',
             ),
         maxRequestCostUsd:
-            parseOptionalDecimal(
+            parsePolicyMoney(
                 draft.maxRequestCostUsd,
                 'Максимальная стоимость запроса',
             ),
         monthlyBudgetUsd:
-            parseOptionalDecimal(
+            parsePolicyMoney(
                 draft.monthlyBudgetUsd,
                 'Месячный бюджет',
             ),

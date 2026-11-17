@@ -56,6 +56,156 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
+for (const width of [1440, 1280]) {
+  test(`models overview and diagnostics keep primary actions visible at ${width}×900`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await page.goto('/admin/models')
+    const readiness = page.locator('.models-overview-readiness')
+    await expect(readiness).toBeVisible()
+    await expect(readiness).not.toHaveAttribute('open', '')
+    await expect(page.getByText('Требует внимания', { exact: true })).toBeInViewport()
+    await expect(page.getByRole('button', { name: 'Открыть проверку правил' })).toBeInViewport({ ratio: 1 })
+    await expect(page.getByText('Как устроено управление моделями?')).toHaveCount(0)
+    await readiness.locator('summary').click()
+    await expect(readiness).toHaveAttribute('open', '')
+    await expect(readiness.locator('li')).toHaveCount(4)
+    await readiness.locator('summary').click()
+    await page.getByRole('tab', { name: 'Диагностика' }).click()
+    const details = page.locator('.models-runtime-details')
+    await expect(details).not.toHaveAttribute('open', '')
+    await expect(page.getByText('Нет действующей записи')).toBeInViewport()
+    await expect(page.getByText('Не выполнялась', { exact: true })).toBeInViewport()
+    await expect(page.getByRole('link', { name: 'Открыть журнал аудита' })).toBeInViewport()
+    await expect(page.getByRole('textbox', { name: 'Идентификатор решения безопасности (UUID)' })).toBeInViewport({ ratio: 1 })
+    await expect(page.getByRole('button', { name: 'Найти решение' })).toBeInViewport({ ratio: 1 })
+    await details.locator('summary').click()
+    await expect(page.getByText('Лимиты токенов', { exact: true })).toBeVisible()
+    await expect(page.getByText('Поддерживаемые возможности')).toBeVisible()
+  })
+}
+
+for (const width of [1440, 390]) {
+  test(`models shortcuts open distinct targets and never run a probe at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    let probeRequests = 0
+    await page.route('**/api/admin/models/runtime/probe', route => {
+      probeRequests++
+      return route.fulfill({ status: 403, json: { message: 'Forbidden' } })
+    })
+    await page.goto('/admin/models')
+    await page.getByRole('button', { name: /Подключение модели/ }).click()
+    await expect(page).toHaveURL(/focus=connection/)
+    await expect(page.locator('#models-runtime-connection')).toBeFocused()
+    // Click the tile's heading, rather than the small action text, to verify the full hit area.
+    const characteristics = page.locator('.models-runtime-action-tile').filter({ hasText: 'Провайдер / модель' })
+    await characteristics.click({ position: { x: 12, y: 12 } })
+    await expect(page.locator('.models-runtime-details')).toHaveAttribute('open', '')
+    await characteristics.locator('.models-runtime-tile-indicator').click()
+    await expect(page.locator('.models-runtime-details')).not.toHaveAttribute('open', '')
+    await expect(characteristics.getByRole('button')).toHaveAttribute('aria-expanded', 'false')
+    await characteristics.locator('.models-runtime-tile-indicator').click()
+    await expect(page.locator('.models-runtime-details')).toHaveAttribute('open', '')
+    await page.getByRole('button', { name: 'Условия обработки данных' }).click()
+    await expect(page.getByText('Хранение и использование данных')).toBeVisible()
+    await page.getByRole('tab', { name: 'Обзор' }).click()
+    await page.getByRole('button', { name: /Проверка соединения/ }).click()
+    await expect(page).toHaveURL(/focus=probe/)
+    const permission = page.locator('#models-runtime-probe')
+    await expect(permission).toBeFocused()
+    await expect(permission).toBeInViewport({ ratio: 1 })
+    await expect(page.getByRole('button', { name: 'Проверить доступность' })).toHaveCount(0)
+    expect(probeRequests).toBe(0)
+  })
+}
+
+for (const width of [1440, 390]) {
+  test(`catalog history stays over diagnostics and uses the full modal width at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    const effective = { id: '11111111-1111-4111-8111-111111111111', modelKey: 'mock:mock-safeai',
+      version: 1, provider: 'mock', providerModelId: 'mock-safeai', displayName: 'mock-safeai',
+      lifecycle: 'ACTIVE', maxInputTokens: 64000, maxOutputTokens: 2048, capabilities: [],
+      inputModalities: ['TEXT'], outputModalities: ['TEXT'], retentionStatus: 'NOT_DECLARED',
+      retentionDays: null, trainingUseStatus: 'NOT_DECLARED', pricingStatus: 'FREE', pricingComplete: true,
+      inputUsdPer1mTokens: '0', outputUsdPer1mTokens: '0', cachedInputUsdPer1mTokens: '0',
+      cacheWriteInputUsdPer1mTokens: '0', extraPricingJson: '{}', pricingVersion: 'mock-2026-01',
+      effectiveFrom: '2026-08-28T10:00:00Z', source: 'MANUAL', createdByUserId: userId,
+      createdAt: '2026-08-28T10:00:00Z' }
+    const latest = { ...effective, id: '22222222-2222-4222-8222-222222222222', version: 2 }
+    await page.route(/\/api\/admin\/models\/catalog(?:\/|\?|$)/, route => {
+      const { pathname } = new NodeURL(route.request().url())
+      return route.fulfill({ json: pathname.endsWith('/versions') ? [latest, effective]
+        : pathname.endsWith('/effective') ? [effective] : [latest] })
+    })
+    await page.goto('/admin/models?section=diagnostics')
+    const input = page.getByRole('textbox', { name: 'Идентификатор решения безопасности (UUID)' })
+    await input.fill('local draft')
+    const historyButton = page.getByRole('button', { name: 'Открыть историю версий' })
+    await historyButton.click()
+    await expect(page).toHaveURL(/section=diagnostics.*versionId=/)
+    const modal = page.getByRole('dialog')
+    const selected = modal.locator('[data-navigation-target="true"]')
+    await expect(selected).toContainText('Версия 1')
+    const intro = await modal.locator('.models-history-modal__intro').boundingBox()
+    const list = await modal.locator('.models-history-list').boundingBox()
+    expect(intro.y + intro.height).toBeLessThanOrEqual(list.y + 1)
+    expect(Math.abs(intro.width - list.width)).toBeLessThan(2)
+    expect(await modal.locator('.modal-body').evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBeTruthy()
+    await modal.getByRole('button', { name: 'Закрыть окно' }).click()
+    await expect(modal).toHaveCount(0)
+    await expect(page).toHaveURL(/section=diagnostics$/)
+    await expect(page.getByRole('tab', { name: 'Диагностика' })).toHaveAttribute('aria-selected', 'true')
+    await expect(input).toHaveValue('local draft')
+    await expect(historyButton).toBeFocused()
+    await historyButton.click()
+    await expect(selected).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(modal).toHaveCount(0)
+    await expect(page).toHaveURL(/section=diagnostics$/)
+  })
+}
+
+for (const width of [1440, 390]) {
+  test(`access shortcuts open exact editor sections and return without mutations at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    let writes = 0
+    await page.route(/\/api\/admin\/models\/policies\//, async route => {
+      if (route.request().method() !== 'GET') {
+        writes++
+        return route.fulfill({ status: 500, json: { message: 'Unexpected mutation' } })
+      }
+      return route.fallback()
+    })
+    await page.goto('/admin/models?section=access')
+    const shortcuts = [
+      ['Модель по умолчанию', 'Доступ', '-default'],
+      ['Разрешения и запреты', 'Доступ', '-access'],
+      ['Лимиты токенов', 'Лимиты', '-limits'],
+      ['Лимит стоимости запроса', 'Бюджет', '-request-cost'],
+      ['Месячный бюджет', 'Бюджет', '-monthly-budget'],
+      ['Требования к данным и стоимости', 'Требования', '-data'],
+    ]
+    for (const [name, tab, suffix] of shortcuts) {
+      const button = page.getByRole('button', { name: `Настроить: ${name}` })
+      const tile = page.locator('.models-policy-action-tile').filter({ has: button })
+      await tile.click({ position: { x: 12, y: 12 } })
+      const dialog = page.getByRole('dialog')
+      await expect(dialog.getByRole('tab', { name: tab, exact: true })).toHaveAttribute('aria-selected', 'true')
+      const formId = await dialog.locator('form').getAttribute('id')
+      await expect(dialog.locator(`[id="${formId}${suffix}"]`)).toBeFocused()
+      await expect(dialog.getByText('Изменений нет')).toBeVisible()
+      await dialog.getByRole('button', { name: 'Закрыть окно' }).click()
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+      await expect(button).toBeFocused()
+      await expect(page.getByRole('tab', { name: 'Доступ' })).toHaveAttribute('aria-selected', 'true')
+    }
+    await page.getByRole('button', { name: 'Открыть проверку правил' }).click()
+    await expect(page.getByRole('dialog').getByRole('tab', { name: 'Проверка', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    expect(writes).toBe(0)
+  })
+}
+
 for (const width of [1440, 760]) {
   test(`audit dropdowns overlay the form without layout shifts at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 })

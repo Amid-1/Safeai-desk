@@ -145,7 +145,7 @@ describe('ModelPolicyModal', () => {
             screen.getByRole(
                 'heading',
                 {
-                    name: 'Правила использования моделей',
+                    name: 'Настройка правил использования моделей',
                 },
             ),
         ).toBeInTheDocument()
@@ -167,7 +167,7 @@ describe('ModelPolicyModal', () => {
             screen.getByRole(
                 'option',
                 {
-                    name: 'Мягкий — предупреждать',
+                    name: 'Мягкий — фиксировать превышение',
                 },
             ),
         ).toBeInTheDocument()
@@ -176,7 +176,7 @@ describe('ModelPolicyModal', () => {
             screen.getByRole(
                 'option',
                 {
-                    name: 'Жёсткий — блокировать',
+                    name: 'Жёсткий — блокировать запрос',
                 },
             ),
         ).toBeInTheDocument()
@@ -266,7 +266,7 @@ describe('ModelPolicyModal', () => {
 
         expect(
             screen.getByText(
-                'Ограничения и лимиты применяются к запросам этой организации.',
+                'Ограничения черновика вступят в силу после сохранения.',
             ),
         ).toBeInTheDocument()
     })
@@ -274,18 +274,18 @@ describe('ModelPolicyModal', () => {
     it('переключает вкладки семантически, а поля скрытых разделов недоступны', () => {
         renderPolicyModal()
         expect(screen.getByRole('tab', {name: /Доступ/})).toHaveAttribute('aria-selected', 'true')
-        expect(screen.queryByPlaceholderText('Например: 32000')).not.toBeVisible()
+        expect(screen.queryByLabelText('Максимум входных токенов')).not.toBeVisible()
 
         fireEvent.click(screen.getByRole('tab', {name: /Лимиты/}))
         expect(screen.getByRole('tab', {name: /Лимиты/})).toHaveAttribute('aria-selected', 'true')
-        expect(screen.getByPlaceholderText('Например: 32000')).toBeVisible()
+        expect(screen.getByLabelText('Максимум входных токенов')).toBeVisible()
         expect(screen.queryByRole('combobox', {name: 'Разрешённые модели'})).not.toBeInTheDocument()
 
         fireEvent.click(screen.getByRole('tab', {name: /Бюджет/}))
         expect(screen.getByLabelText(/Контроль бюджета/)).toBeVisible()
 
-        fireEvent.click(screen.getByRole('tab', {name: /Требования к данным/}))
-        expect(screen.getByRole('checkbox', {name: 'Полные данные о стоимости'})).toBeVisible()
+        fireEvent.click(screen.getByRole('tab', {name: /Требования/}))
+        expect(screen.getByRole('checkbox', {name: 'Полные сведения о стоимости'})).toBeVisible()
     })
 
     it('стрелки, Home и End переключают вкладки без потери фокуса', () => {

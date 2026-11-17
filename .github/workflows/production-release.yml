@@ -53,9 +53,17 @@ jobs:
       contents: read
     uses: ./.github/workflows/performance-ci.yml
 
+  provider-data-assurance:
+    name: Предрелизная проверка защиты данных
+    needs: preflight
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/provider-data-assurance.yml
+
   publish:
     name: Production build, image scan, SBOM и GHCR
-    needs: [preflight, performance]
+    needs: [preflight, performance, provider-data-assurance]
     permissions:
       contents: read
       packages: write

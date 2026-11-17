@@ -607,6 +607,18 @@
 .models-page--sections .models-kv-grid > div[data-restriction="configured"] { border-color: #9db4ee; background: #f1f5ff; }
 .models-org-identifier { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
 .models-org-identifier code { overflow-wrap: anywhere; font-size: 11px; color: #60718d; }
+@media (min-width: 768px) {
+    .models-page--sections .models-policy-organization-summary {
+        grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+        align-items: center;
+        column-gap: 16px;
+    }
+    .models-page--sections .models-policy-organization-summary > :is(span, strong) { grid-column: 1; }
+    .models-page--sections .models-policy-organization-summary > strong { overflow-wrap: anywhere; }
+    .models-page--sections .models-policy-organization-summary > .models-org-identifier {
+        grid-column: 2; grid-row: 1 / span 2; justify-content: flex-end;
+    }
+}
 .models-page--sections .models-copy-icon {
     display: inline-flex; align-items: center; justify-content: center; padding: 5px;
     border: 1px solid #d2ddef; border-radius: 6px; background: #fff; color: #465faa;
@@ -631,4 +643,69 @@
 @media (max-width: 479px) {
     .models-page--sections .models-overview-stats { grid-template-columns: 1fr; }
     .models-page--sections .models-sections-nav__tab { gap: 5px; }
+}
+
+/* Compact default state: security status and primary actions never hide in disclosure. */
+.models-page--sections .models-readiness { padding: 14px 16px; gap: 10px; }
+.models-page--sections .models-readiness__heading h2 { font-size: 19px; }
+.models-page--sections .models-readiness__heading p { font-size: 14px; }
+.models-readiness-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; }
+.models-readiness-actions > span { flex: 1 1 260px; color: #506681; font-size: 13px; line-height: 1.45; }
+.models-inline-details { min-width: 0; border: 1px solid var(--models-border); border-radius: 10px; box-shadow: none; background: #f8faff; }
+.models-page--sections .models-inline-details > summary { padding: 9px 12px; cursor: pointer; color: #253a59; font-weight: 700; font-size: 14px; line-height: 1.5; }
+.models-page--sections .models-inline-details > summary:focus-visible { outline: 2px solid #3459dc; outline-offset: 2px; border-radius: 8px; }
+.models-page--sections .models-inline-details > summary span { margin-inline-start: 6px; color: inherit; font-size: inherit; font-weight: inherit; }
+.models-page--sections .models-inline-details > summary .models-details-caption { color: #506681; font-weight: 500; }
+.models-inline-details:not([open]) > :not(summary) { display: none; }
+.models-inline-details[open] > summary { border-bottom: 1px solid var(--models-border); }
+.models-inline-details > .models-readiness-timeline { margin: 8px; }
+.models-page--sections .models-diagnostics-runtime .models-card--runtime { gap: 10px; }
+.models-page--sections .models-diagnostics-runtime .models-kv-grid { margin: 0; }
+.models-page--sections .models-diagnostics-runtime .models-runtime-details > .models-kv-grid { margin: 8px; }
+.models-page--sections .models-diagnostics-runtime .models-kv-grid > div { padding: 10px 12px; min-width: 0; }
+.models-page--sections .models-diagnostics-runtime .models-kv-grid dd { overflow-wrap: anywhere; }
+.models-page--sections .models-diagnostics-runtime .models-kv-grid dt { overflow-wrap: anywhere; }
+.models-page--sections .models-diagnostics-runtime .models-runtime-probe { padding: 9px 12px; }
+.models-page--sections .models-diagnostics-runtime .models-diagnostics-permission { margin: 0; padding: 8px 12px; font-size: 13px; }
+.models-page--sections .models-diagnostics-decision .models-evidence-search { gap: 6px 10px; }
+.models-page--sections .models-diagnostics-decision .models-evidence-search > input { min-width: 0; }
+
+/* Native buttons stretch over their tiles; static status cards remain read-only. */
+.models-page--sections :is(.models-runtime-action-tile, .models-policy-action-tile) { position: relative; cursor: pointer; transition: border-color .16s, box-shadow .16s; }
+.models-page--sections .models-kv-grid :is(.models-runtime-action-tile, .models-policy-action-tile):hover,
+.models-page--sections .models-kv-grid :is(.models-runtime-action-tile, .models-policy-action-tile):focus-within { border-color: #8da8f5; box-shadow: 0 3px 12px #285be61c; }
+.models-page--sections :is(.models-runtime-action-tile, .models-policy-action-tile):focus-within { outline: 2px solid #3459dc; outline-offset: 2px; }
+.models-page--sections .models-diagnostics-runtime .models-kv-grid > div:not(.models-runtime-action-tile):hover {
+    border-color: #e1e7f1; background: #f7f9fd; box-shadow: none;
+}
+.models-page--sections :is(.models-runtime-tile-action, .models-policy-tile-action) {
+    position: static; transform: none; background: transparent; border: 0; padding: 0; margin: 0; min-height: 0; min-width: 0;
+    text-align: left; color: #3459dc; font: inherit; font-weight: 700; cursor: pointer; box-shadow: none;
+}
+.models-page--sections :is(.models-runtime-tile-action, .models-policy-tile-action):not(:disabled)::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
+.models-page--sections :is(.models-runtime-tile-action, .models-policy-tile-action):not(:disabled):hover { transform: none; box-shadow: none; background: transparent; color: #2444b3; text-decoration: underline; }
+.models-page--sections :is(.models-runtime-tile-action, .models-policy-tile-action):focus-visible { outline: 0; box-shadow: none; }
+.models-page--sections .models-policy-tiles > div { min-width: 0; display: flex; flex-direction: column; }
+.models-page--sections .models-policy-tiles > div > small:last-child { margin-top: auto; padding-top: 4px; }
+.models-page--sections .models-policy-tiles dt { overflow-wrap: anywhere; }
+.models-page--sections .models-policy-tile-action:disabled { cursor: not-allowed; opacity: .55; }
+.models-page--sections .models-policy-tiles > div:not(.models-policy-action-tile):hover { border-color: #e1e7f1; background: #f7f9fd; box-shadow: none; }
+@media (max-width: 767px) {
+    .models-page--sections .models-policy-card__footer > button { width: 100%; }
+}
+.models-runtime-tile-indicator { display: inline-flex; margin-inline-start: auto; flex-shrink: 0; }
+.models-runtime-tile-indicator--expanded { transform: rotate(180deg); }
+.models-runtime-essential .models-label-row { width: 100%; }
+.models-navigation-target { scroll-margin-block: 100px 16px; }
+.models-page--sections .models-navigation-target:focus { outline: 2px solid #526bea; outline-offset: 3px; }
+.models-runtime-retention { background: #f4f7ff; border: 1px solid var(--models-border); border-radius: 10px; padding: 12px 14px; color: #253a59; font-size: 14px; line-height: 1.5; }
+.models-runtime-retention[hidden] { display: none; }
+.models-runtime-retention p { margin: 6px 0 0; }
+.models-runtime-characteristics-note { margin: 8px 12px; font-size: 13px; color: #506681; }
+@media (min-width: 769px) and (max-width: 1180px) { .models-navigation-target { scroll-margin-top: 140px; } }
+@media (prefers-reduced-motion: reduce) { .models-page--sections :is(.models-runtime-action-tile, .models-policy-action-tile) { transition: none; } }
+@media (max-width: 740px) {
+    .models-page--sections .models-diagnostics-runtime .models-runtime-essential { grid-template-columns: minmax(0,1fr); }
+    .models-readiness-actions > span { flex-basis: 100%; }
+    .models-readiness-actions > button { width: 100%; }
 }

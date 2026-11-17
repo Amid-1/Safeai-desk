@@ -328,7 +328,7 @@ final class ModelRoutingCostPolicy {
             }
             if (entry.inputUsdPer1mTokens() == null
                     || entry.outputUsdPer1mTokens() == null) {
-                return new PricingEstimate(null, true);
+                return new PricingEstimate(null, false);
             }
 
             // For a generic tariff the three supported input prices are

@@ -3412,10 +3412,13 @@ model/
 │   ├── OrganizationModelPolicyResponse
 │   ├── RuntimeModelProbeResponse
 │   ├── RuntimeModelStatusResponse
-│   └── RuntimeModelStatusWireResponse
+│   ├──  RuntimeModelStatusWireResponse
+│   └── StrictPolicyTokenLimitDeserializer
 ├── exception/
 │   ├── ModelRouteDeniedException
 │   └── ModelRouteEnvelopeExceededException
+├── pricing/
+│   ├── VersionedCatalogPricingResolver
 ├── repository/
 │   ├── JdbcTextArrayReader
 │   ├── ModelCatalogRepository
@@ -3452,10 +3455,13 @@ model/
     ├── OrganizationModelPolicyAuditDetailsFactory
     ├── OrganizationModelPolicyRules
     ├── OrganizationModelPolicyService
+    ├── ProviderDataDispatchGuard
     ├── RuntimeModelHealthProbe
     ├── RuntimeModelProbeHttpSupport
     ├── RuntimeModelProbeService
     └── RuntimeModelStatusService
+└── spi
+    └── ModelRequestContentHashPort.java
 ```
 
 ### Runtime model
@@ -3720,6 +3726,7 @@ ai/
 │   ├── AiProviderTimeoutException
 │   └── AiProviderUnavailableException
 ├── execution/
+│   ├── AiDataAssurancePort
 │   ├── AiExecutionAttemptAuthorization
 │   ├── AiExecutionAttemptObserver
 │   ├── AiExecutionAttemptRecorder
@@ -3782,6 +3789,8 @@ ai/
 │   ├── AiResponseTooLargeIOException
 │   ├── AiRestClientFactory
 │   ├── AiRetryProperties
+│   ├── ProviderDataAssuranceProperties
+│   ├── ProviderDataEvidence
 │   ├── ProviderEvidenceText
 │   ├── ProviderPropertyValidator
 │   └── ProviderRegistry
@@ -4069,6 +4078,7 @@ knowledge/
 │   ├── KnowledgeOcrConfigurationInvariantVerifier
 │   ├── KnowledgeOcrProperties
 │   ├── KnowledgeProcessingConfiguration
+│   ├── KnowledgeProviderDataGuard
 │   ├── KnowledgeRagProperties
 │   └── KnowledgeRetrievalProperties
 ├── controller/

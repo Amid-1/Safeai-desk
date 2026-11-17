@@ -145,7 +145,7 @@ describe('ModelPolicyModal production safety', () => {
             onPreview={unusedPreview}
             onSubmit={vi.fn<PolicySubmit>()}
         />)
-        expect(screen.getByRole('dialog', {name: 'Правила использования моделей'}))
+        expect(screen.getByRole('dialog', {name: 'Настройка правил использования моделей'}))
             .toBeInTheDocument()
         expect(document.querySelectorAll('[data-modal-resize-handle]')).toHaveLength(8)
         fireEvent.click(screen.getByRole('button', {name: 'Закрыть окно'}))
@@ -171,7 +171,7 @@ describe('ModelPolicyModal production safety', () => {
             fireEvent.click(screen.getByRole('button', {name: 'Развернуть окно на весь экран'}))
             expect(confirm).not.toHaveBeenCalled()
             fireEvent.click(screen.getByRole('tab', {name: /Лимиты/}))
-            fireEvent.change(screen.getByPlaceholderText('Например: 32000'), {
+            fireEvent.change(screen.getByLabelText('Максимум входных токенов'), {
                 target: {value: '1500'},
             })
             expect(screen.getByText('Есть несохранённые изменения'))
@@ -227,7 +227,7 @@ describe('ModelPolicyModal production safety', () => {
             onPreview={onPreview}
             onSubmit={vi.fn<PolicySubmit>()}
         />)
-        fireEvent.click(screen.getByRole('tab', {name: /Требования к данным/}))
+        fireEvent.click(screen.getByRole('tab', {name: /Требования/}))
         const localTrainingWarning = screen.getByText('Запрет обучения не подтверждён')
             .closest('.models-policy-form__warning')
         expect(localTrainingWarning).toHaveTextContent(
@@ -241,9 +241,9 @@ describe('ModelPolicyModal production safety', () => {
 
         fireEvent.click(screen.getByRole('button', {name: 'Проверить правила'}))
 
-        await screen.findByText('Серверная проверка черновика')
-        expect(screen.getByText(/Исполняемых моделей: 0/)).toBeInTheDocument()
-        fireEvent.click(screen.getByRole('tab', {name: /Требования к данным/}))
+        await screen.findByText('Результат проверки правил')
+        expect(screen.getByText(/Доступных моделей: 0/)).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('tab', {name: /Требования/}))
         const confirmedTrainingLockout = screen.getByRole('alert')
         expect(confirmedTrainingLockout).toHaveClass(
             'models-policy-form__warning--danger',
@@ -268,8 +268,8 @@ describe('ModelPolicyModal production safety', () => {
         fireEvent.click(screen.getByRole('checkbox', {name: 'Правила включены'}))
         expect(screen.getByText('При включении правил запрет обучения не будет подтверждён'))
             .toBeInTheDocument()
-        expect(screen.queryByText(/Доступных для выполнения моделей: 0|Исполняемых моделей: 0/)).not.toBeInTheDocument()
-        fireEvent.click(screen.getByRole('checkbox', {name: /Не использовать данные для обучения/}))
+        expect(screen.queryByText(/Доступных для выполнения моделей: 0|Доступных моделей: 0/)).not.toBeInTheDocument()
+        fireEvent.click(screen.getByRole('checkbox', {name: /Запрет использования данных для обучения/}))
         expect(screen.queryByText('При включении правил запрет обучения не будет подтверждён'))
             .not.toBeInTheDocument()
     })
@@ -423,12 +423,8 @@ describe('ModelPolicyModal production safety', () => {
             ),
         )
 
-        fireEvent.click(
-            screen.getByRole(
-                'button',
-                {name: 'Сохранить правила'},
-            ),
-        )
+        expect(screen.getByRole('button', {name: 'Сохранить правила'})).toBeDisabled()
+        fireEvent.submit(screen.getByRole('dialog').querySelector('form')!)
         expect(onSubmit).not.toHaveBeenCalled()
         expect(
             await screen.findByText(/выполните «Проверить правила»/),
@@ -445,15 +441,11 @@ describe('ModelPolicyModal production safety', () => {
             expect(onPreview).toHaveBeenCalledTimes(1)
         })
         expect(
-            await screen.findByText(/Исполняемых моделей: 0/),
+            await screen.findByText(/Доступных моделей: 0/),
         ).toBeInTheDocument()
 
-        fireEvent.click(
-            screen.getByRole(
-                'button',
-                {name: 'Сохранить правила'},
-            ),
-        )
+        expect(screen.getByRole('button', {name: 'Сохранить правила'})).toBeDisabled()
+        fireEvent.submit(screen.getByRole('dialog').querySelector('form')!)
         expect(onSubmit).not.toHaveBeenCalled()
         expect(
             await screen.findByText(/Подтвердите осознанную блокировку/),

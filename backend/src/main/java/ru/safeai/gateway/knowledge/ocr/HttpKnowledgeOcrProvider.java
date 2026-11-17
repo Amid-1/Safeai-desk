@@ -1,6 +1,7 @@
 package ru.safeai.gateway.knowledge.ocr;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -8,7 +9,10 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 import ru.safeai.gateway.ai.provider.AiRestClientFactory;
+import ru.safeai.gateway.ai.provider.ProviderDataAssuranceProperties;
+import ru.safeai.gateway.ai.provider.ProviderDataEvidence;
 import ru.safeai.gateway.knowledge.config.KnowledgeOcrProperties;
+import ru.safeai.gateway.knowledge.config.KnowledgeProviderDataGuard;
 import ru.safeai.gateway.knowledge.ingestion.KnowledgeIngestionException;
 import tools.jackson.databind.JsonNode;
 
@@ -19,6 +23,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.time.Clock;
 
 @Component
 @ConditionalOnProperty(
@@ -32,18 +37,25 @@ public class HttpKnowledgeOcrProvider
 
     private final KnowledgeOcrProperties properties;
     private final RestClient client;
+    private final ProviderDataEvidence evidence;
+    private final Clock clock;
 
+    @Autowired
     public HttpKnowledgeOcrProvider(
-            KnowledgeOcrProperties properties
+            KnowledgeOcrProperties properties,
+            ProviderDataAssuranceProperties assurances,
+            Clock clock
     ) {
+        this(properties, AiRestClientFactory.create(properties.endpoint(), properties.connectTimeout(),
+                properties.readTimeout(), properties.maxResponseBytes()), assurances.ocr(), clock);
+    }
+
+    HttpKnowledgeOcrProvider(KnowledgeOcrProperties properties, RestClient client,
+            ProviderDataEvidence evidence, Clock clock) {
         this.properties = properties;
-        this.client =
-                AiRestClientFactory.create(
-                        properties.endpoint(),
-                        properties.connectTimeout(),
-                        properties.readTimeout(),
-                        properties.maxResponseBytes()
-                );
+        this.client = java.util.Objects.requireNonNull(client);
+        this.evidence = evidence;
+        this.clock = java.util.Objects.requireNonNull(clock);
     }
 
     @Override
@@ -72,6 +84,11 @@ public class HttpKnowledgeOcrProvider
             );
         }
 
+        if (!KnowledgeProviderDataGuard.permits(evidence, clock, properties.endpoint(),
+                KnowledgeProviderDataGuard.ocrBinding(properties))) {
+            throw new KnowledgeIngestionException("OCR_DATA_ASSURANCE_DENIED",
+                    "External OCR requires current no-training and zero-retention assurance", false);
+        }
         try {
             JsonNode body =
                     client.post()

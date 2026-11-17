@@ -101,6 +101,7 @@ Knowledge REST Controllers --------> KnowledgeAccessService (ACL)
 │   ├── KnowledgeOcrConfigurationInvariantVerifier.java
 │   ├── KnowledgeOcrProperties.java
 │   ├── KnowledgeProcessingConfiguration.java
+│   ├── KnowledgeProviderDataGuard.java
 │   ├── KnowledgeRagProperties.java
 │   └── KnowledgeRetrievalProperties.java
 ├── controller/
@@ -1068,6 +1069,8 @@ Alertmanager routing, backup policies и external S3 semantics надо пров
 │   ├── KnowledgeBaseAccessResponseTest.java
 │   └── KnowledgeDocumentResponseJsonTest.java
 ├── embedding/
+│   ├── EmbeddingAssuranceTestSupport.java
+│   ├── EmbeddingDataAssuranceTest.java
 │   ├── KnowledgeEmbeddingBoundaryTest.java
 │   ├── KnowledgeEmbeddingProductionConditionTest.java
 │   ├── KnowledgeEmbeddingProductionInvariantVerifierTest.java

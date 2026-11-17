@@ -6,9 +6,8 @@ export function AdminModelsUpper({ runtime }: { runtime: RuntimeModelStatus }) {
     return (
         <header className="models-hero models-sections-hero">
             <div className="models-hero__content">
-                <span className="models-eyebrow">МОДЕЛИ И ПОЛИТИКИ ДОСТУПА</span>
-                <h1>Управление AI</h1>
-                <p>Каталог моделей, правила организаций и диагностика запросов.</p>
+                <h1>Управление AI-моделями</h1>
+                <p>Каталог, правила доступа и диагностика</p>
             </div>
             <div className="models-runtime-badge" aria-label="Подключённая модель">
                 <span>Подключение на сервере</span>

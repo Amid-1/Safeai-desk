@@ -22,6 +22,8 @@ import {
     getEffectiveModelCatalog,
     getModelCatalog,
     getModelRouteDecision,
+    previewOrganizationModelPolicy,
+    createOrganizationModelPolicyVersion,
     getOrganizationModelPolicy,
     getRuntimeModelStatus,
     importRuntimeModelCatalog,
@@ -32,6 +34,9 @@ import {
 } from '../entities/organization/api/organizationApi'
 import AdminModelsPage from './AdminModelsPage'
 import { MemoryRouter } from 'react-router-dom'
+import { getModelCatalogHistory } from '../entities/model/api/modelCatalogHistoryApi'
+
+vi.mock('../entities/model/api/modelCatalogHistoryApi', () => ({ getModelCatalogHistory: vi.fn() }))
 
 const authMock = vi.hoisted(() => ({
     currentUser: null as AuthUser | null,
@@ -232,7 +237,7 @@ describe('AdminModelsPage', () => {
         expect(screen.getByRole('tab', { name: 'Каталог' })).toHaveAttribute('aria-selected', 'true')
         expect(screen.getByRole('region', { name: 'Таблица каталога моделей' })).toBeInTheDocument()
         fireEvent.click(screen.getByRole('tab', { name: 'Доступ' }))
-        expect(screen.getByRole('heading', { name: 'Правила использования AI' })).toBeInTheDocument()
+        expect(screen.getByRole('heading', { name: 'Правила использования моделей' })).toBeInTheDocument()
         expect(screen.queryByRole('region', { name: 'Таблица каталога моделей' })).not.toBeInTheDocument()
         expect(runtimeMock).toHaveBeenCalledTimes(1)
         expect(policyMock).toHaveBeenCalledTimes(1)
@@ -241,10 +246,75 @@ describe('AdminModelsPage', () => {
     it('карточки обзора доступны ADMIN и переводят в каталог без нового запроса', async () => {
         authMock.currentUser = currentUser('ADMIN')
         render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
-        fireEvent.click(await screen.findByRole('button', { name: /Каталог моделей.*Моделей: 1/ }))
+        fireEvent.click(await screen.findByRole('button', { name: /Каталог моделей.*1 модель/ }))
         expect(screen.getByRole('tab', { name: 'Каталог' })).toHaveAttribute('aria-selected', 'true')
         expect(screen.queryByRole('button', { name: 'Создать модель' })).not.toBeInTheDocument()
         expect(catalogMock).toHaveBeenCalledTimes(1)
+    })
+
+    it.each(['ADMIN', 'SUPER_ADMIN'] as const)('для %s карточки ведут к разным целям без probe', async (role) => {
+        authMock.currentUser = currentUser(role)
+        render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
+        fireEvent.click(await screen.findByRole('button', {name: /Подключение модели/}))
+        expect(document.getElementById('models-runtime-connection')).toHaveFocus()
+        fireEvent.click(screen.getByRole('tab', {name: 'Обзор'}))
+        fireEvent.click(screen.getByRole('button', {name: /Проверка соединения/}))
+        expect(document.getElementById('models-runtime-probe')).toHaveFocus()
+        expect(runtimeProbeMock).not.toHaveBeenCalled()
+        if (role === 'ADMIN') expect(screen.getByText('Проверку запускает суперадминистратор.')).toBeVisible()
+        else expect(screen.getByRole('button', {name: 'Проверить доступность'})).toBeVisible()
+        fireEvent.click(screen.getByRole('tab', {name: 'Обзор'}))
+        fireEvent.click(screen.getByRole('button', {name: /Правила доступа/}))
+        expect(screen.getByRole('tab', {name: 'Доступ'})).toHaveAttribute('aria-selected', 'true')
+    })
+
+    it.each(['ADMIN', 'SUPER_ADMIN'] as const)('из диагностики для %s открывает точную версию без смены вкладки', async (role) => {
+        authMock.currentUser = currentUser(role)
+        const latest = {...CATALOG_ENTRY, id: '22222222-2222-4222-8222-222222222222', version: 2}
+        catalogMock.mockResolvedValue([latest])
+        vi.mocked(getModelCatalogHistory).mockResolvedValue([latest, CATALOG_ENTRY])
+        render(<MemoryRouter initialEntries={['/admin/models?section=diagnostics']}><AdminModelsPage /></MemoryRouter>)
+        const characteristics = await screen.findByRole('button', {name: 'Характеристики модели'})
+        fireEvent.click(characteristics)
+        const decisionInput = screen.getByRole('textbox', {name: 'Идентификатор решения безопасности (UUID)'})
+        fireEvent.change(decisionInput, {target: {value: 'local draft'}})
+        const historyButton = screen.getByRole('button', {name: 'Открыть историю версий'})
+        historyButton.focus()
+        fireEvent.click(historyButton)
+        const selected = (await screen.findByText('Версия из диагностики')).closest('li')
+        expect(selected).toHaveTextContent('Версия 1')
+        expect(selected).toHaveAttribute('data-navigation-target', 'true')
+        expect(screen.getByText('Версия 2').closest('li')).not.toHaveAttribute('data-navigation-target')
+        expect(getModelCatalogHistory).toHaveBeenCalledWith(CATALOG_ENTRY.modelKey, expect.anything())
+        expect(screen.getByRole('tab', {name: 'Диагностика', hidden: true})).toHaveAttribute('aria-selected', 'true')
+        fireEvent.click(screen.getByRole('button', {name: 'Закрыть окно'}))
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+        expect(screen.getByRole('tab', {name: 'Диагностика'})).toHaveAttribute('aria-selected', 'true')
+        expect(characteristics).toHaveAttribute('aria-expanded', 'true')
+        expect(decisionInput).toHaveValue('local draft')
+        expect(runtimeProbeMock).not.toHaveBeenCalled()
+        fireEvent.click(historyButton)
+        await screen.findByText('Версия из диагностики')
+        fireEvent.keyDown(document, {key: 'Escape'})
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+        expect(screen.getByRole('tab', {name: 'Диагностика'})).toHaveAttribute('aria-selected', 'true')
+        fireEvent.click(screen.getByRole('tab', {name: 'Каталог'}))
+        fireEvent.click(screen.getByRole('button', {name: /История версий/}))
+        await screen.findByRole('dialog')
+        fireEvent.click(screen.getByRole('button', {name: 'Закрыть окно'}))
+        expect(screen.getByRole('tab', {name: 'Каталог'})).toHaveAttribute('aria-selected', 'true')
+    })
+
+    it.each(['catalog', 'diagnostics'])('прямая ссылка из %s на исчезнувшую версию не выдаёт другую за целевую', async (section) => {
+        authMock.currentUser = currentUser('ADMIN')
+        vi.mocked(getModelCatalogHistory).mockResolvedValue([CATALOG_ENTRY])
+        const params = new URLSearchParams({section, modelKey: CATALOG_ENTRY.modelKey,
+            versionId: '99999999-9999-4999-8999-999999999999'})
+        render(<MemoryRouter initialEntries={[`/admin/models?${params}`]}><AdminModelsPage /></MemoryRouter>)
+        expect(await screen.findByText(/Версия из ссылки не найдена в истории модели/)).toBeVisible()
+        expect(screen.queryByText('Версия из диагностики')).not.toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', {name: 'Закрыть окно'}))
+        expect(screen.getByRole('tab', {name: section === 'catalog' ? 'Каталог' : 'Диагностика'})).toHaveAttribute('aria-selected', 'true')
     })
 
     it('фильтрует каталог по имени, провайдеру и статусу последней версии без повторных GET', async () => {
@@ -275,7 +345,7 @@ describe('AdminModelsPage', () => {
 
         expect(
             await screen.findByText(
-                'Управление AI',
+                'Управление AI-моделями',
             ),
         ).toBeInTheDocument()
 
@@ -294,18 +364,21 @@ describe('AdminModelsPage', () => {
             ),
         ).not.toBeInTheDocument()
 
-        expect(screen.getByText('Каталог изменяет SUPER_ADMIN.'))
+        expect(screen.getByText('Каталог изменяет суперадминистратор.'))
             .toBeInTheDocument()
         expect(screen.queryByRole('button', {name: 'Создать модель'})).not.toBeInTheDocument()
         expect(screen.queryByRole('dialog', {name: 'Модель каталога'}))
             .not.toBeInTheDocument()
         fireEvent.click(screen.getByRole('tab', { name: 'Обзор' }))
-        expect(screen.getByRole('heading', {name: 'Совместимость конфигурации'})).toBeInTheDocument()
-        const summary = screen.getByText('Предварительная проверка совместимости')
-        fireEvent.click(summary)
+        expect(screen.getByRole('heading', {name: 'Предварительная проверка совместимости'})).toBeInTheDocument()
+        const summary = screen.getByText('Показать подробности')
         expect(summary.closest('details')).not.toHaveAttribute('open')
-        fireEvent.click(summary)
-        expect(screen.getByRole('heading', {name: 'Совместимость конфигурации'})).toBeInTheDocument()
+        expect(screen.getByRole('button', {name: 'Открыть проверку правил'})).toBeVisible()
+        expect(screen.getByText('Требует внимания')).toBeVisible()
+        fireEvent.click(summary.closest('summary')!)
+        expect(summary.closest('details')).toHaveAttribute('open')
+        fireEvent.click(summary.closest('summary')!)
+        expect(summary.closest('details')).not.toHaveAttribute('open')
         expect(screen.getAllByText('Не настроены').length).toBeGreaterThan(0)
 
         expect(
@@ -323,7 +396,7 @@ describe('AdminModelsPage', () => {
         render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
 
         await screen.findByText(
-            'Управление AI',
+            'Управление AI-моделями',
         )
 
         expect(runtimeMock)
@@ -361,7 +434,7 @@ describe('AdminModelsPage', () => {
 
         expect(
             await screen.findByText(
-                'Управление AI',
+                'Управление AI-моделями',
             ),
         ).toBeInTheDocument()
 
@@ -398,7 +471,7 @@ describe('AdminModelsPage', () => {
             },
         ])
 
-        expect(screen.queryByText('Каталог изменяет SUPER_ADMIN.'))
+        expect(screen.queryByText('Каталог изменяет суперадминистратор.'))
             .not.toBeInTheDocument()
         expect(screen.getByRole('button', {name: 'Создать модель'}))
             .toBeInTheDocument()
@@ -518,11 +591,55 @@ describe('AdminModelsPage', () => {
         await screen.findByRole('tab', { name: 'Доступ' })
         fireEvent.click(screen.getByRole('tab', { name: 'Доступ' }))
         fireEvent.click(screen.getByRole('button', {name: 'Настроить правила'}))
-        expect(screen.getByRole('dialog', {name: 'Правила использования моделей'}))
+        expect(screen.getByRole('dialog', {name: 'Настройка правил использования моделей'}))
             .toBeInTheDocument()
         fireEvent.click(screen.getByRole('button', {name: 'Закрыть окно'}))
-        expect(screen.queryByRole('dialog', {name: 'Правила использования моделей'}))
+        expect(screen.queryByRole('dialog', {name: 'Настройка правил использования моделей'}))
             .not.toBeInTheDocument()
+    })
+
+    it.each(['ADMIN', 'SUPER_ADMIN'] as const)('для %s каждая карточка открывает конкретное поле без изменения правил', async (role) => {
+        authMock.currentUser = currentUser(role)
+        render(<MemoryRouter initialEntries={['/admin/models?section=access']}><AdminModelsPage /></MemoryRouter>)
+        const shortcuts = [
+            ['Настроить: Модель по умолчанию', 'Доступ', '-default'],
+            ['Настроить: Разрешения и запреты', 'Доступ', '-access'],
+            ['Настроить: Лимиты токенов', 'Лимиты', '-limits'],
+            ['Настроить: Лимит стоимости запроса', 'Бюджет', '-request-cost'],
+            ['Настроить: Месячный бюджет', 'Бюджет', '-monthly-budget'],
+            ['Настроить: Требования к данным и стоимости', 'Требования', '-data'],
+            ['Открыть проверку правил', 'Проверка', '-panel-preview'],
+        ]
+        for (const [name, tab, suffix] of shortcuts) {
+            const button = await screen.findByRole('button', {name})
+            button.focus()
+            fireEvent.click(button)
+            const dialog = screen.getByRole('dialog')
+            const selected = dialog.querySelector('[role="tab"][aria-selected="true"]')
+            expect(selected).toHaveTextContent(tab)
+            const formId = dialog.querySelector('form')?.id
+            expect(dialog.querySelector(`[id="${formId}${suffix}"]`)).toHaveFocus()
+            expect(dialog.querySelector('form')).toHaveAttribute('data-highlight-target', suffix.slice(1))
+            fireEvent.click(selected!)
+            expect(dialog.querySelector('form')).not.toHaveAttribute('data-highlight-target')
+            expect(screen.getByText('Изменений нет')).toBeInTheDocument()
+            fireEvent.click(screen.getByRole('button', {name: 'Закрыть окно'}))
+            expect(screen.getByRole('tab', {name: 'Доступ'})).toHaveAttribute('aria-selected', 'true')
+        }
+        expect(previewOrganizationModelPolicy).not.toHaveBeenCalled()
+        expect(createOrganizationModelPolicyVersion).not.toHaveBeenCalled()
+        fireEvent.click(screen.getByRole('button', {name: 'Настроить правила'}))
+        expect(screen.getByRole('dialog').querySelector('[role="tab"][aria-selected="true"]')).toHaveTextContent('Доступ')
+    }, 10000)
+
+    it('открывает проверку из обзора сразу на вкладке проверки без серверного вызова', async () => {
+        authMock.currentUser = currentUser('ADMIN')
+        render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
+        fireEvent.click(await screen.findByRole('button', {name: 'Открыть проверку правил'}))
+        expect(screen.getByRole('dialog').querySelector('[role="tab"][aria-selected="true"]')).toHaveTextContent('Проверка')
+        expect(previewOrganizationModelPolicy).not.toHaveBeenCalled()
+        fireEvent.keyDown(document, {key: 'Escape'})
+        expect(screen.getByRole('tab', {name: 'Обзор'})).toHaveAttribute('aria-selected', 'true')
     })
 
     it('диагностика маршрутизации проверяет UUID до запроса к backend', async () => {

@@ -8,10 +8,30 @@ import type {
 } from '../../../../entities/model/api/modelApi'
 import type { OrganizationDirectoryItem } from '../../../../entities/organization/api/organizationApi'
 import {formatUsd} from '../../../../shared/lib/format'
-import { StatusPill, InfoHint } from './viewPresentation'
+import { StatusPill } from './viewPresentation'
 import { policyAccessSummary, policyDataRequirements, policyTokenLimits } from './viewPresentationLabels'
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import { ModelIcon } from '../ModelIcon'
+import type { ModelIconName } from '../ModelIcon'
+import type { PolicyEditorTarget } from '../modelPolicyModal/policyFormTabsConfig'
+
+function PolicyTile({icon, title, value, detail, target, restriction, disabled, onEdit}: {
+    icon: ModelIconName; title: string; value: ReactNode; detail?: ReactNode
+    target: PolicyEditorTarget; restriction?: string; disabled: boolean
+    onEdit: (target: PolicyEditorTarget) => void
+}) {
+    return <div className={disabled ? undefined : 'models-policy-action-tile'} data-restriction={restriction}>
+        <dt><ModelIcon name={icon} />{title}
+            {!disabled && <span className="models-runtime-tile-indicator"><ModelIcon name="arrow" /></span>}
+        </dt>
+        <dd>{value}</dd>
+        {detail && <small>{detail}</small>}
+        <small><button type="button" className="models-policy-tile-action" disabled={disabled}
+            aria-label={`Настроить: ${title}`} aria-haspopup="dialog"
+            onClick={() => onEdit(target)}>Настроить</button></small>
+    </div>
+}
 
 function OrganizationIdentifier({ value }: { value: string }) {
     const [message, setMessage] = useState('')
@@ -63,7 +83,7 @@ export function PolicyCard({
     onOrganizationQueryChange: (value: string) => void
     onOrganizationSearch: () => void | Promise<void>
     onOrganizationSelect: (organization: OrganizationDirectoryItem) => void
-    onEdit: () => void
+    onEdit: (target?: PolicyEditorTarget) => void
     editDisabled?: boolean
 }) {
     const defaultEntry =
@@ -78,7 +98,7 @@ export function PolicyCard({
     const constraintsActive = policy.configured && policy.enabled
     const restrictionState = (configured: boolean) => constraintsActive && configured ? 'configured' : 'neutral'
 
-    const undeclaredRuntimeModels = policy.enabled && policy.requireNoTraining
+    const undeclaredRuntimeModels = constraintsActive && policy.requireNoTraining
         ? effectiveCatalog.filter((entry) =>
             entry.provider === runtime.provider
             && entry.providerModelId === runtime.model
@@ -91,7 +111,6 @@ export function PolicyCard({
         <section className="models-card models-card--policy">
             <div className="models-card__heading">
                 <div>
-                    <span>ПРАВИЛА ОРГАНИЗАЦИИ</span>
                     <h2>Доступ и ограничения</h2>
                 </div>
 
@@ -198,89 +217,48 @@ export function PolicyCard({
                 </form>
             )}
 
-            <dl className="models-kv-grid">
-                <div>
-                    <dt><ModelIcon name="cpu" />Модель по умолчанию</dt>
-                    <dd>
-                        {defaultEntry?.displayName ?? policy.defaultModelKey
-                            ?? runtime.model}
-                    </dd>
-                    {!policy.defaultModelKey && <small>Подключённая модель · {runtime.provider}</small>}
-                    {defaultEntry && (
-                        <small>
-                            {defaultEntry.provider}
-                            {' / '}
-                            {defaultEntry.providerModelId}
-                        </small>
-                    )}
-                    {policy.defaultModelKey && !defaultEntry && (
-                        <small>{savedDefaultEntry ? 'Нет действующей версии' : 'Модель отсутствует в каталоге'}</small>
-                    )}
-                </div>
-
-                <div data-restriction={restrictionState(Boolean(policy.allowModelKeys.length || policy.denyModelKeys.length))}>
-                    <dt>
-                        <span className="models-label-row">
-                            <ModelIcon name="list" />Списки доступа
-                            <InfoHint text="Если список разрешённых пуст, доступны все модели, которые не запрещены явно и проходят остальные проверки правил и настроек подключения." />
-                        </span>
-                    </dt>
-                    <dd>
-                        {policyAccessSummary(policy)}
-                    </dd>
-                    {policy.allowModelKeys.length === 0 && (
-                        <small>
-                            Список разрешённых не ограничивает выбор моделей
-                        </small>
-                    )}
-                </div>
-
-                <div data-restriction={restrictionState(policy.maxRequestCostUsd !== null)}>
-                    <dt><ModelIcon name="wallet" />Стоимость запроса</dt>
-                    <dd>
-                        {policy.maxRequestCostUsd === null
-                            ? 'Без лимита'
-                            : formatUsd(policy.maxRequestCostUsd)}
-                    </dd>
-                </div>
-
-                <div data-restriction={restrictionState(policy.monthlyBudgetUsd !== null)}>
-                    <dt><ModelIcon name="budget" />Бюджет на месяц</dt>
-                    <dd>
-                        {policy.monthlyBudgetUsd === null
-                            ? 'Не задан'
-                            : formatUsd(policy.monthlyBudgetUsd)}
-                    </dd>
-                    <small>
-                        {policy.monthlyBudgetUsd === null
-                            ? 'Контроль бюджета выключен'
-                            : policy.budgetEnforcement === 'HARD'
-                                ? 'Жёсткий контроль'
-                                : 'Мягкий контроль'}
-                    </small>
-                </div>
-
-                <div data-restriction={restrictionState(policy.requireCompletePricing || policy.requireNoTraining || policy.requireZeroDataRetention)}>
-                    <dt><ModelIcon name="shield" />Требования безопасности и стоимости</dt>
-                    <dd>
-                        {policyDataRequirements(policy)}
-                    </dd>
-                </div>
-
-                <div data-restriction={restrictionState(policy.maxInputTokens !== null || policy.maxOutputTokens !== null)}>
-                    <dt><ModelIcon name="gauge" />Лимиты токенов</dt>
-                    <dd>
-                        {policyTokenLimits(policy)}
-                    </dd>
-                    <small>
-                        Подключённая модель: {' '}
-                        {runtime.maxInputTokens.toLocaleString('ru-RU')}
-                        {' / '}
-                        {runtime.maxOutputTokens.toLocaleString('ru-RU')}
-                    </small>
-                </div>
+            <dl className="models-kv-grid models-policy-tiles">
+                <PolicyTile icon="cpu" title="Модель по умолчанию" target="default"
+                    value={defaultEntry?.displayName ?? policy.defaultModelKey ?? 'Автоматически'}
+                    detail={!policy.defaultModelKey ? `Текущая модель: ${runtime.model} · ${runtime.provider}`
+                        : defaultEntry ? `${defaultEntry.provider} / ${defaultEntry.providerModelId}${defaultEntry.lifecycle === 'DISABLED' || defaultEntry.lifecycle === 'RETIRED' ? ' · недоступна в каталоге' : defaultEntry.provider !== runtime.provider || defaultEntry.providerModelId !== runtime.model ? ' · не совпадает с подключением' : ''}`
+                        : savedDefaultEntry ? 'Нет действующей версии' : 'Модель отсутствует в каталоге'}
+                    disabled={editDisabled} onEdit={onEdit} />
+                <PolicyTile icon="list" title="Разрешения и запреты" target="access"
+                    value={policyAccessSummary(policy)}
+                    detail={policy.allowModelKeys.length === 0 ? 'Без явного списка разрешений; остальные проверки действуют' : 'Заданы разрешённые ключи каталога'}
+                    restriction={restrictionState(Boolean(policy.allowModelKeys.length || policy.denyModelKeys.length))}
+                    disabled={editDisabled} onEdit={onEdit} />
+                <PolicyTile icon="gauge" title="Лимиты токенов" target="limits"
+                    value={policyTokenLimits(policy)}
+                    detail={`Лимиты подключения (вход / выход): ${runtime.maxInputTokens.toLocaleString('ru-RU')} / ${runtime.maxOutputTokens.toLocaleString('ru-RU')}`}
+                    restriction={restrictionState(policy.maxInputTokens !== null || policy.maxOutputTokens !== null)}
+                    disabled={editDisabled} onEdit={onEdit} />
+                <PolicyTile icon="wallet" title="Лимит стоимости запроса" target="requestCost"
+                    value={policy.maxRequestCostUsd === null ? 'Без лимита' : formatUsd(policy.maxRequestCostUsd)}
+                    detail="Максимальная расчётная стоимость одного запроса"
+                    restriction={restrictionState(policy.maxRequestCostUsd !== null)}
+                    disabled={editDisabled} onEdit={onEdit} />
+                <PolicyTile icon="budget" title="Месячный бюджет" target="monthlyBudget"
+                    value={policy.monthlyBudgetUsd === null ? 'Не задан' : formatUsd(policy.monthlyBudgetUsd)}
+                    detail={policy.monthlyBudgetUsd === null ? 'Контроль бюджета выключен'
+                        : policy.budgetEnforcement === 'HARD' ? 'Жёсткий контроль: блокировка превышения' : 'Мягкий контроль: фиксация превышения'}
+                    restriction={restrictionState(policy.monthlyBudgetUsd !== null)}
+                    disabled={editDisabled} onEdit={onEdit} />
+                <PolicyTile icon="shield" title="Требования к данным и стоимости" target="data"
+                    value={policyDataRequirements(policy)}
+                    detail="Стоимость, использование для обучения и хранение данных"
+                    restriction={restrictionState(policy.requireCompletePricing || policy.requireNoTraining || policy.requireZeroDataRetention)}
+                    disabled={editDisabled} onEdit={onEdit} />
             </dl>
 
+            {constraintsActive && ((policy.requireNoTraining && runtime.dataAssurance?.noTraining !== true)
+                || (policy.requireZeroDataRetention && runtime.dataAssurance?.zeroDataRetention !== true)) && (
+                <div className="models-policy-form__warning" role="status">
+                    <strong>Условия серверного подключения не подтверждены</strong>
+                    <p>Требования к обучению или хранению данных не подтверждены для текущего подключения. Одной записи в каталоге недостаточно.</p>
+                </div>
+            )}
             {undeclaredRuntimeModels.length > 0 && (
                 <div className="models-policy-form__warning" role="status">
                     <strong>Требование запрета обучения не подтверждено</strong>
@@ -302,11 +280,13 @@ export function PolicyCard({
                     настраивается отдельно.
                 </p>
 
+                <button type="button" className="secondary-button" disabled={editDisabled}
+                    onClick={() => onEdit('preview')}>Открыть проверку правил</button>
                 <button
                     type="button"
                     className="btn-primary models-policy-action"
                     disabled={editDisabled}
-                    onClick={onEdit}
+                    onClick={() => onEdit()}
                 >
                     {policy.configured
                         ? 'Изменить правила'

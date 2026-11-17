@@ -8,6 +8,7 @@ import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import ru.safeai.gateway.model.domain.BudgetEnforcement;
+import tools.jackson.databind.annotation.JsonDeserialize;
 
 import java.math.BigDecimal;
 import java.util.Set;
@@ -18,8 +19,8 @@ public record CreateOrganizationModelPolicyVersionRequest(
         @Size(max = 200) Set<@NotBlank @Size(max = 160) String> allowModelKeys,
         @Size(max = 200) Set<@NotBlank @Size(max = 160) String> denyModelKeys,
         @Size(max = 160) String defaultModelKey,
-        @Positive Integer maxInputTokens,
-        @Positive Integer maxOutputTokens,
+        @Positive @JsonDeserialize(using = StrictPolicyTokenLimitDeserializer.class) Integer maxInputTokens,
+        @Positive @JsonDeserialize(using = StrictPolicyTokenLimitDeserializer.class) Integer maxOutputTokens,
         @DecimalMin("0") @Digits(integer = 18, fraction = 12) BigDecimal maxRequestCostUsd,
         @DecimalMin("0") @Digits(integer = 18, fraction = 12) BigDecimal monthlyBudgetUsd,
         @NotNull BudgetEnforcement budgetEnforcement,

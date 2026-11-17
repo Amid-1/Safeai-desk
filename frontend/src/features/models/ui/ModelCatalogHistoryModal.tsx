@@ -5,6 +5,7 @@
 import {
     useEffect,
     useMemo,
+    useRef,
     useState,
 } from 'react'
 import {
@@ -353,13 +354,16 @@ export function ModelCatalogHistoryModal({
     modelKey,
     displayName,
     runtime,
+    targetVersionId,
     onClose,
 }: {
     modelKey: string
     displayName: string
     runtime: RuntimeModelStatus
+    targetVersionId?: string
     onClose: () => void
 }) {
+    const targetVersionRef = useRef<HTMLLIElement>(null)
     const [versions, setVersions] =
         useState<ModelCatalogEntry[]>([])
     const [effectiveEntry, setEffectiveEntry] =
@@ -455,6 +459,12 @@ export function ModelCatalogHistoryModal({
     const latestEntry =
         sortedVersions[0] ?? null
 
+    useEffect(() => {
+        if (loading || error || !targetVersionId) return
+        targetVersionRef.current?.focus({ preventScroll: true })
+        targetVersionRef.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+    }, [loading, error, targetVersionId])
+
     return (
         <Modal
             title={`История версий: ${displayName}`}
@@ -499,6 +509,12 @@ export function ModelCatalogHistoryModal({
                 </div>
             )}
 
+            {!loading && !error && targetVersionId && !sortedVersions.some(entry => entry.id === targetVersionId) && (
+                <div className="models-history-modal__warning" role="status">
+                    Версия из ссылки не найдена в истории модели. Другие версии показаны без выбора.
+                </div>
+            )}
+
             {!loading && !error && sortedVersions.length === 0 && (
                 <div className="models-history-modal__empty">
                     История для этой модели пока пуста.
@@ -533,6 +549,9 @@ export function ModelCatalogHistoryModal({
                                 <li
                                     key={entry.id}
                                     className="models-history-card"
+                                    data-navigation-target={entry.id === targetVersionId ? 'true' : undefined}
+                                    ref={entry.id === targetVersionId ? targetVersionRef : undefined}
+                                    tabIndex={entry.id === targetVersionId ? -1 : undefined}
                                 >
                                     <div className="models-history-card__rail" />
 
@@ -549,6 +568,7 @@ export function ModelCatalogHistoryModal({
                                         </div>
 
                                         <div className="models-history-card__badges">
+                                            {entry.id === targetVersionId && <span className="models-history-state models-history-state--selected">Версия из диагностики</span>}
                                             {states.map((state) => (
                                                 <StateBadge
                                                     key={state}

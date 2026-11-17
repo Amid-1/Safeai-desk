@@ -225,6 +225,17 @@ class ModelRoutingCostPolicyTest {
     }
 
     @Test
+    void falselyCompleteCatalogPriceWithMissingRateIsRejected() {
+        ModelCatalogEntry entry = org.mockito.Mockito.mock(ModelCatalogEntry.class);
+        when(entry.pricingScheme()).thenReturn(ModelPricingScheme.FLAT_TOKEN_V1);
+        when(entry.pricingStatus()).thenReturn(ModelPricingStatus.CONFIGURED);
+        when(entry.pricingComplete()).thenReturn(true);
+        var estimate = policy.estimateCost(entry, ModelTestFixtures.configuredRuntime(), 1, 1);
+        assertThat(estimate.cost()).isNull();
+        assertThat(estimate.complete()).isFalse();
+    }
+
+    @Test
     void legacyConfiguredRuntimeCanEstimateButNeverClaimsCompletePricing() {
         ModelRoutingCostPolicy.PricingEstimate estimate =
                 policy.estimateCost(

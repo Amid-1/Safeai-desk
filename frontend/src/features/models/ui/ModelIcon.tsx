@@ -25,6 +25,8 @@ const paths = {
     check: 'm5 12 4 4L19 6',
     alert: 'M12 3 2 21h20L12 3Z M12 9v5 M12 17h.01',
     arrow: 'M4 12h15 M13 6l6 6-6 6',
+    chevronDown: 'm6 9 6 6 6-6',
+    info: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z M12 11v6 M12 7h.01',
 } as const
 
 export type ModelIconName = keyof typeof paths

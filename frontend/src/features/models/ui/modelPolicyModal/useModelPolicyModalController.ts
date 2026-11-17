@@ -12,10 +12,30 @@ import {buildPolicyRequest, createPolicyDraft} from '../modelControlPlaneSupport
 import type {PolicyDraft} from '../modelControlPlaneSupport'
 import type {ModelKeySelectorInteractionState} from '../ModelPolicyModelSelectors'
 import type {ModelPolicyModalProps} from './policyModalTypes'
+import {POLICY_EDITOR_TARGETS} from './policyFormTabsConfig'
+import type {PolicyTab} from './policyFormTabsConfig'
+import {validatePolicyNumericFields} from '../modelControlPlane/policyNumericFields'
 
 type ModelPolicyModalControllerInput = Pick<ModelPolicyModalProps,
-    'policy' | 'organizationId' | 'effectiveCatalog' | 'runtime' | 'pending' | 'onClose' | 'onPreview' | 'onSubmit'
+    'policy' | 'organizationId' | 'effectiveCatalog' | 'runtime' | 'pending' | 'onClose' | 'onPreview' | 'onSubmit' | 'initialTarget'
 >
+
+// List ordering and decimal formatting do not change the actual rules.
+function policyContentFingerprint(draft: PolicyDraft): string | null {
+    try {
+        const request = buildPolicyRequest(draft, 0)
+        const decimal = (value: string | null) => value === null ? null
+            : value.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '').replace(/^0+(?=\d)/, '')
+        return JSON.stringify({...request,
+            allowModelKeys: [...request.allowModelKeys].sort(),
+            denyModelKeys: [...request.denyModelKeys].sort(),
+            maxRequestCostUsd: decimal(request.maxRequestCostUsd),
+            monthlyBudgetUsd: decimal(request.monthlyBudgetUsd),
+        })
+    } catch {
+        return null
+    }
+}
 
 export function useModelPolicyModalController({
     policy,
@@ -26,6 +46,7 @@ export function useModelPolicyModalController({
     onClose,
     onPreview,
     onSubmit,
+    initialTarget,
 }: ModelPolicyModalControllerInput) {
     // Исходная версия фиксируется на весь сеанс редактирования. Нельзя
     // сохранять старый черновик под новой optimistic-lock версией после
@@ -68,6 +89,7 @@ export function useModelPolicyModalController({
                 createPolicyDraft(policy),
             ),
         )
+    const [initialContentFingerprint] = useState(() => policyContentFingerprint(createPolicyDraft(policy)))
 
     const [
         formError,
@@ -146,7 +168,7 @@ export function useModelPolicyModalController({
         )
 
     const [activeSection, setActiveSection] =
-        useState<'access' | 'limits' | 'budget' | 'data' | 'preview'>('access')
+        useState<PolicyTab>(() => initialTarget ? POLICY_EDITOR_TARGETS[initialTarget].tab : 'access')
 
     // Локально поясняем только метаданные каталога: решения о маршрутизации и блокировке принимает сервер.
     const undeclaredTrainingModels = effectiveCatalog.filter((entry) =>
@@ -266,8 +288,14 @@ export function useModelPolicyModalController({
         setVerifiedContextFingerprint('')
     }, [previewContextFingerprint])
 
-    const isDirty =
-        draftFingerprint !== initialDraftFingerprint
+    const contentFingerprint = useMemo(() => policyContentFingerprint(draft), [draft])
+    const isDirty = draftFingerprint !== initialDraftFingerprint
+        && (contentFingerprint === null || contentFingerprint !== initialContentFingerprint)
+    const canSaveChanges = !policy.configured || isDirty
+    const numericErrors = useMemo(() => validatePolicyNumericFields(draft), [draft])
+    const invalidNumericSection = numericErrors.maxInputTokens || numericErrors.maxOutputTokens
+        ? 'limits' : numericErrors.maxRequestCostUsd || numericErrors.monthlyBudgetUsd
+            ? 'budget' : null
 
     const requestClose = () => {
         if (pending || previewPending) {
@@ -304,6 +332,11 @@ export function useModelPolicyModalController({
             // политика относятся к разным tenant.
             if (organizationId !== policy.organizationId) {
                 setFormError('Организация формы не совпадает с загруженными правилами. Обновите данные.')
+                return null
+            }
+
+            if (invalidNumericSection) {
+                setActiveSection(invalidNumericSection)
                 return null
             }
 
@@ -418,7 +451,7 @@ export function useModelPolicyModalController({
     }
 
     const handleSubmit = async () => {
-        if (pending || previewInFlightRef.current || submitInFlightRef.current) {
+        if (!canSaveChanges || pending || previewInFlightRef.current || submitInFlightRef.current) {
             return
         }
         const request = buildCurrentRequest()
@@ -466,9 +499,8 @@ export function useModelPolicyModalController({
     const versionMessage =
         policy.configured
             ? (
-                `Действующие правила организации: версия ${policy.version}. `
-                + `При успешном сохранении будет создана версия ${policy.version + 1}. `
-                + 'Предыдущая версия сохранится в истории.'
+                `Действующая версия: ${policy.version}. `
+                + `При сохранении изменений будет создана версия ${policy.version + 1}; предыдущая сохранится в истории.`
             )
             : (
                 'Это первая настройка правил. '
@@ -483,13 +515,12 @@ export function useModelPolicyModalController({
     const rulesStatusHint =
         draft.enabled
             ? (
-                'Ограничения и лимиты применяются '
-                + 'к запросам этой организации.'
+                'Ограничения черновика вступят в силу после сохранения.'
             )
             : policy.configured
                 ? (
-                    'Сохранённые правила существуют, '
-                    + 'но сейчас не ограничивают маршрутизацию.'
+                    'После сохранения ограничения организации не будут применяться. '
+                    + 'Серверные проверки безопасности сохраняются.'
                 )
                 : (
                     'Первая настройка не включится, '
@@ -506,7 +537,8 @@ export function useModelPolicyModalController({
         activeSection, setActiveSection, policyChangedExternally,
         undeclaredTrainingModels, activationWarning,
         serverConfirmedTrainingLockout, serverTrainingRejectedModelKeys,
-        isDirty, requestClose, handlePreview, handleSubmit,
+        isDirty, canSaveChanges, requestClose, handlePreview, handleSubmit,
+        numericErrors, invalidNumericSection,
         versionMessage, rulesStatusLabel, rulesStatusHint,
     }
 }

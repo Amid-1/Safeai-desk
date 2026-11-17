@@ -24,7 +24,7 @@ export const POLICY_PREVIEW_LABEL: Readonly<Record<PolicyPreviewState, string>> 
     pending: 'Проверяем',
     stale: 'Требуется повторная проверка',
     error: 'Ошибка проверки',
-    available: 'Доступно по текущим правилам',
+    available: 'Предварительно доступно',
     restricted: 'Есть ограничения',
     blocked: 'Доступ заблокирован',
 }

@@ -65,7 +65,7 @@ function setup(options: {
 
 async function check() {
     fireEvent.click(screen.getByRole('button', {name: 'Проверить правила'}))
-    await screen.findByText('Серверная проверка черновика')
+    await screen.findByText('Результат проверки правил')
 }
 
 function save() {
@@ -73,11 +73,23 @@ function save() {
 }
 
 describe('ModelPolicyModal: production preview hardening', () => {
+    it('сворачивает критерии после проверки и показывает точные расчётные значения бюджета', async () => {
+        setup({preview: vi.fn(async () => evaluation({models: [{...evaluation().models[0]!,
+            estimatedMaxCostUsd: '0.000000000123', monthlyBudgetUsd: '15.00',
+            monthlyProjectedUsd: '3.25', monthlyCostKnown: true}]}))})
+        await check()
+        expect(screen.getByText('Параметры выполненной проверки').closest('details')).not.toHaveAttribute('open')
+        expect(screen.getByText('0.000000000123 USD')).toBeVisible()
+        fireEvent.click(screen.getByText('Месячный бюджет · Расчёт доступен'))
+        expect(screen.getByText('15 USD')).toBeVisible()
+        expect(screen.getByText('3.25 USD')).toBeVisible()
+        expect(screen.getAllByRole('button', {name: 'Проверить правила'})).toHaveLength(1)
+    })
     it('A → B → A of retention settings does not revive an obsolete preview', async () => {
         const {onSubmit} = setup()
         await check()
-        fireEvent.click(screen.getByRole('tab', {name: /Требования к данным/}))
-        const retention = screen.getByRole('checkbox', {name: 'Не хранить данные после запроса'})
+        fireEvent.click(screen.getByRole('tab', {name: /Требования/}))
+        const retention = screen.getByRole('checkbox', {name: 'Нулевое хранение данных у провайдера'})
         const initial = (retention as HTMLInputElement).checked
         fireEvent.click(retention)
         fireEvent.click(retention)
@@ -93,7 +105,7 @@ describe('ModelPolicyModal: production preview hardening', () => {
         await check()
         rerender(view('other-model'))
         rerender(view(runtime.model))
-        expect(screen.queryByText('Серверная проверка черновика')).not.toBeInTheDocument()
+        expect(screen.queryByText('Результат проверки правил')).not.toBeInTheDocument()
         save()
         expect(onSubmit).not.toHaveBeenCalled()
     })
@@ -106,7 +118,7 @@ describe('ModelPolicyModal: production preview hardening', () => {
         rerender(view('other-model'))
         rerender(view(runtime.model))
         await act(async () => complete(evaluation()))
-        expect(screen.queryByText('Серверная проверка черновика')).not.toBeInTheDocument()
+        expect(screen.queryByText('Результат проверки правил')).not.toBeInTheDocument()
         save()
         expect(onSubmit).not.toHaveBeenCalled()
     })
@@ -120,7 +132,7 @@ describe('ModelPolicyModal: production preview hardening', () => {
         await check()
         expect(screen.getByText('Доступ заблокирован')).toBeInTheDocument()
         expect(screen.getByText(`Версия модели в каталоге: ${entry.version}`)).toBeInTheDocument()
-        expect(screen.getByText('Доступ отклонён')).toBeInTheDocument()
+        expect(screen.getByText('Предварительно отклонена')).toBeInTheDocument()
         // The reason is shown in both the policy summary and the selected model.
         expect(screen.getAllByText(/Не подтверждено, что данные не используются для обучения/).length)
             .toBeGreaterThan(0)
@@ -142,9 +154,9 @@ describe('ModelPolicyModal: production preview hardening', () => {
     it('retention and training are independent request fields', async () => {
         const onSubmit = vi.fn<Submit>().mockResolvedValue(undefined)
         setup({submit: onSubmit})
-        fireEvent.click(screen.getByRole('tab', {name: /Требования к данным/}))
-        const training = screen.getByRole('checkbox', {name: 'Не использовать данные для обучения'})
-        const retention = screen.getByRole('checkbox', {name: 'Не хранить данные после запроса'})
+        fireEvent.click(screen.getByRole('tab', {name: /Требования/}))
+        const training = screen.getByRole('checkbox', {name: 'Запрет использования данных для обучения'})
+        const retention = screen.getByRole('checkbox', {name: 'Нулевое хранение данных у провайдера'})
         fireEvent.click(training)
         fireEvent.click(retention)
         fireEvent.click(retention)

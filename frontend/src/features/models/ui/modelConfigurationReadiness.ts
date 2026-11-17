@@ -48,6 +48,12 @@ export function modelConfigurationReadiness(
     if (runtime.healthStatus === 'UNAVAILABLE') {
         blockers.push('Последняя проверка подключения завершилась неуспешно.')
     }
+    if (policy.enabled && policy.requireNoTraining && runtime.dataAssurance?.noTraining !== true) {
+        blockers.push('Запрет использования данных для обучения не подтверждён для текущего подключения.')
+    }
+    if (policy.enabled && policy.requireZeroDataRetention && runtime.dataAssurance?.zeroDataRetention !== true) {
+        blockers.push('Нулевое хранение данных не подтверждено для текущего подключения.')
+    }
 
     return {
         compatibleCount: compatible.length,

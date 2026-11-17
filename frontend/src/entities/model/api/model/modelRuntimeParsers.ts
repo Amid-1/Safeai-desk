@@ -10,6 +10,9 @@ export function parseRuntimeModelStatus(
     path = 'runtimeModel',
 ): RuntimeModelStatus {
     const raw = requireObject(value, path)
+    // Older servers expose no binding-specific proof. Absence never implies consent.
+    const assurance = raw.dataAssurance == null ? undefined
+        : requireObject(raw.dataAssurance, `${path}.dataAssurance`)
 
     return {
         provider: requireNonBlankString(
@@ -54,6 +57,13 @@ export function parseRuntimeModelStatus(
             RUNTIME_DATA_RETENTION_STATUSES,
             `${path}.dataRetentionStatus`,
         ),
+        ...(assurance ? {dataAssurance: {
+            noTraining: requireBoolean(assurance.noTraining, `${path}.dataAssurance.noTraining`),
+            zeroDataRetention: requireBoolean(assurance.zeroDataRetention, `${path}.dataAssurance.zeroDataRetention`),
+            source: optionalNonBlankString(assurance.source, `${path}.dataAssurance.source`),
+            verifiedAt: assurance.verifiedAt == null ? null : requireInstant(assurance.verifiedAt, `${path}.dataAssurance.verifiedAt`),
+            expiresAt: assurance.expiresAt == null ? null : requireInstant(assurance.expiresAt, `${path}.dataAssurance.expiresAt`),
+        }} : {}),
         healthStatus: requireEnum(
             raw.healthStatus,
             RUNTIME_HEALTH_STATUSES,

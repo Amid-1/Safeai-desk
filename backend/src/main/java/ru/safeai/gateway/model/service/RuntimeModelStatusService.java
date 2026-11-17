@@ -4,6 +4,8 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import ru.safeai.gateway.ai.pricing.ModelPricingProperties;
 import ru.safeai.gateway.ai.provider.AiProviderProperties;
+import ru.safeai.gateway.ai.provider.ProviderDataAssuranceProperties;
+import ru.safeai.gateway.ai.provider.ProviderDataEvidence;
 import ru.safeai.gateway.ai.provider.anthropic.AnthropicProperties;
 import ru.safeai.gateway.ai.provider.openai.OpenAiProperties;
 import ru.safeai.gateway.model.dto.RuntimeModelStatusResponse;
@@ -41,6 +43,7 @@ public class RuntimeModelStatusService {
     private final ModelPricingProperties pricingProperties;
     private final ObjectProvider<OpenAiProperties> openAiProperties;
     private final ObjectProvider<AnthropicProperties> anthropicProperties;
+    private final ProviderDataAssuranceProperties assurances;
 
     public RuntimeModelStatusService(
             AiProviderProperties providerProperties,
@@ -51,7 +54,6 @@ public class RuntimeModelStatusService {
         this(providerProperties, pricingProperties, openAiProperties, anthropicProperties, Clock.systemUTC());
     }
 
-    @Autowired
     public RuntimeModelStatusService(
             AiProviderProperties providerProperties,
             ModelPricingProperties pricingProperties,
@@ -59,7 +61,21 @@ public class RuntimeModelStatusService {
             ObjectProvider<AnthropicProperties> anthropicProperties,
             Clock clock
     ) {
+        this(providerProperties, pricingProperties, openAiProperties, anthropicProperties,
+                clock, ProviderDataAssuranceProperties.EMPTY);
+    }
+
+    @Autowired
+    public RuntimeModelStatusService(
+            AiProviderProperties providerProperties,
+            ModelPricingProperties pricingProperties,
+            ObjectProvider<OpenAiProperties> openAiProperties,
+            ObjectProvider<AnthropicProperties> anthropicProperties,
+            Clock clock,
+            ProviderDataAssuranceProperties assurances
+    ) {
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.assurances = Objects.requireNonNull(assurances, "assurances");
         this.providerProperties = Objects.requireNonNull(
                 providerProperties,
                 "providerProperties не должен быть null"
@@ -84,7 +100,8 @@ public class RuntimeModelStatusService {
                     "mock",
                     "mock-safeai",
                     64_000,
-                    2_048
+                    2_048,
+                    ProviderDataEvidence.Status.LOCAL_MOCK
             );
             case "openai" -> fromOpenAi(requiredOpenAi());
             case "anthropic" -> fromAnthropic(requiredAnthropic());
@@ -102,7 +119,10 @@ public class RuntimeModelStatusService {
                 "openai",
                 properties.model(),
                 properties.maxInputTokens(),
-                properties.maxOutputTokens()
+                properties.maxOutputTokens(),
+                assurance(properties.baseUrl(), !properties.effectiveStore(),
+                        "openai", properties.baseUrl(), properties.model(),
+                        properties.apiKey(), Boolean.toString(properties.effectiveStore()))
         );
     }
 
@@ -113,7 +133,9 @@ public class RuntimeModelStatusService {
                 "anthropic",
                 properties.model(),
                 properties.maxInputTokens(),
-                properties.maxTokens()
+                properties.maxTokens(),
+                assurance(properties.baseUrl(), true, "anthropic", properties.baseUrl(),
+                        properties.model(), properties.apiKey(), properties.version())
         );
     }
 
@@ -121,7 +143,8 @@ public class RuntimeModelStatusService {
             String provider,
             String model,
             int maxInputTokens,
-            int maxOutputTokens
+            int maxOutputTokens,
+            ProviderDataEvidence.Status assurance
     ) {
         if (model == null || model.isBlank()) {
             throw new IllegalStateException(
@@ -149,7 +172,8 @@ public class RuntimeModelStatusService {
                 false,
                 false,
                 false,
-                "NOT_DECLARED",
+                assurance.zeroDataRetention() && !"mock".equals(provider)
+                        ? "ZERO_DATA_RETENTION" : "NOT_DECLARED",
                 healthStatus(provider, normalizedModel),
                 price == null
                         ? "UNPRICED"
@@ -164,8 +188,21 @@ public class RuntimeModelStatusService {
                         : price.outputUsdPer1mTokens(),
                 price == null
                         ? null
-                        : price.version()
+                        : price.version(),
+                assurance
         );
+    }
+
+    private ProviderDataEvidence.Status assurance(String endpoint, boolean retentionCompatible,
+                                                   String... binding) {
+        if (assurances.chat() == null || !endpoint.startsWith("https://")) {
+            return ProviderDataEvidence.Status.UNKNOWN;
+        }
+        String[] parts = new String[binding.length + 1];
+        parts[0] = "chat";
+        System.arraycopy(binding, 0, parts, 1, binding.length);
+        return assurances.chat().evaluate(clock.instant(), ProviderDataEvidence.fingerprint(parts),
+                retentionCompatible);
     }
 
     private static String normalizeRuntimeModel(

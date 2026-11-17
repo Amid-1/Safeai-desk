@@ -23,6 +23,46 @@ import static org.mockito.Mockito.when;
 class RuntimeModelStatusServiceTest {
 
     @Test
+    void openAiAssuranceIsBoundToCredentialAndStoreMode() {
+        Instant now = Instant.parse("2026-11-17T12:00:00Z");
+        Clock clock = Clock.fixed(now, ZoneOffset.UTC);
+        OpenAiProperties openAi = mock(OpenAiProperties.class);
+        when(openAi.baseUrl()).thenReturn("https://api.openai.com/v1");
+        when(openAi.apiKey()).thenReturn("test-key");
+        when(openAi.model()).thenReturn("gpt-test");
+        when(openAi.maxInputTokens()).thenReturn(32000);
+        when(openAi.maxOutputTokens()).thenReturn(2048);
+        var configuration = new ru.safeai.gateway.ai.provider.ProviderDataAssuranceProperties(
+                new ru.safeai.gateway.ai.provider.ProviderDataEvidence("CONTRACT-42", now,
+                        now.plusSeconds(60), ru.safeai.gateway.ai.provider.ProviderDataEvidence.fingerprint(
+                        "chat", "openai", "https://api.openai.com/v1", "gpt-test", "test-key", "false"),
+                        true, true), null, null);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<OpenAiProperties> openAiProvider = mock(ObjectProvider.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<AnthropicProperties> anthropicProvider = mock(ObjectProvider.class);
+        when(openAiProvider.getIfAvailable()).thenReturn(openAi);
+        var service = new RuntimeModelStatusService(new AiProviderProperties("openai"),
+                new ModelPricingProperties(List.of()), openAiProvider, anthropicProvider, clock, configuration);
+        assertThat(service.current().dataAssurance().zeroDataRetention()).isTrue();
+        assertThat(service.current().dataAssurance().noTraining()).isTrue();
+        when(openAi.apiKey()).thenReturn("rotated-key");
+        assertThat(service.current().dataAssurance().noTraining()).isFalse();
+        when(openAi.apiKey()).thenReturn("test-key");
+        when(openAi.effectiveStore()).thenReturn(true);
+        assertThat(service.current().dataAssurance().zeroDataRetention()).isFalse();
+        var storeConfiguration = new ru.safeai.gateway.ai.provider.ProviderDataAssuranceProperties(
+                new ru.safeai.gateway.ai.provider.ProviderDataEvidence("CONTRACT-42", now,
+                        now.plusSeconds(60), ru.safeai.gateway.ai.provider.ProviderDataEvidence.fingerprint(
+                        "chat", "openai", "https://api.openai.com/v1", "gpt-test", "test-key", "true"),
+                        true, true), null, null);
+        var storeService = new RuntimeModelStatusService(new AiProviderProperties("openai"),
+                new ModelPricingProperties(List.of()), openAiProvider, anthropicProvider, clock, storeConfiguration);
+        assertThat(storeService.current().dataAssurance().noTraining()).isTrue();
+        assertThat(storeService.current().dataAssurance().zeroDataRetention()).isFalse();
+    }
+
+    @Test
     void mockRuntimeIsTruthfulAndDoesNotPretendToHaveProviderCapabilities() {
         RuntimeModelStatusService service = service(
                 "mock",

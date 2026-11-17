@@ -1,6 +1,7 @@
 package ru.safeai.gateway.model.dto;
 
 import java.math.BigDecimal;
+import ru.safeai.gateway.ai.provider.ProviderDataEvidence;
 
 /** Public runtime DTO. Money is serialized as exact decimal strings. */
 public record RuntimeModelStatusWireResponse(
@@ -18,7 +19,8 @@ public record RuntimeModelStatusWireResponse(
         String pricingStatus,
         String inputUsdPer1mTokens,
         String outputUsdPer1mTokens,
-        String pricingVersion
+        String pricingVersion,
+        ProviderDataEvidence.Status dataAssurance
 ) {
     public static RuntimeModelStatusWireResponse from(
             RuntimeModelStatusResponse value
@@ -38,7 +40,8 @@ public record RuntimeModelStatusWireResponse(
                 value.pricingStatus(),
                 decimal(value.inputUsdPer1mTokens()),
                 decimal(value.outputUsdPer1mTokens()),
-                value.pricingVersion()
+                value.pricingVersion(),
+                value.dataAssurance()
         );
     }
 

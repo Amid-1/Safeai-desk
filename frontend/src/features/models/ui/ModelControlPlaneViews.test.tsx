@@ -3,7 +3,7 @@
    frontend/src/features/models/ui/ModelControlPlaneViews.test.tsx
    ============================================================ */
 
-import {render, screen} from '@testing-library/react'
+import {fireEvent, render, screen} from '@testing-library/react'
 import {describe, expect, it, vi} from 'vitest'
 import {
     CatalogTable,
@@ -21,6 +21,17 @@ const baseEntry = createModelCatalogEntry()
 const policy = createOrganizationModelPolicy()
 
 describe('ModelControlPlaneViews semantics', () => {
+    it('shows source, validity and local history scope in connection diagnostics', () => {
+        render(<RuntimeCard runtime={createRuntimeModelStatus({
+            provider: 'openai', model: 'test-model',
+            dataAssurance: {noTraining: true, zeroDataRetention: false, source: 'CONTRACT-42',
+                verifiedAt: '2026-11-17T12:00:00Z', expiresAt: '2026-12-17T12:00:00Z'},
+        })} effectiveCatalog={[]} probe={null} probePending={false} canProbe={false} onProbe={vi.fn()} />)
+        fireEvent.click(screen.getByRole('button', {name: 'Условия обработки данных'}))
+        expect(screen.getByText(/Подтверждение подключения: CONTRACT-42/)).toBeVisible()
+        expect(screen.getByText(/Действует до:/)).toBeVisible()
+        expect(screen.getByText(/История чатов SafeAI Desk сохраняется/)).toBeVisible()
+    })
     it.each([
         [true, 'NOT_DECLARED', true],
         [false, 'NOT_DECLARED', false],

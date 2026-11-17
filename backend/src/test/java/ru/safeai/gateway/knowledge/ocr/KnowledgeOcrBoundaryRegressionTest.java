@@ -148,7 +148,9 @@ class KnowledgeOcrBoundaryRegressionTest {
 
     private static HttpKnowledgeOcrProvider httpProvider() {
         return new HttpKnowledgeOcrProvider(
-                configuredProperties()
+                configuredProperties(),
+                ru.safeai.gateway.ai.provider.ProviderDataAssuranceProperties.EMPTY,
+                java.time.Clock.systemUTC()
         );
     }
 

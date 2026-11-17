@@ -2,6 +2,7 @@ package ru.safeai.gateway.model.service;
 
 import ru.safeai.gateway.audit.details.AuditDetails;
 import ru.safeai.gateway.model.domain.ModelRouteDecision;
+import ru.safeai.gateway.ai.provider.ProviderDataEvidence;
 
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
@@ -13,7 +14,8 @@ import java.util.Objects;
  */
 record ModelRouteDecisionAuditDetails(
         ModelRouteDecision decision,
-        ModelRoutingCostPolicy.BudgetSnapshot budget
+        ModelRoutingCostPolicy.BudgetSnapshot budget,
+        ProviderDataEvidence.Status dataAssurance
 ) implements AuditDetails {
 
     ModelRouteDecisionAuditDetails {
@@ -25,11 +27,22 @@ record ModelRouteDecisionAuditDetails(
                 budget,
                 "budget"
         );
+        Objects.requireNonNull(dataAssurance, "dataAssurance");
     }
 
     @Override
     public Map<String, Object> toMap() {
         Map<String, Object> details = new LinkedHashMap<>();
+
+        details.put("runtimeNoTrainingConfirmed", dataAssurance.noTraining());
+        details.put("runtimeZeroDataRetentionConfirmed", dataAssurance.zeroDataRetention());
+        putIfNonNull(details, "runtimeDataEvidenceSource", dataAssurance.source());
+        if (dataAssurance.verifiedAt() != null) {
+            details.put("runtimeDataEvidenceVerifiedAt", dataAssurance.verifiedAt().toString());
+        }
+        if (dataAssurance.expiresAt() != null) {
+            details.put("runtimeDataEvidenceExpiresAt", dataAssurance.expiresAt().toString());
+        }
 
         details.put(
                 "decisionId",

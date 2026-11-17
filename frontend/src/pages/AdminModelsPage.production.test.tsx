@@ -93,7 +93,7 @@ function configureApi() {
 
 async function loadPage() {
     render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
-    await screen.findByRole('heading', { name: 'Управление AI' })
+    await screen.findByRole('heading', { name: 'Управление AI-моделями' })
 }
 
 describe('AdminModelsPage — контрактные и регрессионные сценарии', () => {
@@ -107,7 +107,7 @@ describe('AdminModelsPage — контрактные и регрессионны
         vi.mocked(getRuntimeModelStatus).mockRejectedValueOnce(new Error('runtime unavailable'))
         render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
         expect(await screen.findByText('Не удалось загрузить настройки моделей.')).toBeInTheDocument()
-        expect(screen.queryByRole('heading', { name: 'Управление AI' }))
+        expect(screen.queryByRole('heading', { name: 'Управление AI-моделями' }))
             .not.toBeInTheDocument()
     })
 
@@ -118,7 +118,7 @@ describe('AdminModelsPage — контрактные и регрессионны
         render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
         expect(await screen.findByText(/Сервер вернул правила другой организации/))
             .toBeInTheDocument()
-        expect(screen.queryByRole('heading', { name: 'Управление AI' }))
+        expect(screen.queryByRole('heading', { name: 'Управление AI-моделями' }))
             .not.toBeInTheDocument()
     })
 
@@ -147,12 +147,12 @@ describe('AdminModelsPage — контрактные и регрессионны
         fireEvent.click(screen.getByRole('button', { name: 'Найти' }))
         fireEvent.click(await screen.findByRole('button', { name: /Second Organization/ }))
 
-        expect(screen.queryByRole('heading', { name: 'Управление AI' }))
+        expect(screen.queryByRole('heading', { name: 'Управление AI-моделями' }))
             .not.toBeInTheDocument()
         expect(screen.getByText('Загрузка настроек моделей...')).toBeInTheDocument()
 
         secondPolicy.resolve(createOrganizationModelPolicy({ organizationId: SECOND_ORG }))
-        await screen.findByRole('heading', { name: 'Управление AI' })
+        await screen.findByRole('heading', { name: 'Управление AI-моделями' })
         await waitFor(() => {
             expect(screen.getAllByText(SECOND_ORG).length).toBeGreaterThan(0)
         })
@@ -333,7 +333,7 @@ describe('AdminModelsPage — контрактные и регрессионны
         expect(await screen.findByText(/Ответ сервера относится к другой организации/))
             .toBeInTheDocument()
         expect(screen.getByText('Не настроены')).toBeInTheDocument()
-        expect(screen.queryByRole('dialog', { name: 'Правила использования моделей' }))
+        expect(screen.queryByRole('dialog', { name: 'Настройка правил использования моделей' }))
             .not.toBeInTheDocument()
     })
 
@@ -352,7 +352,7 @@ describe('AdminModelsPage — контрактные и регрессионны
         render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
         expect(getRuntimeModelStatus).not.toHaveBeenCalled()
         expect(getOrganizationModelPolicy).not.toHaveBeenCalled()
-        expect(screen.queryByRole('heading', { name: 'Управление AI' }))
+        expect(screen.queryByRole('heading', { name: 'Управление AI-моделями' }))
             .not.toBeInTheDocument()
     })
 

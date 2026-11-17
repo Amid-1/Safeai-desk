@@ -59,7 +59,7 @@ export function ModelsCatalogWorkspace({ controller }: { controller: AdminModels
                 <p>Если версия уже создана вручную, откройте её историю и создайте новую версию. Существующие данные не изменены.</p>
             </div>}
             {!isSuperAdmin && <p className="models-catalog-permission-hint" role="note">
-                <ModelIcon name="shield" /> <strong>Каталог изменяет SUPER_ADMIN.</strong> Администратор организации может просматривать версии и изменять правила своей организации.
+                <ModelIcon name="shield" /> <strong>Каталог изменяет суперадминистратор.</strong> Администратор организации может просматривать версии и изменять правила своей организации.
             </p>}
 
             <div className="models-catalog-panel">

@@ -80,13 +80,17 @@ function clickPreview() {
 }
 
 function clickSubmit() {
-    fireEvent.click(screen.getByRole('button', {name: 'Сохранить правила'}))
+    const save = screen.getByRole('button', {name: 'Сохранить правила'}) as HTMLButtonElement
+    // Test the controller guard as well as the disabled UI (direct form submission).
+    if (save.disabled) fireEvent.submit(screen.getByRole('dialog').querySelector('form')!)
+    else fireEvent.click(save)
 }
 
 describe('ModelPolicyModal: безопасность изменения правил', () => {
     it('не сохраняет включённые правила без предварительной серверной проверки', () => {
         const {onSubmit} = setup()
         enablePolicy()
+        expect(screen.getByRole('button', {name: 'Сохранить правила'})).toBeDisabled()
         clickSubmit()
         expect(onSubmit).not.toHaveBeenCalled()
         expect(screen.getByText(/Перед сохранением включённых правил выполните/)).toBeInTheDocument()
@@ -96,7 +100,7 @@ describe('ModelPolicyModal: безопасность изменения прав
         const {onSubmit, onPreview} = setup()
         enablePolicy()
         clickPreview()
-        await screen.findByText('Серверная проверка черновика')
+        await screen.findByText('Результат проверки правил')
         clickSubmit()
         await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
             enabled: true, expectedPreviousVersion: 0,
@@ -108,9 +112,9 @@ describe('ModelPolicyModal: безопасность изменения прав
         const {onSubmit} = setup()
         enablePolicy()
         clickPreview()
-        await screen.findByText('Серверная проверка черновика')
+        await screen.findByText('Результат проверки правил')
         fireEvent.click(screen.getByRole('tab', {name: /Лимиты/}))
-        fireEvent.change(screen.getByPlaceholderText('Например: 32000'), {target: {value: '16384'}})
+        fireEvent.change(screen.getByLabelText('Максимум входных токенов'), {target: {value: '16384'}})
         fireEvent.click(screen.getByRole('tab', {name: /Проверка/}))
         expect(screen.getByText(/Правила изменены после предыдущей проверки/)).toBeInTheDocument()
         clickSubmit()
@@ -126,7 +130,7 @@ describe('ModelPolicyModal: безопасность изменения прав
         enablePolicy()
         clickPreview()
         await screen.findByText('Сервер вернул проверку для другого состояния правил.')
-        expect(screen.queryByText('Серверная проверка черновика')).not.toBeInTheDocument()
+        expect(screen.queryByText('Результат проверки правил')).not.toBeInTheDocument()
         clickSubmit()
         expect(onSubmit).not.toHaveBeenCalled()
     })
@@ -142,7 +146,7 @@ describe('ModelPolicyModal: безопасность изменения прав
         expect(onPreview).toHaveBeenCalledTimes(1)
         expect(onSubmit).not.toHaveBeenCalled()
         await act(async () => resolve(preview()))
-        await screen.findByText('Серверная проверка черновика')
+        await screen.findByText('Результат проверки правил')
     })
 
     it('отклоняет двойное сохранение до завершения первого Promise', async () => {
@@ -175,10 +179,12 @@ describe('ModelPolicyModal: безопасность изменения прав
         })), onSubmit})
         enablePolicy()
         clickPreview()
-        await screen.findByText(/Исполняемых моделей: 0/)
+        await screen.findByText(/Доступных моделей: 0/)
+        expect(screen.getByRole('button', {name: 'Сохранить правила'})).toBeDisabled()
         clickSubmit()
         expect(onSubmit).not.toHaveBeenCalled()
         fireEvent.click(screen.getByRole('checkbox', {name: /Подтверждаю осознанную блокировку/}))
+        expect(screen.getByRole('button', {name: 'Сохранить правила'})).toBeEnabled()
         clickSubmit()
         await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1))
     })
@@ -206,7 +212,7 @@ describe('ModelPolicyModal: безопасность изменения прав
         enablePolicy()
         clickPreview()
         fireEvent.click(screen.getByRole('tab', {name: /Лимиты/}))
-        fireEvent.change(screen.getByPlaceholderText('Например: 32000'), {target: {value: '8096'}})
+        fireEvent.change(screen.getByLabelText('Максимум входных токенов'), {target: {value: '8096'}})
         await act(async () => resolve(preview()))
         fireEvent.click(screen.getByRole('tab', {name: /Проверка/}))
         expect(screen.getByText(/Правила изменены после предыдущей проверки/)).toBeInTheDocument()
@@ -231,13 +237,11 @@ describe('ModelPolicyModal: безопасность изменения прав
         const {rerender} = render(ui(0))
         enablePolicy()
         clickPreview()
-        await screen.findByText('Серверная проверка черновика')
+        await screen.findByText('Результат проверки правил')
         rerender(ui(1))
         clickSubmit()
         expect(onSubmit).not.toHaveBeenCalled()
-        expect(screen.getByRole('alert')).toHaveTextContent(
-            'На сервере изменилась версия правил',
-        )
+        expect(screen.getByText(/На сервере изменилась версия правил/)).toHaveAttribute('role', 'alert')
         expect(screen.getByRole('button', {name: 'Сохранить правила'})).toBeDisabled()
     })
 
@@ -254,10 +258,10 @@ describe('ModelPolicyModal: безопасность изменения прав
         const onSubmit = vi.fn(async () => {throw new Error('Конфликт версии')})
         setup({onSubmit})
         fireEvent.click(screen.getByRole('tab', {name: /Лимиты/}))
-        fireEvent.change(screen.getByPlaceholderText('Например: 32000'), {target: {value: '32000'}})
+        fireEvent.change(screen.getByLabelText('Максимум входных токенов'), {target: {value: '32000'}})
         clickSubmit()
         await screen.findByText('Конфликт версии')
-        expect(screen.getByPlaceholderText('Например: 32000')).toHaveValue('32000')
+        expect(screen.getByLabelText('Максимум входных токенов')).toHaveValue('32000')
         clickSubmit()
         await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2))
     })

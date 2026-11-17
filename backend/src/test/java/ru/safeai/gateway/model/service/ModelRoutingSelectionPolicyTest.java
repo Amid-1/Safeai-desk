@@ -377,6 +377,47 @@ class ModelRoutingSelectionPolicyTest {
         )).isEqualTo(ModelRouteReason.TRAINING_POLICY_UNSATISFIED);
     }
 
+    @Test
+    void exhaustivelyChecksCatalogAndRuntimePrivacyRequirementsIndependently() {
+        for (var training : ModelTrainingUseStatus.values()) {
+            for (var retention : ModelRetentionStatus.values()) {
+                for (boolean runtimeTraining : new boolean[]{false, true}) {
+                    for (boolean runtimeZdr : new boolean[]{false, true}) {
+                        for (boolean requireTraining : new boolean[]{false, true}) {
+                            for (boolean requireZdr : new boolean[]{false, true}) {
+                                var tenant = ModelTestFixtures.policy(true, Set.of(), Set.of(),
+                                        null, null, null, null, null,
+                                        ru.safeai.gateway.model.domain.BudgetEnforcement.SOFT,
+                                        false, requireTraining, requireZdr);
+                                var entry = ModelTestFixtures.entry(ModelLifecycle.ACTIVE,
+                                        ru.safeai.gateway.model.domain.ModelPricingStatus.FREE,
+                                        true, java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO,
+                                        Set.of(), retention, training);
+                                var runtime = new ru.safeai.gateway.model.dto.RuntimeModelStatusResponse(
+                                        "openai", "gpt-test", true, "SINGLE_PROVIDER_STATIC",
+                                        32000, 4096, false, false, false, "NOT_DECLARED",
+                                        "NOT_PROBED", "FREE", java.math.BigDecimal.ZERO,
+                                        java.math.BigDecimal.ZERO, null,
+                                        new ru.safeai.gateway.ai.provider.ProviderDataEvidence.Status(
+                                                runtimeTraining, runtimeZdr, "TEST", null, null));
+                                boolean trainingOk = runtimeTraining && (training == ModelTrainingUseStatus.NOT_USED
+                                        || training == ModelTrainingUseStatus.CONTRACTUAL_NO_TRAINING);
+                                boolean retentionOk = runtimeZdr && retention == ModelRetentionStatus.ZERO_DATA_RETENTION;
+                                ModelRouteReason expected = requireTraining && !trainingOk
+                                        ? ModelRouteReason.TRAINING_POLICY_UNSATISFIED
+                                        : requireZdr && !retentionOk ? ModelRouteReason.RETENTION_POLICY_UNSATISFIED : null;
+                                assertThat(policy.validateCatalogAndPolicy(entry, entry.modelKey(),
+                                        runtime, tenant, true, Set.of())).isEqualTo(expected);
+                                assertThat(policy.validateCatalogAndPolicy(entry, entry.modelKey(),
+                                        runtime, tenant, false, Set.of())).isNull();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private static ModelCatalogEntry copyWithModelKey(
             ModelCatalogEntry source,
             String modelKey

@@ -51,6 +51,29 @@
     color: #1c304b;
     font-size: 15px;
 }
+.modal-card.models-policy-modal .models-policy-check__criteria summary,
+.modal-card.models-policy-modal .models-policy-check__budget-details summary {
+    color: #1c304b;
+    font-weight: 700;
+    cursor: pointer;
+}
+.modal-card.models-policy-modal .models-policy-check__criteria[open] summary,
+.modal-card.models-policy-modal .models-policy-check__budget-details[open] summary {margin-bottom: 12px;}
+.modal-card.models-policy-modal .models-policy-check__budget-details {padding: 10px 0;}
+.modal-card.models-policy-modal .models-policy-check__budget-details p {color: #526581; font-size: 13px; margin: 8px 0 0;}
+.modal-card.models-policy-modal .models-policy-form__requirement-options > div {
+    min-width: 0;
+    background: #fff;
+    border: 1px solid #dbe4f2;
+    border-radius: 10px;
+    padding: 12px;
+}
+.modal-card.models-policy-modal .models-policy-form__requirement-options p {
+    color: #526581;
+    font-size: 13px;
+    line-height: 1.5;
+    margin: 6px 0 0;
+}
 .modal-card.models-policy-modal .models-policy-check__criteria-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -282,6 +305,12 @@
     font-size: 14px;
     color: #1d2b42;
     font-variant-numeric: tabular-nums;
+}
+.modal-card.models-policy-modal .models-policy-check__model-result > .models-policy-check__model-facts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+@container model-policy-modal (max-width: 720px) {
+    .modal-card.models-policy-modal .models-policy-check__model-result > .models-policy-check__model-facts {grid-template-columns: minmax(0, 1fr);}
 }
 .modal-card.models-policy-modal .models-policy-check__status--available {
     background: #eef9f2; border-color: #bee5cf; color: #14683c;

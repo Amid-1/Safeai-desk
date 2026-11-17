@@ -45,10 +45,11 @@ describe('Модели: понятный и безопасный интерфе�
             organizationName="SafeAI Platform"
             onOpenPolicy={onOpenPolicy}
         />)
-        expect(screen.getByRole('heading', {name: 'Совместимость конфигурации'})).toBeInTheDocument()
-        expect(screen.getByText('Нужна проверка запроса')).toBeInTheDocument()
+        expect(screen.getByRole('heading', {name: 'Предварительная проверка совместимости'})).toBeInTheDocument()
+        expect(screen.getByText('Требуется проверка запроса')).toBeVisible()
         expect(screen.getByText(/Окончательный доступ определяется сервером/)).toBeInTheDocument()
-        // Три сводные карточки не должны быть ложными кнопками.
+        expect(screen.getByText('Показать подробности').closest('details')).not.toHaveAttribute('open')
+        // Серверная проверка доступна и при закрытых подробностях.
         expect(screen.getAllByRole('button')).toHaveLength(1)
         fireEvent.click(screen.getByRole('button', {name: 'Открыть проверку правил'}))
         expect(onOpenPolicy).toHaveBeenCalledTimes(1)
@@ -106,5 +107,33 @@ describe('Модели: понятный и безопасный интерфе�
             effectiveCatalog={[entry]} />)
         expect(screen.getByText('mock / mock-safeai')).toBeInTheDocument()
         expect(screen.queryByText(/future-model/)).not.toBeInTheDocument()
+    })
+
+    it('различает автоматический выбор, закреплённую модель и заданные лимиты', () => {
+        const {rerender} = render(<PolicyCard {...policyProps()} />)
+        expect(screen.getByText('Автоматически')).toBeVisible()
+        expect(screen.getByText('Текущая модель: mock-safeai · mock')).toBeVisible()
+        const restricted = {...policy, configured: true, enabled: true, defaultModelKey: entry.modelKey,
+            maxInputTokens: 1000, maxOutputTokens: null, monthlyBudgetUsd: '10', budgetEnforcement: 'HARD' as const,
+            maxRequestCostUsd: '0.01', requireCompletePricing: true, requireNoTraining: true, requireZeroDataRetention: true}
+        rerender(<PolicyCard {...policyProps()} policy={restricted} />)
+        expect(screen.getByText(/Вход: 1\s000 · выход: без доп\. лимита/)).toBeVisible()
+        expect(screen.getByText('Жёсткий контроль: блокировка превышения')).toBeVisible()
+        expect(screen.getByText('Полные сведения о стоимости · Запрет использования данных для обучения · Нулевое хранение данных у провайдера')).toBeVisible()
+        expect(screen.getByText('mock / mock-safeai')).toBeVisible()
+        expect(screen.queryByText('Автоматически')).not.toBeInTheDocument()
+    })
+
+    it('не открывает редактор при заблокированном редактировании', () => {
+        const onEdit = vi.fn()
+        render(<PolicyCard {...policyProps()} editDisabled onEdit={onEdit} />)
+        const shortcuts = screen.getAllByRole('button', {name: /^Настроить:/})
+        expect(shortcuts).toHaveLength(6)
+        for (const button of shortcuts) {
+            expect(button).toBeDisabled()
+            fireEvent.click(button)
+        }
+        expect(screen.getByRole('button', {name: 'Открыть проверку правил'})).toBeDisabled()
+        expect(onEdit).not.toHaveBeenCalled()
     })
 })

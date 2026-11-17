@@ -23,19 +23,7 @@ public class AiExecutionService {
     private final AiExecutionAttemptScope scope;
     private final AiModelExecutionPort bindingService;
     private final AiExecutionAttemptAuthorization attemptAuthorization;
-
-    /** Source-compatible constructor for unit tests that exercise GENERAL routes only. */
-    public AiExecutionService(
-            AiProvider provider,
-            AiProviderProperties properties,
-            AiExecutionPlanService planService,
-            AiExecutionAttemptRecorder recorder,
-            AiExecutionAttemptScope scope,
-            AiModelExecutionPort bindingService
-    ) {
-        this(provider, properties, planService, recorder, scope, bindingService,
-                AiExecutionAttemptAuthorization.noOp());
-    }
+    private final AiDataAssurancePort dataAssurance;
 
     @Autowired
     public AiExecutionService(
@@ -45,7 +33,8 @@ public class AiExecutionService {
             AiExecutionAttemptRecorder recorder,
             AiExecutionAttemptScope scope,
             AiModelExecutionPort bindingService,
-            AiExecutionAttemptAuthorization attemptAuthorization
+            AiExecutionAttemptAuthorization attemptAuthorization,
+            AiDataAssurancePort dataAssurance
     ) {
         this.provider = Objects.requireNonNull(provider, "provider");
         this.properties = Objects.requireNonNull(properties, "properties");
@@ -54,6 +43,7 @@ public class AiExecutionService {
         this.scope = Objects.requireNonNull(scope, "scope");
         this.bindingService = Objects.requireNonNull(bindingService, "bindingService");
         this.attemptAuthorization = Objects.requireNonNull(attemptAuthorization, "attemptAuthorization");
+        this.dataAssurance = Objects.requireNonNull(dataAssurance, "dataAssurance");
     }
 
     public AiExecutionResult execute(AiExecutionRequest request) {
@@ -155,6 +145,7 @@ public class AiExecutionService {
 
         @Override
         public void started(AiProviderAttemptContext attempt) {
+            dataAssurance.require(request, false);
             UUID leaseId = attemptAuthorization.beforePhysicalAttempt(request, attempt);
             try {
                 recorder.started(plan.getId(), target, attempt);
@@ -180,6 +171,7 @@ public class AiExecutionService {
                         "Knowledge dispatch is forbidden without an owned attempt lease");
             }
             attemptAuthorization.beforeNetworkDispatch(request, attempt, leaseId);
+            dataAssurance.require(request, true);
         }
 
         @Override

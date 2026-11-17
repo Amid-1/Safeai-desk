@@ -420,33 +420,15 @@
     scroll-margin-block: 16px;
 }
 
-.modal-card.models-policy-modal .models-policy-form[data-active-section='access'] [data-policy-block='access'],
-.modal-card.models-policy-modal .models-policy-form[data-active-section='limits'] [data-policy-block='limits'],
-.modal-card.models-policy-modal .models-policy-form[data-active-section='budget'] [data-policy-block='budget'],
-.modal-card.models-policy-modal .models-policy-form[data-active-section='data'] [data-policy-block='data'] {
-    outline: 3px solid var(--policy-section-color);
-    outline-offset: 2px;
-    box-shadow: 0 0 0 6px var(--policy-section-soft);
-}
-
-.modal-card.models-policy-modal [data-policy-block='access'] {
-    --policy-section-color: var(--policy-blue);
-    --policy-section-soft: var(--policy-blue-soft);
-}
-
-.modal-card.models-policy-modal [data-policy-block='limits'] {
-    --policy-section-color: var(--policy-cyan);
-    --policy-section-soft: var(--policy-cyan-soft);
-}
-
-.modal-card.models-policy-modal [data-policy-block='budget'] {
-    --policy-section-color: var(--policy-violet);
-    --policy-section-soft: var(--policy-violet-soft);
-}
-
-.modal-card.models-policy-modal [data-policy-block='data'] {
-    --policy-section-color: var(--policy-green);
-    --policy-section-soft: var(--policy-green-soft);
+.modal-card.models-policy-modal .models-policy-form[data-highlight-target='access'] [id$='-access'][data-policy-block],
+.modal-card.models-policy-modal .models-policy-form[data-highlight-target='default'] [id$='-default'][data-policy-block],
+.modal-card.models-policy-modal .models-policy-form[data-highlight-target='limits'] [id$='-limits'][data-policy-block],
+.modal-card.models-policy-modal .models-policy-form[data-highlight-target='request-cost'] [id$='-request-cost'][data-policy-block],
+.modal-card.models-policy-modal .models-policy-form[data-highlight-target='monthly-budget'] [id$='-monthly-budget'][data-policy-block],
+.modal-card.models-policy-modal .models-policy-form[data-highlight-target='data'] [id$='-data'][data-policy-block] {
+    outline: 2px solid #5368f5;
+    outline-offset: 3px;
+    border-radius: 12px;
 }
 
 .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope-tag[aria-pressed='true'] {
@@ -459,12 +441,6 @@
 .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__requirements input:focus-visible {
     outline: 2px solid var(--policy-green);
     outline-offset: 3px;
-}
-
-@media (forced-colors: active) {
-    .modal-card.models-policy-modal .models-policy-form [data-policy-block] {
-        --policy-section-color: Highlight;
-    }
 }
 
 .modal-card.models-policy-modal .models-policy-form__access-grid[data-policy-block] {

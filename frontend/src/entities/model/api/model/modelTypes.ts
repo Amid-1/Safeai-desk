@@ -127,6 +127,13 @@ export type RuntimeModelStatus = {
     visionSupported: boolean
     structuredOutputSupported: boolean
     dataRetentionStatus: RuntimeDataRetentionStatus
+    dataAssurance?: {
+        noTraining: boolean
+        zeroDataRetention: boolean
+        source: string | null
+        verifiedAt: string | null
+        expiresAt: string | null
+    }
     healthStatus: RuntimeHealthStatus
     pricingStatus: RuntimePricingStatus
     inputUsdPer1mTokens: string | null

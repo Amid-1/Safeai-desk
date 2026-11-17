@@ -89,6 +89,18 @@ public class OrganizationModelPolicyRepository {
         return rows.stream().findFirst();
     }
 
+    public Optional<OrganizationModelPolicy> findById(UUID organizationId, UUID policyId) {
+        return jdbc.query("""
+                select id, organization_id, version, enabled,
+                    allow_model_keys, deny_model_keys, default_model_key,
+                    max_input_tokens, max_output_tokens, max_request_cost_usd, monthly_budget_usd,
+                    budget_enforcement, require_complete_pricing, require_no_training,
+                    require_zero_data_retention, created_by_user_id, created_at
+                from organization_model_policies
+                where organization_id = ? and id = ?
+                """, this::map, organizationId, policyId).stream().findFirst();
+    }
+
     public OrganizationModelPolicy insert(
             OrganizationModelPolicy policy
     ) {

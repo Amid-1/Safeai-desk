@@ -80,6 +80,7 @@ describe('RuntimeCard: достоверность сведений', () => {
             effectiveCatalog={[createModelCatalogEntry({capabilities: ['TOOLS','VISION','STRUCTURED_OUTPUT']})]}
             probe={null} probePending={false} canProbe={false} onProbe={vi.fn()} />)
         expect(screen.getByText('Поддерживаемые возможности')).toBeInTheDocument()
+        expect(screen.getByText('Поддерживаемые возможности').closest('details')).not.toHaveAttribute('open')
         const dt = screen.getByText('Поддерживаемые возможности').closest('dt')!
         expect(dt.nextElementSibling).toHaveTextContent('Текст')
         expect(dt.nextElementSibling).not.toHaveTextContent('Инструменты')
@@ -97,6 +98,55 @@ describe('RuntimeCard: достоверность сведений', () => {
         render(<RuntimeCard runtime={runtime} effectiveCatalog={[entry]} probe={null}
             probePending={false} canProbe onProbe={onProbe} />)
         expect(screen.getByText('Не выполнялась')).toBeInTheDocument()
+        expect(onProbe).not.toHaveBeenCalled()
+        fireEvent.click(screen.getByRole('button', {name: 'Проверить доступность'}))
+        expect(onProbe).toHaveBeenCalledTimes(1)
+    })
+
+    it('не выбирает произвольную запись каталога при нескольких совпадениях', () => {
+        const onOpenCatalogVersion = vi.fn()
+        render(<RuntimeCard runtime={runtime} effectiveCatalog={[entry, {...entry, modelKey: 'alias'}]}
+            probe={null} probePending={false} canProbe={false} onProbe={vi.fn()} onOpenCatalogVersion={onOpenCatalogVersion} />)
+        expect(screen.getByText('Совпадений: 2')).toBeVisible()
+        expect(screen.getByText('Несколько действующих записей')).toBeVisible()
+        expect(screen.queryByRole('button', {name: 'Открыть историю версий'})).not.toBeInTheDocument()
+        expect(onOpenCatalogVersion).not.toHaveBeenCalled()
+    })
+
+    it('раскрывает свойства и пояснение о данных, не выполняя probe; ADMIN не получает лишних действий', () => {
+        const onProbe = vi.fn()
+        const onOpenCatalogVersion = vi.fn()
+        render(<RuntimeCard runtime={runtime} effectiveCatalog={[entry]}
+            probe={null} probePending={false} canProbe={false} onProbe={onProbe} onOpenCatalogVersion={onOpenCatalogVersion} />)
+        const details = screen.getByRole('button', {name: 'Характеристики модели'})
+        expect(details).toHaveAttribute('aria-expanded', 'false')
+        fireEvent.click(details)
+        expect(details).toHaveAttribute('aria-expanded', 'true')
+        expect(screen.getByText('Поддерживаемые возможности').closest('details')).toHaveAttribute('open')
+        fireEvent.click(details)
+        expect(details).toHaveAttribute('aria-expanded', 'false')
+        expect(screen.getByText('Поддерживаемые возможности').closest('details')).not.toHaveAttribute('open')
+        expect(screen.getByText('Поддерживаемые возможности')).not.toBeVisible()
+        fireEvent.click(details)
+        expect(details).toHaveAttribute('aria-expanded', 'true')
+        const retention = screen.getByRole('button', {name: 'Условия обработки данных'})
+        fireEvent.click(retention)
+        expect(retention).toHaveAttribute('aria-expanded', 'true')
+        expect(screen.getByText(/Сведения о хранении сами по себе/)).toBeVisible()
+        fireEvent.click(retention)
+        expect(retention).toHaveAttribute('aria-expanded', 'false')
+        expect(screen.queryByRole('button', {name: 'Перейти к проверке'})).not.toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', {name: 'Открыть историю версий'}))
+        expect(onOpenCatalogVersion).toHaveBeenCalledWith(entry)
+        expect(onProbe).not.toHaveBeenCalled()
+    })
+
+    it('переход к проверке только фокусирует элемент управления, запрос требует отдельного нажатия', () => {
+        const onProbe = vi.fn()
+        render(<RuntimeCard runtime={runtime} effectiveCatalog={[entry]}
+            probe={null} probePending={false} canProbe onProbe={onProbe} />)
+        fireEvent.click(screen.getByRole('button', {name: 'Перейти к проверке'}))
+        expect(document.getElementById('models-runtime-probe')).toHaveFocus()
         expect(onProbe).not.toHaveBeenCalled()
         fireEvent.click(screen.getByRole('button', {name: 'Проверить доступность'}))
         expect(onProbe).toHaveBeenCalledTimes(1)
