@@ -92,8 +92,25 @@ def assert_policy(repo: Path) -> None:
          and '    uses: ./.github/workflows/performance-ci.yml\n' in release_gate[1]
          and 'continue-on-error:' not in release_gate[1],
          'Production release: изменён обязательный Performance CI')
-    must(re.search(r'(?m)^    needs: \[preflight, performance\]\s*$', prod),
-         'Production release: publish не ждёт Performance CI')
+    assurance_gate = re.search(r'(?ms)^  provider-data-assurance:\n(.*?)(?=^  \w[\w-]*:|\Z)', prod)
+    must(bool(assurance_gate), 'Production release: отсутствует Provider Data Assurance')
+    must('    needs: preflight\n' in assurance_gate[1]
+         and '    uses: ./.github/workflows/provider-data-assurance.yml\n' in assurance_gate[1]
+         and 'continue-on-error:' not in assurance_gate[1],
+         'Production release: изменён обязательный Provider Data Assurance')
+    publish = re.search(r'(?ms)^  publish:\n(.*?)(?=^  \w[\w-]*:|\Z)', prod)
+    must(bool(publish), 'Production release: отсутствует publish')
+    needs = re.findall(r'(?m)^    needs: \[([^\]\n]+)\][ \t]*$', publish[1])
+    must(len(needs) == 1, 'Production release: неверный список publish.needs')
+    dependencies = [item.strip() for item in needs[0].split(',')]
+    must(len(dependencies) == len(set(dependencies))
+         and all(re.fullmatch(r'[A-Za-z_][A-Za-z0-9_-]*', item) for item in dependencies),
+         'Production release: неверные зависимости publish')
+    must({'preflight', 'performance', 'provider-data-assurance'} <= set(dependencies),
+         'Production release: publish не ждёт все обязательные шлюзы')
+    must(re.findall(r'(?m)^    if: (.*)$', publish[1]) == ["github.ref == 'refs/heads/main'"]
+         and not re.search(r'(?m)^    continue-on-error:', publish[1]),
+         'Production release: изменено обязательное условие publish')
     must('test_performance_reports.py' in policy_workflow,
          'CI policy: отсутствуют тесты Performance CI')
     assert 'infra/postgres/Dockerfile' in docker and 'infra/postgres/noble-candidate/Dockerfile' not in docker

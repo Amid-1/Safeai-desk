@@ -1,3 +1,4 @@
+// frontend/src/entities/model/api/model/modelRuntimeAssurance.test.ts
 import {describe, expect, it} from 'vitest'
 import {parseRuntimeModelStatus} from './modelRuntimeParsers'
 import {createRuntimeModelStatus} from '../../../../test/fixtures/modelControlPlaneTestFixtures'

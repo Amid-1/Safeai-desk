@@ -1,7 +1,5 @@
 package ru.safeai.gateway.ai.provider;
 
-import org.jspecify.annotations.NonNull;
-
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -41,7 +39,7 @@ public record ProviderDataEvidence(
     }
 
     @Override
-    public @NonNull String toString() {
+    public String toString() {
         return "ProviderDataEvidence[connection=REDACTED]";
     }
 

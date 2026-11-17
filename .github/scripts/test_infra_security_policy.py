@@ -3,6 +3,7 @@
 """Негативные тесты: обойти security gates и допуск к production нельзя."""
 import importlib.util
 from pathlib import Path
+import re
 import shutil
 import tempfile
 import unittest
@@ -43,6 +44,17 @@ class InfraPolicyTests(unittest.TestCase):
         content = file.read_text(encoding='utf-8')
         self.assertIn(old, content)
         file.write_text(content.replace(old, new, 1), encoding='utf-8')
+
+    def alter_publish_needs(self, replacement):
+        path = self.repo / '.github/workflows/production-release.yml'
+        content = path.read_text(encoding='utf-8')
+        job = re.search(r'(?ms)^  publish:\n(.*?)(?=^  \w[\w-]*:|\Z)', content)
+        self.assertIsNotNone(job)
+        block, count = re.subn(r'(?m)^    needs: \[[^\]\n]+\][ \t]*$',
+                               '    needs: ' + replacement, job[1])
+        self.assertEqual(1, count)
+        path.write_text(content[:job.start(1)] + block + content[job.end(1):],
+                        encoding='utf-8')
 
     def test_reference_passes(self):
         policy.assert_policy(self.repo)
@@ -86,8 +98,38 @@ class InfraPolicyTests(unittest.TestCase):
             policy.assert_policy(self.repo)
 
     def test_release_without_performance_fails(self):
+        self.alter_publish_needs('[preflight, provider-data-assurance]')
+        with self.assertRaises(AssertionError):
+            policy.assert_policy(self.repo)
+
+    def test_release_without_provider_assurance_fails(self):
+        self.alter_publish_needs('[preflight, performance]')
+        with self.assertRaises(AssertionError):
+            policy.assert_policy(self.repo)
+
+    def test_release_with_reordered_dependencies_passes(self):
+        self.alter_publish_needs('[provider-data-assurance, preflight, performance]')
+        policy.assert_policy(self.repo)
+
+    def test_release_with_nonblocking_provider_assurance_fails(self):
         self.alter('.github/workflows/production-release.yml',
-                   'needs: [preflight, performance]', 'needs: preflight')
+                   '    uses: ./.github/workflows/provider-data-assurance.yml',
+                   '    continue-on-error: true\n    uses: ./.github/workflows/provider-data-assurance.yml')
+        with self.assertRaises(AssertionError):
+            policy.assert_policy(self.repo)
+
+    def test_release_with_decoy_needs_fails(self):
+        self.alter_publish_needs('[preflight, provider-data-assurance]')
+        path = self.repo / '.github/workflows/production-release.yml'
+        with path.open('a', encoding='utf-8') as handle:
+            handle.write('\n  decoy:\n    needs: [preflight, performance, provider-data-assurance]\n')
+        with self.assertRaises(AssertionError):
+            policy.assert_policy(self.repo)
+
+    def test_release_always_bypassing_dependencies_fails(self):
+        self.alter('.github/workflows/production-release.yml',
+                   '    if: github.ref == \'refs/heads/main\'\n    runs-on: ubuntu-latest\n    timeout-minutes: 150',
+                   '    if: always()\n    runs-on: ubuntu-latest\n    timeout-minutes: 150')
         with self.assertRaises(AssertionError):
             policy.assert_policy(self.repo)
 
