@@ -1,3 +1,5 @@
+-- V1-V92 reviewed: V91 adds columns to organization_model_policies (existing SI);
+-- V92 adds CHECK constraints only. No new relation, routine or grant is needed.
 -- S=SELECT I=INSERT U=UPDATE D=DELETE. '-' means no table-level grants.
 -- Last two fields are comma-separated column-only INSERT / UPDATE.
 CREATE TEMP TABLE acl_matrix (
@@ -143,7 +145,7 @@ BEGIN
 END;
 $fn$;
 
--- All application-owned invoker routines are reviewed in the immutable V1–V90
+-- All application-owned invoker routines are reviewed in the immutable V1–V92
 -- history; extension functions are granted separately by bootstrap.
 -- SECURITY DEFINER functions retain only their migration-specific grants.
 DO $routines$

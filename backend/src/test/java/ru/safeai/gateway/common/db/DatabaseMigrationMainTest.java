@@ -1,6 +1,10 @@
 package ru.safeai.gateway.common.db;
 
 import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.MigrationInfo;
+import org.flywaydb.core.api.MigrationInfoService;
+import org.flywaydb.core.api.MigrationState;
+import org.flywaydb.core.api.MigrationVersion;
 import org.flywaydb.core.api.configuration.FluentConfiguration;
 import org.flywaydb.database.postgresql.PostgreSQLConfigurationExtension;
 import org.junit.jupiter.api.Test;
@@ -17,6 +21,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Arrays;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -116,6 +121,7 @@ class DatabaseMigrationMainTest {
         verify(fixture.configuration).validateOnMigrate(true);
         verify(fixture.configuration, never()).target(anyString());
         var order = inOrder(fixture.flyway, fixture.aclConnection, fixture.aclStatement, fixture.history);
+        order.verify(fixture.flyway).info();
         order.verify(fixture.flyway).migrate();
         order.verify(fixture.flyway).validate();
         order.verify(fixture.aclConnection).setAutoCommit(false);
@@ -126,6 +132,53 @@ class DatabaseMigrationMainTest {
         order.verify(fixture.aclStatement).execute(aclPolicy());
         order.verify(fixture.aclConnection).commit();
         verify(fixture.aclConnection, never()).rollback();
+    }
+
+    @Test
+    void newMigrationCannotRunUntilExplicitlyReviewed() throws Exception {
+        Fixture fixture = new Fixture();
+        MigrationInfo[] expanded = Arrays.copyOf(fixture.approved, fixture.approved.length + 1);
+        expanded[expanded.length - 1] = migration(93, "V93__unreviewed.sql");
+        when(fixture.info.all()).thenReturn(expanded);
+        assertThrows(IllegalStateException.class, fixture::run);
+        verify(fixture.flyway, never()).migrate();
+        verifyNoInteractions(fixture.aclConnection, fixture.aclStatement);
+    }
+
+    @Test
+    void missingDuplicateRenamedOrUnresolvedMigrationIsBlockedBeforeDdl() throws Exception {
+        Fixture fixture = new Fixture();
+        var reviewed = RuntimeAclPolicy.verifyReviewedResources();
+        assertThrows(IllegalStateException.class, () -> RuntimeAclPolicy.verifyResolvedMigrations(
+                Arrays.copyOf(fixture.approved, fixture.approved.length - 1), reviewed));
+        var changed = fixture.approved.clone();
+        changed[0] = changed[1];
+        assertThrows(IllegalStateException.class, () -> RuntimeAclPolicy.verifyResolvedMigrations(changed, reviewed));
+        changed[0] = migration(1, "V1__renamed.sql");
+        assertThrows(IllegalStateException.class, () -> RuntimeAclPolicy.verifyResolvedMigrations(changed, reviewed));
+        changed[0] = fixture.approved[0];
+        when(changed[0].getState()).thenReturn(MigrationState.FAILED);
+        assertThrows(IllegalStateException.class, () -> RuntimeAclPolicy.verifyResolvedMigrations(changed, reviewed));
+        when(changed[0].getState()).thenReturn(MigrationState.SUCCESS);
+        RuntimeAclPolicy.verifyResolvedMigrations(changed, reviewed);
+        when(changed[0].getVersion()).thenReturn(null);
+        assertThrows(IllegalStateException.class, () -> RuntimeAclPolicy.verifyResolvedMigrations(changed, reviewed));
+    }
+
+    @Test
+    void reviewedResourcesAndHistoryCoverExactlyCurrentMigrations() throws Exception {
+        assertEquals(92, RuntimeAclPolicy.verifyReviewedResources().size());
+        assertEquals("V92__organization_model_policy_budget_finite_values.sql",
+                RuntimeAclPolicy.verifyReviewedResources().get(92));
+        assertEquals(true, RuntimeAclPolicy.historyQuery().contains("BETWEEN 1 AND 92"));
+    }
+
+    private static MigrationInfo migration(int version, String script) {
+        var migration = mock(MigrationInfo.class);
+        when(migration.getVersion()).thenReturn(MigrationVersion.fromVersion(Integer.toString(version)));
+        when(migration.getScript()).thenReturn(script);
+        when(migration.getState()).thenReturn(MigrationState.PENDING);
+        return migration;
     }
 
     @Test
@@ -171,6 +224,8 @@ class DatabaseMigrationMainTest {
         private final ResultSet history = mock(ResultSet.class);
         private final FluentConfiguration configuration = mock(FluentConfiguration.class, RETURNS_SELF);
         private final Flyway flyway = mock(Flyway.class);
+        private final MigrationInfoService info = mock(MigrationInfoService.class);
+        private final MigrationInfo[] approved;
         private final PostgreSQLConfigurationExtension extension = mock(PostgreSQLConfigurationExtension.class);
 
         private Fixture() throws Exception {
@@ -185,6 +240,10 @@ class DatabaseMigrationMainTest {
             when(history.getBoolean(1)).thenReturn(true);
             when(configuration.load()).thenReturn(flyway);
             when(flyway.getConfigurationExtension(PostgreSQLConfigurationExtension.class)).thenReturn(extension);
+            approved = RuntimeAclPolicy.verifyReviewedResources().entrySet().stream()
+                    .map(entry -> migration(entry.getKey(), entry.getValue())).toArray(MigrationInfo[]::new);
+            when(flyway.info()).thenReturn(info);
+            when(info.all()).thenReturn(approved);
         }
 
         private void run(String... args) throws Exception {
@@ -206,7 +265,7 @@ class DatabaseMigrationMainTest {
 
         private void assertInvalidHistory() throws Exception {
             IllegalStateException failure = assertThrows(IllegalStateException.class, this::run);
-            assertEquals("ACL policy requires exactly V1-V90", failure.getMessage());
+            assertEquals("ACL policy requires exactly V1-V92", failure.getMessage());
             verify(aclStatement, never()).execute(aclPolicy());
             verify(aclConnection).rollback();
             verify(aclConnection, never()).commit();

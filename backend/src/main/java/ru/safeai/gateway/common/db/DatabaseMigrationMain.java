@@ -60,26 +60,27 @@ public final class DatabaseMigrationMain {
         }
         Flyway flyway = configuration.load();
         flyway.getConfigurationExtension(PostgreSQLConfigurationExtension.class).setTransactionalLock(false);
+        if (!ciV85) {
+            // Do not apply new or changed migrations until runtime permissions have been reviewed.
+            var approved = RuntimeAclPolicy.verifyReviewedResources();
+            RuntimeAclPolicy.verifyResolvedMigrations(flyway.info().all(), approved);
+        }
         flyway.migrate();
         if (ciV85) {
             return;
         }
         flyway.validate();
         try (var connection = DriverManager.getConnection(url, "safeai_migrator", password);
-             InputStream input = DatabaseMigrationMain.class.getResourceAsStream("/db/acl/runtime-v90.sql")) {
+             InputStream input = DatabaseMigrationMain.class.getResourceAsStream(RuntimeAclPolicy.ACL_RESOURCE)) {
             if (input == null) {
                 throw new IllegalStateException("Missing runtime ACL policy");
             }
             connection.setAutoCommit(false);
             try (var statement = connection.createStatement()) {
                 statement.execute("SET LOCAL lock_timeout = '5s'; SET LOCAL statement_timeout = '120s'");
-                try (var result = statement.executeQuery("""
-                        SELECT count(*)=90 AND count(DISTINCT version)=90
-                            AND bool_and(success AND version ~ '^[0-9]+$' AND version::int BETWEEN 1 AND 90)
-                        FROM public.flyway_schema_history WHERE version IS NOT NULL
-                        """)) {
+                try (var result = statement.executeQuery(RuntimeAclPolicy.historyQuery())) {
                     if (!result.next() || !result.getBoolean(1)) {
-                        throw new IllegalStateException("ACL policy requires exactly V1-V90");
+                        throw new IllegalStateException("ACL policy requires exactly V1-V" + RuntimeAclPolicy.REVIEWED_THROUGH);
                     }
                 }
                 statement.execute(new String(input.readAllBytes(), StandardCharsets.UTF_8));

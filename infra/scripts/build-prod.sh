@@ -55,9 +55,10 @@ if [[ -f "$repo_dir/frontend/package-lock.json" ]]; then
     (
         cd "$repo_dir/frontend"
         npm ci
-        npm run ci
         npm run audit:prod
-        npm audit --audit-level=low
+        node --test ../scripts/npm-audit-gate.test.cjs
+        node ../scripts/npm-audit-gate.cjs
+        npm run ci
     )
 fi
 [[ -f "$repo_dir/frontend/dist/index.html" ]] || { echo "frontend/dist/index.html is missing" >&2; exit 1; }

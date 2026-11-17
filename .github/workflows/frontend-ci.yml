@@ -52,7 +52,9 @@ jobs:
         run: npm run audit:prod
 
       - name: Полный аудит зависимостей, включая dev
-        run: npm audit --audit-level=low
+        run: |
+          node --test ../scripts/npm-audit-gate.test.cjs
+          node ../scripts/npm-audit-gate.cjs
 
       - name: Проверка архитектуры, ESLint, тестов и сборки
         run: npm run ci
