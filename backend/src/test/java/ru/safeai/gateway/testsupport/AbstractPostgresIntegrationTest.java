@@ -131,6 +131,10 @@ public abstract class AbstractPostgresIntegrationTest {
         registry.add("safeai.audit.outbox.poll-delay-ms", () ->
                 "3600000");
         registry.add("safeai.audit.retention.enabled", () -> "false");
+        // Shared database fixtures must not race with an automatic analytics
+        // rebuild from any cached Spring context. Keep the scheduler bean and
+        // its services available for explicit invocations in tests.
+        registry.add("safeai.usage.rollup.cron", () -> "-");
         registry.add("safeai.auth.cookies.secure", () -> "false");
         registry.add("safeai.auth.cookies.same-site", () -> "Lax");
         registry.add("safeai.rate-limit.login.enabled", () -> "false");
@@ -157,7 +161,7 @@ public abstract class AbstractPostgresIntegrationTest {
      * Остальные ошибки не перехватываются и не маскируются.</p>
      */
     @BeforeEach
-    void cleanDatabase() {
+    protected void cleanDatabase() {
         // Явная диагностика на случай ошибочного запуска без SpringExtension.
         Objects.requireNonNull(jdbcTemplate,
                 "Spring Test не внедрил JdbcTemplate");
@@ -173,6 +177,9 @@ public abstract class AbstractPostgresIntegrationTest {
                 // откатывает её до выхода из executeWithoutResult().
                 cleanup.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
                 cleanup.executeWithoutResult(status -> {
+                    // CASCADE also clears chat_turns, chat_quota_reservations
+                    // and usage_daily_quality_rollups via their organization
+                    // foreign keys. Do not truncate them again in chat fixtures.
                     jdbcTemplate.execute("""
                             TRUNCATE TABLE
                                 public.audit_outbox,

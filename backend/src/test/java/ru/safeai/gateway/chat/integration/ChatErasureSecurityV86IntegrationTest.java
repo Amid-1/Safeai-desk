@@ -16,6 +16,38 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @ActiveProfiles("test")
 class ChatErasureSecurityV86IntegrationTest extends AbstractChatPostgresIntegrationTest {
 
+    @Test void sharedCleanupRemovesChatTurnsReservationsAndQualityRollups() {
+        UUID clientRequestId = UUID.randomUUID();
+        UUID userMessageId = insertUserMessage(CHAT_ID, ORGANIZATION_ID,
+            clientRequestId, "Fixture", NOW.minusSeconds(20));
+        UUID turnId = insertProcessingTurn(CHAT_ID, ORGANIZATION_ID, USER_ID,
+            clientRequestId, userMessageId, UUID.randomUUID(), NOW.plusSeconds(60), null);
+        insertQuotaReservation(turnId, ORGANIZATION_ID, USER_ID);
+        jdbcTemplate.update("""
+            INSERT INTO public.usage_daily_quality_rollups (usage_date, organization_id)
+            VALUES (DATE '2026-06-12', ?)
+            """, ORGANIZATION_ID);
+
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM public.chat_turns", Long.class)).isEqualTo(1L);
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM public.chat_quota_reservations", Long.class)).isEqualTo(1L);
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM public.usage_daily_quality_rollups", Long.class)).isEqualTo(1L);
+
+        // Exercise the actual shared cleanup, without calling the chat fixture again.
+        cleanDatabase();
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM public.chat_turns", Long.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM public.chat_quota_reservations", Long.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM public.usage_daily_quality_rollups", Long.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM public.organizations WHERE id = ?",
+            Long.class, PLATFORM_ORGANIZATION_ID)).isEqualTo(1L);
+    }
+
     @Test void dedicatedRoleAndRagGuardsExist() {
         assertThat(jdbcTemplate.queryForObject("""
             SELECT count(*) FROM pg_trigger WHERE tgname IN

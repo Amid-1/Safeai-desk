@@ -54,7 +54,8 @@ export function RuntimeCard({
         const open = !details.open
         details.open = open
         setDetailsOpen(open)
-        if (open) details.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+        // Expanding inline must not scroll the toggle underneath the sticky
+        // header or move it away from the pointer on mobile.
     }
 
     function goToProbe() {
@@ -82,7 +83,6 @@ export function RuntimeCard({
                     <dt>
                         <span className="models-label-row">
                             <ModelIcon name="server" />Провайдер / модель
-                            <span className={`models-runtime-tile-indicator${detailsOpen ? ' models-runtime-tile-indicator--expanded' : ''}`}><ModelIcon name="chevronDown" /></span>
                         </span>
                     </dt>
                     <dd>
@@ -91,12 +91,13 @@ export function RuntimeCard({
                         {runtime.model}
                     </dd>
                     <small><button type="button" className="models-runtime-tile-action" aria-controls="models-runtime-characteristics"
-                        aria-expanded={detailsOpen} onClick={toggleCharacteristics}>Характеристики модели</button></small>
+                        aria-expanded={detailsOpen} onClick={toggleCharacteristics}>Характеристики модели
+                        <span className={`models-runtime-tile-indicator${detailsOpen ? ' models-runtime-tile-indicator--expanded' : ''}`} aria-hidden="true"><ModelIcon name="chevronDown" /></span>
+                    </button></small>
                 </div>
 
                 <div className={canProbe ? 'models-runtime-action-tile' : undefined}>
-                    <dt><ModelIcon name="activity" />Проверка соединения
-                        {canProbe && <span className="models-runtime-tile-indicator"><ModelIcon name="arrow" /></span>}</dt>
+                    <dt><ModelIcon name="activity" />Проверка соединения</dt>
                     <dd>
                         <StatusPill tone={healthTone} label={runtimeHealthLabel(runtime, probe)} />
                     </dd>
@@ -108,25 +109,30 @@ export function RuntimeCard({
                                 : 'Статус получен от сервера'}
                     </small>
                     {canProbe && <small><button type="button" className="models-runtime-tile-action"
-                        onClick={goToProbe}>Перейти к проверке</button></small>}
+                        onClick={goToProbe}>Перейти к проверке
+                        <span className="models-runtime-tile-indicator" aria-hidden="true"><ModelIcon name="arrow" /></span>
+                    </button></small>}
                 </div>
 
                 <div className={catalogMatch && onOpenCatalogVersion ? 'models-runtime-action-tile' : undefined}>
-                    <dt><ModelIcon name="database" />Запись в каталоге
-                        {catalogMatch && onOpenCatalogVersion && <span className="models-runtime-tile-indicator"><ModelIcon name="history" /></span>}</dt>
+                    <dt><ModelIcon name="database" />Запись в каталоге</dt>
                     <dd>{catalogMatch ? `${catalogMatch.modelKey} · v${catalogMatch.version}`
                         : catalogMatches.length > 1 ? `Совпадений: ${catalogMatches.length}` : 'Нет действующей записи'}</dd>
                     <small>{catalogMatch && onOpenCatalogVersion ? <button type="button" className="models-runtime-tile-action"
-                        aria-haspopup="dialog" onClick={() => onOpenCatalogVersion(catalogMatch)}>Открыть историю версий</button>
+                        aria-haspopup="dialog" onClick={() => onOpenCatalogVersion(catalogMatch)}>Открыть историю версий
+                        <span className="models-runtime-tile-indicator" aria-hidden="true"><ModelIcon name="history" /></span>
+                    </button>
                         : catalogMatch ? 'Совпадение с подключением' : catalogMatches.length > 1
                         ? 'Несколько действующих записей' : 'Требует внимания'}</small>
                 </div>
 
                 <div className="models-runtime-action-tile">
-                    <dt><ModelIcon name="shield" />Хранение данных <span className="models-runtime-tile-indicator"><ModelIcon name="info" /></span></dt>
+                    <dt><ModelIcon name="shield" />Хранение данных</dt>
                     <dd>{retentionLabel(runtime.dataRetentionStatus)}</dd>
                     <small><button type="button" className="models-runtime-tile-action" aria-expanded={retentionOpen}
-                        aria-controls="models-runtime-retention" onClick={() => setRetentionOpen(open => !open)}>Условия обработки данных</button></small>
+                        aria-controls="models-runtime-retention" onClick={() => setRetentionOpen(open => !open)}>Условия обработки данных
+                        <span className="models-runtime-tile-indicator" aria-hidden="true"><ModelIcon name="info" /></span>
+                    </button></small>
                 </div>
             </dl>
 
@@ -158,7 +164,7 @@ export function RuntimeCard({
                 <div>
                     <dt>
                         <span className="models-label-row">
-                            <ModelIcon name="gauge" />Лимиты токенов
+                            <ModelIcon name="gauge" /><span>Лимиты токенов</span>
                             <InfoHint text="Максимальный вход и выход физически настроенной модели." />
                         </span>
                     </dt>
@@ -173,7 +179,7 @@ export function RuntimeCard({
                 <div>
                     <dt>
                         <span className="models-label-row">
-                            <ModelIcon name="layers" />Поддерживаемые возможности
+                            <ModelIcon name="layers" /><span>Поддерживаемые возможности</span>
                             <InfoHint text="Перечислены возможности подключённой модели. Запись в каталоге сама по себе не активирует дополнительные функции." />
                         </span>
                     </dt>

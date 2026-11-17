@@ -119,12 +119,17 @@ describe('RuntimeCard: достоверность сведений', () => {
         render(<RuntimeCard runtime={runtime} effectiveCatalog={[entry]}
             probe={null} probePending={false} canProbe={false} onProbe={onProbe} onOpenCatalogVersion={onOpenCatalogVersion} />)
         const details = screen.getByRole('button', {name: 'Характеристики модели'})
+        const indicator = details.querySelector('.models-runtime-tile-indicator')!
+        expect(indicator).toHaveAttribute('aria-hidden', 'true')
         expect(details).toHaveAttribute('aria-expanded', 'false')
         fireEvent.click(details)
         expect(details).toHaveAttribute('aria-expanded', 'true')
+        expect(screen.getByText('Лимиты токенов', {exact: true})).toBeVisible()
+        expect(indicator).toHaveClass('models-runtime-tile-indicator--expanded')
         expect(screen.getByText('Поддерживаемые возможности').closest('details')).toHaveAttribute('open')
-        fireEvent.click(details)
+        fireEvent.click(indicator)
         expect(details).toHaveAttribute('aria-expanded', 'false')
+        expect(indicator).not.toHaveClass('models-runtime-tile-indicator--expanded')
         expect(screen.getByText('Поддерживаемые возможности').closest('details')).not.toHaveAttribute('open')
         expect(screen.getByText('Поддерживаемые возможности')).not.toBeVisible()
         fireEvent.click(details)

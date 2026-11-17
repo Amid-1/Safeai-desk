@@ -51,10 +51,10 @@
 .models-page--sections .models-access-grid .models-kv-grid { grid-template-columns: repeat(3, minmax(0,1fr)); }
 .models-diagnostics-runtime .models-card--runtime { width: 100%; }
 .models-diagnostics-context { color: #506681; margin: 0 0 8px; font-size: 13px; }
-.models-diagnostics-decision { scroll-margin-top: 100px; }
+.models-diagnostics-decision { scroll-margin-top: 124px; }
 @media (min-width: 769px) and (max-width: 1180px) {
     /* The application header wraps to two rows at these widths. */
-    .models-diagnostics-decision { scroll-margin-top: 140px; }
+    .models-diagnostics-decision { scroll-margin-top: 160px; }
 }
 .models-route-evidence .models-route-summary { border: 1px solid #dbe4f2; background: #f8fbff; border-radius: 12px; padding: 12px 16px; }
 .models-route-evidence .models-route-summary--denied { border-color: #fecaca; background: #fff7f7; }
@@ -694,15 +694,26 @@
     .models-page--sections .models-policy-card__footer > button { width: 100%; }
 }
 .models-runtime-tile-indicator { display: inline-flex; margin-inline-start: auto; flex-shrink: 0; }
+.models-page--sections .models-runtime-action-tile > dt { padding-inline-end: 24px; }
+.models-page--sections .models-runtime-tile-action > .models-runtime-tile-indicator {
+    /* The indicator belongs to the native button; keep it above its stretched
+       hit area so both the icon and the entire tile are actionable. */
+    position: absolute; inset-block-start: 10px; inset-inline-end: 12px;
+    z-index: 1; margin: 0; color: #526bea;
+}
+.models-page--sections .models-runtime-tile-indicator > .models-icon { width: 18px; height: 18px; }
+.models-page--sections .models-runtime-action-tile { scroll-margin-block-start: 124px; }
 .models-runtime-tile-indicator--expanded { transform: rotate(180deg); }
 .models-runtime-essential .models-label-row { width: 100%; }
-.models-navigation-target { scroll-margin-block: 100px 16px; }
+.models-navigation-target { scroll-margin-block: 124px 16px; }
 .models-page--sections .models-navigation-target:focus { outline: 2px solid #526bea; outline-offset: 3px; }
 .models-runtime-retention { background: #f4f7ff; border: 1px solid var(--models-border); border-radius: 10px; padding: 12px 14px; color: #253a59; font-size: 14px; line-height: 1.5; }
 .models-runtime-retention[hidden] { display: none; }
 .models-runtime-retention p { margin: 6px 0 0; }
 .models-runtime-characteristics-note { margin: 8px 12px; font-size: 13px; color: #506681; }
-@media (min-width: 769px) and (max-width: 1180px) { .models-navigation-target { scroll-margin-top: 140px; } }
+@media (min-width: 769px) and (max-width: 1180px) {
+    .models-navigation-target, .models-page--sections .models-runtime-action-tile { scroll-margin-top: 160px; }
+}
 @media (prefers-reduced-motion: reduce) { .models-page--sections :is(.models-runtime-action-tile, .models-policy-action-tile) { transition: none; } }
 @media (max-width: 740px) {
     .models-page--sections .models-diagnostics-runtime .models-runtime-essential { grid-template-columns: minmax(0,1fr); }

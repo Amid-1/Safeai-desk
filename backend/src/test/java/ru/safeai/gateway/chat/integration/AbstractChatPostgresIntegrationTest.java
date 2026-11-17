@@ -52,16 +52,9 @@ public abstract class AbstractChatPostgresIntegrationTest
 
     @BeforeEach
     void prepareChatFixture() {
-        jdbcTemplate.execute(
-                """
-                truncate table
-                    public.chat_quota_reservations,
-                    public.chat_turns,
-                    public.usage_daily_quality_rollups
-                cascade
-                """
-        );
-
+        // The parent @BeforeEach already clears these tables through the
+        // organization FK cascade in its atomic, deadlock-aware transaction.
+        // Only seed the chat fixture here.
         insertOrganization(
                 ORGANIZATION_ID,
                 "Chat Organization",
