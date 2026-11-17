@@ -200,7 +200,8 @@ model/
 │   ├── ModelPolicyPreviewController.java
 │   ├── ModelRouteDecisionController.java
 │   ├── ModelRuntimeController.java
-│   └── OrganizationModelPolicyController.java
+│   ├── OrganizationModelPolicyController.java
+│   └── RubBudgetRateController.java
 ├── domain
 │   ├── BudgetEnforcement.java
 │   ├── ModelBudgetCommitmentSnapshot.java
@@ -220,6 +221,7 @@ model/
 │   ├── MonthlyCommitmentState.java
 │   ├── MonthlyCostState.java
 │   ├── OrganizationModelPolicy.java
+│   ├── RubBudgetSnapshot.java
 │   ├── RuntimeModelProbeResult.java
 │   └── RuntimeModelProbeStatus.java
 ├── dto
@@ -230,6 +232,8 @@ model/
 │   ├── ModelPolicyPreviewResponse.java
 │   ├── ModelRouteDecisionResponse.java
 │   ├── OrganizationModelPolicyResponse.java
+│   ├── RubBudgetInput.java
+│   ├── RubBudgetResponse.java
 │   ├── RuntimeModelProbeResponse.java
 │   ├── RuntimeModelStatusResponse.java
 │   ├──  RuntimeModelStatusWireResponse.java
@@ -238,6 +242,7 @@ model/
 │   ├── ModelRouteDeniedException.java
 │   └── ModelRouteEnvelopeExceededException.java
 ├── pricing
+│   ├── CatalogPricingEligibility.java
 │   └── VersionedCatalogPricingResolver.java
 ├── repository
 │   ├── JdbcTextArrayReader.java
@@ -248,6 +253,7 @@ model/
 │   └── OrganizationModelPolicyRepository.java
 ├── service
 │   ├── AnthropicRuntimeModelHealthProbe.java
+│   ├── CbrUsdRateSource.java
 │   ├── DatabaseTimestampNormalizer.java
 │   ├── MockRuntimeModelHealthProbe.java
 │   ├── ModelCatalogAuditDetails.java
@@ -276,6 +282,7 @@ model/
 │   ├── OrganizationModelPolicyRules.java
 │   ├── OrganizationModelPolicyService.java
 │   ├── ProviderDataDispatchGuard.java
+│   ├── RubBudgetRateService.java
 │   ├── RuntimeModelHealthProbe.java
 │   ├── RuntimeModelProbeHttpSupport.java
 │   ├── RuntimeModelProbeService.java
@@ -464,6 +471,15 @@ governance.
 
 ## 11. Стоимость, pricing scheme, бюджеты
 
+### Единый источник тарифов
+
+PostgreSQL: `model_catalog_entries` — единственный источник новых тарифов.
+Runtime показывает только единственную effective ACTIVE/DEPRECATED verified версию; при отсутствии/неоднозначности — UNPRICED.
+Импорт runtime создаёт UNPRICED для внешнего провайдера, не копирует projected rates и не переписывает версии;
+локальный mock получает отдельную FREE запись. Изменение тарифа требует новой audited catalog version.
+Реальный settlement всегда использует ID и версию из сохранённого route decision, не текущий тариф.
+Внутренние ставки, резервирование, settlement и ledger остаются в USD; конвертация RUB относится только к вводимым бюджетам.
+
 ### 11.1. Исправленный контракт pricing V66
 
 По текущим исходникам схема теперь передаётся по цепочке `CreateModelCatalogVersionRequest` → `ModelCatalogService` →
@@ -637,7 +653,7 @@ disposable БД. Отдельно проверить frontend admin UI, contract
 ### 19. M-03 — P1 → адресован в коде
 
 - Замечание старой редакции: Worst-case estimate игнорировал поддержку pricing scheme.
-- Текущий статус/основание: `ModelRoutingCostPolicy.estimateCost()` проверяет `supportedForAutomaticSettlement()`.
+- Текущий статус/основание: `ModelRoutingCostPolicy.estimateCost()` использует общий `CatalogPricingEligibility.verified()`.
 
 ### 19. M-04 — P2 → частично адресован
 
@@ -1903,7 +1919,7 @@ HTTPS metadata probe, bounded timeout, no redirects, discard body.
 - `L81 current()` — Вернул актуальный runtime или текущую policy без изменения состояния.
 - `L98 fromOpenAi(OpenAiProperties)` — Построил статус настроенного OpenAI runtime.
 - `L109 fromAnthropic(AnthropicProperties)` — Построил статус настроенного Anthropic runtime.
-- `L120 response(String, String, int, int)` — Собрал conservative runtime status и static pricing metadata.
+- `L120 response(String, String, int, int)` — Собрал conservative runtime status и effective catalog pricing metadata.
 - `L171 normalizeRuntimeModel(String, String)` — Проверил допустимый model ID.
 - `L192 recordProbe(RuntimeModelProbeResult)` — Обновил in-memory факт последнего probe.
 - `L198 healthStatus(String, String)` — Вернул свежую probe оценку либо NOT_PROBED.
@@ -2394,7 +2410,7 @@ JUnit-сценариев с явной `@Test`/`@ParameterizedTest`: 13.
 - `L149 configuredCatalogEntryCalculatesWorstCaseCostAtScaleTwelve()` — проверка, обозначенная именем теста.
 - `L170 governanceUpperBoundRoundsEveryPositiveFractionUpInsteadOfDown()` — проверка, обозначенная именем теста.
 - `L196 incompleteEntryWithMissingOrdinaryPriceIsUnknown()` — проверка, обозначенная именем теста.
-- `L227 legacyConfiguredRuntimeCanEstimateButNeverClaimsCompletePricing()` — проверка, обозначенная именем теста.
+- `L227 missingCatalogHasNoEstimate()` — проверка, обозначенная именем теста.
 - `L248 budgetIsSkippedWhenPolicyIsDisabled()` — проверка, обозначенная именем теста.
 - `L313 enabledPolicyWithoutMonthlyBudgetIsNotEvaluatedAndDoesNotLockBudget()` — проверка, обозначенная именем теста.
 - `L386 hardBudgetFailsClosedWhenCommittedCostIsUnknown()` — проверка, обозначенная именем теста.

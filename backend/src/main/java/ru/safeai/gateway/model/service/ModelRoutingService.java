@@ -20,6 +20,7 @@ import ru.safeai.gateway.model.domain.OrganizationModelPolicy;
 import ru.safeai.gateway.model.dto.RuntimeModelStatusResponse;
 import ru.safeai.gateway.model.dto.ModelRouteDecisionResponse;
 import ru.safeai.gateway.model.exception.ModelRouteDeniedException;
+import ru.safeai.gateway.model.pricing.CatalogPricingEligibility;
 import ru.safeai.gateway.model.repository.ModelCatalogRepository;
 import ru.safeai.gateway.model.repository.ModelRouteDecisionRepository;
 import ru.safeai.gateway.model.repository.ModelRouteRequestMutexRepository;
@@ -225,7 +226,6 @@ public class ModelRoutingService {
 
         ModelRoutingCostPolicy.PricingEstimate pricing = costPolicy.estimateCost(
                 entry,
-                runtime,
                 estimatedInputTokens,
                 estimatedOutputTokens
         );
@@ -425,13 +425,7 @@ public class ModelRoutingService {
             pricingComplete = pricing.complete();
             estimatedCost = pricing.cost();
         } else if (selection.entry() != null) {
-            pricingComplete = selection.entry().pricingComplete();
-            estimatedCost = null;
-        } else if (runtime != null
-                && selection.selectedProvider() != null
-                && selection.selectedProviderModelId() != null
-                && "FREE".equals(runtime.pricingStatus())) {
-            pricingComplete = true;
+            pricingComplete = CatalogPricingEligibility.verified(selection.entry());
             estimatedCost = null;
         } else {
             pricingComplete = false;

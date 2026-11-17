@@ -3,6 +3,7 @@ package ru.safeai.gateway.model.service;
 import ru.safeai.gateway.model.domain.*;
 import ru.safeai.gateway.model.dto.RuntimeModelStatusResponse;
 import ru.safeai.gateway.model.repository.ModelRouteDecisionRepository;
+import ru.safeai.gateway.model.pricing.CatalogPricingEligibility;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -308,72 +309,36 @@ final class ModelRoutingCostPolicy {
 
     PricingEstimate estimateCost(
             ModelCatalogEntry entry,
-            RuntimeModelStatusResponse runtime,
             long inputTokens,
             long outputTokens
     ) {
-        if (entry != null) {
-            // V66: legacy, unknown and complex schemes are never a proven
-            // reservation estimate for HARD monthly budget enforcement.
-            if (!entry.pricingScheme().supportedForAutomaticSettlement()) {
-                return new PricingEstimate(null, false);
-            }
-            if (entry.pricingStatus() == ModelPricingStatus.FREE) {
-                return new PricingEstimate(BigDecimal.ZERO, entry.pricingComplete());
-            }
-
-            if (entry.pricingStatus() != ModelPricingStatus.CONFIGURED
-                    || !entry.pricingComplete()) {
-                return new PricingEstimate(null, false);
-            }
-            if (entry.inputUsdPer1mTokens() == null
-                    || entry.outputUsdPer1mTokens() == null) {
-                return new PricingEstimate(null, false);
-            }
-
-            // For a generic tariff the three supported input prices are
-            // independent: any token may be billed at the most expensive
-            // applicable rate. Do not assume cache-write <= ordinary input.
-            BigDecimal worstInputRate = entry.inputUsdPer1mTokens();
-            if (entry.cachedInputUsdPer1mTokens() != null) {
-                worstInputRate = worstInputRate.max(entry.cachedInputUsdPer1mTokens());
-            }
-            if (entry.cacheWriteInputUsdPer1mTokens() != null) {
-                worstInputRate = worstInputRate.max(entry.cacheWriteInputUsdPer1mTokens());
-            }
-            BigDecimal estimatedCost = calculateWorstCaseCost(
-                    inputTokens,
-                    outputTokens,
-                    worstInputRate,
-                    entry.outputUsdPer1mTokens()
-            );
-            if (ModelControlPlaneNumericValidation.violatesNonNegativeNumeric30Scale12(estimatedCost)) {
-                return new PricingEstimate(null, false);
-            }
-            return new PricingEstimate(estimatedCost, true);
+        // Unknown and complex schemes are never a proven reservation estimate.
+        if (!CatalogPricingEligibility.verified(entry)) {
+            return new PricingEstimate(null, false);
         }
-
-        if ("FREE".equals(runtime.pricingStatus())) {
+        if (entry.pricingStatus() == ModelPricingStatus.FREE) {
             return new PricingEstimate(BigDecimal.ZERO, true);
         }
 
-        if (runtime.inputUsdPer1mTokens() == null
-                || runtime.outputUsdPer1mTokens() == null) {
-            return new PricingEstimate(null, false);
+        // Any input token may be billed at the most expensive applicable rate.
+        BigDecimal worstInputRate = entry.inputUsdPer1mTokens();
+        if (entry.cachedInputUsdPer1mTokens() != null) {
+            worstInputRate = worstInputRate.max(entry.cachedInputUsdPer1mTokens());
         }
-
+        if (entry.cacheWriteInputUsdPer1mTokens() != null) {
+            worstInputRate = worstInputRate.max(entry.cacheWriteInputUsdPer1mTokens());
+        }
         BigDecimal estimatedCost = calculateWorstCaseCost(
                 inputTokens,
                 outputTokens,
-                runtime.inputUsdPer1mTokens(),
-                runtime.outputUsdPer1mTokens()
+                worstInputRate,
+                entry.outputUsdPer1mTokens()
         );
-        if (ModelControlPlaneNumericValidation.violatesNonNegativeNumeric30Scale12(estimatedCost)) {
+        if (estimatedCost.signum() <= 0
+                || ModelControlPlaneNumericValidation.violatesNonNegativeNumeric30Scale12(estimatedCost)) {
             return new PricingEstimate(null, false);
         }
-
-        // Legacy flat runtime pricing cannot prove all billing dimensions.
-        return new PricingEstimate(estimatedCost, false);
+        return new PricingEstimate(estimatedCost, true);
     }
 
     private static BigDecimal calculateWorstCaseCost(

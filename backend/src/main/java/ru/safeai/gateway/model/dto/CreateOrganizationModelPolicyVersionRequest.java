@@ -7,6 +7,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
+import jakarta.validation.Valid;
 import ru.safeai.gateway.model.domain.BudgetEnforcement;
 import tools.jackson.databind.annotation.JsonDeserialize;
 
@@ -26,6 +27,16 @@ public record CreateOrganizationModelPolicyVersionRequest(
         @NotNull BudgetEnforcement budgetEnforcement,
         boolean requireCompletePricing,
         boolean requireNoTraining,
-        boolean requireZeroDataRetention
+        boolean requireZeroDataRetention,
+        @Valid RubBudgetInput rubBudget
 ) {
+    public CreateOrganizationModelPolicyVersionRequest(int expectedPreviousVersion, boolean enabled,
+            Set<String> allowModelKeys, Set<String> denyModelKeys, String defaultModelKey,
+            Integer maxInputTokens, Integer maxOutputTokens, BigDecimal maxRequestCostUsd,
+            BigDecimal monthlyBudgetUsd, BudgetEnforcement budgetEnforcement,
+            boolean requireCompletePricing, boolean requireNoTraining, boolean requireZeroDataRetention) {
+        this(expectedPreviousVersion, enabled, allowModelKeys, denyModelKeys, defaultModelKey,
+                maxInputTokens, maxOutputTokens, maxRequestCostUsd, monthlyBudgetUsd, budgetEnforcement,
+                requireCompletePricing, requireNoTraining, requireZeroDataRetention, null);
+    }
 }

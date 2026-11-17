@@ -2,7 +2,7 @@
 # Windows path: D:\Java projects\Safeai-desk\backend\docs\config\application-prod-knowledge.example.yml
 # Documentation-only example; not automatically loaded by Spring Boot.
 # Production settings are primarily managed by application.yml/application-prod.yml
-# and external /run/config/pricing.yml and /run/secrets/.
+# and external /run/secrets/. Model pricing is managed in the versioned catalog.
 # Do not import this file wholesale: it is a focused example with an OCR policy.
 safeai:
   knowledge:

@@ -151,7 +151,7 @@ Java-файлы, а для крупных классов — публичный 
 
 | Класс | Назначение и ключевые методы |
 |---|---|
-| `AiConfiguration` | `@Configuration`, подключает `AiProviderProperties`, `AiRetryProperties`, `AiContextWindowProperties`, `ModelPricingProperties` через `@EnableConfigurationProperties`. |
+| `AiConfiguration` | `@Configuration`, подключает `AiProviderProperties`, `AiRetryProperties`, `AiContextWindowProperties` через `@EnableConfigurationProperties`. |
 | `AiProductionConfigurationValidator` | `validate()` (`@PostConstruct`) — запрещает `mock` и неизвестный provider в production; `normalizeProvider`, `displayValue` — представление настройки. |
 | `AiRetryTimeoutBudgetValidator` | `validate()` — проверяет выбранного провайдера; `validateBudget()` — `connectTimeout + readTimeout <= totalTimeout`; `safeAdd()` — защита от переполнения `Duration`; `requireSelectedProviderProperties()` — наличие нужного bean. |
 | `OpenAiProviderConfiguration` | Условно регистрирует настройки `OpenAiProperties` при `safeai.ai.provider=openai`. Сам `OpenAiProvider` — `@Service`. |
@@ -260,14 +260,11 @@ Java-файлы, а для крупных классов — публичный 
 
 | Класс | Назначение и ключевые методы |
 |---|---|
-| `PricingResolver` | Порт `resolve(target, resolvedModel, usage)` и перегрузка `resolve(operationId, target, resolvedModel, usage)`. Важно: default-перегрузка интерфейса без переопределения **теряет идентичность операции**. |
-| `StaticConfigurationPricingResolver` | `@Service`; `resolve(...)` делегирует статическому `ModelPricingService`. Оставлен как переходный/совместимый адаптер, не приоритетный governed-resolver. |
-| `ModelPricingService` | `calculate(resolvedModel, tokens..., usageStatus)` и `calculate(resolvedModel, AiTokenUsage)`; обычные тарифы из `ModelPricingProperties`. Не объявляет вычисление доказанным при cache billing, для которого статическая схема не описывает отдельную ставку. |
-| `ModelPricingProperties` | Конфигурируемая `models` карта, `find(resolvedModel)`, `models()`; вложенный `ModelPrice` (ставка input/output на 1 млн токенов, валюта, версия, `free`). |
-| `ModelPricingScheme` | Enum `FLAT_TOKEN_V1`, `LEGACY_FLAT_UNVERIFIED_V1`, `UNSUPPORTED_COMPLEX_V1`; `supportedForAutomaticSettlement`, `databaseValue`, `fromDatabaseValue`. Задуман как инвариант V66 — **на текущем read/settlement пути ещё не внедрён** (см. P0 ниже). |
-| `PricingResult` | `record(status, costUsd, currency, priceVersion, calculatedAt)`; `unpriced`, `calculationFailed`, строгая валидация сочетаний статуса и метаданных. |
+| `PricingResolver` | Единственный порт settlement: `resolve(operationId, target, resolvedModel, usage)`. Идентичность операции обязательна для доказанной цены. |
+| `ModelPricingScheme` | Persisted V66: `FLAT_TOKEN_V1`, `LEGACY_FLAT_UNVERIFIED_V1`, `UNSUPPORTED_COMPLEX_V1`. Исторические значения неизменяемы. |
+| `PricingResult` | `record(status, costUsd, currency, priceVersion, calculatedAt)`; строгие инварианты цены и метаданных. |
 
-**Межмодульный основной резолвер:** [`ru.safeai.gateway.model.pricing.VersionedCatalogPricingResolver`](../model/pricing/VersionedCatalogPricingResolver.java) аннотирован `@Primary @Service`. Именно он при стандартном Spring DI выбирается для `AiResponseMetadataService`. Его `resolve(operationId, ...)` сверяет сохранённый execution plan, route decision, версию модели каталога и её ставки; для OpenAI учитывает cached-токены как часть total input, для Anthropic — отдельно. При неподтверждённых данных возвращает `UNPRICED`/`CALCULATION_FAILED`. **Проблема `pricing_scheme` описана в разделе 8: не все задекларированные в миграции V66 проверки доведены до этого резолвера.**
+**Единственный резолвер:** [`VersionedCatalogPricingResolver`](../model/pricing/VersionedCatalogPricingResolver.java) — сверяет execution plan, route decision, точную физическую модель и неизменяемую версию каталога. `CatalogPricingEligibility` используется также для оценки резерва и runtime-проекции. Обычные и специализированные ставки берутся только из PostgreSQL; OpenAI и Anthropic учитывают cache counters по их собственным контрактам. Mock работает через тот же порт. Неподтверждённая цена не может стать нулевой. USD остаётся базовой валютой.
 
 ### 3.9. `exception/` — исключения
 
@@ -331,7 +328,6 @@ overloaded/account/unavailable → 503, прочие ошибки провайд
 | `safeai.ai.anthropic.max-tokens` | `2048` | Передаётся как `max_tokens` после `min()` с route cap. |
 | `safeai.ai.anthropic.max-response-body-bytes` | `2097152` (2 MiB) | Ограничение чтения ответа. |
 | `safeai.ai.anthropic.connect-timeout` / `read-timeout` | `5s` / `60s` | Сумма одного attempt budget — 65 s. |
-| `safeai.ai.pricing.models` | три static example rates | Локальные/совместимые тарифы; не источник истины для governed production settlement с `@Primary` resolver. |
 
 **Секреты:** `OPENAI_API_KEY` и `ANTHROPIC_API_KEY` подаются через окружение/secret management и никогда не должны попадать в 
 `README`, тестовые логи, git diff или HTTP error body. Запрещено подменять реальный API key placeholder-значением в production. 
@@ -398,28 +394,13 @@ immutable rows, включая legacy.
 
 Приоритеты: **P0** — может нарушить денежную/безопасностную гарантию и блокирует признание соответствующего функционала production-ready; **P1** — высокий риск, требующий отдельного PR и регрессионных проверок; **P2** — техническое ограничение или усиление; **P3** — улучшение качества. Каждый пункт помечен как **подтверждено кодом**, **требует проверки межмодульного поведения** или **ограничение по замыслу**.
 
-### P0 — `pricing_scheme` не участвует в доказательстве цены (подтверждено кодом)
+### P0 — V66 pricing scheme и единственный каталог (реализовано; необходим CI)
 
-**Факты:**
-
-1. Миграция `V66__physical_response_and_pricing_scheme.sql` вводит обязательное `model_catalog_entries.pricing_scheme`. Исторические `CONFIGURED` получают `LEGACY_FLAT_UNVERIFIED_V1`, `FREE` — `FLAT_TOKEN_V1`; комментарий миграции прямо требует отказа от автоматического settlement по legacy до новой проверенной версии каталога.
-2. `ModelCatalogRepository.insert(entry)` сознательно сохраняет `CONFIGURED` по совместимому методу как `LEGACY_FLAT_UNVERIFIED_V1`.
-3. `ModelCatalogRepository.SELECT_COLUMNS` **не содержит** `pricing_scheme`, а `ModelCatalogEntry` не несёт это свойство.
-4. `VersionedCatalogPricingResolver.resolve` проверяет `pricingStatus`, `pricingComplete`, rates/version, но **не проверяет** `ModelPricingScheme.supportedForAutomaticSettlement()`; код может вернуть `PRICED` для snapshot с недоказанным `LEGACY_FLAT_UNVERIFIED_V1`.
-5. `ModelPricingScheme` существует, но не подключён к реальному read/settlement контракту.
-
-**Последствие:** часть цен может получить формально доказанный статус `PRICED` вопреки инварианту V66. Это **не автоматически доказанный перерасход**, 
-но достоверный разрыв в финансовой цепочке доверия; при строгих квотах может стать критичным.
-
-**Правильное исправление:** добавить `pricing_scheme` в `SELECT_COLUMNS`, в `ModelCatalogEntry` и маппинг `ModelCatalogRepository`, включить 
-его в проверку `VersionedCatalogPricingResolver` и при необходимости в snapshot fingerprint/receipt. При `LEGACY_FLAT_UNVERIFIED_V1` и 
-`UNSUPPORTED_COMPLEX_V1` возвращать `UNPRICED`/недоказанное состояние; `FLAT_TOKEN_V1` разрешать лишь при корректных тарифах и зафиксированных provider-specific правилах. Новые `CONFIGURED` версии должны создаваться через явный audited scheme, а не через compatibility default. Нельзя переписывать старые версионные записи.
-
-**Тесты:** создать две разные версии одной модели с одинаковыми ставками, но разными `pricing_scheme`; доказать, что legacy не получает `PRICED`, 
-поддерживаемая получает, а неверная схема/недостающая ставка fail-closed. Проверить DB migration и репозитории, не только Mockito unit-тест resolver.
-
-**Файлы:** `model/repository/ModelCatalogRepository.java`, `model/domain/ModelCatalogEntry.java`, `model/pricing/VersionedCatalogPricingResolver.java`, 
-`ai/pricing/ModelPricingScheme.java`, Flyway V66, тесты обоих модулей.
+Схема читается из неизменяемой версии каталога. Единая проверка `CatalogPricingEligibility` не признаёт
+legacy/complex схемы доказанным тарифом; без точного execution plan и route decision settlement возвращает
+`UNPRICED`. YAML rates и статический resolver удалены. Исторические строки и price-book identity не изменяются.
+Регрессионные тесты проверяют legacy/verified, cached counters, FREE и несовпадающую модель; интеграционный прогон
+Flyway/PostgreSQL остаётся обязательным перед релизом.
 
 ### P1 — сквозное доказательство денежных hard quotas (требует межмодульной проверки)
 
@@ -511,9 +492,7 @@ production bean реализует строгий overload. Сохранить �
 
 ### P3 — устаревшие совместимые методы и документационная неоднозначность
 
-`ModelPricingService` и `StaticConfigurationPricingResolver`, legacy DTO constructor, deprecated overload retry и 
-`ModelPricingScheme` с `@SuppressWarnings("unused")` могут ошибочно восприниматься как один равноправный production-путь. 
-Явно пометить, какие API нельзя использовать для governed routes, затем удалять только после подтверждения call sites и тестов.
+Статический pricing удалён. Оставшиеся совместимые DTO и retry API необходимо отдельно оценивать по call sites и интеграционным тестам.
 
 ---
 
@@ -544,7 +523,7 @@ production bean реализует строгий overload. Сохранить �
 ### 10.1. Что уже есть в репозитории
 
 Проверены имена существующих тестов для AI: `AiChatResponseTest`, `AiMessageAndRequestTest`, `AiContextWindowServiceTest`, 
-`AiProviderRetryExecutorTest`, `AiProviderSupportTest`, `AiRestClientFactoryTest`, `ModelPricingPropertiesTest`, `ModelPricingServiceTest`, `PricingResultTest`, `OpenAiPropertiesTest`, `AnthropicPropertiesTest`, `MockAiProviderTest`, `AiExceptionHandlerTest`, а также тесты в `ai/config`, `ai/dto`, `ai/execution`, `ai/input`, `ai/pricing`, `ai/provider`, `ai/web`.
+`AiProviderRetryExecutorTest`, `AiProviderSupportTest`, `AiRestClientFactoryTest`, `VersionedCatalogPricingResolverTest`, `PricingResultTest`, `OpenAiPropertiesTest`, `AnthropicPropertiesTest`, `MockAiProviderTest`, `AiExceptionHandlerTest`, а также тесты в `ai/config`, `ai/dto`, `ai/execution`, `ai/input`, `ai/pricing`, `ai/provider`, `ai/web`.
 
 В `ai/execution` дополнительно существуют `AiExecutionAttemptOrganizationGateTest`, `AiExecutionAttemptRecorderTest`, `AiExecutionAttemptScopeTest`, 
 `AiExecutionPlanServiceTest`, `AiExecutionServiceTest`, `ExecutionEvidenceContractTest`, `ModelExecutionAttemptEntityTest`, `ProviderFailureCertaintyTest`. В `model/pricing` — `VersionedCatalogPricingResolverTest`. Это подтверждает **наличие** тестов, но не означает, что они были запущены при составлении документа.
@@ -588,7 +567,7 @@ cd backend
 
 ### 10.4. Рекомендуемая последовательность исправлений
 
-1. **PR AI-P0 Pricing Scheme:** обеспечить чтение `pricing_scheme` → `ModelCatalogEntry` → `VersionedCatalogPricingResolver` → тесты V66 legacy/verified.
+1. **PR AI-P0 Pricing Scheme (реализовано):** V66 legacy/verified и единый каталог; подтвердить на CI.
 2. **PR AI-P1 Financial Evidence:** проверить совместно `ai/execution`, `model` и `chat/quota` учёт всех физических попыток и cost-unverifiable при AMBIGUOUS/failed protocol; связать с hard-limit.
 3. **PR AI-P1 Retry Evidence:** зафиксировать provider-specific 4xx/429 evidence policy и негативные тесты безопасности повторов.
 4. **PR AI-P2 Timeouts:** формализовать aggregate deadline и тестировать зависшие HTTP bodies; не проводить слепую переотправку при cancellation.
@@ -621,16 +600,6 @@ mismatch resolved models, рост ошибок reconciliation, превышен
 
 ## 12. Критерии готовности модуля
 
-Модуль можно считать *функционально реализованным* для одно-провайдерного синхронного текстового вызова с durable attempt ledger. Однако **для признания полноценного production-ready AI billing/hard quota нужно закрыть P0**, подтвердить корректное поведение по неизвестным расходам и выполнить интеграционные испытания с Flyway/PostgreSQL и реальными/контрактно смоделированными provider responses.
+Модуль можно считать *функционально реализованным* для одно-провайдерного синхронного текстового вызова с durable attempt ledger. Однако **для подтверждения production-ready AI billing/hard quota нужен полный CI**, подтвердить корректное поведение по неизвестным расходам и выполнить интеграционные испытания с Flyway/PostgreSQL и реальными/контрактно смоделированными provider responses.
 
-**Текущая инженерная оценка:** архитектурный фундамент серьёзный; важнейший недоведённый инвариант — **проверка `pricing_scheme` V66 в реальном automatic settlement**. Это конкретная проблема, а не вопрос косметического оформления. После её устранения следующий по важности участок — сквозная цепочка **route estimate → quota reservation → physical attempt → settlement/reconciliation**. Ни `ProviderRegistry`, ни статический `ModelPricingService` сами по себе не дают гарантии корректного списания.
-
-### Источники и воспроизводимость
-
-- Присланные пользователем исходники `ru.safeai.gateway.ai` (вставка в чат).
-- Репозиторий [`Amid-1/Safeai-desk`](https://github.com/Amid-1/Safeai-desk/tree/ec2596ed079423d7103fa3218b51a0ce6cd46df0/backend/src/main/java/ru/safeai/gateway/ai), commit `ec2596ed` (`main` на момент проверки).
-- [`VersionedCatalogPricingResolver`](https://github.com/Amid-1/Safeai-desk/blob/ec2596ed079423d7103fa3218b51a0ce6cd46df0/backend/src/main/java/ru/safeai/gateway/model/pricing/VersionedCatalogPricingResolver.java).
-- [`ModelCatalogRepository`](https://github.com/Amid-1/Safeai-desk/blob/ec2596ed079423d7103fa3218b51a0ce6cd46df0/backend/src/main/java/ru/safeai/gateway/model/repository/ModelCatalogRepository.java) и [`ModelCatalogEntry`](https://github.com/Amid-1/Safeai-desk/blob/ec2596ed079423d7103fa3218b51a0ce6cd46df0/backend/src/main/java/ru/safeai/gateway/model/domain/ModelCatalogEntry.java).
-- [`V66__physical_response_and_pricing_scheme.sql`](https://github.com/Amid-1/Safeai-desk/blob/ec2596ed079423d7103fa3218b51a0ce6cd46df0/backend/src/main/resources/db/migration/V66__physical_response_and_pricing_scheme.sql), [`application.yml`](https://github.com/Amid-1/Safeai-desk/blob/ec2596ed079423d7103fa3218b51a0ce6cd46df0/backend/src/main/resources/application.yml) и `application-local.yml`/`application-prod.yml`.
-
-> **Ограничение аудита:** выполнена статическая сверка исходников и миграций по GitHub. Не проводились локальная компиляция всего модуля, запуск тестовой suite, проверка реального PostgreSQL и live billing API. Вставка пользователя содержит артефакты форматирования и дублированные фрагменты `AiProviderRetryExecutor`/`AiChatResponse`; окончательное описание составлено по нормальным Java-файлам репозитория, без предположения, что дубли находятся в исходниках.
+**Текущая инженерная оценка:** pricing имеет единый источник ставок и operation-bound settlement. Полнота финансового enforcement требует сквозной проверки route estimate → quota reservation → physical attempt → settlement/reconciliation в CI.

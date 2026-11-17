@@ -11,8 +11,8 @@ import ru.safeai.gateway.ai.dto.AiChatResponse;
 import ru.safeai.gateway.ai.dto.AiMessage;
 import ru.safeai.gateway.ai.execution.ProviderExecutionTarget;
 import ru.safeai.gateway.ai.metadata.AiResponseStatus;
-import ru.safeai.gateway.ai.metadata.UsageStatus;
-import ru.safeai.gateway.ai.pricing.ModelPricingService;
+import ru.safeai.gateway.ai.metadata.AiTokenUsage;
+import ru.safeai.gateway.ai.pricing.PricingResolver;
 import ru.safeai.gateway.ai.pricing.PricingResult;
 import ru.safeai.gateway.ai.provider.AiProvider;
 import ru.safeai.gateway.ai.provider.AiProviderRetryExecutor;
@@ -33,7 +33,7 @@ public class MockAiProvider implements AiProvider {
 
     private static final String MODEL = "mock-safeai";
 
-    private final ModelPricingService pricingService;
+    private final PricingResolver pricingResolver;
     private final AiProviderRetryExecutor retryExecutor;
 
     @Override
@@ -68,11 +68,11 @@ public class MockAiProvider implements AiProvider {
         int inputTokens = calculateMockInputTokens(request);
         int outputTokens = estimateTokens(content);
 
-        PricingResult pricing = pricingService.calculate(
+        PricingResult pricing = pricingResolver.resolve(
+                request.providerOperationId(),
+                executionTarget(),
                 MODEL,
-                inputTokens,
-                outputTokens,
-                UsageStatus.AVAILABLE
+                AiTokenUsage.basic(inputTokens, outputTokens)
         );
 
         log.debug(

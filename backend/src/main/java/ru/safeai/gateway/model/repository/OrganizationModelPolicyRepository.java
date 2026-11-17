@@ -6,6 +6,8 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.model.domain.BudgetEnforcement;
 import ru.safeai.gateway.model.domain.OrganizationModelPolicy;
+import ru.safeai.gateway.model.domain.RubBudgetSnapshot;
+import java.time.LocalDate;
 
 import java.sql.Array;
 import java.sql.Connection;
@@ -77,7 +79,9 @@ public class OrganizationModelPolicyRepository {
                     max_request_cost_usd, monthly_budget_usd,
                     budget_enforcement, require_complete_pricing,
                     require_no_training, require_zero_data_retention,
-                    created_by_user_id, created_at
+                    created_by_user_id, created_at,
+                    max_request_cost_rub, monthly_budget_rub, rub_per_usd,
+                    rub_quote_date, rub_effective_date, rub_fetched_at
                 from organization_model_policies
                 where organization_id = ?
                 order by version desc
@@ -95,7 +99,9 @@ public class OrganizationModelPolicyRepository {
                     allow_model_keys, deny_model_keys, default_model_key,
                     max_input_tokens, max_output_tokens, max_request_cost_usd, monthly_budget_usd,
                     budget_enforcement, require_complete_pricing, require_no_training,
-                    require_zero_data_retention, created_by_user_id, created_at
+                    require_zero_data_retention, created_by_user_id, created_at,
+                    max_request_cost_rub, monthly_budget_rub, rub_per_usd,
+                    rub_quote_date, rub_effective_date, rub_fetched_at
                 from organization_model_policies
                 where organization_id = ? and id = ?
                 """, this::map, organizationId, policyId).stream().findFirst();
@@ -134,8 +140,10 @@ public class OrganizationModelPolicyRepository {
                     max_request_cost_usd, monthly_budget_usd,
                     budget_enforcement, require_complete_pricing,
                     require_no_training, require_zero_data_retention,
-                    created_by_user_id, created_at
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    created_by_user_id, created_at,
+                    max_request_cost_rub, monthly_budget_rub, rub_per_usd,
+                    rub_quote_date, rub_effective_date, rub_fetched_at
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
         );
 
@@ -168,6 +176,13 @@ public class OrganizationModelPolicyRepository {
         statement.setBoolean(15, policy.requireZeroDataRetention());
         statement.setObject(16, policy.createdByUserId());
         statement.setTimestamp(17, Timestamp.from(policy.createdAt()));
+        RubBudgetSnapshot rub = policy.rubBudget();
+        statement.setBigDecimal(18, rub == null ? null : rub.maxRequestCostRub());
+        statement.setBigDecimal(19, rub == null ? null : rub.monthlyBudgetRub());
+        statement.setBigDecimal(20, rub == null ? null : rub.rubPerUsd());
+        statement.setObject(21, rub == null ? null : rub.quoteDate());
+        statement.setObject(22, rub == null ? null : rub.effectiveDate());
+        statement.setTimestamp(23, rub == null ? null : Timestamp.from(rub.fetchedAt()));
         return statement;
     }
 
@@ -194,7 +209,12 @@ public class OrganizationModelPolicyRepository {
                 resultSet.getBoolean("require_no_training"),
                 resultSet.getBoolean("require_zero_data_retention"),
                 resultSet.getObject("created_by_user_id", UUID.class),
-                resultSet.getTimestamp("created_at").toInstant()
+                resultSet.getTimestamp("created_at").toInstant(),
+                resultSet.getBigDecimal("rub_per_usd") == null ? null : new RubBudgetSnapshot(
+                        resultSet.getBigDecimal("max_request_cost_rub"), resultSet.getBigDecimal("monthly_budget_rub"),
+                        resultSet.getBigDecimal("rub_per_usd"), resultSet.getObject("rub_quote_date", LocalDate.class),
+                        resultSet.getObject("rub_effective_date", LocalDate.class),
+                        resultSet.getTimestamp("rub_fetched_at").toInstant())
         );
     }
 

@@ -31,6 +31,7 @@ import ru.safeai.gateway.model.domain.ModelRouteReason;
 import ru.safeai.gateway.model.domain.ModelRouteRequest;
 import ru.safeai.gateway.model.domain.ModelTrainingUseStatus;
 import ru.safeai.gateway.model.domain.OrganizationModelPolicy;
+import ru.safeai.gateway.model.domain.RubBudgetSnapshot;
 import ru.safeai.gateway.model.dto.CreateModelCatalogVersionRequest;
 import ru.safeai.gateway.model.dto.CreateOrganizationModelPolicyVersionRequest;
 import ru.safeai.gateway.model.exception.ModelRouteDeniedException;
@@ -47,6 +48,7 @@ import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Objects;
@@ -389,6 +391,29 @@ class ModelControlPlanePostgresIntegrationTest {
                 .containsExactly("a:model", "z:model");
         assertThat(loaded.denyModelKeys())
                 .containsExactly("x:model");
+        assertThat(loaded.rubBudget()).isNull();
+    }
+
+    @Test
+    void rubBudgetSnapshotRoundTripsAndDatabaseRejectsRoundedUpCeiling() {
+        Instant now = Instant.parse("2026-11-17T07:00:00Z");
+        var snapshot = new RubBudgetSnapshot(new BigDecimal("5.00"), new BigDecimal("10000"),
+                new BigDecimal("90.0000"), LocalDate.parse("2026-11-17"),
+                LocalDate.parse("2026-11-16"), now.minusSeconds(1));
+        UUID id = UUID.randomUUID();
+        var valid = new OrganizationModelPolicy(id, organizationId, 1, true, Set.of(), Set.of(),
+                null, null, null, snapshot.maxRequestCostUsd(), snapshot.monthlyBudgetUsd(),
+                BudgetEnforcement.HARD, false, false, false, userId, now, snapshot);
+        policyRepository.insert(valid);
+        var loaded = policyRepository.findLatest(organizationId).orElseThrow();
+        assertThat(loaded.rubBudget().rubPerUsd()).isEqualByComparingTo("90");
+        assertThat(loaded.rubBudget().monthlyBudgetRub()).isEqualByComparingTo("10000");
+        assertThat(loaded.maxRequestCostUsd()).isEqualByComparingTo("0.055555555555");
+        var invalid = new OrganizationModelPolicy(UUID.randomUUID(), organizationId, 2, true, Set.of(), Set.of(),
+                null, null, null, new BigDecimal("0.055555555556"), snapshot.monthlyBudgetUsd(),
+                BudgetEnforcement.HARD, false, false, false, userId, now, snapshot);
+        assertThatThrownBy(() -> policyRepository.insert(invalid)).isInstanceOf(DataIntegrityViolationException.class);
+        assertThat(policyRepository.findLatest(organizationId).orElseThrow().id()).isEqualTo(id);
     }
 
     @Test

@@ -77,6 +77,21 @@ final class OrganizationModelPolicyAuditDetailsFactory {
                             .toPlainString()
             );
         }
+        if (policy.rubBudget() != null) {
+            var rub = policy.rubBudget();
+            details.put("budgetInputCurrency", "RUB");
+            details.put("budgetRateSource", "CBR");
+            details.put("budgetRubPerUsd", rub.rubPerUsd().toPlainString());
+            details.put("budgetRateQuoteDate", rub.quoteDate().toString());
+            details.put("budgetRateEffectiveDate", rub.effectiveDate().toString());
+            details.put("budgetRateFetchedAt", rub.fetchedAt().toString());
+            if (rub.maxRequestCostRub() != null) {
+                details.put("maxRequestCostRub", rub.maxRequestCostRub().toPlainString());
+            }
+            if (rub.monthlyBudgetRub() != null) {
+                details.put("monthlyBudgetRub", rub.monthlyBudgetRub().toPlainString());
+            }
+        }
 
         details.put(
                 "budgetEnforcement",

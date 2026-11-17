@@ -19,9 +19,6 @@ import ru.safeai.gateway.ai.exception.AiProviderQuotaExceededException;
 import ru.safeai.gateway.ai.exception.AiProviderRateLimitedException;
 import ru.safeai.gateway.ai.metadata.AiResponseStatus;
 import ru.safeai.gateway.ai.metadata.PricingStatus;
-import ru.safeai.gateway.ai.pricing.ModelPricingProperties;
-import ru.safeai.gateway.ai.pricing.ModelPricingService;
-import ru.safeai.gateway.ai.pricing.StaticConfigurationPricingResolver;
 import ru.safeai.gateway.ai.provider.AiContextWindowProperties;
 import ru.safeai.gateway.ai.provider.AiContextWindowService;
 import ru.safeai.gateway.ai.provider.AiProviderRetryExecutor;
@@ -29,6 +26,8 @@ import ru.safeai.gateway.ai.provider.AiResponseMetadataService;
 import ru.safeai.gateway.ai.provider.AiRestClientFactory;
 import ru.safeai.gateway.ai.provider.AiRetryProperties;
 import ru.safeai.gateway.ai.testsupport.ProviderContractTestServer;
+import ru.safeai.gateway.ai.testsupport.CatalogPricingFixture;
+import ru.safeai.gateway.ai.pricing.PricingResolver;
 import tools.jackson.databind.JsonNode;
 
 import java.io.IOException;
@@ -86,7 +85,7 @@ class OpenAiProviderContractTest {
     }
 
     @Test
-    void completedResponseParsesAndUsesResolvedModelForPricing() {
+    void completedResponseUsesExactRoutedSnapshotForPricing() {
         server.enqueue(
                 200,
                 Map.of(
@@ -112,7 +111,7 @@ class OpenAiProviderContractTest {
                 .isEqualTo("Ответ");
 
         assertThat(response.requestedModel())
-                .isEqualTo(REQUESTED_MODEL);
+                .isEqualTo(ACTUAL_MODEL);
 
         assertThat(response.model())
                 .isEqualTo(ACTUAL_MODEL);
@@ -561,13 +560,15 @@ class OpenAiProviderContractTest {
     private OpenAiProvider provider(
             int maxResponseChars,
             AiRetryProperties retryProperties,
-            List<ModelPricingProperties.ModelPrice> prices
+            List<CatalogPricingFixture.Price> prices
     ) {
+        String requestedModel = prices.stream().anyMatch(p -> p.model().equals(ACTUAL_MODEL))
+                ? ACTUAL_MODEL : REQUESTED_MODEL;
         OpenAiProperties properties =
                 new OpenAiProperties(
                         "https://api.openai.com/v1",
                         "test-secret-key",
-                        REQUESTED_MODEL,
+                        requestedModel,
                         64_000,
                         2_048,
                         maxResponseChars,
@@ -577,16 +578,9 @@ class OpenAiProviderContractTest {
                         Duration.ofSeconds(2)
                 );
 
-        ModelPricingService pricingService =
-                new ModelPricingService(
-                        new ModelPricingProperties(
-                                prices
-                        ),
-                        Clock.fixed(
-                                NOW,
-                                ZoneOffset.UTC
-                        )
-                );
+        PricingResolver pricingResolver = CatalogPricingFixture.resolver(
+                "openai", requestedModel, request().providerOperationId(), prices,
+                Clock.fixed(NOW, ZoneOffset.UTC));
 
         RestClient client =
                 AiRestClientFactory.create(
@@ -599,7 +593,7 @@ class OpenAiProviderContractTest {
         return new OpenAiProvider(
                 properties,
                 new AiResponseMetadataService(
-                        new StaticConfigurationPricingResolver(pricingService)
+                        pricingResolver
                 ),
                 new AiProviderRetryExecutor(
                         retryProperties, attemptScope
@@ -637,11 +631,11 @@ class OpenAiProviderContractTest {
         );
     }
 
-    private static ModelPricingProperties.ModelPrice price(
+    private static CatalogPricingFixture.Price price(
             String model,
             String version
     ) {
-        return new ModelPricingProperties.ModelPrice(
+        return new CatalogPricingFixture.Price(
                 model,
                 INPUT_PRICE,
                 OUTPUT_PRICE,

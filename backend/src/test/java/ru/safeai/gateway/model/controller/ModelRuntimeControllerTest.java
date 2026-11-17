@@ -31,7 +31,7 @@ class ModelRuntimeControllerTest {
         RuntimeModelProbeService probeService =
                 mock(RuntimeModelProbeService.class);
 
-        when(statusService.current())
+        when(statusService.currentWithCatalogPricing())
                 .thenReturn(
                         new RuntimeModelStatusResponse(
                                 "openai",
@@ -67,7 +67,7 @@ class ModelRuntimeControllerTest {
         assertThat(response.outputUsdPer1mTokens())
                 .isEqualTo("8.000000000000");
 
-        verify(statusService).current();
+        verify(statusService).currentWithCatalogPricing();
     }
 
     @Test

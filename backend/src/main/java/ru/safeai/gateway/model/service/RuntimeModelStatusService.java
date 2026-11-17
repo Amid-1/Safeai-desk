@@ -2,7 +2,10 @@ package ru.safeai.gateway.model.service;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
-import ru.safeai.gateway.ai.pricing.ModelPricingProperties;
+import ru.safeai.gateway.model.domain.ModelCatalogEntry;
+import ru.safeai.gateway.model.domain.ModelLifecycle;
+import ru.safeai.gateway.model.pricing.CatalogPricingEligibility;
+import ru.safeai.gateway.model.repository.ModelCatalogRepository;
 import ru.safeai.gateway.ai.provider.AiProviderProperties;
 import ru.safeai.gateway.ai.provider.ProviderDataAssuranceProperties;
 import ru.safeai.gateway.ai.provider.ProviderDataEvidence;
@@ -40,35 +43,35 @@ public class RuntimeModelStatusService {
     private final AtomicReference<RuntimeModelProbeResult> lastProbe = new AtomicReference<>();
     private final Clock clock;
     private final AiProviderProperties providerProperties;
-    private final ModelPricingProperties pricingProperties;
+    private final ModelCatalogRepository catalog;
     private final ObjectProvider<OpenAiProperties> openAiProperties;
     private final ObjectProvider<AnthropicProperties> anthropicProperties;
     private final ProviderDataAssuranceProperties assurances;
 
     public RuntimeModelStatusService(
             AiProviderProperties providerProperties,
-            ModelPricingProperties pricingProperties,
+            ModelCatalogRepository catalog,
             ObjectProvider<OpenAiProperties> openAiProperties,
             ObjectProvider<AnthropicProperties> anthropicProperties
     ) {
-        this(providerProperties, pricingProperties, openAiProperties, anthropicProperties, Clock.systemUTC());
+        this(providerProperties, catalog, openAiProperties, anthropicProperties, Clock.systemUTC());
     }
 
     public RuntimeModelStatusService(
             AiProviderProperties providerProperties,
-            ModelPricingProperties pricingProperties,
+            ModelCatalogRepository catalog,
             ObjectProvider<OpenAiProperties> openAiProperties,
             ObjectProvider<AnthropicProperties> anthropicProperties,
             Clock clock
     ) {
-        this(providerProperties, pricingProperties, openAiProperties, anthropicProperties,
+        this(providerProperties, catalog, openAiProperties, anthropicProperties,
                 clock, ProviderDataAssuranceProperties.EMPTY);
     }
 
     @Autowired
     public RuntimeModelStatusService(
             AiProviderProperties providerProperties,
-            ModelPricingProperties pricingProperties,
+            ModelCatalogRepository catalog,
             ObjectProvider<OpenAiProperties> openAiProperties,
             ObjectProvider<AnthropicProperties> anthropicProperties,
             Clock clock,
@@ -80,9 +83,9 @@ public class RuntimeModelStatusService {
                 providerProperties,
                 "providerProperties не должен быть null"
         );
-        this.pricingProperties = Objects.requireNonNull(
-                pricingProperties,
-                "pricingProperties не должен быть null"
+        this.catalog = Objects.requireNonNull(
+                catalog,
+                "catalog не должен быть null"
         );
         this.openAiProperties = Objects.requireNonNull(
                 openAiProperties,
@@ -94,17 +97,28 @@ public class RuntimeModelStatusService {
         );
     }
 
+    /** Runtime facts for routing and dispatch; pricing comes from the selected catalog entry. */
     public RuntimeModelStatusResponse current() {
+        return snapshot(false);
+    }
+
+    /** Administrative projection; the data plane never performs this extra catalog scan. */
+    public RuntimeModelStatusResponse currentWithCatalogPricing() {
+        return snapshot(true);
+    }
+
+    private RuntimeModelStatusResponse snapshot(boolean includePricing) {
         return switch (providerProperties.provider()) {
             case "mock" -> response(
                     "mock",
                     "mock-safeai",
                     64_000,
                     2_048,
-                    ProviderDataEvidence.Status.LOCAL_MOCK
+                    ProviderDataEvidence.Status.LOCAL_MOCK,
+                    includePricing
             );
-            case "openai" -> fromOpenAi(requiredOpenAi());
-            case "anthropic" -> fromAnthropic(requiredAnthropic());
+            case "openai" -> fromOpenAi(requiredOpenAi(), includePricing);
+            case "anthropic" -> fromAnthropic(requiredAnthropic(), includePricing);
             default -> throw new IllegalStateException(
                     "Unsupported configured AI provider: "
                             + providerProperties.provider()
@@ -113,7 +127,7 @@ public class RuntimeModelStatusService {
     }
 
     private RuntimeModelStatusResponse fromOpenAi(
-            OpenAiProperties properties
+            OpenAiProperties properties, boolean includePricing
     ) {
         return response(
                 "openai",
@@ -122,12 +136,13 @@ public class RuntimeModelStatusService {
                 properties.maxOutputTokens(),
                 assurance(properties.baseUrl(), !properties.effectiveStore(),
                         "openai", properties.baseUrl(), properties.model(),
-                        properties.apiKey(), Boolean.toString(properties.effectiveStore()))
+                        properties.apiKey(), Boolean.toString(properties.effectiveStore())),
+                includePricing
         );
     }
 
     private RuntimeModelStatusResponse fromAnthropic(
-            AnthropicProperties properties
+            AnthropicProperties properties, boolean includePricing
     ) {
         return response(
                 "anthropic",
@@ -135,7 +150,8 @@ public class RuntimeModelStatusService {
                 properties.maxInputTokens(),
                 properties.maxTokens(),
                 assurance(properties.baseUrl(), true, "anthropic", properties.baseUrl(),
-                        properties.model(), properties.apiKey(), properties.version())
+                        properties.model(), properties.apiKey(), properties.version()),
+                includePricing
         );
     }
 
@@ -144,7 +160,7 @@ public class RuntimeModelStatusService {
             String model,
             int maxInputTokens,
             int maxOutputTokens,
-            ProviderDataEvidence.Status assurance
+            ProviderDataEvidence.Status assurance, boolean includePricing
     ) {
         if (model == null || model.isBlank()) {
             throw new IllegalStateException(
@@ -159,8 +175,18 @@ public class RuntimeModelStatusService {
         }
 
         String normalizedModel = normalizeRuntimeModel(model, provider);
-        ModelPricingProperties.ModelPrice price =
-                pricingProperties.find(normalizedModel);
+        // Runtime is informational: never choose a tariff across ambiguous logical mappings.
+        ModelCatalogEntry price = null;
+        if (includePricing) {
+            var candidates = catalog.findEffectiveByRuntime(provider, normalizedModel, clock.instant())
+                    .stream()
+                    .filter(entry -> entry.lifecycle() == ModelLifecycle.ACTIVE
+                            || entry.lifecycle() == ModelLifecycle.DEPRECATED)
+                    .toList();
+            if (candidates.size() == 1 && CatalogPricingEligibility.verified(candidates.getFirst())) {
+                price = candidates.getFirst();
+            }
+        }
 
         return new RuntimeModelStatusResponse(
                 provider,
@@ -177,9 +203,7 @@ public class RuntimeModelStatusService {
                 healthStatus(provider, normalizedModel),
                 price == null
                         ? "UNPRICED"
-                        : price.free()
-                        ? "FREE"
-                        : "CONFIGURED",
+                        : price.pricingStatus().name(),
                 price == null
                         ? null
                         : price.inputUsdPer1mTokens(),
@@ -188,7 +212,7 @@ public class RuntimeModelStatusService {
                         : price.outputUsdPer1mTokens(),
                 price == null
                         ? null
-                        : price.version(),
+                        : price.pricingVersion(),
                 assurance
         );
     }

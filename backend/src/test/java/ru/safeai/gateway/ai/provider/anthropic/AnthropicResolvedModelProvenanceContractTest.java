@@ -43,8 +43,7 @@ class AnthropicResolvedModelProvenanceContractTest {
         AiRetryProperties retry = new AiRetryProperties(true, 2, Duration.ofMillis(10), Duration.ofMillis(10), Duration.ofSeconds(1), Duration.ofSeconds(5));
         RestClient client = AiRestClientFactory.create(server.baseUrl(), Duration.ofSeconds(1), Duration.ofSeconds(2), 2L * 1024 * 1024);
         return new AnthropicProvider(properties,
-                new AiResponseMetadataService(new StaticConfigurationPricingResolver(
-                        new ModelPricingService(new ModelPricingProperties(List.of()), clock))),
+                new AiResponseMetadataService(CatalogPricingFixture.unpriced(clock)),
                 new AiProviderRetryExecutor(retry, scope),
                 new AiContextWindowService(AiContextWindowProperties.defaults()), clock, client);
     }
