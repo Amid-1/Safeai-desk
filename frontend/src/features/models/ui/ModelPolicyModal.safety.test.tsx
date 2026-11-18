@@ -246,21 +246,23 @@ describe('ModelPolicyModal: безопасность изменения прав
     })
 
     it('показывает отказ серверной проверки и не разрешает сохранение', async () => {
-        const {onSubmit} = setup({onPreview: vi.fn(async () => {throw new Error('Сервер недоступен')})})
+        const {onSubmit} = setup({onPreview: vi.fn(async () => {throw new Error('SQL internal details: SELECT secret FROM private_table')})})
         enablePolicy()
         clickPreview()
-        await screen.findByText('Сервер недоступен')
+        await screen.findByText('Не удалось проверить правила. Попробуйте повторно.')
+        expect(screen.queryByText(/SELECT secret/)).not.toBeInTheDocument()
         clickSubmit()
         expect(onSubmit).not.toHaveBeenCalled()
     })
 
     it('показывает ошибку сохранения и позволяет повторную попытку без потери черновика', async () => {
-        const onSubmit = vi.fn(async () => {throw new Error('Конфликт версии')})
+        const onSubmit = vi.fn(async () => {throw new Error('SQL internal details: SELECT secret FROM private_table')})
         setup({onSubmit})
         fireEvent.click(screen.getByRole('tab', {name: /Лимиты/}))
         fireEvent.change(screen.getByLabelText('Максимум входных токенов'), {target: {value: '32000'}})
         clickSubmit()
-        await screen.findByText('Конфликт версии')
+        await screen.findByText('Не удалось сохранить правила. Попробуйте повторно.')
+        expect(screen.queryByText(/SELECT secret/)).not.toBeInTheDocument()
         expect(screen.getByLabelText('Максимум входных токенов')).toHaveValue('32000')
         clickSubmit()
         await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2))

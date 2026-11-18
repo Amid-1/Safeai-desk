@@ -1,7 +1,7 @@
 // frontend/src/features/admin-organizations/ui/AdminOrganizationsView.test.tsx
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, within, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { Organization } from '../../../entities/organization/api/organizationApi'
 import { AdminOrganizationsView } from './AdminOrganizationsView'
 
@@ -25,24 +25,29 @@ const platform: Organization = {
     name: 'SafeAI Platform', type: 'PLATFORM', protected: true,
 }
 
-function renderView(options: { rows?: Organization[], page?: number, pages?: number } = {}) {
+function renderView(options: { rows?: Organization[], page?: number, pages?: number, total?: number, createResult?: boolean } = {}) {
     const onDisable = vi.fn(async () => {})
     const onEnable = vi.fn()
     const onDetails = vi.fn(async () => {})
     const onRename = vi.fn()
     const onPageChange = vi.fn()
     const onNameChange = vi.fn()
-    const onCreate = vi.fn(async () => {})
-    render(<AdminOrganizationsView
+    const onCreate = vi.fn(async () => options.createResult ?? true)
+    function Harness() {
+        const [name, setName] = useState('')
+        return <AdminOrganizationsView
         organizations={options.rows ?? [customer, platform]}
         loadError="" mutationError="" createError="" success=""
         loading={false} creating={false} hasPendingAction={false}
         page={options.page ?? 0} totalPages={options.pages ?? 1}
-        name="" detailsLoadingId={null} impactLoadingId={null}
-        onNameChange={onNameChange} onCreate={onCreate}
+        totalOrganizations={options.total ?? (options.rows ?? [customer, platform]).length}
+        name={name} detailsLoadingId={null} impactLoadingId={null}
+        onNameChange={value => { setName(value); onNameChange(value) }} onCreate={onCreate}
         onReload={vi.fn()} onDetails={onDetails} onRename={onRename}
         onDisable={onDisable} onEnable={onEnable} onPageChange={onPageChange}
-    />)
+    />
+    }
+    render(<Harness />)
     return { onDisable, onEnable, onDetails, onRename, onPageChange, onCreate, onNameChange }
 }
 
@@ -51,18 +56,16 @@ beforeEach(() => { vi.restoreAllMocks() })
 describe('AdminOrganizationsView: readable UI and protected actions', () => {
     it('explains creation defaults without offering editable system type or initial status', () => {
         renderView({ rows: [customer] })
-        expect(screen.getByText('Тип:')).toBeTruthy()
-        expect(screen.getByText('Статус после создания:')).toBeTruthy()
-        expect(screen.getByText(/только SUPER_ADMIN/)).toBeTruthy()
+        expect(screen.queryByLabelText('Название организации')).toBeNull()
+        fireEvent.click(screen.getByRole('button', { name: '＋ Создать организацию' }))
+        expect(screen.getByText(/После создания организация будет включена/)).toBeTruthy()
+        expect(screen.queryByText(/только SUPER_ADMIN/)).toBeNull()
         expect(screen.queryByRole('combobox', { name: /тип организации/i })).toBeNull()
-        expect(screen.getByText(/постоянное удаление организаций здесь не предусмотрено/)).toBeTruthy()
     })
 
     it.each([
-        ['ID', 'ID организации', /поиска событий аудита/],
-        ['Тип', 'Тип организации', /Тип устанавливает сервер/],
+        ['Тип', 'Тип организации', /служебная организация SafeAI Desk/],
         ['Статус', 'Статус организации', /не означает, что пользователь сейчас в сети/],
-        ['Версия', 'Версия записи', /не версия программы/],
     ])('opens real help dialog for column %s', (column, title, explanation) => {
         renderView({ rows: [customer] })
         fireEvent.click(screen.getByRole('button', { name: `Справка: ${column}` }))
@@ -72,24 +75,19 @@ describe('AdminOrganizationsView: readable UI and protected actions', () => {
 
     it('uses understandable terms without exposing implementation jargon', () => {
         renderView()
-        expect(screen.getByRole('heading', { name: 'Создать организацию' })).toBeTruthy()
+        expect(screen.getByRole('button', { name: '＋ Создать организацию' })).toBeTruthy()
         expect(screen.getByText('УПРАВЛЕНИЕ ОРГАНИЗАЦИЯМИ')).toBeTruthy()
         expect(screen.queryByText('Создать tenant')).toBeNull()
-        expect(screen.getByText('Показано в списке')).toBeTruthy()
-        expect(screen.getByText('Всего организаций: 2')).toBeTruthy()
+        expect(screen.getByText('Всего организаций')).toBeTruthy()
+        expect(screen.getByText('Показано 2 из 2')).toBeTruthy()
     })
 
-    it('shows compact UUID and provides exact clipboard copy', async () => {
-        const writeText = vi.fn(async () => {})
-        Object.defineProperty(navigator, 'clipboard', {
-            configurable: true, value: { writeText },
-        })
-        renderView({ rows: [customer] })
-        expect(screen.getByText('af08bde0…')).toBeTruthy()
+    it('omits technical columns from the directory and uses server total across pages', () => {
+        renderView({ rows: [customer], pages: 3, total: 123 })
+        expect(screen.getByText('123')).toBeTruthy()
+        expect(screen.getByText('Показано 1 из 123')).toBeTruthy()
         expect(screen.queryByText(customer.id)).toBeNull()
-        fireEvent.click(screen.getByRole('button', { name: `Скопировать ID организации ${customer.id}` }))
-        await waitFor(() => expect(writeText).toHaveBeenCalledWith(customer.id))
-        expect(screen.getByText('Скопировано')).toBeTruthy()
+        expect(screen.queryByRole('columnheader', { name: /ID|Версия/ })).toBeNull()
     })
 
     it('routes a tenant status click through the existing confirmation handler', () => {
@@ -120,24 +118,40 @@ describe('AdminOrganizationsView: readable UI and protected actions', () => {
         expect(actions.onEnable).not.toHaveBeenCalled()
     })
 
-    it('explains type and optimistic version without pretending they are editable', () => {
+    it('explains type without pretending it is editable', () => {
         renderView({ rows: [customer] })
         fireEvent.click(screen.getByLabelText('Тип организации: клиентская. Подробнее'))
         expect(screen.getByText(/Тип определяется системой при создании/)).toBeTruthy()
-        fireEvent.click(screen.getByLabelText('Версия организации: 0. Подробнее'))
-        expect(screen.getByText(/Номер обновления записи/)).toBeTruthy()
     })
 
 
-    it('keeps creating a client organization tied to the existing submit callback', () => {
+    it('keeps creating a client organization tied to the existing submit callback', async () => {
         const actions = renderView()
+        fireEvent.click(screen.getByRole('button', { name: '＋ Создать организацию' }))
+        const dialog = screen.getByRole('region', { name: 'Создать организацию' })
         const input = screen.getByPlaceholderText('Например, ООО «Ромашка»')
+        const createButton = within(dialog).getByRole('button', { name: 'Создать организацию' })
+        expect(createButton).toBeDisabled()
         fireEvent.change(input, { target: { value: 'ООО «Новая»' } })
         expect(actions.onNameChange).toHaveBeenCalledWith('ООО «Новая»')
-        // The controlled form remains disabled until its owner hook supplies nonempty name.
-        const createButton = screen.getByRole('button', { name: 'Создать организацию' }) as HTMLButtonElement
-        expect(createButton.disabled).toBe(true)
-        expect(actions.onCreate).not.toHaveBeenCalled()
+        expect(createButton).toBeEnabled()
+        fireEvent.click(createButton)
+        await waitFor(() => expect(screen.queryByRole('region', { name: 'Создать организацию' })).toBeNull())
+        expect(actions.onCreate).toHaveBeenCalledTimes(1)
+    })
+
+    it('preserves a failed create draft and allows cancellation', async () => {
+        const actions = renderView({createResult: false})
+        fireEvent.click(screen.getByRole('button', { name: '＋ Создать организацию' }))
+        const dialog = screen.getByRole('region', { name: 'Создать организацию' })
+        const input = within(dialog).getByRole('textbox')
+        fireEvent.change(input, { target: { value: 'Компания' } })
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Создать организацию' }))
+        await waitFor(() => expect(actions.onCreate).toHaveBeenCalledTimes(1))
+        expect(input).toHaveValue('Компания')
+        fireEvent.click(within(dialog).getByRole('button', {name: 'Отмена'}))
+        expect(screen.queryByRole('region', { name: 'Создать организацию' })).toBeNull()
+        expect(actions.onNameChange).toHaveBeenLastCalledWith('')
     })
 
     it('does not offer disabled pagination on a single page', () => {

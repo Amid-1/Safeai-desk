@@ -34,6 +34,7 @@ export function useAdminOrganizationsDirectory() {
     const [page, setPage] = useState(0)
     const [totalPages, setTotalPages] =
         useState(0)
+    const [totalOrganizations, setTotalOrganizations] = useState<number | null>(null)
     const [reloadToken, setReloadToken] =
         useState(0)
 
@@ -111,6 +112,7 @@ export function useAdminOrganizationsDirectory() {
                 setTotalPages(
                     normalized.totalPages,
                 )
+                setTotalOrganizations(normalized.totalElements)
             } catch (error) {
                 if (
                     sequence
@@ -121,6 +123,7 @@ export function useAdminOrganizationsDirectory() {
                 ) {
                     setOrganizations([])
                     setTotalPages(0)
+                    setTotalOrganizations(null)
                     setLoadError(
                         getApiErrorMessage(
                             error,
@@ -253,6 +256,7 @@ export function useAdminOrganizationsDirectory() {
         loading,
         page,
         totalPages,
+        totalOrganizations,
         setPage,
         requestReloadFromFirstPage,
         reloadCurrentPage,

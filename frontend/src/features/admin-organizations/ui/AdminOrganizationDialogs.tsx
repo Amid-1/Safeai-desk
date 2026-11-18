@@ -7,7 +7,7 @@ import type { DisableOrganizationDialogState } from '../lib/adminOrganizationsSu
 import { canMutateOrganization } from '../lib/adminOrganizationsSupport'
 import {
     OrganizationDetail, OrganizationImpact, OrganizationStatusBadge,
-    OrganizationTypeInfo, OrganizationVersionInfo, OrganizationId,
+    OrganizationVersionInfo, OrganizationId,
 } from './AdminOrganizationsUi'
 
 type AdminOrganizationDialogsProps = {
@@ -69,32 +69,27 @@ export function AdminOrganizationDialogs({
                 </header>
                 <section aria-label="Основные сведения об организации">
                     <dl className="organization-details">
-                        <OrganizationDetail term="Тип" value={<OrganizationTypeInfo type={detailsOrganization.type} />} />
-                        <OrganizationDetail term="Статус" value={<span>
-                            <OrganizationStatusBadge enabled={detailsOrganization.enabled} />
-                            <span className="org-detail-hint">{detailsOrganization.enabled
-                                ? 'Включённые сотрудники этой организации могут входить в SafeAI Desk, если их личные учётные записи активны. Доступ к моделям и функциям зависит от ролей и правил.' : 'Вход пользователей этой организации в SafeAI Desk заблокирован, даже если их личные учётные записи включены.'}</span>
-                        </span>} />
-                        <OrganizationDetail term="Защита" value={detailsOrganization.protected
-                            ? 'Защищена системой — изменение недоступно'
-                            : 'Обычная организация клиента'} />
-                        <OrganizationDetail term="Версия записи" value={<OrganizationVersionInfo version={detailsOrganization.version} />} />
                         <OrganizationDetail term="Создана" value={formatDateTime(detailsOrganization.createdAt)} />
                         <OrganizationDetail term="Изменена" value={detailsOrganization.updatedAt
                             ? formatDateTime(detailsOrganization.updatedAt) : '—'} />
                     </dl>
                 </section>
+                <p className="org-detail-hint">{detailsOrganization.enabled
+                    ? 'Пользователи с активными учётными записями могут войти в SafeAI Desk. Доступ к функциям и моделям зависит от их ролей и правил организации.'
+                    : 'Вход пользователей этой организации в SafeAI Desk заблокирован.'}</p>
                 <section className="org-detail-technical" aria-label="Технические сведения">
                     <details>
                         <summary>Технические сведения и полный ID</summary>
                         <p>Идентификатор используется для интеграций, аудита и обращения в поддержку.</p>
                         <code className="org-detail-full-id">{detailsOrganization.id}</code>
                         <OrganizationId id={detailsOrganization.id} />
+                        <dl className="organization-details">
+                            <OrganizationDetail term="Версия записи" value={<OrganizationVersionInfo version={detailsOrganization.version} />} />
+                        </dl>
                     </details>
                 </section>
                 {detailsOrganization.type === 'PLATFORM' && <p className="organization-platform-note">
-                    Эта организация необходима для работы SafeAI Desk. Ее нельзя переименовать,
-                    отключить или включить обычными действиями администрирования.
+                    Служебная организация, необходимая для работы SafeAI Desk. Её переименование и отключение недоступны.
                 </p>}
                 <div className="modal-actions org-detail-actions">
                     {mutable && <>

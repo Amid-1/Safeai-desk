@@ -37,7 +37,7 @@ export function useAdminOrganizationCreate({
 
     async function submitCreateOrganization() {
         if (creatingRef.current) {
-            return
+            return false
         }
 
         const normalizedName =
@@ -47,7 +47,7 @@ export function useAdminOrganizationCreate({
             setCreateError(
                 'Введите название организации.',
             )
-            return
+            return false
         }
 
         creatingRef.current = true
@@ -66,6 +66,7 @@ export function useAdminOrganizationCreate({
                 `Организация «${created.name}» создана.`,
             )
             requestReloadFromFirstPage()
+            return true
         } catch (error) {
             setCreateError(
                 getApiErrorMessage(
@@ -73,6 +74,7 @@ export function useAdminOrganizationCreate({
                     'Не удалось создать организацию.',
                 ),
             )
+            return false
         } finally {
             creatingRef.current = false
             setCreating(false)

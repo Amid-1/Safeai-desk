@@ -465,7 +465,7 @@ export function useModelPolicyModalController({
         } catch (failure) {
             invalidatePreview(
                 failure instanceof Error
-                    ? getApiErrorMessage(failure, failure.message)
+                    ? getApiErrorMessage(failure, 'Не удалось проверить правила. Попробуйте повторно.')
                     : 'Не удалось проверить правила.',
             )
         } finally {
@@ -511,7 +511,7 @@ export function useModelPolicyModalController({
                 failure instanceof Error
                     ? getApiErrorMessage(
                         failure,
-                        failure.message,
+                        'Не удалось сохранить правила. Попробуйте повторно.',
                     )
                     : 'Не удалось сохранить правила.',
             )

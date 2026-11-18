@@ -1,5 +1,5 @@
 // frontend/src/features/admin-organizations/ui/AdminOrganizationDialogs.clarity.test.tsx
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import type { Organization } from '../../../entities/organization/api/organizationApi'
@@ -41,12 +41,16 @@ function renderDetails(organization: Organization) {
 }
 
 describe('Organization details: safe actions and explanations', () => {
-    it('explains identifiers and version without enabling manual edits', () => {
+    it('explains identifiers and version in technical details without enabling manual edits', async () => {
+        const writeText = vi.fn(async () => {})
+        Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
         renderDetails(customer)
         expect(screen.getByText('ООО «Ромашка»')).toBeTruthy()
-        expect(screen.getByText(/Включённые сотрудники этой организации могут входить/)).toBeTruthy()
+        expect(screen.getByText(/Пользователи с активными учётными записями могут войти/)).toBeTruthy()
         fireEvent.click(screen.getByText('Технические сведения и полный ID'))
         expect(screen.getByText(customer.id)).toBeTruthy()
+        fireEvent.click(screen.getByRole('button', {name: `Скопировать ID организации ${customer.id}`}))
+        await waitFor(() => expect(writeText).toHaveBeenCalledWith(customer.id))
         fireEvent.click(screen.getByLabelText('Версия организации: 2. Подробнее'))
         expect(screen.getByText(/Номер обновления записи/)).toBeTruthy()
     })
@@ -80,7 +84,7 @@ describe('Organization details: safe actions and explanations', () => {
         const actions = renderDetails(platform)
         expect(screen.queryByRole('button', { name: 'Отключить организацию' })).toBeNull()
         expect(screen.queryByRole('button', { name: 'Переименовать' })).toBeNull()
-        expect(screen.getByText(/необходима для работы SafeAI Desk/)).toBeTruthy()
+        expect(screen.getByText(/необходимая для работы SafeAI Desk/)).toBeTruthy()
         expect(actions.onDisable).not.toHaveBeenCalled()
         expect(actions.onRename).not.toHaveBeenCalled()
     })

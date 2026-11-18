@@ -35,6 +35,7 @@ function AdminOrganizationsPageContent() {
             hasPendingAction={mutations.hasPendingAction}
             page={directory.page}
             totalPages={directory.totalPages}
+            totalOrganizations={directory.totalOrganizations}
             name={create.name}
             detailsLoadingId={directory.detailsLoadingId}
             impactLoadingId={mutations.impactLoadingId}
