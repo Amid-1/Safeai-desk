@@ -82,7 +82,6 @@ export function useModalResize(resize: ModalResizeOptions | undefined, topmost: 
                             resizeMaxScale,
                         maximizable:
                             resizeMaximizable,
-                resizeResizable,
                         resizable: resizeResizable,
                     },
                 }
@@ -98,6 +97,7 @@ export function useModalResize(resize: ModalResizeOptions | undefined, topmost: 
                 resizeMinScale,
                 resizeMaxScale,
                 resizeMaximizable,
+                resizeResizable,
             ],
         )
 

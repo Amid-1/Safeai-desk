@@ -1,3 +1,4 @@
+// frontend/src/shared/ui/adminDetailWindow.ts
 // Fixed, viewport-clamped window geometry; dragging and maximizing reuse the shared Modal engine.
 // Edge-resize handles are deliberately disabled for read-only profile cards.
 import type { ModalResizeOptions } from './Modal'

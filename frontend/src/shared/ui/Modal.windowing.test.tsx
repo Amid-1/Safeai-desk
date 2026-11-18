@@ -37,6 +37,29 @@ describe('Управление окном указателем', () => {
         expect(dialog.querySelector('[data-modal-resize-handle]')).toBeNull()
     })
 
+    it('обновляет ручки изменения размера при смене режима карточки', () => {
+        const onClose = vi.fn()
+        const view = render(
+            <Modal title="Карточка" onClose={onClose}
+                resize={{ ...dimensions, resizable: false }}>Сведения</Modal>,
+        )
+        const dialog = screen.getByRole('dialog', { name: 'Карточка' })
+        expect(dialog.querySelectorAll('[data-modal-resize-handle]')).toHaveLength(0)
+        expect(dialog.querySelector('[data-modal-drag-handle="true"]')).not.toBeNull()
+
+        view.rerender(
+            <Modal title="Карточка" onClose={onClose}
+                resize={{ ...dimensions, resizable: true }}>Сведения</Modal>,
+        )
+        expect(dialog.querySelectorAll('[data-modal-resize-handle]')).toHaveLength(8)
+
+        view.rerender(
+            <Modal title="Карточка" onClose={onClose}
+                resize={{ ...dimensions, resizable: false }}>Сведения</Modal>,
+        )
+        expect(dialog.querySelectorAll('[data-modal-resize-handle]')).toHaveLength(0)
+    })
+
     it('позволяет отключить перемещение окна, сохраняя resize и максимизацию', () => {
         render(
             <Modal

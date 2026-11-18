@@ -1,3 +1,4 @@
+// frontend/src/features/admin-organizations/lib/useAdminOrganizationCreate.test.tsx
 import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createOrganization } from '../../../entities/organization/api/organizationApi'

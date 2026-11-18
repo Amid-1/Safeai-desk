@@ -1,3 +1,4 @@
+// frontend/src/shared/ui/AdminPageHeader.tsx
 import type { ReactNode } from 'react'
 import './AdminConsole.css'
 

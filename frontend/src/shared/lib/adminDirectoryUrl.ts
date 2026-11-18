@@ -1,3 +1,4 @@
+// frontend/src/shared/lib/adminDirectoryUrl.ts
 import { useCallback, useEffect, useState } from 'react'
 
 export function directoryUuid(value: string | null): string {

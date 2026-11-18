@@ -1,3 +1,4 @@
+// frontend/src/shared/lib/roleLabel.ts
 import type { UserRole } from '../api/types'
 
 export function roleLabel(role: UserRole): string {

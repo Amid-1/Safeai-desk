@@ -1,3 +1,4 @@
+// frontend/src/entities/organization/ui/OrganizationDirectoryFilter.tsx
 import { useEffect, useState } from 'react'
 import { searchOrganizationDirectory, getOrganizationDetails } from '../api/organizationApi'
 import type { OrganizationDirectoryItem } from '../api/organizationApi'

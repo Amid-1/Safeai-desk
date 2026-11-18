@@ -1,3 +1,4 @@
+// frontend/src/features/admin-organizations/ui/OrganizationActionsMenu.tsx
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
