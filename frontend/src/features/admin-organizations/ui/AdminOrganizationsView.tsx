@@ -1,14 +1,16 @@
 // frontend/src/features/admin-organizations/ui/AdminOrganizationsView.tsx
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Organization } from '../../../entities/organization/api/organizationApi'
 import Modal from '../../../shared/ui/Modal'
 import { formatDateTime } from '../../../shared/lib/format'
 import ResizableScrollRegion from '../../../shared/ui/ResizableScrollRegion'
+import { AdminPageHeader } from '../../../shared/ui/AdminPageHeader'
 import { EmptyState, ErrorState, LoadingState } from '../../../shared/ui/StateBlock'
 import { canMutateOrganization, getProtectionLabel } from '../lib/adminOrganizationsSupport'
 import {
-    OrganizationStatusBadge, OrganizationTypeInfo,
+    OrganizationStatusBadge, OrganizationTypeBadge,
 } from './AdminOrganizationsUi'
+import { OrganizationActionsMenu } from './OrganizationActionsMenu'
 
 const COLUMN_HELP = {
     type: {
@@ -46,6 +48,11 @@ type AdminOrganizationsViewProps = {
     page: number
     totalPages: number
     totalOrganizations: number | null
+    totalMatched?: number | null
+    query?: string
+    type?: string
+    status?: string
+    onFiltersChange?: (query: string, type: string, status: string) => void
     name: string
     detailsLoadingId: string | null
     impactLoadingId: string | null
@@ -65,12 +72,15 @@ export function AdminOrganizationsView({
     loading, creating, hasPendingAction, page, totalPages, totalOrganizations, name,
     detailsLoadingId, impactLoadingId, onNameChange, onCreate,
     onReload, onDetails, onRename, onDisable, onEnable, onPageChange,
+    totalMatched, query = '', type = '', status = '', onFiltersChange,
 }: AdminOrganizationsViewProps) {
     const [helpColumn, setHelpColumn] = useState<ColumnKey | null>(null)
     const [createOpen, setCreateOpen] = useState(false)
     const hasRows = !loading && !loadError && organizations.length > 0
     const pageCount = Math.max(1, totalPages)
     const visibleTotal = loading || loadError ? null : totalOrganizations
+    const [searchDraft, setSearchDraft] = useState(query)
+    useEffect(() => {setSearchDraft(query)}, [query])
 
     function closeCreate() {
         if (creating) return
@@ -80,7 +90,7 @@ export function AdminOrganizationsView({
 
     const upper = (
         <div className="organizations-page__upper">
-            <header className="organizations-page__header">
+            <AdminPageHeader className="organizations-page__header">
                 <div>
                     <span className="organizations-page__eyebrow">УПРАВЛЕНИЕ ОРГАНИЗАЦИЯМИ</span>
                     <h1>Организации</h1>
@@ -94,10 +104,34 @@ export function AdminOrganizationsView({
                     <button type="button" disabled={creating || hasPendingAction || detailsLoadingId !== null}
                         onClick={() => setCreateOpen(true)}>＋ Создать организацию</button>
                 </div>
-            </header>
+            </AdminPageHeader>
 
             {mutationError && <div className="error" role="alert" aria-live="assertive">{mutationError}</div>}
             {success && <div className="success" role="status" aria-live="polite">{success}</div>}
+
+            {onFiltersChange && <form className="organization-directory-filter" role="search"
+                onSubmit={event => {event.preventDefault(); onFiltersChange(searchDraft, type, status)}}>
+                <label htmlFor="organizations-query">Название</label>
+                <input id="organizations-query" type="search" maxLength={255} value={searchDraft}
+                    onChange={event => setSearchDraft(event.target.value)} placeholder="Поиск по названию" />
+                <label htmlFor="organizations-type">Тип</label>
+                <select id="organizations-type" value={type}
+                    onChange={event => onFiltersChange(searchDraft, event.target.value, status)}>
+                    <option value="">Все типы</option><option value="PLATFORM">Системная</option>
+                    <option value="TENANT">Клиентская</option>
+                </select>
+                <label htmlFor="organizations-status">Статус</label>
+                <select id="organizations-status" value={status}
+                    onChange={event => onFiltersChange(searchDraft, type, event.target.value)}>
+                    <option value="">Все статусы</option><option value="ACTIVE">Включённые</option>
+                    <option value="DISABLED">Отключённые</option>
+                </select>
+                <button type="submit">Найти</button>
+                <button type="button" className="secondary-button" onClick={() => {
+                    setSearchDraft(''); onFiltersChange('', '', '')
+                }}>Сбросить</button>
+                <span>Найдено: {loading || loadError ? '—' : totalMatched ?? '—'}</span>
+            </form>}
 
             <span className="resizable-scroll-region__upper-boundary-marker"
                   data-resizable-upper-boundary aria-hidden="true" />
@@ -107,7 +141,7 @@ export function AdminOrganizationsView({
     const footer = hasRows ? (
         <div className="organizations-list-footer">
             <span className="organizations-list-footer__count">
-                {`Показано ${organizations.length}${visibleTotal === null ? '' : ` из ${visibleTotal}`}`}
+                {`Показано ${organizations.length}${(totalMatched ?? visibleTotal) === null ? '' : ` из ${totalMatched ?? visibleTotal}`}`}
             </span>
             {totalPages > 1 && (
                 <nav className="pagination organizations-pagination" aria-label="Страницы списка организаций">
@@ -153,8 +187,11 @@ export function AdminOrganizationsView({
                         return <tr key={organization.id} className={!organization.enabled
                             ? 'organizations-table__row--disabled'
                             : organization.type === 'PLATFORM' ? 'organizations-table__row--platform' : undefined}>
-                            <td><strong className="organization-name-cell">{organization.name}</strong></td>
-                            <td><OrganizationTypeInfo type={organization.type} /></td>
+                            <td><button type="button" className="organization-name-cell organization-name-link"
+                                disabled={detailsLoadingId === organization.id}
+                                aria-label={`Открыть карточку организации ${organization.name}`}
+                                onClick={() => void onDetails(organization)}>{organization.name}</button></td>
+                            <td><OrganizationTypeBadge type={organization.type} /></td>
                             <td>
                                 {mutable ? (
                                     <button type="button" className="org-status-action"
@@ -180,10 +217,13 @@ export function AdminOrganizationsView({
                                             onClick={() => void onDetails(organization)}>
                                         {detailsLoadingId === organization.id ? 'Загрузка…' : 'Подробнее'}
                                     </button>
-                                    {mutable && <button type="button" className="secondary-button"
-                                        disabled={hasPendingAction} onClick={() => onRename(organization)}>
-                                        Переименовать
-                                    </button>}
+                                    {mutable && <OrganizationActionsMenu
+                                        organizationName={organization.name}
+                                        enabled={organization.enabled}
+                                        disabled={updating}
+                                        onRename={() => onRename(organization)}
+                                        onToggleStatus={() => organization.enabled
+                                            ? void onDisable(organization) : onEnable(organization)} /> }
                                 </div>
                                 {!mutable && <span className="organization-protection-label">
                                     {getProtectionLabel(organization)}
@@ -195,7 +235,7 @@ export function AdminOrganizationsView({
                 </table>
             )}
         </ResizableScrollRegion>
-        {createOpen && <Modal title="Создать организацию" size="sm" onClose={closeCreate}
+        {createOpen && <Modal title="Создать организацию" size="sm" onClose={closeCreate} className="admin-details-dialog"
             closeDisabled={creating} closeOnBackdrop={false}>
             <form className="form org-create-modal-form" onSubmit={async event => {
                 event.preventDefault()

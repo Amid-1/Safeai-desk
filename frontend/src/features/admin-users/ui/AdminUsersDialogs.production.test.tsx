@@ -147,6 +147,7 @@ describe('AdminUsersDialogs: сохранение контрактов и защ
         expect(screen.getByText('Тестовая компания')).toBeInTheDocument()
         expect(screen.queryByText('UUID пользователя')).not.toBeInTheDocument()
         expect(screen.queryByText('UUID организации')).not.toBeInTheDocument()
+        expect(screen.queryByText('Технические сведения')).not.toBeInTheDocument()
         expect(screen.getByText(USER.email)).toBeInTheDocument()
         fireEvent.click(screen.getByRole('button', { name: 'Закрыть окно' }))
         expect(props.closeDetailsModal).toHaveBeenCalledTimes(1)
@@ -154,7 +155,12 @@ describe('AdminUsersDialogs: сохранение контрактов и защ
 
     it('SUPER_ADMIN видит UUID пользователя и организации в сведениях', () => {
         open({ detailsUser: DETAILS, currentUserIsSuperAdmin: true })
-        expect(screen.getByText('UUID пользователя')).toBeInTheDocument()
+        const details = screen.getByText('Технические сведения').closest('details')
+        expect(details).not.toHaveAttribute('open')
+        expect(screen.getByRole('link', { name: /Тестовая компания/ })).toHaveAttribute(
+            'href', `/admin/organizations?organizationId=${DETAILS.organizationId}`)
+        fireEvent.click(screen.getByText('Технические сведения'))
+        expect(screen.getByText('Идентификатор пользователя')).toBeVisible()
         expect(screen.getByRole('button', {
             name: 'Копировать UUID организации',
         })).toBeInTheDocument()

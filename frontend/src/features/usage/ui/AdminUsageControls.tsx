@@ -2,6 +2,7 @@
 import { UsageFilterCombobox, type UsageFilterOption } from './UsageFilterCombobox'
 import { TabButton } from './UsageReportView'
 import { formatIsoDate, type UsageReportTab } from '../lib/adminUsage.helpers'
+import { AdminPageHeader } from '../../../shared/ui/AdminPageHeader'
 
 type AdminUsageControlsProps = {
     tab: UsageReportTab
@@ -51,7 +52,7 @@ export function AdminUsageControls(p: AdminUsageControlsProps) {
         </span>
     return (
         <div className="usage-page__upper">
-            <header className="usage-dashboard-header">
+            <AdminPageHeader className="usage-dashboard-header">
                 <div>
                     <span className="usage-eyebrow">АНАЛИТИКА И СТОИМОСТЬ</span>
                     <h1>Использование AI</h1>
@@ -59,7 +60,7 @@ export function AdminUsageControls(p: AdminUsageControlsProps) {
                 <div className="usage-scope" aria-label="Область отчёта">
                     <span>Область отчёта</span><strong>{p.scopeLabel}</strong>
                 </div>
-            </header>
+            </AdminPageHeader>
             <section className="usage-filters" aria-label="Период и фильтры">
                 <div className="usage-filter-bar">
                     <div className="usage-applied-filters" aria-label="Применённые фильтры">

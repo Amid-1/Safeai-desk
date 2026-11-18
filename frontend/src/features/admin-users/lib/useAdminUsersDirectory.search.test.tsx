@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AuthUser } from '../../auth/api/authApi'
 import type { User, UserStatistics } from '../../../entities/user/api/userApi'
 import { getUserStatistics, searchUsers } from '../../../entities/user/api/userApi'
+import { searchOrganizationDirectory } from '../../../entities/organization/api/organizationApi'
 import { useAdminUsersDirectory } from './useAdminUsersDirectory'
 
 vi.mock('../../../entities/user/api/userApi', () => ({
@@ -52,7 +53,9 @@ function latestQuery(): string | undefined {
 }
 
 beforeEach(() => {
+    window.history.replaceState({}, '', '/admin/users')
     vi.clearAllMocks()
+    vi.mocked(searchOrganizationDirectory).mockResolvedValue([])
     vi.mocked(getUserStatistics).mockResolvedValue(statistics)
     vi.mocked(searchUsers).mockImplementation(async (_page, _size, filters) => {
         const query = (filters?.query || '').toLocaleLowerCase()
@@ -121,5 +124,29 @@ describe('Users directory: server-side search and reset', () => {
                 query: 'user5@test.com', role: 'USER', enabled: true,
             })
         })
+    })
+
+    it('restores organization scope and role from a direct link, and resets page on change', async () => {
+        window.history.replaceState({}, '', `/admin/users?organizationId=${ORGANIZATION}&role=SUPER_ADMIN&page=2`)
+        const superAdmin: AuthUser = {...currentUser, roles: ['SUPER_ADMIN']}
+        const {result} = renderHook(() => useAdminUsersDirectory(superAdmin, true))
+        await waitFor(() => expect(vi.mocked(searchUsers).mock.calls[0]?.[2]).toMatchObject({
+            organizationId: ORGANIZATION, role: 'SUPER_ADMIN',
+        }))
+        expect(vi.mocked(getUserStatistics).mock.calls[0]?.[0]).toMatchObject({
+            directory: true, organizationId: ORGANIZATION,
+        })
+        act(() => result.current.changeOrganization(''))
+        await waitFor(() => expect(vi.mocked(searchUsers).mock.lastCall?.[2]?.organizationId).toBeUndefined())
+        expect(result.current.page).toBe(0)
+        expect(window.location.search).not.toContain('organizationId')
+    })
+
+    it('does not forward a foreign scope or SUPER_ADMIN role for a tenant administrator', async () => {
+        window.history.replaceState({}, '', '/admin/users?organizationId=bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb&role=SUPER_ADMIN')
+        renderHook(() => useAdminUsersDirectory(currentUser, false))
+        await waitFor(() => expect(searchUsers).toHaveBeenCalled())
+        expect(vi.mocked(searchUsers).mock.lastCall?.[2]?.organizationId).toBeUndefined()
+        expect(vi.mocked(searchUsers).mock.lastCall?.[2]?.role).toBeUndefined()
     })
 })

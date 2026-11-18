@@ -109,6 +109,24 @@ describe('AdminOrganizationsView: readable UI and protected actions', () => {
         expect(actions.onDisable).not.toHaveBeenCalled()
     })
 
+    it('opens exactly the same details callback from an organization name and the Details button', () => {
+        const actions = renderView({ rows: [customer] })
+        fireEvent.click(screen.getByRole('button', { name: `Открыть карточку организации ${customer.name}` }))
+        fireEvent.click(screen.getByRole('button', { name: 'Подробнее' }))
+        expect(actions.onDetails).toHaveBeenCalledTimes(2)
+        expect(actions.onDetails).toHaveBeenNthCalledWith(1, customer)
+        expect(actions.onDetails).toHaveBeenNthCalledWith(2, customer)
+    })
+
+    it('keeps rename and disabling behind the action menu and the existing callbacks', () => {
+        const actions = renderView({ rows: [customer] })
+        expect(screen.queryByRole('button', { name: 'Переименовать' })).toBeNull()
+        fireEvent.click(screen.getByRole('button', { name: `Действия для организации ${customer.name}` }))
+        fireEvent.click(screen.getByRole('button', { name: 'Переименовать' }))
+        expect(actions.onRename).toHaveBeenCalledWith(customer)
+        expect(actions.onDisable).not.toHaveBeenCalled()
+    })
+
     it('does not expose status or rename actions for protected PLATFORM', () => {
         const actions = renderView({ rows: [platform] })
         expect(screen.queryByRole('button', { name: /изменить статус/i })).toBeNull()
@@ -120,8 +138,10 @@ describe('AdminOrganizationsView: readable UI and protected actions', () => {
 
     it('explains type without pretending it is editable', () => {
         renderView({ rows: [customer] })
-        fireEvent.click(screen.getByLabelText('Тип организации: клиентская. Подробнее'))
-        expect(screen.getByText(/Тип определяется системой при создании/)).toBeTruthy()
+        expect(screen.getByText('Клиентская')).toBeTruthy()
+        expect(screen.queryByLabelText('Тип организации: клиентская. Подробнее')).toBeNull()
+        fireEvent.click(screen.getByRole('button', {name: 'Справка: Тип'}))
+        expect(screen.getByText(/служебная организация SafeAI Desk/)).toBeTruthy()
     })
 
 

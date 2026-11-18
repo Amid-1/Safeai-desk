@@ -4,6 +4,8 @@ import type { User } from '../../../../entities/user/api/userApi'
 import { ErrorState, LoadingState } from '../../../../shared/ui/StateBlock'
 import { FilterButton } from '../AdminUsersUi'
 import type { AdminUsersViewProps } from '../adminUsersViewTypes'
+import { OrganizationDirectoryFilter } from '../../../../entities/organization/ui/OrganizationDirectoryFilter'
+import { AdminPageHeader } from '../../../../shared/ui/AdminPageHeader'
 
 export function UsersDirectoryUpper({
     users,
@@ -28,6 +30,8 @@ export function UsersDirectoryUpper({
     onCreate,
     onFilterChange,
     onReload,
+    organizationId,
+    onOrganizationChange,
 }: AdminUsersViewProps) {
     const [suggestionsOpen, setSuggestionsOpen] = useState(false)
     const showSuggestions = suggestionsOpen
@@ -50,7 +54,7 @@ export function UsersDirectoryUpper({
                             'users-page__upper'
                         }
                     >
-                        <div
+                        <AdminPageHeader
                             className={
                                 'users-page-header'
                             }
@@ -90,7 +94,7 @@ export function UsersDirectoryUpper({
 
                                 Создать пользователя
                             </button>
-                        </div>
+                        </AdminPageHeader>
 
                         {mutationError && (
                             <div
@@ -127,7 +131,7 @@ export function UsersDirectoryUpper({
                                 }
                                 label="Все"
                                 count={
-                                    statistics.total
+                                    loading || loadError ? '—' : statistics.total
                                 }
                                 disabled={
                                     hasPendingMutation
@@ -139,13 +143,16 @@ export function UsersDirectoryUpper({
                                 }
                             />
 
+                            {currentUserIsSuperAdmin && <FilterButton active={filter === 'SUPER_ADMIN'}
+                                label="Супер администраторы" count={loading || loadError ? '—' : statistics.superAdministrators ?? '—'}
+                                disabled={hasPendingMutation} onClick={() => onFilterChange('SUPER_ADMIN')} />}
                             <FilterButton
                                 active={
                                     filter === 'ADMIN'
                                 }
                                 label="Администраторы"
                                 count={
-                                    statistics.administrators
+                                    loading || loadError ? '—' : statistics.administrators
                                 }
                                 disabled={
                                     hasPendingMutation
@@ -163,7 +170,7 @@ export function UsersDirectoryUpper({
                                 }
                                 label="Пользователи"
                                 count={
-                                    statistics.users
+                                    loading || loadError ? '—' : statistics.users
                                 }
                                 disabled={
                                     hasPendingMutation
@@ -175,6 +182,9 @@ export function UsersDirectoryUpper({
                                 }
                             />
                         </div>
+
+                        {currentUserIsSuperAdmin && onOrganizationChange && <OrganizationDirectoryFilter
+                            value={organizationId ?? ''} onChange={onOrganizationChange} disabled={hasPendingMutation} />}
 
                         <form
                             className="users-directory-search"
@@ -266,8 +276,8 @@ export function UsersDirectoryUpper({
                                 </div>
                             )}
                             <span className="users-directory-search__summary" role="status">
-                                Найдено по фильтрам: {totalMatched}
-                                {' · Всего пользователей: '}{statistics.total}
+                                Найдено по фильтрам: {loading || loadError ? '—' : totalMatched}
+                                {' · Всего пользователей: '}{loading || loadError ? '—' : statistics.total}
                                 {searchDraft.trim() !== appliedSearch && (
                                     <> · {searchDraft.trim().length === 1
                                         ? 'Введите ещё символ или нажмите «Найти»'

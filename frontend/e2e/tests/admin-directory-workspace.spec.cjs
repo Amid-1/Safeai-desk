@@ -16,7 +16,7 @@ const users = Array.from({ length: 21 }, (_, n) => user(n + 1))
 test.beforeEach(async ({ page }) => {
   const organizations = [...Array.from({ length: 16 }, (_, n) => tenant(n + 1)), platform]
   await page.route('**/api/**', async route => {
-    const { pathname } = new NodeURL(route.request().url())
+    const { pathname, searchParams } = new NodeURL(route.request().url())
     const method = route.request().method()
     let json
     switch (pathname) {
@@ -32,8 +32,23 @@ test.beforeEach(async ({ page }) => {
         }
         json = { content: organizations, page: 0, size: 50, totalPages: 1, totalElements: organizations.length }; break
       case '/api/organizations/directory': json = organizations; break
-      case '/api/users/search': json = { content: users, page: 0, size: 50, totalPages: 1, totalElements: users.length }; break
+      case '/api/organizations/search': {
+        const matches = organizations.filter(org =>
+          (!searchParams.get('query') || org.name.toLowerCase().includes(searchParams.get('query').toLowerCase())) &&
+          (!searchParams.get('type') || org.type === searchParams.get('type')) &&
+          (!searchParams.has('enabled') || String(org.enabled) === searchParams.get('enabled')))
+        json = { content: matches, page: 0, size: 50, totalPages: matches.length ? 1 : 0, totalElements: matches.length }; break
+      }
+      case '/api/users/search': {
+        const matches = users.filter(row => (!searchParams.get('organizationId') || row.organizationId === searchParams.get('organizationId')) &&
+          (!searchParams.get('role') || row.roles.includes(searchParams.get('role'))))
+        json = { content: matches, page: 0, size: 50, totalPages: matches.length ? 1 : 0, totalElements: matches.length }; break
+      }
       case '/api/users/statistics': json = { total: 21, administrators: 0, users: 21, enabled: 21, disabled: 0 }; break
+      case '/api/users/search/statistics': {
+        const count = users.filter(row => !searchParams.get('organizationId') || row.organizationId === searchParams.get('organizationId')).length
+        json = { total: count, administrators: 0, superAdministrators: 0, users: count, enabled: count, disabled: 0 }; break
+      }
       default:
         if (method === 'GET' && pathname.startsWith('/api/organizations/')) {
           json = organizations.find(org => org.id === pathname.split('/').at(-1))
@@ -45,11 +60,27 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
-for (const [width, height] of [[1440, 900], [1280, 720]]) {
+test('organization card opens a scoped users directory', async ({page}) => {
+  await page.goto('/admin/organizations')
+  const row = page.getByRole('row').filter({hasText: 'Компания 1'}).first()
+  await row.getByRole('button', {name: 'Подробнее'}).click()
+  const card = page.getByRole('dialog', {name: 'Сведения об организации'})
+  await expect(card.getByRole('link', {name: /Правила использования моделей/})).toHaveAttribute('href', /section=access&organizationId=/)
+  await expect(card.getByRole('link', {name: /Журнал событий/})).toHaveAttribute('href', /targetOrganizationId=/)
+  await card.getByRole('link', {name: /Пользователи организации/}).click()
+  await expect(page).toHaveURL(new RegExp('organizationId=' + tenant(1).id))
+  await expect(page.getByRole('button', {name: /Супер администраторы/})).toBeVisible()
+  await expect(page.getByRole('row')).toHaveCount(22)
+})
+
+for (const [width, height] of [[1920, 1080], [1440, 900], [1280, 720]]) {
   test(`directory fills the workspace at ${width}×${height}`, async ({ page }) => {
     await page.setViewportSize({ width, height })
     await page.goto('/admin/users')
     await expect(page.getByRole('row')).toHaveCount(22)
+    await expect(page.locator('.admin-page-header')).toHaveCount(1)
+    await expect(page.locator('.current-user')).toContainText('Супер администратор')
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     const table = page.locator('.users-table-card')
     const upper = page.locator('.users-page__upper')
     await expect.poll(async () => {
@@ -87,3 +118,20 @@ for (const [width, height] of [[1440, 900], [1280, 720]]) {
     await expect(details.getByText(platformId, { exact: true })).toBeVisible()
   })
 }
+
+test('mobile directory retains filters, accessible card and contained scrolling', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/admin/users')
+  await expect(page.getByRole('heading', { name: 'Пользователи' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Супер администраторы/ })).toBeVisible()
+  await expect(page.getByLabel('Организация', { exact: true })).toBeVisible()
+  await page.goto('/admin/organizations')
+  await expect(page.getByRole('heading', { name: 'Организации' })).toBeVisible()
+  await page.getByRole('row').filter({ hasText: 'Компания 1' }).first().getByRole('button', { name: 'Подробнее' }).click()
+  const card = page.getByRole('dialog', { name: 'Сведения об организации' })
+  await expect(card.getByRole('link', { name: /Пользователи организации/ })).toBeVisible()
+  await expect(card.getByRole('link', { name: /Журнал событий/ })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.keyboard.press('Escape')
+  await expect(card).toHaveCount(0)
+})

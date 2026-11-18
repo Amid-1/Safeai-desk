@@ -1,0 +1,24 @@
+.organization-directory-filter {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 12px 0;
+}
+.organization-directory-filter label {font-size: .875rem; font-weight: 650;}
+.organization-directory-filter input, .organization-directory-filter select {
+    flex: 1 1 180px;
+    min-width: 0;
+    min-height: 40px;
+    padding: 8px 12px;
+    border: 1px solid #d6deea;
+    border-radius: 10px;
+    color: #182236;
+    background: #fff;
+    font: inherit;
+}
+.organization-directory-filter span {font-size: .875rem; color: #52647e;}
+.org-management-links {display: grid; gap: 8px; margin: 12px 0;}
+.org-management-links h3 {margin: 0;}
+.org-management-links a {padding: 10px 12px; border: 1px solid #d6deea; border-radius: 10px; font-weight: 650;}
+.organization-directory-filter :focus-visible, .org-management-links a:focus-visible {outline: 2px solid #2563eb; outline-offset: 2px;}

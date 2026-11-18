@@ -1,10 +1,11 @@
 // frontend/src/features/models/ui/AdminModelsUpper.tsx
 // Область заголовка. Действия вынесены в соответствующие разделы.
 import type { RuntimeModelStatus } from '../../../entities/model/api/modelApi'
+import { AdminPageHeader } from '../../../shared/ui/AdminPageHeader'
 
 export function AdminModelsUpper({ runtime }: { runtime: RuntimeModelStatus }) {
     return (
-        <header className="models-hero models-sections-hero">
+        <AdminPageHeader className="models-hero models-sections-hero">
             <div className="models-hero__content">
                 <h1>Управление AI-моделями</h1>
                 <p>Каталог, правила доступа и диагностика</p>
@@ -17,6 +18,6 @@ export function AdminModelsUpper({ runtime }: { runtime: RuntimeModelStatus }) {
                     {runtime.provider === 'mock' && ' · Тестовая модель'}
                 </small>
             </div>
-        </header>
+        </AdminPageHeader>
     )
 }

@@ -11,6 +11,10 @@ import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.organization.dto.OrganizationDirectoryResponse;
 import ru.safeai.gateway.organization.dto.OrganizationDisableImpactResponse;
 import ru.safeai.gateway.organization.dto.OrganizationResponse;
+import ru.safeai.gateway.organization.dto.OrganizationType;
+import jakarta.persistence.criteria.Predicate;
+import java.util.ArrayList;
+import java.util.Locale;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
 import ru.safeai.gateway.organization.repository.OrganizationImpactQueryRepository;
 import ru.safeai.gateway.organization.repository.OrganizationRepository;
@@ -115,6 +119,28 @@ final class OrganizationQueryOperations {
         return page.getContent().stream()
                 .map(responseMapper::toDirectoryResponse)
                 .toList();
+    }
+
+    Page<OrganizationResponse> search(
+            SafeAiUserPrincipal principal, String query, OrganizationType type,
+            Boolean enabled, Pageable pageable
+    ) {
+        accessPolicy.requireSuperAdmin(principal);
+        if (query != null && (query.length() > 255 || query.chars().anyMatch(Character::isISOControl))) {
+            throw new BadRequestException("Некорректная строка поиска организаций");
+        }
+        String pattern = query == null || query.isBlank() ? null
+                : "%" + escapeDirectoryLikeLiteral(query.strip().toLowerCase(Locale.ROOT)) + "%";
+        return organizationRepository.findAll((root, criteria, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            if (pattern != null) predicates.add(cb.like(cb.lower(root.get("name")), pattern, '!'));
+            if (enabled != null) predicates.add(cb.equal(root.get("enabled"), enabled));
+            if (type != null) {
+                var platform = cb.equal(root.get("id"), accessPolicy.platformOrganizationId());
+                predicates.add(type == OrganizationType.PLATFORM ? platform : cb.not(platform));
+            }
+            return cb.and(predicates.toArray(Predicate[]::new));
+        }, normalizePageable(pageable)).map(responseMapper::toResponse);
     }
 
     OrganizationResponse findCurrentOrganization(SafeAiUserPrincipal currentUser) {

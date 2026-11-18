@@ -26,6 +26,7 @@ import { useAdminModelsOrganizationSearch } from './useAdminModelsOrganizationSe
 import { useAdminModelsDiagnostics } from './useAdminModelsDiagnostics'
 import { getOrganizationDetails } from '../../../entities/organization/api/organizationApi'
 import { useAuth } from '../../auth/state/useAuth'
+import { directoryUuid } from '../../../shared/lib/adminDirectoryUrl'
 
 export function useAdminModelsController() {
     const {
@@ -57,7 +58,8 @@ export function useAdminModelsController() {
         targetOrganizationId,
         setTargetOrganizationId,
     ] = useState(
-        currentUser?.organizationId ?? '',
+        (isSuperAdmin ? directoryUuid(new URLSearchParams(window.location.search).get('organizationId')) : '')
+        || currentUser?.organizationId || '',
     )
 
     const [
@@ -132,10 +134,11 @@ export function useAdminModelsController() {
         }
 
         setTargetOrganizationId(
-            currentUser.organizationId,
+            (isSuperAdmin ? directoryUuid(new URLSearchParams(window.location.search).get('organizationId')) : '')
+            || currentUser.organizationId,
         )
         setSelectedOrganization(null)
-    }, [currentUser])
+    }, [currentUser, isSuperAdmin])
 
     /*
      * Название tenant — presentation metadata. Его отдельная загрузка

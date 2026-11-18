@@ -21,6 +21,9 @@ export type ModalResizeOptions = {
      * Показывать системную кнопку разворота и восстановления окна.
      */
     maximizable?: boolean
+
+    /** Disable edge/corner resizing while keeping drag and maximize controls. */
+    resizable?: boolean
 }
 
 export type ModalBounds = {

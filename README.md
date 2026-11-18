@@ -4,8 +4,7 @@
 
 # SafeAI Desk
 
-**Корпоративная AI-платформа и управляемый AI Gateway** для работы с языковыми моделями,
-корпоративными документами и проверяемой историей выполнения запросов.
+**Корпоративная AI-платформа и управляемый AI Gateway** для работы с языковыми моделями, корпоративными документами и проверяемой историей выполнения запросов.
 
 [![Java](https://img.shields.io/badge/Java-21-007396)](backend/pom.xml)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-backend-6DB33F)](backend/pom.xml)
@@ -13,7 +12,7 @@
 [![Flyway](https://img.shields.io/badge/Flyway-V1%E2%80%93V92-CC0200)](backend/src/main/resources/db/migration)
 [![React](https://img.shields.io/badge/React%20%2B%20TypeScript-frontend-149ECA)](frontend/package.json)
 
-> **Редакция документа:** 17 ноября 2026 года. **Схема:** Flyway V1–V92.
+> **Редакция документа:** 18 ноября 2026 года. **Схема:** Flyway V1–V92.
 >
 > **Источник:** переданный README, доступный комплект SQL V1–V92, актуальный
 > срез исходников и пакеты изменений 17.11.2026 (Model Control Plane,
@@ -69,14 +68,14 @@
 36. [Передача контекста в новый AI-чат](#передача-контекста-в-новый-ai-чат)
 37. [План следующего этапа](#план-следующего-этапа)
 38. [Релизный контроль V73–V92](#релизный-контроль-v73v92)
+39. [Super Admin Production UX](#super-admin-production-ux)
 <!-- TOC:END -->
 
 ---
 
 ## Границы документа
 
-- Изменяется **только README.md**. SQL, Spring/React исходники, конфигурация,
-  secrets и история Git не затрагиваются.
+- README описывает реализованные контракты и состояние проверок. Пакет Super Admin UX Stage 2 меняет только соответствующие Spring/React исходники, тесты и документацию; SQL, конфигурация безопасности, secrets и история Git не затрагиваются.
 - Комплект SQL V1–V92 представлен в доступном срезе; V91/V92 сверены с SQL и
   связанными backend-тестами. Frontend-изменения, отсутствующие в частичном
   срезе дерева, описаны по подготовленным патчам, а не по live deployment.
@@ -136,13 +135,9 @@ Identity
 
 ## Текущее состояние
 
-Схемы **V1–V92 представлены целиком**: 92 последовательные SQL-миграции
-и файл `V87__chat_archive_owner_online_index.sql.conf`. Само наличие файлов
-не доказывает успешного `migrate`, `validate` или прохождения интеграционных тестов.
+Схемы **V1–V92 представлены целиком**: 92 последовательные SQL-миграции и файл `V87__chat_archive_owner_online_index.sql.conf`. Само наличие файлов не доказывает успешного `migrate`, `validate` или прохождения интеграционных тестов.
 
-**Реализованные направления:** аутентификация с security epochs, изоляция tenants,
-ChatTurn и provider attempt evidence, модельное управление, квоты/учёт затрат,
-Knowledge/RAG, аудит и контролируемое стирание содержимого.
+**Реализованные направления:** аутентификация с security epochs, изоляция tenants, ChatTurn и provider attempt evidence, модельное управление, квоты/учёт затрат, Knowledge/RAG, аудит и контролируемое стирание содержимого.
 
 **Новые границы V85–V92:**
 
@@ -178,19 +173,9 @@ Knowledge/RAG, аудит и контролируемое стирание со�
   identities, отдельный migration service и release-controlled image digest;
   никакого автоматического изменения существующего volume.
 
-**Исторический baseline:** для PR #8 (`fdcff62`) отдельно фиксировался зелёный
-набор из 2259 тестов и 27 PostgreSQL/Redis IT. На 31 октября 2026 года был
-успешно проверен clean Flyway V1–V84 на Testcontainers PostgreSQL 16.15,
-но полный suite того среза содержал один ошибочный тестовый сценарий.
-**Эти результаты не относятся автоматически к V85–V92.**
+**Исторический baseline:** для PR #8 (`fdcff62`) отдельно фиксировался зелёный набор из 2259 тестов и 27 PostgreSQL/Redis IT. На 31 октября 2026 года был успешно проверен clean Flyway V1–V84 на Testcontainers PostgreSQL 16.15, но полный suite того среза содержал один ошибочный тестовый сценарий. **Эти результаты не относятся автоматически к V85–V92.**
 
-**Последние предоставленные логи 17.11.2026:** общий backend-прогон —
-2722 теста, 0 failures, 1 error (runtime wire contract fixture), 5 skipped;
-целевой прогон после V92 — 28 тестов, 0 failures, 1 error (создание тестового
-пользователя без роли). Подготовлены исправления обоих fixtures, включая
-атомарное создание пользователя и роли с повторной проверкой V20.
-Повторный зелёный Maven-прогон после последнего исправления не предоставлен.
-Ни один из этих результатов не подтверждает production deploy.
+**Последние предоставленные логи 17.11.2026:** общий backend-прогон — 2722 теста, 0 failures, 1 error (runtime wire contract fixture), 5 skipped; целевой прогон после V92 — 28 тестов, 0 failures, 1 error (создание тестового пользователя без роли). Подготовлены исправления обоих fixtures, включая атомарное создание пользователя и роли с повторной проверкой V20. Повторный зелёный Maven-прогон после последнего исправления не предоставлен. Ни один из этих результатов не подтверждает production deploy.
 
 ### Identity / Security
 
@@ -325,8 +310,7 @@ Knowledge/RAG, аудит и контролируемое стирание со�
 - **V90:** приложение собирает старые поколения индекса через ограждённую
   PostgreSQL-функцию без самостоятельного доступа к `DELETE` chunks.
 
-`enabled=false`, принятие операции, S3 purge, `DELETED`, доставка квитанции
-и backup/third-party retention не являются взаимозаменяемыми состояниями.
+`enabled=false`, принятие операции, S3 purge, `DELETED`, доставка квитанции и backup/third-party retention не являются взаимозаменяемыми состояниями.
 
 ### Audit / Usage / Rate limits
 
@@ -382,8 +366,7 @@ Knowledge/RAG, аудит и контролируемое стирание со�
 | V91 | RUB budget input, immutable CBR quote evidence и точный USD ceiling. |
 | V92 | Запрет NaN USD-лимитов и бесконечных дат/времени RUB evidence. |
 
-**Frontend:** функции удаления Knowledge и чатов зависят от соответствующих
-backend capability/status API. UI не является границей безопасности.
+**Frontend:** функции удаления Knowledge и чатов зависят от соответствующих backend capability/status API. UI не является границей безопасности.
 
 ---
 
@@ -391,9 +374,7 @@ backend capability/status API. UI не является границей без�
 
 Проект построен как **модульный монолит**.
 
-Это сознательный выбор: security, tenant, durability, model-governance и provenance invariants
-выгодно держать в одной PostgreSQL transactional boundary, не добавляя преждевременную
-распределённую согласованность.
+Это сознательный выбор: security, tenant, durability, model-governance и provenance invariants выгодно держать в одной PostgreSQL transactional boundary, не добавляя преждевременную распределённую согласованность.
 
 ```text
 ┌──────────────────────────────┐
@@ -460,10 +441,7 @@ PostgreSQL: terminal operation state + required audit
               +--> retries, delivery bookkeeping, diagnostics
 ```
 
-V89 не позволяет опубликовать **финальную** внешнюю квитанцию до
-подтверждения DB commit. Если S3 недоступен, долговечная запись остаётся
-в outbox и может быть доставлена повторно; это не означает повторную очистку
-исходных объектов. Триггеры, права SQL-ролей и Object Lock не отключаются.
+V89 не позволяет опубликовать **финальную** внешнюю квитанцию до подтверждения DB commit. Если S3 недоступен, долговечная запись остаётся в outbox и может быть доставлена повторно; это не означает повторную очистку исходных объектов. Триггеры, права SQL-ролей и Object Lock не отключаются.
 
 ### Control plane vs execution plane
 
@@ -490,8 +468,7 @@ AI Physical Execution Plane
 
 `ModelRouteDecision` отвечает на вопрос **что governance разрешил**.
 
-`ModelExecutionAttempt` отвечает на вопрос **что физически пытались выполнить и что удалось доказать
-о результате**.
+`ModelExecutionAttempt` отвечает на вопрос **что физически пытались выполнить и что удалось доказать о результате**.
 
 ---
 
@@ -519,10 +496,7 @@ backend/src/test/java/ru/safeai/gateway/architecture/
   └── CommonDependencyArchitectureTest.java
 ```
 
-Правило анализирует **производственные классы** `ru.safeai.gateway.common..` и запрещает
-bytecode-зависимости на любые классы `ru.safeai.gateway..` **вне `common..`**. Это шире текстового
-поиска `import`: срабатывает, например, на тип поля и сигнатуру. Оно не является доказательством
-отсутствия runtime reflection, конфигурационных и транзакционных нарушений.
+Правило анализирует **производственные классы** `ru.safeai.gateway.common..` и запрещает bytecode-зависимости на любые классы `ru.safeai.gateway..` **вне `common..`**. Это шире текстового поиска `import`: срабатывает, например, на тип поля и сигнатуру. Оно не является доказательством отсутствия runtime reflection, конфигурационных и транзакционных нарушений.
 
 Проверка:
 
@@ -532,9 +506,7 @@ cd backend
 ./mvnw test
 ```
 
-**Negative control:** временный класс `common.archprobe.ArchUnitBoundaryProbe` с полем типа
-`auth.security.PasswordEncodingConfiguration` привел к ожидаемой `Architecture Violation`.
-Временный файл и скомпилированный `.class` удалены, повторный positive test прошел.
+**Negative control:** временный класс `common.archprobe.ArchUnitBoundaryProbe` с полем типа `auth.security.PasswordEncodingConfiguration` привел к ожидаемой `Architecture Violation`. Временный файл и скомпилированный `.class` удалены, повторный positive test прошел.
 
 ### История разделения границ — восемь merged PR
 
@@ -569,20 +541,13 @@ cd backend
   - **Архитектурный результат:** Добавлена автоматическая архитектурная проверка `common`
 
 
-PR #8: исходный коммит `103c587`, merge-коммит `fdcff62`. Это **историческое** состояние `main`; на 31.10.2026
-показана другая рабочая ветка `fix/knowledge-upload-confirmation-20261025` с изменёнными и новыми файлами. Статус
-чистого дерева к ней не относится.
+PR #8: исходный коммит `103c587`, merge-коммит `fdcff62`. Это **историческое** состояние `main`; на 31.10.2026 показана другая рабочая ветка `fix/knowledge-upload-confirmation-20261025` с изменёнными и новыми файлами. Статус чистого дерева к ней не относится.
 
-**Эти PR не означают, что остальные пакеты уже имеют автоматические правила независимости.**
-Не создавать новые правила по догадкам: сначала инвентаризировать исходящие зависимости и
-Spring bean graph, затем выбрать допустимую границу и проверить тестами.
+**Эти PR не означают, что остальные пакеты уже имеют автоматические правила независимости.** Не создавать новые правила по догадкам: сначала инвентаризировать исходящие зависимости и Spring bean graph, затем выбрать допустимую границу и проверить тестами.
 
 ### Правило безопасного рефакторинга
 
-Малые изолированные PR, сохранение public API/JSON/errors/configuration, тесты до и после
-перемещения, отсутствие циклов, package visibility без необоснованного `public`, сохранение
-`@Transactional`/event/cache semantics и DB constraints. Не перемещать класс только из-за
-его имени; учитываются фактические consumers, ownership, shared contracts и startup wiring.
+Малые изолированные PR, сохранение public API/JSON/errors/configuration, тесты до и после перемещения, отсутствие циклов, package visibility без необоснованного `public`, сохранение `@Transactional`/event/cache semantics и DB constraints. Не перемещать класс только из-за его имени; учитываются фактические consumers, ownership, shared contracts и startup wiring.
 
 ---
 
@@ -616,14 +581,9 @@ Spring bean graph, затем выбрать допустимую границу
 - structured logging;
 - Docker / Docker Compose.
 
-Точные dependency versions определяет `backend/pom.xml`; README не дублирует их как источник истины.
-Для исторического среза `fdcff62` проверены также `postgresql.version=42.7.14`,
-`snappy-java.version=1.1.10.11` и `testcontainers.version=2.0.5`.
+Точные dependency versions определяет `backend/pom.xml`; README не дублирует их как источник истины. Для исторического среза `fdcff62` проверены также `postgresql.version=42.7.14`, `snappy-java.version=1.1.10.11` и `testcontainers.version=2.0.5`.
 
-Frontend baseline из `frontend/package.json`: React 19.2.7, React Router 7.18.3,
-TypeScript 6.0.3, Vite 8.0.16, Vitest 4.1.10;
-**Node.js 24.x и npm 11.x** (`engines`/`packageManager`). Эти номера отражают именно
-проверенный manifest, а не отдельную проверку безопасности supply chain.
+Frontend baseline из `frontend/package.json`: React 19.2.7, React Router 7.18.3, TypeScript 6.0.3, Vite 8.0.16, Vitest 4.1.10; **Node.js 24.x и npm 11.x** (`engines`/`packageManager`). Эти номера отражают именно проверенный manifest, а не отдельную проверку безопасности supply chain.
 
 ### Persistence philosophy
 
@@ -637,16 +597,12 @@ TypeScript 6.0.3, Vite 8.0.16, Vitest 4.1.10;
 
 ---
 
-Карта структуры каталогов приведена далее. Для точного перечня Java-файлов
-используйте текущий checkout, а не историческое дерево из документации.
+Карта структуры каталогов приведена далее. Для точного перечня Java-файлов используйте текущий checkout, а не историческое дерево из документации.
 
 
 ### Карта репозитория и источники конфигурации
 
-Это **структурная схема**, а не прямой `find` из локального checkout.
-Пути проверены по предоставленным снимкам IDE, конфигурационным файлам и архивам
-V82–V84. Стандартный `target/`, IDE metadata, `.env`, секреты и локальные
-object-storage данные не являются частью релиза.
+Это **структурная схема**, а не прямой `find` из локального checkout. Пути проверены по предоставленным снимкам IDE, конфигурационным файлам и архивам V82–V84. Стандартный `target/`, IDE metadata, `.env`, секреты и локальные object-storage данные не являются частью релиза.
 
 ```text
 SafeAI-Desk/
@@ -701,18 +657,11 @@ SafeAI-Desk/
 └── README.md                            # this entry point
 ```
 
-**Важно:** `backend/deploy/prometheus/` — отдельный legacy/example-каталог в
-некоторых снимках. Он не становится активным из-за названия: актуальные
-`infra/docker-compose*.yml` монтируют только `infra/prometheus`.
-`ops/prometheus/knowledge-erasure-alerts.yml`, поставленный в V84 ZIP как
-пример, не следует одновременно подключать с каноническими rules: это создаёт
-дубликат аудиторского alert. Источником истины служит Compose mount + `rule_files`.
+**Важно:** `backend/deploy/prometheus/` — отдельный legacy/example-каталог в некоторых снимках. Он не становится активным из-за названия: актуальные `infra/docker-compose*.yml` монтируют только `infra/prometheus`. `ops/prometheus/knowledge-erasure-alerts.yml`, поставленный в V84 ZIP как пример, не следует одновременно подключать с каноническими rules: это создаёт дубликат аудиторского alert. Источником истины служит Compose mount + `rule_files`.
 
 ## Структура frontend
 
-Начиная с refactoring frontend использует feature-oriented каталоги. Ниже приведена известная структурная схема, а
-не полный `git ls-files`
-локального checkout. Для верификации состава нужно сравнить её с `frontend/src`.
+Начиная с refactoring frontend использует feature-oriented каталоги. Ниже приведена известная структурная схема, а не полный `git ls-files` локального checkout. Для верификации состава нужно сравнить её с `frontend/src`.
 
 ```text
 frontend/
@@ -755,14 +704,7 @@ frontend/
 ```
 
 
-Список конкретных файлов и ограничений направленности imports проверяется
-`frontend/scripts/check-architecture.cjs`, `verify-source-layout.cjs` и
-`audit-dependencies.cjs`. При `FEATURE_DISABLED` история операций **не должна исчезать**: V84 отделяет
-`GET` истории и статуса от destructive DELETE. Ошибка запроса истории должна
-отображаться как ошибка, а не как «операций нет». Тесты в V84 архиве охватывают
-этот контракт; полное прохождение текущего `npm run ci` необходимо проверить
-в локальной ветке. Команда «Удалить…» является UI capability, а не разрешением
-backend на физическую очистку.
+Список конкретных файлов и ограничений направленности imports проверяется `frontend/scripts/check-architecture.cjs`, `verify-source-layout.cjs` и `audit-dependencies.cjs`. При `FEATURE_DISABLED` история операций **не должна исчезать**: V84 отделяет `GET` истории и статуса от destructive DELETE. Ошибка запроса истории должна отображаться как ошибка, а не как «операций нет». Тесты в V84 архиве охватывают этот контракт; полное прохождение текущего `npm run ci` необходимо проверить в локальной ветке. Команда «Удалить…» является UI capability, а не разрешением backend на физическую очистку.
 
 ---
 
@@ -808,9 +750,7 @@ backend/
 
 #### Подробная структура backend и Flyway
 
-Дерево объединяет исторический baseline и файлы, обнаруженные в предоставленных
-архивах и подготовленных материалах V73–V92. Это не результат `ls` полной рабочей
-ветки и не подтверждает коммит, успешную миграцию либо запуск worker.
+Дерево объединяет исторический baseline и файлы, обнаруженные в предоставленных архивах и подготовленных материалах V73–V92. Это не результат `ls` полной рабочей ветки и не подтверждает коммит, успешную миграцию либо запуск worker.
 
 ```text
 backend/
@@ -959,10 +899,7 @@ backend/
 
 #### V78–V90: классы и интеграционные тесты по путям
 
-Имена классов сверены с приложенными исходными файлами/архивами; наличие каждого файла в актуальной локальной ветке
-следует проверить отдельно.
-Обозначение версии говорит о **появлении в пакете**, а не о подтверждённом
-production rollout; доступность в конкретном checkout нужно сравнить с `git ls-files`.
+Имена классов сверены с приложенными исходными файлами/архивами; наличие каждого файла в актуальной локальной ветке следует проверить отдельно. Обозначение версии говорит о **появлении в пакете**, а не о подтверждённом production rollout; доступность в конкретном checkout нужно сравнить с `git ls-files`.
 
 ```text
 backend/src/main/java/ru/safeai/gateway/knowledge/
@@ -1006,9 +943,7 @@ backend/src/test/java/ru/safeai/gateway/knowledge/
     └── KnowledgeDocumentErasureRealMinioIntegrationTest.java
 ```
 
-Дополнительные тесты документного executor, version purge и отдельных S3
-провайдеров перечислены в разделе «Тестирование». Тестовый worker для
-kill/restart запускается в отдельной JVM, а не в production process.
+Дополнительные тесты документного executor, version purge и отдельных S3 провайдеров перечислены в разделе «Тестирование». Тестовый worker для kill/restart запускается в отдельной JVM, а не в production process.
 
 Основные потоки взаимодействия (логические, **не исчерпывающий граф Java imports**):
 
@@ -1024,10 +959,7 @@ kill/restart запускается в отдельной JVM, а не в produc
          └──► quota / audit / usage evidence
 ```
 
-Стрелка означает **использование контракта/ответственности**, а не утверждение о полном наборе
-Java-импортов. Фактический межпакетный граф для каждого следующего рефакторинга следует
-снимать с текущих исходников и проверять отдельно. Зафиксированное автоматическое
-ограничение сегодня только одно: **`common` не зависит от других пакетов `ru.safeai.gateway`**.
+Стрелка означает **использование контракта/ответственности**, а не утверждение о полном наборе Java-импортов. Фактический межпакетный граф для каждого следующего рефакторинга следует снимать с текущих исходников и проверять отдельно. Зафиксированное автоматическое ограничение сегодня только одно: **`common` не зависит от других пакетов `ru.safeai.gateway`**.
 
 ---
 
@@ -1170,8 +1102,7 @@ answer_passport.model_route_decision_id
     -> exact route evidence
 ```
 
-Цель — не полагаться только на service-layer checks и не допустить cross-tenant/provenance mismatch
-даже при application bug или race.
+Цель — не полагаться только на service-layer checks и не допустить cross-tenant/provenance mismatch даже при application bug или race.
 
 ---
 
@@ -1185,9 +1116,7 @@ refresh token -> HttpOnly cookie
 XSRF-TOKEN    -> readable cookie
 ```
 
-JWT не должен храниться в `localStorage`. Access principal
-не должен включать email/PII только ради удобства аудита:
-actor snapshot разрешается отдельно из доверенных данных.
+JWT не должен храниться в `localStorage`. Access principal не должен включать email/PII только ради удобства аудита: actor snapshot разрешается отдельно из доверенных данных.
 
 Unsafe browser methods передают CSRF header:
 
@@ -1215,8 +1144,7 @@ Access token содержит/валидирует identity и security epoch da
 - audience;
 - signing key identity.
 
-JWT validity не ограничивается проверкой криптографической подписи: runtime также проверяет текущий
-user/org security state.
+JWT validity не ограничивается проверкой криптографической подписи: runtime также проверяет текущий user/org security state.
 
 ### Security epochs
 
@@ -1274,8 +1202,7 @@ DB-инварианты защищают replacement chain/family consistency.
 
 ### V72 — единый PostgreSQL lock ordering для сессий
 
-Одновременное создание сессии, refresh и отключение tenant — **конкурентные транзакции**. Текущий
-патч задаёт общий порядок захвата строк и повторную проверку security state **после** блокировок.
+Одновременное создание сессии, refresh и отключение tenant — **конкурентные транзакции**. Текущий патч задаёт общий порядок захвата строк и повторную проверку security state **после** блокировок.
 
 - **Login**
   - **Порядок и защита:** `organizations FOR SHARE` → `users PESSIMISTIC_WRITE` → запись
@@ -1293,20 +1220,11 @@ DB-инварианты защищают replacement chain/family consistency.
     отзыв сессий
 
 
-Правило **organization → user → token** препятствует обратному захвату блокировок по этим путям.
-Предварительный lookup ID токена **не является авторизацией**: token hash, владелец, семейство,
-состояние, `enabled`, `token_version` и `auth_version` проверяются на актуальных данных под
-блокировками. Блокировка `FOR SHARE` удерживается до commit соответствующей транзакции и конфликтует
-с disable `FOR UPDATE` той же organization.
+Правило **organization → user → token** препятствует обратному захвату блокировок по этим путям. Предварительный lookup ID токена **не является авторизацией**: token hash, владелец, семейство, состояние, `enabled`, `token_version` и `auth_version` проверяются на актуальных данных под блокировками. Блокировка `FOR SHARE` удерживается до commit соответствующей транзакции и конфликтует с disable `FOR UPDATE` той же organization.
 
-После `Disable` любой ранее выпущенный access token должен проходить runtime-проверку
-`enabled`/epoch; наличие уже подписанного JWT само по себе не сохраняет доступ. Старый refresh token
-не может получить новую сессию через старую версию безопасности. Повторный Enable не делает старый
-epoch актуальным.
+После `Disable` любой ранее выпущенный access token должен проходить runtime-проверку `enabled`/epoch; наличие уже подписанного JWT само по себе не сохраняет доступ. Старый refresh token не может получить новую сессию через старую версию безопасности. Повторный Enable не делает старый epoch актуальным.
 
-Это **контракт кода и базы**, а не доказательство отсутствия всех deadlock во всей системе:
-необходимы реальные PostgreSQL concurrency-тесты, анализ дополнительных lock paths,
-timeout/serialization diagnostics и проверка поведения при параллельных `Refresh` одной семьи.
+Это **контракт кода и базы**, а не доказательство отсутствия всех deadlock во всей системе: необходимы реальные PostgreSQL concurrency-тесты, анализ дополнительных lock paths, timeout/serialization diagnostics и проверка поведения при параллельных `Refresh` одной семьи.
 
 
 ### Passwords
@@ -1325,12 +1243,7 @@ Baseline включает:
 
 ### Production environment detection
 
-`common.security.ProductionEnvironmentCondition` включает production-only invariant
-checks не только при `prod`/`production`, но и при профилях вида `prod-k8s`,
-`production-eu`; предпочтительный явный сигнал — `safeai.environment=production`.
-Проверено по текущему классу. Новые профили и механизм включения этих validators
-не должны случайно обходить production hardening. Старый пункт README о распознавании
-**только точных** имен профилей устранен и не считается известным дефектом среза.
+`common.security.ProductionEnvironmentCondition` включает production-only invariant checks не только при `prod`/`production`, но и при профилях вида `prod-k8s`, `production-eu`; предпочтительный явный сигнал — `safeai.environment=production`. Проверено по текущему классу. Новые профили и механизм включения этих validators не должны случайно обходить production hardening. Старый пункт README о распознавании **только точных** имен профилей устранен и не считается известным дефектом среза.
 
 ### Request ID
 
@@ -1403,14 +1316,9 @@ Public response не должен содержать:
 
 ### Канонические источники конфигурации
 
-**Нельзя «привести всё к одному `application.yml`».** Runtime Spring, Compose,
-настоящие файлы секретов, example-шаблоны и тестовые профили выполняют
-разные роли. Правка примера в `backend/docs/config` сама по себе ничего не
-активирует; production остаётся управляемым через `/etc/safeai/config`,
-`/etc/safeai/secrets`, `backend/.env.prod` и проверенные изображения контейнеров.
+**Нельзя «привести всё к одному `application.yml`».** Runtime Spring, Compose, настоящие файлы секретов, example-шаблоны и тестовые профили выполняют разные роли. Правка примера в `backend/docs/config` сама по себе ничего не активирует; production остаётся управляемым через `/etc/safeai/config`, `/etc/safeai/secrets`, `backend/.env.prod` и проверенные изображения контейнеров.
 
-Разделять **Spring runtime**, **Compose deployment**, **Prometheus monitoring** и
-**reference templates**. Одинаковое имя в другом каталоге не делает файл активным.
+Разделять **Spring runtime**, **Compose deployment**, **Prometheus monitoring** и **reference templates**. Одинаковое имя в другом каталоге не делает файл активным.
 
 | Роль | Канонический источник |
 |---|---|
@@ -1426,22 +1334,11 @@ Public response не должен содержать:
 | Secrets на host | `/etc/safeai/secrets/`; JWT structured config и deployment env |
 | Документационные примеры | `backend/docs/config/`, `infra/config/*.example`, `infra/secrets/*.example` |
 
-Файлы `backend/deploy/prometheus/*` — **legacy** с точки зрения актуального
-`infra/docker-compose*.yml`: они не монтируются и не активируют алерты. То же
-относится к `ops/prometheus/*`, если его явно не включает иной deployment.
-Не удалять legacy файлы, пока не выполнены `git grep` по ссылкам и review скриптов.
+Файлы `backend/deploy/prometheus/*` — **legacy** с точки зрения актуального `infra/docker-compose*.yml`: они не монтируются и не активируют алерты. То же относится к `ops/prometheus/*`, если его явно не включает иной deployment. Не удалять legacy файлы, пока не выполнены `git grep` по ссылкам и review скриптов.
 
-31.10.2026 конфигурационным merge добавлены `check-config-topology.sh`,
-`check-prometheus-config.sh`, erasure rules/tests, уточнены env template,
-production Compose/validator/deploy. Применение merge выполнено пользователем
-без изменения runtime secrets и базы. Сообщённые `promtool` проверки успешны;
-для release всё равно нужны Compose render with actual **non-secret**
-production settings, pinned image digest, проверка секретов на host и
-Alertmanager routing. Подробности: `docs/config/CONFIGURATION_LAYOUT.md`,
-`docs/config/PRODUCTION_CONFIG_AUDIT_2026-10-31.md`.
+31.10.2026 конфигурационным merge добавлены `check-config-topology.sh`, `check-prometheus-config.sh`, erasure rules/tests, уточнены env template, production Compose/validator/deploy. Применение merge выполнено пользователем без изменения runtime secrets и базы. Сообщённые `promtool` проверки успешны; для release всё равно нужны Compose render with actual **non-secret** production settings, pinned image digest, проверка секретов на host и Alertmanager routing. Подробности: `docs/config/CONFIGURATION_LAYOUT.md`, `docs/config/PRODUCTION_CONFIG_AUDIT_2026-10-31.md`.
 
-Ниже перечислены ключевые configuration groups, подтверждённые в просмотренном backend. Конкретный
-production secret/value задаётся deployment environment, а не README.
+Ниже перечислены ключевые configuration groups, подтверждённые в просмотренном backend. Конкретный production secret/value задаётся deployment environment, а не README.
 
 ### Core
 
@@ -1521,8 +1418,7 @@ safeai.security.user-status-cache.*
 - TTL;
 - key prefix.
 
-Security correctness не должна зависеть только от cached value; invalidation/fallback semantics
-должны оставаться fail-safe.
+Security correctness не должна зависеть только от cached value; invalidation/fallback semantics должны оставаться fail-safe.
 
 ### Rate limiting
 
@@ -1583,10 +1479,7 @@ Baseline properties:
 - advisory lock key;
 - statement timeout.
 
-При работе с `UsageJdbcClients` учитываются изоляция ресурсов аналитических запросов и инварианты
-пула подключений; конкретные настройки/бюджеты пула следует сверять с `UsageConfiguration`,
-properties и текущими runtime profiles. Не считать схему пулов доказанной только по одному названию
-класса.
+При работе с `UsageJdbcClients` учитываются изоляция ресурсов аналитических запросов и инварианты пула подключений; конкретные настройки/бюджеты пула следует сверять с `UsageConfiguration`, properties и текущими runtime profiles. Не считать схему пулов доказанной только по одному названию класса.
 
 ### Chat
 
@@ -1611,8 +1504,7 @@ safeai.chat.recovery.*
 
 #### Chat content erasure (V86–V88)
 
-Все переключатели выключены по умолчанию. Для production необходимо
-подтверждённое решение о retention, выделенное SQL-подключение и тесты.
+Все переключатели выключены по умолчанию. Для production необходимо подтверждённое решение о retention, выделенное SQL-подключение и тесты.
 
 ```yaml
 safeai:
@@ -1634,9 +1526,7 @@ safeai:
   и исторические raw retrieval queries. Ровно 10 000 разрешено;
   10 001 отклоняется до durable intent и частичной редакции.
 
-Для `@PreAuthorize` необходима активная аутентификация **и** повторная проверка
-сохранённой роли ADMIN в PostgreSQL. Отключение SecurityContext в тесте
-не является допустимым исправлением авторизации.
+Для `@PreAuthorize` необходима активная аутентификация **и** повторная проверка сохранённой роли ADMIN в PostgreSQL. Отключение SecurityContext в тесте не является допустимым исправлением авторизации.
 
 ### AI
 
@@ -1675,15 +1565,9 @@ OpenAI/Anthropic configuration включает:
 
 Production provider URLs проходят strict HTTPS/host validation.
 
-Статический `safeai.ai.pricing.*` и монтирование legacy `pricing.yml` удалены
-из актуального pricing-патча. `validate-prod.sh` не требует этот файл.
-Ротация тарифа выполняется созданием audited catalog version, не изменением
-конфигурации контейнера. Исторический host-файл не удаляется автоматически.
+Статический `safeai.ai.pricing.*` и монтирование legacy `pricing.yml` удалены из актуального pricing-патча. `validate-prod.sh` не требует этот файл. Ротация тарифа выполняется созданием audited catalog version, не изменением конфигурации контейнера. Исторический host-файл не удаляется автоматически.
 
-Для доказательств no-training/ZDR используется `ProviderDataAssuranceProperties`.
-Точные канонические переменные и порядок их заполнения — в
-`docs/security/provider-data-assurance.md` и актуальных конфигурационных шаблонах.
-Не записывать ключи, отпечатки подключения и договорные evidence в публичный README.
+Для доказательств no-training/ZDR используется `ProviderDataAssuranceProperties`. Точные канонические переменные и порядок их заполнения — в `docs/security/provider-data-assurance.md` и актуальных конфигурационных шаблонах. Не записывать ключи, отпечатки подключения и договорные evidence в публичный README.
 
 ### Knowledge
 
@@ -1736,8 +1620,7 @@ hashing
 openai
 ```
 
-Baseline embedding dimension фиксирован текущей реализацией; OpenAI production configuration pins
-allowed endpoint вместо произвольного outbound host.
+Baseline embedding dimension фиксирован текущей реализацией; OpenAI production configuration pins allowed endpoint вместо произвольного outbound host.
 
 #### OCR
 
@@ -1751,8 +1634,7 @@ OCR provider configuration включает:
 - connect/read timeout;
 - maximum response size.
 
-Credential-bearing property records редактируют `toString()` так, чтобы API keys не утекали в
-logs/diagnostics.
+Credential-bearing property records редактируют `toString()` так, чтобы API keys не утекали в logs/diagnostics.
 #### Безвозвратное удаление документов (опционально, по умолчанию выключено)
 
 ```yaml
@@ -1795,14 +1677,9 @@ safeai.knowledge.base-deletion.executor-enabled
 safeai.knowledge.deletion.recovery-enabled
 ```
 
-В предоставленной реализации финальное внешнее подтверждение зависит от
-`KnowledgeErasureCommitPublisher`, который читает
-`knowledge_erasure_commit_outbox_v89` через отдельное JDBC-подключение
-`safeai_knowledge_erasure_worker` и передаёт событие в immutable journal.
+В предоставленной реализации финальное внешнее подтверждение зависит от `KnowledgeErasureCommitPublisher`, который читает `knowledge_erasure_commit_outbox_v89` через отдельное JDBC-подключение `safeai_knowledge_erasure_worker` и передаёт событие в immutable journal.
 
-Сопутствующие настройки S3 Object Lock, journal, approved drills,
-разрешений персонала и изоляции worker обязательны для release gate.
-Нельзя ставить `true` только ради появления кнопки в интерфейсе.
+Сопутствующие настройки S3 Object Lock, journal, approved drills, разрешений персонала и изоляции worker обязательны для release gate. Нельзя ставить `true` только ради появления кнопки в интерфейсе.
 
 ---
 
@@ -1814,17 +1691,9 @@ Package:
 ru.safeai.gateway.common
 ```
 
-`common` — cross-cutting infrastructure layer. В нем не должна жить business-логика конкретного
-tenant domain. Это **проверяемая граница**, а не папка для всего, что повторно используется:
-внутренний код `common..` не должен зависеть от других пакетов `ru.safeai.gateway..`. ArchUnit
-контролирует это автоматически.
+`common` — cross-cutting infrastructure layer. В нем не должна жить business-логика конкретного tenant domain. Это **проверяемая граница**, а не папка для всего, что повторно используется: внутренний код `common..` не должен зависеть от других пакетов `ru.safeai.gateway..`. ArchUnit контролирует это автоматически.
 
-После PR #1–#8 из `common` вынесены auth-specific исключения и handlers, JWT runtime/key ring, auth
-filter converter и BCrypt configuration. В `common.security` оставлены действительно совместно
-используемые `SafeAiUserPrincipal`, `SystemRole`, `AccessTokenSubject`, `JwtProperties`,
-CORS/IP/request-id, management chain и production startup invariants. `JwtProperties` намеренно
-остается здесь как shared configuration contract; это **не** повод возвращать сюда `JwtService` или
-crypto implementation.
+После PR #1–#8 из `common` вынесены auth-specific исключения и handlers, JWT runtime/key ring, auth filter converter и BCrypt configuration. В `common.security` оставлены действительно совместно используемые `SafeAiUserPrincipal`, `SystemRole`, `AccessTokenSubject`, `JwtProperties`, CORS/IP/request-id, management chain и production startup invariants. `JwtProperties` намеренно остается здесь как shared configuration contract; это **не** повод возвращать сюда `JwtService` или crypto implementation.
 
 ### Структура
 
@@ -1879,18 +1748,15 @@ common/
 
 #### `TimeConfiguration`
 
-Предоставляет injectable UTC `Clock`, чтобы business timestamps и lease/retry/retention tests были
-воспроизводимыми.
+Предоставляет injectable UTC `Clock`, чтобы business timestamps и lease/retry/retention tests были воспроизводимыми.
 
 #### `StablePageableNormalizer`
 
-Централизует bounded pagination/sort normalization и снижает риск расхождения paging semantics между
-controllers.
+Централизует bounded pagination/sort normalization и снижает риск расхождения paging semantics между controllers.
 
 #### `DatabaseConstraintClassifier`
 
-Преобразует ожидаемые PostgreSQL constraint failures в domain-level conflict semantics вместо
-случайного generic 500.
+Преобразует ожидаемые PostgreSQL constraint failures в domain-level conflict semantics вместо случайного generic 500.
 
 #### `PostgresAdvisoryLockExecutor`
 
@@ -1905,10 +1771,7 @@ controllers.
 
 #### `SafeAiUserPrincipal`
 
-JWT principal хранит минимальную identity/security-информацию без email и credentials.
-Password-auth principal временно содержит hash для проверки; после аутентификации
-его `eraseCredentials()` очищает. UUID пользователя и организации ненулевые
-по контракту конструктора.
+JWT principal хранит минимальную identity/security-информацию без email и credentials. Password-auth principal временно содержит hash для проверки; после аутентификации его `eraseCredentials()` очищает. UUID пользователя и организации ненулевые по контракту конструктора.
 
 #### `ProductionSecurityInvariantValidator`
 
@@ -1927,29 +1790,13 @@ identity/
     └── SessionRevocationReason.java
 ```
 
-Этот пакет — **узкая контрактная граница identity/tenancy**, а не новая реализация JWT или хранилище
-refresh-token rows.
+Этот пакет — **узкая контрактная граница identity/tenancy**, а не новая реализация JWT или хранилище refresh-token rows.
 
-`SessionRevocationPort` задает две операции: `revokeAllForUser(UUID, SessionRevocationReason)` и
-`revokeAllForOrganization(UUID, SessionRevocationReason)`. Модули `user` и `organization` зависят от
-порта,
-а реализация `auth.service.UserSessionRevocationService` владеет фактическим отзывом refresh-сессий
-и
-маппингом причин в auth-specific `RefreshTokenRevocationReason`. Реализация использует
-`@Transactional(propagation = MANDATORY)`: бизнес-операция должна открыть транзакцию до вызова
-порта.
+`SessionRevocationPort` задает две операции: `revokeAllForUser(UUID, SessionRevocationReason)` и `revokeAllForOrganization(UUID, SessionRevocationReason)`. Модули `user` и `organization` зависят от порта, а реализация `auth.service.UserSessionRevocationService` владеет фактическим отзывом refresh-сессий и маппингом причин в auth-specific `RefreshTokenRevocationReason`. Реализация использует `@Transactional(propagation = MANDATORY)`: бизнес-операция должна открыть транзакцию до вызова порта.
 
-`SessionRevocationReason` — общие security-mutation reasons (`PASSWORD_RESET`, `ROLE_CHANGED`,
-`EMAIL_CHANGED`, `USER_DISABLED`, `ORGANIZATION_DISABLED`, `SECURITY_STATE_CHANGED`,
-`ADMIN_REVOKED`). Не добавлять сюда details JWT/cookie/refresh-token persistence: они принадлежат
-`auth`.
+`SessionRevocationReason` — общие security-mutation reasons (`PASSWORD_RESET`, `ROLE_CHANGED`, `EMAIL_CHANGED`, `USER_DISABLED`, `ORGANIZATION_DISABLED`, `SECURITY_STATE_CHANGED`, `ADMIN_REVOKED`). Не добавлять сюда details JWT/cookie/refresh-token persistence: они принадлежат `auth`.
 
-В `identity` на данном срезе **два Java-класса**; расширять пакет только при наличии нового
-реального
-межмодульного identity-контракта. Рекомендуемый следующий защитный тест —
-`identity..` не зависит от `auth`, `user`, `organization` и прочих прикладных модулей; правило
-сначала
-нужно проверить на реальном bytecode/импортах.
+В `identity` на данном срезе **два Java-класса**; расширять пакет только при наличии нового реального межмодульного identity-контракта. Рекомендуемый следующий защитный тест — `identity..` не зависит от `auth`, `user`, `organization` и прочих прикладных модулей; правило сначала нужно проверить на реальном bytecode/импортах.
 
 ---
 
@@ -2028,21 +1875,11 @@ auth/
 
 ### Собственность классов после PR #1–#8
 
-`auth.exception` содержит `AuthExceptionHandler` и исключения недействительного, истекшего и
-повторно
-использованного refresh token, а также недоступности auth infrastructure. Они используют общий
-`common.exception.ApiErrorResponse` contract, но не должны находиться в `common`.
+`auth.exception` содержит `AuthExceptionHandler` и исключения недействительного, истекшего и повторно использованного refresh token, а также недоступности auth infrastructure. Они используют общий `common.exception.ApiErrorResponse` contract, но не должны находиться в `common`.
 
-`auth.security` владеет `JwtCodecConfiguration`, `JwtRsaKeyRing`,
-`SafeAiJwtAuthenticationConverter`, `BearerAuthenticationEntryPoint`,
-`RestAuthenticationEntryPoint`, `RestAccessDeniedHandler`, `PasswordEncodingConfiguration`.
-`auth.service.JwtService` владеет JWT runtime. BCrypt остается **strength 12**,
-новые password hashes используют `{bcrypt}`; поддержка legacy unprefixed BCrypt контролируется
-`safeai.security.password.allow-legacy-unprefixed-bcrypt` и не должна выключаться без проверки
-существующих учетных записей.
+`auth.security` владеет `JwtCodecConfiguration`, `JwtRsaKeyRing`, `SafeAiJwtAuthenticationConverter`, `BearerAuthenticationEntryPoint`, `RestAuthenticationEntryPoint`, `RestAccessDeniedHandler`, `PasswordEncodingConfiguration`. `auth.service.JwtService` владеет JWT runtime. BCrypt остается **strength 12**, новые password hashes используют `{bcrypt}`; поддержка legacy unprefixed BCrypt контролируется `safeai.security.password.allow-legacy-unprefixed-bcrypt` и не должна выключаться без проверки существующих учетных записей.
 
-Public JSON envelope остается совместным контрактом в `common.exception`, а все auth-specific
-status/error code mappings принадлежат `auth.exception.AuthExceptionHandler` и security handlers.
+Public JSON envelope остается совместным контрактом в `common.exception`, а все auth-specific status/error code mappings принадлежат `auth.exception.AuthExceptionHandler` и security handlers.
 
 ### Login flow
 
@@ -2108,8 +1945,7 @@ Reuse detection прекращает token family.
 
 ### Logout
 
-Logout отзывает server-side refresh state и очищает browser cookies; audit subject snapshot должен
-быть получен до потери необходимого identity context.
+Logout отзывает server-side refresh state и очищает browser cookies; audit subject snapshot должен быть получен до потери необходимого identity context.
 
 ### Cleanup
 
@@ -2179,11 +2015,7 @@ user/
 
 ### Внутренние границы и ответственность
 
-`UserService` координирует публичные операции; выделены package-private `UserCommandOperations`
-и `UserQueryOperations`, `UserAccessPolicy`, `UserEntityAccess`, `UserRoleAssignmentResolver`,
-`UserResponseMapper`. `UserExceptionHandler` и `UserVersionConflictException` локальны для `user`.
-Security-sensitive commands зависят от `identity.session.SessionRevocationPort`, не от
-`auth.service.UserSessionRevocationService` напрямую. Это важная граница PR #2.
+`UserService` координирует публичные операции; выделены package-private `UserCommandOperations` и `UserQueryOperations`, `UserAccessPolicy`, `UserEntityAccess`, `UserRoleAssignmentResolver`, `UserResponseMapper`. `UserExceptionHandler` и `UserVersionConflictException` локальны для `user`. Security-sensitive commands зависят от `identity.session.SessionRevocationPort`, не от `auth.service.UserSessionRevocationService` напрямую. Это важная граница PR #2.
 
 ### Основные invariants
 
@@ -2199,8 +2031,7 @@ Security-sensitive commands зависят от `identity.session.SessionRevocat
 
 Cache является optimization layer, а не единственным security source of truth.
 
-Security mutation публикует `UserSecurityStateChangedEvent`, после чего cache инвалидируется
-listener-ом.
+Security mutation публикует `UserSecurityStateChangedEvent`, после чего cache инвалидируется listener-ом.
 
 ### Permanent deletion
 
@@ -2264,25 +2095,17 @@ organization/
     └── PlatformOrganizationInvariantVerifier
 ```
 
-`OrganizationExceptionHandler` и `OrganizationVersionConflictException` принадлежат модулю
-`organization`, а не глобальной `common.exception`. Внутренние command/query operations отделены
-от публичного `OrganizationService`; отзыв сессий проходит через
-`identity.session.SessionRevocationPort`.
+`OrganizationExceptionHandler` и `OrganizationVersionConflictException` принадлежат модулю `organization`, а не глобальной `common.exception`. Внутренние command/query operations отделены от публичного `OrganizationService`; отзыв сессий проходит через `identity.session.SessionRevocationPort`.
 
 ### Platform organization
 
-Canonical platform organization имеет отдельную semantic role и не должна обрабатываться как обычный
-tenant.
+Canonical platform organization имеет отдельную semantic role и не должна обрабатываться как обычный tenant.
 
-`PlatformOrganizationInvariantVerifier` проверяет startup/runtime assumptions о protected platform
-organization.
+`PlatformOrganizationInvariantVerifier` проверяет startup/runtime assumptions о protected platform organization.
 
 ### Organization naming — V73
 
-`OrganizationNameNormalizer` задаёт правила имени и проверяет
-запрещённые управляющие символы. В целевом патче Java и БД
-одинаково схлопывают 24 ASCII/Unicode пробельных символа,
-включая NBSP, NNBSP, разделители строк и абзацев.
+`OrganizationNameNormalizer` задаёт правила имени и проверяет запрещённые управляющие символы. В целевом патче Java и БД одинаково схлопывают 24 ASCII/Unicode пробельных символа, включая NBSP, NNBSP, разделители строк и абзацев.
 
 - PostgreSQL `lower()` остаётся источником истины для
   уникального `normalized_name` (с учётом коллации БД).
@@ -2300,9 +2123,7 @@ organization.
 - `normalizeForConfirmation()` не подменяет уникальность
   `lower(canonical_organization_name(...))`.
 
-Миграция: `V73__organization_unicode_whitespace_canonicalization.sql`.
-Применять только после теста на копии populated БД,
-предварительной проверки имён и окна блокировок.
+Миграция: `V73__organization_unicode_whitespace_canonicalization.sql`. Применять только после теста на копии populated БД, предварительной проверки имён и окна блокировок.
 
 ### Enable / disable
 
@@ -2320,9 +2141,7 @@ organization.auth_version
 
 #### V72: Disable как security boundary, а не только административный флаг
 
-При отключении организация блокируется на запись до изменения `enabled` и увеличения `auth_version`.
-Login/Refresh запрашивают совместимую с другими читателями, но конфликтующую с Disable блокировку
-`FOR SHARE`; физический AI STARTED использует такой же organization fence в SQL-триггере.
+При отключении организация блокируется на запись до изменения `enabled` и увеличения `auth_version`. Login/Refresh запрашивают совместимую с другими читателями, но конфликтующую с Disable блокировку `FOR SHARE`; физический AI STARTED использует такой же organization fence в SQL-триггере.
 
 - Commit Disable запрещает **новый** `ModelExecutionAttempt STARTED`, пока organization отключена.
 - После Enable устаревший `ChatTurn` с прежним authorized epoch всё равно не проходит V72 gate.
@@ -2331,8 +2150,7 @@ Login/Refresh запрашивают совместимую с другими ч
 - Внешний HTTP-запрос, разрешённый до Disable, не гарантированно остановится: DB fence определяет
   момент **авторизации STARTED**, не момент отправки сетевых байтов.
 
-Проверять только `enabled` в Java перед отправкой запрещено считать строгой защитой: между Java
-check и DB INSERT возникает TOCTOU. База повторно проверяет identity/epoch под row lock.
+Проверять только `enabled` в Java перед отправкой запрещено считать строгой защитой: между Java check и DB INSERT возникает TOCTOU. База повторно проверяет identity/epoch под row lock.
 
 ---
 ## Модуль `ratelimit`
@@ -2374,9 +2192,7 @@ ratelimit/
 
 Redis используется как distributed rate-limit state.
 
-Atomic fixed-window operation выполняется Lua script-ом. Для dual-counter операций критична
-**предварительная проверка обоих Redis-значений до первой записи**: Redis Lua сериализует вызовы, но
-при ошибке **не откатывает** уже выполненные команды.
+Atomic fixed-window operation выполняется Lua script-ом. Для dual-counter операций критична **предварительная проверка обоих Redis-значений до первой записи**: Redis Lua сериализует вызовы, но при ошибке **не откатывает** уже выполненные команды.
 
 ```text
 validate counter #1 + counter #2
@@ -2388,10 +2204,7 @@ INCR and initialize TTL where applicable
 limit decision / optional marker
 ```
 
-`tryIncrementBoth()` резервирует оба bucket только при допустимости запроса;
-`incrementBothAndCheck()` сохраняет семантику учёта попытки. Интеграционные тесты отдельно проверяют
-конкуренцию, TTL и отсутствие частичных записей на повреждённых значениях. В Redis Cluster ключи
-одной Lua-операции должны находиться в одном hash slot.
+`tryIncrementBoth()` резервирует оба bucket только при допустимости запроса; `incrementBothAndCheck()` сохраняет семантику учёта попытки. Интеграционные тесты отдельно проверяют конкуренцию, TTL и отсутствие частичных записей на повреждённых значениях. В Redis Cluster ключи одной Lua-операции должны находиться в одном hash slot.
 
 ### Keys
 
@@ -2417,22 +2230,13 @@ Raw email/IP/user identity не обязана попадать в Redis key.
 - organization bucket;
 - role-dependent limits.
 
-Auth- и rate-limit-specific failure classes живут в `ratelimit.exception`, включая
-`RateLimitExceededException`, `RateLimitUnavailableException`, `RateLimitUnavailableLogger`
-и `RateLimitExceptionHandler`. Совместимый публичный API error envelope обеспечивает
-`common.exception`.
+Auth- и rate-limit-specific failure classes живут в `ratelimit.exception`, включая `RateLimitExceededException`, `RateLimitUnavailableException`, `RateLimitUnavailableLogger` и `RateLimitExceptionHandler`. Совместимый публичный API error envelope обеспечивает `common.exception`.
 
 ### Production fail-fast rate-limit invariants
 
-Login и Refresh limiter обязательны в production. Для AI
-отключение требует явного исключения политики
-`allow-unlimited-ai-traffic=true`. Это аварийный escape hatch,
-а не рекомендуемый штатный режим.
+Login и Refresh limiter обязательны в production. Для AI отключение требует явного исключения политики `allow-unlimited-ai-traffic=true`. Это аварийный escape hatch, а не рекомендуемый штатный режим.
 
-Двойные Redis Lua-операции используют hash tags, чтобы все
-ключи одного вызова находились в одном Redis Cluster slot.
-HMAC защищает сырой email/IP от попадания в названия ключей.
-Счётчики и TTL валидируются, а `Retry-After` округляется вверх.
+Двойные Redis Lua-операции используют hash tags, чтобы все ключи одного вызова находились в одном Redis Cluster slot. HMAC защищает сырой email/IP от попадания в названия ключей. Счётчики и TTL валидируются, а `Retry-After` округляется вверх.
 
 ### Failure semantics
 
@@ -2560,13 +2364,7 @@ V68 делает разделение intent/evidence явным на уровн
 
 #### V69–V70: actor snapshot и live user link
 
-Последовательные миграции `V69__audit_actor_link_fk_detachment.sql` и
-`V70__audit_live_user_link_separation.sql` уточняют границы между **исторической
-идентичностью инициатора audit event** и **актуальной ссылкой на пользователя**.
-Ключевой принцип: удаление или изменение существования user row не должно
-уничтожать уже сохранённую историю аудита. При этом live linkage и правила
-tenant isolation должны оставаться проверяемыми. Точные правила удаления,
-`ON DELETE` и состав колонок определяются SQL этих миграций, а не данным README.
+Последовательные миграции `V69__audit_actor_link_fk_detachment.sql` и `V70__audit_live_user_link_separation.sql` уточняют границы между **исторической идентичностью инициатора audit event** и **актуальной ссылкой на пользователя**. Ключевой принцип: удаление или изменение существования user row не должно уничтожать уже сохранённую историю аудита. При этом live linkage и правила tenant isolation должны оставаться проверяемыми. Точные правила удаления, `ON DELETE` и состав колонок определяются SQL этих миграций, а не данным README.
 
 ### Immutable snapshots
 
@@ -2590,20 +2388,11 @@ Snapshot нужен потому, что пользователь/организ
 
 ### Typed details и обязательный Audit
 
-Для `AuditDetails` должен использоваться
-`AuditCommandFactory.createTyped(...)` и `sanitizeTyped()`;
-legacy `Map<String, Object>` сохраняет отдельный строгий
-unstructured sanitizer. Иначе разрешённые поля типизированного
-security evidence могут быть ошибочно вырезаны.
+Для `AuditDetails` должен использоваться `AuditCommandFactory.createTyped(...)` и `sanitizeTyped()`; legacy `Map<String, Object>` сохраняет отдельный строгий unstructured sanitizer. Иначе разрешённые поля типизированного security evidence могут быть ошибочно вырезаны.
 
-`AuditEventService.recordPrincipalSnapshot(...)` использует
-ту же typed boundary. `AuditEventServiceTest` должен мокировать
-`createTyped(...)`, не `create(Map)`; `MANDATORY`-аудит
-по-прежнему не проглатывает ошибки сохранения.
+`AuditEventService.recordPrincipalSnapshot(...)` использует ту же typed boundary. `AuditEventServiceTest` должен мокировать `createTyped(...)`, не `create(Map)`; `MANDATORY`-аудит по-прежнему не проглатывает ошибки сохранения.
 
-Best-effort standalone остаётся отдельным `REQUIRES_NEW`
-контрактом: ошибка аудита не должна ломать business flow,
-но такой вызов недопустим для обязательного evidence.
+Best-effort standalone остаётся отдельным `REQUIRES_NEW` контрактом: ошибка аудита не должна ломать business flow, но такой вызов недопустим для обязательного evidence.
 
 ### Delivery
 
@@ -2641,31 +2430,15 @@ POST /api/admin/audit-events/outbox/dead-letters/{eventId}/recover
 - V75 регистрирует **только тип** события в справочнике;
   без Java recovery service/controller это не рабочая функция.
 
-Не выполнять recovery до устранения root cause. Сохранять
-старое `occurred_at`: обычные правила retention продолжают
-действовать и для восстановленной записи.
+Не выполнять recovery до устранения root cause. Сохранять старое `occurred_at`: обычные правила retention продолжают действовать и для восстановленной записи.
 
 ### V84: транзакционный аудит завершения удаления Knowledge
 
-В `V84__knowledge_erasure_terminal_audit.sql` зарегистрированы **шесть** типов:
-`KNOWLEDGE_DOCUMENT_DELETION_COMPLETED`,
-`KNOWLEDGE_DOCUMENT_DELETION_REVIEW_REQUIRED`,
-`KNOWLEDGE_DOCUMENT_DELETION_RETENTION_BLOCKED` и аналогичные
-`KNOWLEDGE_BASE_DELETION_*`.
+В `V84__knowledge_erasure_terminal_audit.sql` зарегистрированы **шесть** типов: `KNOWLEDGE_DOCUMENT_DELETION_COMPLETED`, `KNOWLEDGE_DOCUMENT_DELETION_REVIEW_REQUIRED`, `KNOWLEDGE_DOCUMENT_DELETION_RETENTION_BLOCKED` и аналогичные `KNOWLEDGE_BASE_DELETION_*`.
 
-`trg_document_erasure_terminal_audit_v84` / `trg_base_erasure_terminal_audit_v84`
-срабатывают **после реального UPDATE state**, когда операция перешла из
-`DELETING` в `DELETED`, `NEEDS_REVIEW` либо `BLOCKED_BY_RETENTION`.
-`enqueue_knowledge_erasure_terminal_audit_v84()` вставляет outbox intent в **той же
-PostgreSQL транзакции**; rollback отменяет и state, и audit. Для одного перехода
-создаётся один event; повторный вход в `NEEDS_REVIEW` после санкционированного
-V83 resume может породить новое событие, что корректно отражает новую попытку.
+`trg_document_erasure_terminal_audit_v84` / `trg_base_erasure_terminal_audit_v84` срабатывают **после реального UPDATE state**, когда операция перешла из `DELETING` в `DELETED`, `NEEDS_REVIEW` либо `BLOCKED_BY_RETENTION`. `enqueue_knowledge_erasure_terminal_audit_v84()` вставляет outbox intent в **той же PostgreSQL транзакции**; rollback отменяет и state, и audit. Для одного перехода создаётся один event; повторный вход в `NEEDS_REVIEW` после санкционированного V83 resume может породить новое событие, что корректно отражает новую попытку.
 
-Детали содержат только UUID операции/базы/документа, state, предыдущий state,
-число попыток и безопасный код ошибки; `actor_user_id = NULL` обозначает системный
-worker. Запрещено помещать в этот payload storage keys, file names, query text,
-access tokens и provider exception strings. Асинхронный `AuditOutboxProcessor`
-проводит доставку отдельно; V84 **не** backfill-ит старые завершённые операции.
+Детали содержат только UUID операции/базы/документа, state, предыдущий state, число попыток и безопасный код ошибки; `actor_user_id = NULL` обозначает системный worker. Запрещено помещать в этот payload storage keys, file names, query text, access tokens и provider exception strings. Асинхронный `AuditOutboxProcessor` проводит доставку отдельно; V84 **не** backfill-ит старые завершённые операции.
 
 ### Query
 
@@ -2679,40 +2452,21 @@ Cursor pagination использует стабильную пару:
 (createdAt, id)
 ```
 
-Подготовленный `AuditEventQueryService` ограничивает глубину
-старой OFFSET-пагинации: максимум 10 000 пропущенных строк,
-HTTP 400 до тяжёлого запроса. Cursor endpoint остаётся.
+Подготовленный `AuditEventQueryService` ограничивает глубину старой OFFSET-пагинации: максимум 10 000 пропущенных строк, HTTP 400 до тяжёлого запроса. Cursor endpoint остаётся.
 
-Исторические справочники используют выборку ID и latest-row;
-`AuditDirectoryService` ограничивает выполнение до 5 секунд.
-Это защита ресурса, но не доказательство дешёвого
-`DISTINCT`/substring-поиска: нужен `EXPLAIN (ANALYZE,
-BUFFERS)` и нагрузочный профиль реальной БД.
+Исторические справочники используют выборку ID и latest-row; `AuditDirectoryService` ограничивает выполнение до 5 секунд. Это защита ресурса, но не доказательство дешёвого `DISTINCT`/substring-поиска: нужен `EXPLAIN (ANALYZE, BUFFERS)` и нагрузочный профиль реальной БД.
 
 ### Retention
 
 Retention выполняется bounded batches.
 
-Для межинстансовой координации используется PostgreSQL
-advisory lock. Session lock удерживает отдельное соединение,
-а `REQUIRES_NEW` batch может потребовать второе. Требуются
-настройка Hikari capacity, lock/timeout monitoring и
-нагрузочная проверка `AuditRetentionPoolLoadIT` на стенде.
-Наличие теста в пакете не означает, что он был выполнен.
+Для межинстансовой координации используется PostgreSQL advisory lock. Session lock удерживает отдельное соединение, а `REQUIRES_NEW` batch может потребовать второе. Требуются настройка Hikari capacity, lock/timeout monitoring и нагрузочная проверка `AuditRetentionPoolLoadIT` на стенде. Наличие теста в пакете не означает, что он был выполнен.
 
 ### Обязательный и самостоятельный аудит: проверенный контракт
 
-`AuditOutboxWriter.writeRequiredInCurrentTransaction(AuditCommand)` использует
-`@Transactional(propagation = Propagation.MANDATORY)`: без активной business transaction
-вызов должен завершиться отказом, а не незаметно создать независимую транзакцию.
-`AuditEventService.record(...)` вызывает именно этот метод и сохраняет durable audit intent
-в рамках транзакции caller. `saveAndFlush()` не равнозначен `COMMIT` caller transaction.
+`AuditOutboxWriter.writeRequiredInCurrentTransaction(AuditCommand)` использует `@Transactional(propagation = Propagation.MANDATORY)`: без активной business transaction вызов должен завершиться отказом, а не незаметно создать независимую транзакцию. `AuditEventService.record(...)` вызывает именно этот метод и сохраняет durable audit intent в рамках транзакции caller. `saveAndFlush()` не равнозначен `COMMIT` caller transaction.
 
-`AuditOutboxWriter.writeStandaloneRequired(AuditCommand)` использует `REQUIRES_NEW`:
-это отдельный явно выбранный путь для independent audit intent, когда вызов идет через
-Spring transactional proxy. Оба пути нельзя смешивать ради «удобства» или ослаблять
-failure/rollback семантику. Этот контракт уже реализован в проверенном `main` и
-**не является открытой задачей на изменение `REQUIRED → MANDATORY`**.
+`AuditOutboxWriter.writeStandaloneRequired(AuditCommand)` использует `REQUIRES_NEW`: это отдельный явно выбранный путь для independent audit intent, когда вызов идет через Spring transactional proxy. Оба пути нельзя смешивать ради «удобства» или ослаблять failure/rollback семантику. Этот контракт уже реализован в проверенном `main` и **не является открытой задачей на изменение `REQUIRED → MANDATORY`**.
 
 ---
 
@@ -2777,13 +2531,7 @@ usage/
     └── UsageRollupScheduler
 ```
 
-`UsageRebuildController` входит в текущую структуру `usage.controller`:
-`POST /api/admin/usage/rebuild?date=YYYY-MM-DD` возвращает `202 Accepted`, а сам controller
-защищен `@PreAuthorize("hasRole('SUPER_ADMIN')")`. Внутренний `UsageForcedRebuildService`
-обрабатывает запрос; состояние очереди, ограничения выполнения и audit должны проверяться
-по его реализации и тестам при доработках.
-`UsageHikariPoolInvariantVerifier` и `UsageJdbcClients` — конфигурационные границы
-аналитических JDBC-пулов.
+`UsageRebuildController` входит в текущую структуру `usage.controller`: `POST /api/admin/usage/rebuild?date=YYYY-MM-DD` возвращает `202 Accepted`, а сам controller защищен `@PreAuthorize("hasRole('SUPER_ADMIN')")`. Внутренний `UsageForcedRebuildService` обрабатывает запрос; состояние очереди, ограничения выполнения и audit должны проверяться по его реализации и тестам при доработках. `UsageHikariPoolInvariantVerifier` и `UsageJdbcClients` — конфигурационные границы аналитических JDBC-пулов.
 
 ### Usage quality model
 
@@ -2825,9 +2573,7 @@ GET /api/admin/usage/physical-attempts
 GET /api/admin/usage/physical-attempts/reconciliation
 ```
 
-Оба используют `dateFrom`/`dateTo` как диапазон `Instant`.
-`ADMIN` ограничивается своим tenant, `SUPER_ADMIN` может
-читать глобальный scope. Сервис повторно проверяет доступ.
+Оба используют `dateFrom`/`dateTo` как диапазон `Instant`. `ADMIN` ограничивается своим tenant, `SUPER_ADMIN` может читать глобальный scope. Сервис повторно проверяет доступ.
 
 - `UsagePhysicalSpendRepository` агрегирует физические
   `model_execution_attempts` по времени `started_at`,
@@ -2844,8 +2590,7 @@ GET /api/admin/usage/physical-attempts/reconciliation
 - `matched`, `mismatched` и `unverifiable` нельзя подменять
   успешностью chat/провайдера или данными для инвойса.
 
-Новые запросы остаются evidence-backed финансовой аналитикой,
-а не invoice-grade reconciliation с поставщиком.
+Новые запросы остаются evidence-backed финансовой аналитикой, а не invoice-grade reconciliation с поставщиком.
 
 ### Live + rollup
 
@@ -2858,9 +2603,7 @@ GET /api/admin/usage/physical-attempts/reconciliation
 
 ### V71 — Dirty-date recalculation и восстановление актуальности сводок
 
-Историческая дневная сводка не обязательно остаётся актуальной навсегда: сообщение или физический AI
-attempt может получить окончательный статус позже даты первоначального rollup. Поэтому механизм V71
-отделяет **последовательный backfill** от **повторного расчёта уже закрытых UTC-дней**.
+Историческая дневная сводка не обязательно остаётся актуальной навсегда: сообщение или физический AI attempt может получить окончательный статус позже даты первоначального rollup. Поэтому механизм V71 отделяет **последовательный backfill** от **повторного расчёта уже закрытых UTC-дней**.
 
 ```text
 persisted usage / late-arriving or corrected evidence
@@ -2927,24 +2670,13 @@ UsageRollupScheduler ───── PostgreSQL advisory lock
 
 #### Безопасность исполнения и эксплуатация
 
-Используется `PostgresAdvisoryLockExecutor`, чтобы два экземпляра приложения не запускали
-конкурирующую работу одного scheduled rollup. Session-level advisory lock привязан к JDBC connection
-и должен освобождаться при завершении action; корректность изменений всё равно зависит от
-транзакционных границ отдельных операций. Принудительная переагрегация — потенциально дорогая
-операция, поэтому перед массовым использованием нужно проверять лимиты, аудит вызывающего и
-наблюдаемость выполнения по реальному коду.
+Используется `PostgresAdvisoryLockExecutor`, чтобы два экземпляра приложения не запускали конкурирующую работу одного scheduled rollup. Session-level advisory lock привязан к JDBC connection и должен освобождаться при завершении action; корректность изменений всё равно зависит от транзакционных границ отдельных операций. Принудительная переагрегация — потенциально дорогая операция, поэтому перед массовым использованием нужно проверять лимиты, аудит вызывающего и наблюдаемость выполнения по реальному коду.
 
-Для V71 не следует создавать новую SQL-миграцию или редактировать уже применённый
-`V71__usage_dirty_dates_and_recalculation_queue.sql` только ради документации.
+Для V71 не следует создавать новую SQL-миграцию или редактировать уже применённый `V71__usage_dirty_dates_and_recalculation_queue.sql` только ради документации.
 
 ### V74 — UTC-полночь, dirty dates и индексы
 
-`V74__usage_midnight_dirty_date_and_physical_indexes.sql`
-переопределяет функцию `safeai_mark_usage_date_dirty_v71`:
-**текущий UTC-день также помечается dirty** внутри исходной
-транзакции. Это защищает от гонки start-before-midnight /
-commit-after-midnight. Обработчик пересчитывает только
-соответствующие закрытые даты в пределах watermark.
+`V74__usage_midnight_dirty_date_and_physical_indexes.sql` переопределяет функцию `safeai_mark_usage_date_dirty_v71`: **текущий UTC-день также помечается dirty** внутри исходной транзакции. Это защищает от гонки start-before-midnight / commit-after-midnight. Обработчик пересчитывает только соответствующие закрытые даты в пределах watermark.
 
 V74 добавляет неуникальные индексы:
 
@@ -2953,26 +2685,15 @@ idx_model_execution_attempts_started_plan_v74
 idx_model_execution_plans_organization_id_v74
 ```
 
-Увеличение активности dirty queue может создать hot row
-на текущем UTC-дне; нагрузка и contention требуют проверки.
+Увеличение активности dirty queue может создать hot row на текущем UTC-дне; нагрузка и contention требуют проверки.
 
 ### Concurrency / performance
 
-`UsageReportExecutor` ограничивает количество конкурентных
-тяжёлых reports **локальным семафором** и, в подготовленном
-патче, PostgreSQL `pg_try_advisory_xact_lock`-слотами.
+`UsageReportExecutor` ограничивает количество конкурентных тяжёлых reports **локальным семафором** и, в подготовленном патче, PostgreSQL `pg_try_advisory_xact_lock`-слотами.
 
-Транзакция — `REQUIRES_NEW`, read-only, `REPEATABLE_READ`;
-для нескольких агрегаций отчёта она обеспечивает один DB
-snapshot. При исчерпании слотов возвращается HTTP 429.
-В production размер Hikari-пула проверяется с запасом от
-`maxConcurrentReports + 2`.
+Транзакция — `REQUIRES_NEW`, read-only, `REPEATABLE_READ`; для нескольких агрегаций отчёта она обеспечивает один DB snapshot. При исчерпании слотов возвращается HTTP 429. В production размер Hikari-пула проверяется с запасом от `maxConcurrentReports + 2`.
 
-Пагинация Usage ограничена 50 000 строками OFFSET; `models`
-не должен молча обрезать финансовый отчёт: `LIMIT 1001` и
-HTTP 422 при более чем 1000 моделях. `daily` ограничен
-366 днями. Эти ограничения относятся к подготовленному
-Usage hardening и требуют регрессионного прогона.
+Пагинация Usage ограничена 50 000 строками OFFSET; `models` не должен молча обрезать финансовый отчёт: `LIMIT 1001` и HTTP 422 при более чем 1000 моделях. `daily` ограничен 366 днями. Эти ограничения относятся к подготовленному Usage hardening и требуют регрессионного прогона.
 
 SQL paths имеют:
 
@@ -2983,9 +2704,7 @@ SQL paths имеют:
 
 ### Product usage vs physical spend
 
-Usage subsystem остаётся product/chat analytics, но после `V60/V62/V67` физические расходы больше не
-обязаны
-исчезать из accounting только потому, что `ChatTurn` не завершился пользовательским success.
+Usage subsystem остаётся product/chat analytics, но после `V60/V62/V67` физические расходы больше не обязаны исчезать из accounting только потому, что `ChatTurn` не завершился пользовательским success.
 
 Отдельные DB read models дают разные представления:
 
@@ -3002,9 +2721,7 @@ chat_physical_spend_v67
     → usage_unverifiable / cost_unverifiable flags
 ```
 
-Это существенно ближе к FinOps, но всё ещё **не invoice/settlement ledger**: `actual` здесь означает
-provider-evidenced cost по сохранённой pricing/usage evidence, а не подтверждение расчёта с
-поставщиком.
+Это существенно ближе к FinOps, но всё ещё **не invoice/settlement ledger**: `actual` здесь означает provider-evidenced cost по сохранённой pricing/usage evidence, а не подтверждение расчёта с поставщиком.
 
 ---
 
@@ -3116,8 +2833,7 @@ chat/
     └── ChatTitleSource
 ```
 
-Exception ownership: `ChatBusyException` и `ChatLockUnavailableException` находятся
-в `chat.exception` вместе с `ChatInfrastructureExceptionHandler`; не возвращать их в `common`.
+Exception ownership: `ChatBusyException` и `ChatLockUnavailableException` находятся в `chat.exception` вместе с `ChatInfrastructureExceptionHandler`; не возвращать их в `common`.
 
 ### `ChatTurn` state machine
 
@@ -3140,9 +2856,7 @@ PROCESSING -> SUCCEEDED | FAILED | AMBIGUOUS
 terminal -> no further UPDATE
 ```
 
-Identity/provenance поля `ChatTurn` также защищены от изменения после создания. Дополнительно
-message row со
-`status=COMPLETED` становится immutable evidence и не может быть переписан ORM/direct SQL.
+Identity/provenance поля `ChatTurn` также защищены от изменения после создания. Дополнительно message row со `status=COMPLETED` становится immutable evidence и не может быть переписан ORM/direct SQL.
 
 ### Idempotency
 
@@ -3162,8 +2876,7 @@ same clientRequestId + different semantic request
     → IDEMPOTENCY_CONFLICT
 ```
 
-Replay identity не должен зависеть от mutable policy/catalog state, изменившегося уже после принятия
-оригинальной операции.
+Replay identity не должен зависеть от mutable policy/catalog state, изменившегося уже после принятия оригинальной операции.
 
 ### Reservation flow
 
@@ -3184,12 +2897,7 @@ Provider call не выполняется внутри долгой business tra
 
 ### Lease / fencing
 
-Watchdog `ChatTurnLeaseService` использует
-`ChatTurnRepository.renewLeaseUsingDatabaseClock(turnId, processingToken, leaseMillis)` — PostgreSQL `clock_timestamp()`
-определяет и проверку действующего срока, и новую границу lease в одном SQL-запросе. Сохраняются условия `PROCESSING`,
-точного `processing_token` и непросроченной аренды; результат, отличный от одной обновлённой строки, означает потерю
-ownership. Ошибка БД также инвалидирует watchdog; нельзя переключаться на разрешающий fallback по локальным часам JVM.
-Сигнатура конструктора service сохранена для совместимости существующих consumers.
+Watchdog `ChatTurnLeaseService` использует `ChatTurnRepository.renewLeaseUsingDatabaseClock(turnId, processingToken, leaseMillis)` — PostgreSQL `clock_timestamp()` определяет и проверку действующего срока, и новую границу lease в одном SQL-запросе. Сохраняются условия `PROCESSING`, точного `processing_token` и непросроченной аренды; результат, отличный от одной обновлённой строки, означает потерю ownership. Ошибка БД также инвалидирует watchdog; нельзя переключаться на разрешающий fallback по локальным часам JVM. Сигнатура конструктора service сохранена для совместимости существующих consumers.
 
 
 `processingToken` является fencing token.
@@ -3200,8 +2908,7 @@ Stale worker не может завершить turn после lease takeover.
 
 ### Provider-call ambiguity
 
-После V67 `provider_call_started_at` больше не должен быть application-level догадкой о том, начался
-ли provider call.
+После V67 `provider_call_started_at` больше не должен быть application-level догадкой о том, начался ли provider call.
 
 DB boundary для вставки физического attempt:
 
@@ -3233,44 +2940,25 @@ provider_call_started_at != null
     → blind replay после неопределённого исхода запрещён
 ```
 
-Точная истина об outcome хранится в `ModelExecutionAttempt`; `provider_call_started_at` остаётся
-coarse-grained
-ChatTurn marker для recovery/fencing.
+Точная истина об outcome хранится в `ModelExecutionAttempt`; `provider_call_started_at` остаётся coarse-grained ChatTurn marker для recovery/fencing.
 
 #### V72 — immutable authorization epoch у ChatTurn
 
-`chat_turns.authorized_organization_auth_version` — зафиксированная версия безопасности организации,
-предъявленная авторизованным principal при создании logical turn. V72 при `INSERT chat_turns`
-блокирует tenant `FOR SHARE`, проверяет `enabled=true` и совпадение epoch; последующее изменение
-epoch-колонки запрещает DB-trigger.
+`chat_turns.authorized_organization_auth_version` — зафиксированная версия безопасности организации, предъявленная авторизованным principal при создании logical turn. V72 при `INSERT chat_turns` блокирует tenant `FOR SHARE`, проверяет `enabled=true` и совпадение epoch; последующее изменение epoch-колонки запрещает DB-trigger.
 
-Исторические ChatTurn, созданные до V72, сохраняют `NULL` (миграция **не приписывает** прошлым
-запросам произвольную авторизацию). Такие строки не получают право на **новые** физические попытки.
-`DEFAULT 0` в SQL существует для совместимости новых низкоуровневых тестовых INSERT; production Java
-должна явно передавать epoch principal, а не полагаться на default.
+Исторические ChatTurn, созданные до V72, сохраняют `NULL` (миграция **не приписывает** прошлым запросам произвольную авторизацию). Такие строки не получают право на **новые** физические попытки. `DEFAULT 0` в SQL существует для совместимости новых низкоуровневых тестовых INSERT; production Java должна явно передавать epoch principal, а не полагаться на default.
 
-При pre-`STARTED` запрете (например, Disable, потерянный lease, несоответствие epoch) корректное
-состояние — контролируемый `FAILED` без подмены его `AMBIGUOUS`. Если attempt уже был разрешён,
-дальнейший outcome трактуется по durable evidence, а не исходя из последующей смены tenant state.
+При pre-`STARTED` запрете (например, Disable, потерянный lease, несоответствие epoch) корректное состояние — контролируемый `FAILED` без подмены его `AMBIGUOUS`. Если attempt уже был разрешён, дальнейший outcome трактуется по durable evidence, а не исходя из последующей смены tenant state.
 
-**Инвариант временной последовательности:** `created_at ≤ provider_call_started_at ≤ completed_at`
-там, где terminal timestamp установлен. V67/V72 используют физическое время PostgreSQL на STARTED;
-тестовые injectable часы нужно согласовывать с DB clock, не отключая `chk_chat_turns_timestamps` и
-не переписывая immutable `created_at`.
+**Инвариант временной последовательности:** `created_at ≤ provider_call_started_at ≤ completed_at` там, где terminal timestamp установлен. V67/V72 используют физическое время PostgreSQL на STARTED; тестовые injectable часы нужно согласовывать с DB clock, не отключая `chk_chat_turns_timestamps` и не переписывая immutable `created_at`.
 
 
 ### Quota reservation
 
-Новая reservation-путь вызывает перегрузку `ChatQuotaService.reserve(..., ChatQuotaReservation)` вместо устаревшего
-пятиаргументного `reserve(...)`. `ChatQuotaReservation` привязывается к immutable `ModelRouteResult.decisionId`,
-использует `estimatedInputTokens`, `estimatedOutputTokens`, верхнюю оценку `estimatedMaxCostUsd` и `pricingComplete`.
-Сервис отдельно подтверждает поддерживаемую схему через `hasVerifiedRoutePricingScheme`; неизвестная стоимость не
-подменяется доказанным нулём и не обходит денежный hard quota. Старую перегрузку не следует возвращать в production-flow
-лишь ради предупреждений IDE.
+Новая reservation-путь вызывает перегрузку `ChatQuotaService.reserve(..., ChatQuotaReservation)` вместо устаревшего пятиаргументного `reserve(...)`. `ChatQuotaReservation` привязывается к immutable `ModelRouteResult.decisionId`, использует `estimatedInputTokens`, `estimatedOutputTokens`, верхнюю оценку `estimatedMaxCostUsd` и `pricingComplete`. Сервис отдельно подтверждает поддерживаемую схему через `hasVerifiedRoutePricingScheme`; неизвестная стоимость не подменяется доказанным нулём и не обходит денежный hard quota. Старую перегрузку не следует возвращать в production-flow лишь ради предупреждений IDE.
 
 
-Quota резервируется до provider call и затем finalization корректирует состояние согласно persisted
-usage/cost quality.
+Quota резервируется до provider call и затем finalization корректирует состояние согласно persisted usage/cost quality.
 
 V67 добавляет provenance:
 
@@ -3336,28 +3024,16 @@ Automatic naming:
 
 #### V77 — однократный backfill исторических заголовков
 
-`V77__backfill_legacy_default_chat_titles.sql` обрабатывает только строки `chat_sessions`, где `title = 'Новый чат'`.
-Для них по первому непустому `USER`-сообщению (сортировка `created_at, id`) вычисляется заголовок с ограничением до 72
-символов, устанавливается `title_source='AUTO'` и увеличивается optimistic `version`. Остальные пользовательские
-названия сохраняются.
+`V77__backfill_legacy_default_chat_titles.sql` обрабатывает только строки `chat_sessions`, где `title = 'Новый чат'`. Для них по первому непустому `USER`-сообщению (сортировка `created_at, id`) вычисляется заголовок с ограничением до 72 символов, устанавливается `title_source='AUTO'` и увеличивается optimistic `version`. Остальные пользовательские названия сохраняются.
 
-Пустые старые чаты с заглушкой, без USER-сообщений, получают `title_source='DEFAULT'`, чтобы первое новое сообщение
-могло назвать их автоматически. Миграция не передаёт сообщения провайдеру и не изменяет tenant ownership. При повторном
-исполнении обновлённые строки не подходят под условие заглушки; однако **Flyway не следует запускать повторно с
-изменённой checksum**.
+Пустые старые чаты с заглушкой, без USER-сообщений, получают `title_source='DEFAULT'`, чтобы первое новое сообщение могло назвать их автоматически. Миграция не передаёт сообщения провайдеру и не изменяет tenant ownership. При повторном исполнении обновлённые строки не подходят под условие заглушки; однако **Flyway не следует запускать повторно с изменённой checksum**.
 
-**Неустранимая неоднозначность legacy:** старый frontend мог записать буквальную строку `Новый чат` как `USER`; по
-данным БД нельзя надёжно отличить это от сознательного ручного выбора такого же названия. V77 реализует явную политику
-восстановления всех заглушек, заказанную владельцем проекта. Перед применением к populated БД необходимо сделать backup
-и оценить этот компромисс. V58 задним числом не менять.
+**Неустранимая неоднозначность legacy:** старый frontend мог записать буквальную строку `Новый чат` как `USER`; по данным БД нельзя надёжно отличить это от сознательного ручного выбора такого же названия. V77 реализует явную политику восстановления всех заглушек, заказанную владельцем проекта. Перед применением к populated БД необходимо сделать backup и оценить этот компромисс. V58 задним числом не менять.
 
 ---
 ### Архивирование, восстановление и стирание Chat (V86–V88)
 
-Архивирование является **обратимым скрытием**, не удалением. `archive()` и
-`restore()` сериализованы с резервированием новых ChatTurn через mutex.
-Архивный чат больше не принимает новые сообщения, а live-owner endpoints
-не должны возвращать архивы как активные.
+Архивирование является **обратимым скрытием**, не удалением. `archive()` и `restore()` сериализованы с резервированием новых ChatTurn через mutex. Архивный чат больше не принимает новые сообщения, а live-owner endpoints не должны возвращать архивы как активные.
 
 **Стирание содержимого** представляет самостоятельную durable operation:
 
@@ -3370,9 +3046,7 @@ AVAILABLE --(архив + ADMIN + retention + If-Match + idempotency)--> ERASING
                                                                     +--> CANCELLED
 ```
 
-Первое состояние относится к `chat_sessions.erasure_state`, а
-`NEEDS_REVIEW`, `BLOCKED_BY_RETENTION` и `CANCELLED` относятся к
-`chat_erasure_operations_v86.state`. Не смешивать их в API и отчётах.
+Первое состояние относится к `chat_sessions.erasure_state`, а `NEEDS_REVIEW`, `BLOCKED_BY_RETENTION` и `CANCELLED` относятся к `chat_erasure_operations_v86.state`. Не смешивать их в API и отчётах.
 
 - Для принятия нужны действующий ADMIN в БД, архив, текущая версия через
   сильный ETag `If-Match`, проверенные название/фраза и `Idempotency-Key`.
@@ -3390,13 +3064,9 @@ AVAILABLE --(архив + ADMIN + retention + If-Match + idempotency)--> ERASING
   отдельного SQL-операторского процесса с двумя независимыми approvals.
 - Неизвестный исход внешнего провайдера остаётся `AMBIGUOUS`, не `FAILED`.
 
-**V87:** `CREATE INDEX CONCURRENTLY` выполняется вне транзакции Flyway
-(`executeInTransaction=false`). `IF NOT EXISTS` намеренно отсутствует:
-неудачное построение индекса способно оставить `INVALID` объект.
-Перед продолжением DBA должен проверить `pg_index.indisvalid/indisready`.
+**V87:** `CREATE INDEX CONCURRENTLY` выполняется вне транзакции Flyway (`executeInTransaction=false`). `IF NOT EXISTS` намеренно отсутствует: неудачное построение индекса способно оставить `INVALID` объект. Перед продолжением DBA должен проверить `pg_index.indisvalid/indisready`.
 
-**V88:** валидирует `chk_chat_erasure_state_v86` после `NOT VALID` в V86
-и останавливает миграцию при отсутствующем/невалидном индексе V87.
+**V88:** валидирует `chk_chat_erasure_state_v86` после `NOT VALID` в V86 и останавливает миграцию при отсутствующем/невалидном индексе V87.
 
 **PostgreSQL SQL roles:**
 
@@ -3407,8 +3077,7 @@ AVAILABLE --(архив + ADMIN + retention + If-Match + idempotency)--> ERASING
 - две независимые записи approval обязательны для санкционированного действия;
 - Flyway migrator отдельный от app и worker; роли создаёт DBA заранее.
 
-Тесты должны проверять `session_user` и фактические privileges,
-а не только успешный вызов service из `@WithMockUser`.
+Тесты должны проверять `session_user` и фактические privileges, а не только успешный вызов service из `@WithMockUser`.
 
 ---
 
@@ -3528,17 +3197,13 @@ Runtime — это то, что физически настроено в deploym
 
 Control Plane не равен dynamic provider router.
 
-На текущем этапе backend runtime всё ещё представляет один активный configured provider/model target
-на deployment, а catalog/policy определяют, разрешён ли logical model и совместим ли он с этим
-target.
+На текущем этапе backend runtime всё ещё представляет один активный configured provider/model target на deployment, а catalog/policy определяют, разрешён ли logical model и совместим ли он с этим target.
 
 ### Versioned Model Catalog
 
 #### Явные pricing-схемы и совместимость конструкторов
 
-`ModelCatalogEntry`, `ModelCatalogEntryResponse` и `CreateModelCatalogVersionRequest`
-содержат `ModelPricingScheme`. Существующие positional constructors сохранены ради
-совместимости вызовов, но не для автоматического повышения доверия к старым тарифам.
+`ModelCatalogEntry`, `ModelCatalogEntryResponse` и `CreateModelCatalogVersionRequest` содержат `ModelPricingScheme`. Существующие positional constructors сохранены ради совместимости вызовов, но не для автоматического повышения доверия к старым тарифам.
 
 - Для старой записи `CONFIGURED` без явной схемы используется
   `LEGACY_FLAT_UNVERIFIED_V1`, а не подтверждённая `FLAT_TOKEN_V1`.
@@ -3551,14 +3216,7 @@ target.
 - `ModelCatalogRepository` читает точный `pricing_scheme` и сохраняет его вместе с
   immutable catalog entry; нельзя подменять exact version текущей latest-версией.
 
-**Актуальный контракт import-runtime (17.11.2026):** внешний runtime первоначально
-импортируется как `UNPRICED`, поскольку runtime projection не является источником
-цен. Только локальный `mock:mock-safeai` получает явную `FREE` запись; mock
-запрещён в production. Повторный импорт не переписывает историческую
-`RUNTIME_IMPORT` версию и не заменяет ручную или мигрированную запись.
-Настройка проверенного тарифа — отдельное создание новой audited catalog version.
-Предыдущий риск implicit CONFIGURED import закрыт в текущей реализации;
-полная регрессия на PostgreSQL остаётся обязательной.
+**Актуальный контракт import-runtime (17.11.2026):** внешний runtime первоначально импортируется как `UNPRICED`, поскольку runtime projection не является источником цен. Только локальный `mock:mock-safeai` получает явную `FREE` запись; mock запрещён в production. Повторный импорт не переписывает историческую `RUNTIME_IMPORT` версию и не заменяет ручную или мигрированную запись. Настройка проверенного тарифа — отдельное создание новой audited catalog version. Предыдущий риск implicit CONFIGURED import закрыт в текущей реализации; полная регрессия на PostgreSQL остаётся обязательной.
 
 #### Единый источник тарифов
 
@@ -3600,10 +3258,7 @@ Catalog entry — immutable/append-only snapshot.
 - source;
 - creator/time.
 
-V59/V62 дополнительно защищают canonical text/numeric boundaries, а V66 вводит explicit settlement
-algorithm identity.
-Исторические legacy prices сохраняются, но не должны автоматически считаться проверенной современной
-pricing scheme.
+V59/V62 дополнительно защищают canonical text/numeric boundaries, а V66 вводит explicit settlement algorithm identity. Исторические legacy prices сохраняются, но не должны автоматически считаться проверенной современной pricing scheme.
 
 #### Latest vs effective
 
@@ -3645,16 +3300,11 @@ DB canonicality hardening:
 - duplicate key внутри allow/deny array запрещён;
 - required capability array route decision также должен быть unique.
 
-Первое отсутствие policy представляется fail-closed/unconfigured state, а не неявным «разрешить
-всё».
-После V65 новый strict integrity-v3 decision без policy может существовать только как явное
-`DENIED / MODEL_NOT_ALLOWED` unconfigured evidence; physical execution такой row не авторизует.
+Первое отсутствие policy представляется fail-closed/unconfigured state, а не неявным «разрешить всё». После V65 новый strict integrity-v3 decision без policy может существовать только как явное `DENIED / MODEL_NOT_ALLOWED` unconfigured evidence; physical execution такой row не авторизует.
 
 #### Рублёвые бюджеты и фиксированная котировка — V91/V92
 
-USD остаётся единственной валютой route enforcement, reservation, settlement,
-monthly commitment и usage analytics. RUB — альтернативный способ задать два
-потолка, не отдельный счёт, не банковский баланс и не валюта расчётов провайдера.
+USD остаётся единственной валютой route enforcement, reservation, settlement, monthly commitment и usage analytics. RUB — альтернативный способ задать два потолка, не отдельный счёт, не банковский баланс и не валюта расчётов провайдера.
 
 | Поле policy | PostgreSQL type / смысл |
 | --- | --- |
@@ -3665,46 +3315,17 @@ monthly commitment и usage analytics. RUB — альтернативный сп
 | `rub_effective_date` | `date`, дата действия официального курса |
 | `rub_fetched_at` | `timestamptz`, точный момент получения |
 
-`RubBudgetSnapshot` хранит immutable evidence; `RubBudgetInput` /
-`RubBudgetResponse` — DTO. `OrganizationModelPolicyRepository` сохраняет
-все шесть колонок вместе с версией, а audit details включают источник CBR.
-Старые USD-only политики сохраняют все шесть значений NULL.
+`RubBudgetSnapshot` хранит immutable evidence; `RubBudgetInput` / `RubBudgetResponse` — DTO. `OrganizationModelPolicyRepository` сохраняет все шесть колонок вместе с версией, а audit details включают источник CBR. Старые USD-only политики сохраняют все шесть значений NULL.
 
-Конвертация: `USD = RUB / RUB_PER_USD`, scale 12, округление вниз для
-неотрицательных чисел. Java — `BigDecimal.divide(rate, 12, RoundingMode.DOWN)`;
-PostgreSQL — точный `div(rub * 1000000000000, rate) * 0.000000000001`;
-frontend — fixed-scale BigInt. При условном курсе 90: 5 RUB →
-0.055555555555 USD; 10 000 RUB → 111.111111111111 USD. Это пример, не текущий курс.
-NULL и 0 имеют разные смыслы. SQL V91 сверяет каждую пару RUB/USD через
-`IS NOT DISTINCT FROM`; limit не может увеличиться из-за округления.
+Конвертация: `USD = RUB / RUB_PER_USD`, scale 12, округление вниз для неотрицательных чисел. Java — `BigDecimal.divide(rate, 12, RoundingMode.DOWN)`; PostgreSQL — точный `div(rub * 1000000000000, rate) * 0.000000000001`; frontend — fixed-scale BigInt. При условном курсе 90: 5 RUB → 0.055555555555 USD; 10 000 RUB → 111.111111111111 USD. Это пример, не текущий курс. NULL и 0 имеют разные смыслы. SQL V91 сверяет каждую пару RUB/USD через `IS NOT DISTINCT FROM`; limit не может увеличиться из-за округления.
 
-`CbrUsdRateSource` получает официальную котировку исключительно с фиксированного
-HTTPS endpoint `https://www.cbr.ru/scripts/XML_daily.asp?date_req=ДД/ММ/ГГГГ`.
-Connect timeout 4 s, read timeout 5 s, предел 128 KiB; redirects, DTD, external
-entities/schema и XInclude запрещены. Tenant data, prompts и credentials не
-отправляются в этот запрос. JAXP XML parsing в JVM не требует SQL XML-привилегий.
+`CbrUsdRateSource` получает официальную котировку исключительно с фиксированного HTTPS endpoint `https://www.cbr.ru/scripts/XML_daily.asp?date_req=ДД/ММ/ГГГГ`. Connect timeout 4 s, read timeout 5 s, предел 128 KiB; redirects, DTD, external entities/schema и XInclude запрещены. Tenant data, prompts и credentials не отправляются в этот запрос. JAXP XML parsing в JVM не требует SQL XML-привилегий.
 
-`RubBudgetRateService` использует per-process single-flight daily cache по
-`Europe/Moscow`; effective date может отставать до 14 дней. При ошибке —
-30-second cooldown, без fallback на выдуманный/вчерашний курс. Quote API:
-`GET /api/admin/models/policies/rub-quote`, ADMIN/SUPER_ADMIN,
-`Cache-Control: no-store`. Ошибка получения: HTTP 503
-`BUDGET_RATE_UNAVAILABLE`; устаревший или несовпадающий курс: HTTP 409.
-Клиентская котировка служит только сверкой с серверной, не источником цены.
+`RubBudgetRateService` использует per-process single-flight daily cache по `Europe/Moscow`; effective date может отставать до 14 дней. При ошибке — 30-second cooldown, без fallback на выдуманный/вчерашний курс. Quote API: `GET /api/admin/models/policies/rub-quote`, ADMIN/SUPER_ADMIN, `Cache-Control: no-store`. Ошибка получения: HTTP 503 `BUDGET_RATE_UNAVAILABLE`; устаревший или несовпадающий курс: HTTP 409. Клиентская котировка служит только сверкой с серверной, не источником цены.
 
-При изменении RUB-потолка новая версия требует котировку текущего московского
-дня; под блокировкой при сохранении повторно проверяются optimistic version и
-дата. При изменении только доступа, токенов и требований к данным неизменённый
-RUB snapshot переносится без пересчёта, даже если курс теперь другой.
-Уже применённый USD ceiling действует и при недоступности ЦБ; ввод USD
-не зависит от сетевого запроса к ЦБ. Monthly accounting period остаётся UTC.
+При изменении RUB-потолка новая версия требует котировку текущего московского дня; под блокировкой при сохранении повторно проверяются optimistic version и дата. При изменении только доступа, токенов и требований к данным неизменённый RUB snapshot переносится без пересчёта, даже если курс теперь другой. Уже применённый USD ceiling действует и при недоступности ЦБ; ввод USD не зависит от сетевого запроса к ЦБ. Monthly accounting period остаётся UTC.
 
-V92 дополнительно запрещает NaN даже в USD-only политиках и `infinity`/
-`-infinity` для quote/effective/fetched/created timestamps рублёвых политик.
-V91 продолжает контролировать полноту и согласованность evidence; numeric typmod
-запрещает бесконечные денежные значения и переполнение. Обе новые CHECK V92
-валидируются сразу на всех строках, ошибочную историю нельзя исправлять молча.
-Append-only guard V45 защищает сохранённую котировку от UPDATE/DELETE.
+V92 дополнительно запрещает NaN даже в USD-only политиках и `infinity`/ `-infinity` для quote/effective/fetched/created timestamps рублёвых политик. V91 продолжает контролировать полноту и согласованность evidence; numeric typmod запрещает бесконечные денежные значения и переполнение. Обе новые CHECK V92 валидируются сразу на всех строках, ошибочную историю нельзя исправлять молча. Append-only guard V45 защищает сохранённую котировку от UPDATE/DELETE.
 
 ### Route decision
 
@@ -3738,11 +3359,7 @@ unknown_cost_count
 cost_state
 ```
 
-V62 исправляет важный representability case: full monthly liability может оставаться unknown, но
-известный lower bound
-уже способен доказать budget overrun. V64 сохраняет route-time commitment evidence отдельно и
-immutable, не изменяя
-исторические V1/V2/V3 decision hashes.
+V62 исправляет важный representability case: full monthly liability может оставаться unknown, но известный lower bound уже способен доказать budget overrun. V64 сохраняет route-time commitment evidence отдельно и immutable, не изменяя исторические V1/V2/V3 decision hashes.
 
 #### Final request binding — V62/V64/V65
 
@@ -3762,12 +3379,9 @@ binding_version=2
 ExecutionPlan / physical attempt
 ```
 
-Для Knowledge mode prepared receipt дополнительно обязан совпасть с immutable
-`knowledge_rag_context_receipts_v64`: exact `RetrievalRun`, KB, user/org, context hash и final
-prepared-request hash.
+Для Knowledge mode prepared receipt дополнительно обязан совпасть с immutable `knowledge_rag_context_receipts_v64`: exact `RetrievalRun`, KB, user/org, context hash и final prepared-request hash.
 
-После V65 новые prepared receipts должны иметь `binding_version=2`, а DB trigger на
-`model_execution_attempts` не разрешает physical I/O без exact v2 binding.
+После V65 новые prepared receipts должны иметь `binding_version=2`, а DB trigger на `model_execution_attempts` не разрешает physical I/O без exact v2 binding.
 
 ### Input accounting
 
@@ -3781,8 +3395,7 @@ UTF8_STRUCTURAL_UNITS_V2
 
 Это **не** заявляется как exact provider tokenizer.
 
-Исторические DB column names могут содержать `*_tokens`, но новые semantics в коде трактуются как
-versioned deterministic accounting units.
+Исторические DB column names могут содержать `*_tokens`, но новые semantics в коде трактуются как versioned deterministic accounting units.
 
 ### Capability gate
 
@@ -3824,22 +3437,11 @@ ERROR
 
 Probe — point-in-time check, а не SLA monitoring.
 
-`GET /api/admin/models/runtime` возвращает sanitized
-`RuntimeModelStatusWireResponse` через `currentWithCatalogPricing()`.
-Money fields — точные decimal strings; API не раскрывает ключи, provider URL,
-connection fingerprint или evidence secrets. Runtime price — только projection
-единственной подходящей effective ACTIVE/DEPRECATED catalog entry; при
-неоднозначности или непроверенном тарифе — UNPRICED. Metadata-only
-`POST /api/admin/models/runtime/probe` доступен SUPER_ADMIN, не выполняет
-генерацию и не доказывает доступность billing или inference.
+`GET /api/admin/models/runtime` возвращает sanitized `RuntimeModelStatusWireResponse` через `currentWithCatalogPricing()`. Money fields — точные decimal strings; API не раскрывает ключи, provider URL, connection fingerprint или evidence secrets. Runtime price — только projection единственной подходящей effective ACTIVE/DEPRECATED catalog entry; при неоднозначности или непроверенном тарифе — UNPRICED. Metadata-only `POST /api/admin/models/runtime/probe` доступен SUPER_ADMIN, не выполняет генерацию и не доказывает доступность billing или inference.
 
 ### Provider Data Assurance — независимые факты no-training и ZDR
 
-Catalog metadata сама по себе не подтверждает договорные условия реального
-подключения. `ProviderDataAssuranceProperties`, `ProviderDataEvidence`,
-`ProviderDataDispatchGuard` и `AiDataAssurancePort` связывают governance
-с фактической конфигурацией provider/connection и сроком подтверждения
-(не более 90 суток). No-training и ZDR — разные требования и отдельные evidence.
+Catalog metadata сама по себе не подтверждает договорные условия реального подключения. `ProviderDataAssuranceProperties`, `ProviderDataEvidence`, `ProviderDataDispatchGuard` и `AiDataAssurancePort` связывают governance с фактической конфигурацией provider/connection и сроком подтверждения (не более 90 суток). No-training и ZDR — разные требования и отдельные evidence.
 
 - Требуемые подтверждения проверяются при routing и перед каждой physical
   отправкой, в том числе повторной попыткой.
@@ -3852,10 +3454,7 @@ Catalog metadata сама по себе не подтверждает догов
   не гарантия фактического поведения удалённого сервера; API и audit не
   раскрывают credentials и fingerprints.
 
-Контракт и operational setup: `docs/security/provider-data-assurance.md`,
-`infra/scripts/provider-data-fingerprint.py`,
-`infra/scripts/test-provider-data-evidence.sh` и обязательный release workflow
-`provider-data-assurance.yml`. Нельзя придумывать evidence ради прохождения gate.
+Контракт и operational setup: `docs/security/provider-data-assurance.md`, `infra/scripts/provider-data-fingerprint.py`, `infra/scripts/test-provider-data-evidence.sh` и обязательный release workflow `provider-data-assurance.yml`. Нельзя придумывать evidence ради прохождения gate.
 
 ---
 
@@ -3979,14 +3578,11 @@ OpenAiProvider
 AnthropicProvider
 ```
 
-`AiOrganizationExecutionDeniedException` фиксирует application-level отказ на организационной
-execution boundary; authoritative physical STARTED gate при этом остается в PostgreSQL V72.
+`AiOrganizationExecutionDeniedException` фиксирует application-level отказ на организационной execution boundary; authoritative physical STARTED gate при этом остается в PostgreSQL V72.
 
 ### Durable physical execution
 
-Начиная с V50 AI execution имеет отдельную durable evidence layer; V62–V67 доводят binding/start
-boundary до
-жёсткого database-enforced контракта.
+Начиная с V50 AI execution имеет отдельную durable evidence layer; V62–V67 доводят binding/start boundary до жёсткого database-enforced контракта.
 
 ```text
 ModelRouteDecision
@@ -4031,14 +3627,11 @@ persist terminal physical evidence
 application/chat finalization
 ```
 
-Это позволяет переживать crash boundaries без ложного предположения «если Chat не ответил, provider
-точно ничего не сделал»
-и не позволяет historical binding v1 авторизовать новый physical call.
+Это позволяет переживать crash boundaries без ложного предположения «если Chat не ответил, provider точно ничего не сделал» и не позволяет historical binding v1 авторизовать новый physical call.
 
 ### V72 — физический AI kill-switch
 
-**V72 ограничивает допуск новых физических вызовов, а не корректность уже состоявшегося внешнего
-вызова.** Организационный `enabled` и сохранённый `authVersion` проверяются дважды с разными целями:
+**V72 ограничивает допуск новых физических вызовов, а не корректность уже состоявшегося внешнего вызова.** Организационный `enabled` и сохранённый `authVersion` проверяются дважды с разными целями:
 
 1. `ModelExecutionAttemptRepository.organizationEpochCurrent(planId)` — неблокирующий advisory
    preflight для ранней понятной ошибки. Он **не** устраняет TOCTOU.
@@ -4051,19 +3644,11 @@ application/chat finalization
    одновременно фиксируется `provider_call_started_at`; отдельного публичного
    `ChatTurnFinalizationService.markProviderCallStarted()` в актуальном патче нет.
 
-**Линеаризация по БД:** конкурентный Disable (`FOR UPDATE` на той же организации) не может
-закоммититься между V72 проверкой организации и commit разрешённого STARTED. После commit Disable
-новые STARTED не проходят; после Enable старый ChatTurn также не проходит из-за старого epoch.
+**Линеаризация по БД:** конкурентный Disable (`FOR UPDATE` на той же организации) не может закоммититься между V72 проверкой организации и commit разрешённого STARTED. После commit Disable новые STARTED не проходят; после Enable старый ChatTurn также не проходит из-за старого epoch.
 
-**Граница внешнего эффекта:** attempt с разрешением, полученным **до** Disable, может уже выполнять
-HTTP либо дойти до сетевой отправки **после** Disable. Такой вызов нельзя считать автоматически
-отменённым. Для более строгой гарантии «никаких сетевых send после commit Disable» понадобятся
-дополнительные dispatch permits/draining/in-flight coordination; текущая реализация гарантирует
-**транзакционный допуск**, а не физическую отмену provider I/O.
+**Граница внешнего эффекта:** attempt с разрешением, полученным **до** Disable, может уже выполнять HTTP либо дойти до сетевой отправки **после** Disable. Такой вызов нельзя считать автоматически отменённым. Для более строгой гарантии «никаких сетевых send после commit Disable» понадобятся дополнительные dispatch permits/draining/in-flight coordination; текущая реализация гарантирует **транзакционный допуск**, а не физическую отмену provider I/O.
 
-**Execution evidence не теряется:** `STARTED`, `SUCCEEDED`/`FAILED`/`AMBIGUOUS`, outcome certainty,
-usage/pricing и retry-safety сохраняются по существующим договорам. Отказы до STARTED и
-неопределённость после STARTED не объединяются в одно состояние.
+**Execution evidence не теряется:** `STARTED`, `SUCCEEDED`/`FAILED`/`AMBIGUOUS`, outcome certainty, usage/pricing и retry-safety сохраняются по существующим договорам. Отказы до STARTED и неопределённость после STARTED не объединяются в одно состояние.
 
 
 ### Physical target identity
@@ -4076,8 +3661,7 @@ Attempt фиксирует target:
 - requested physical model;
 - allowed resolved models.
 
-Текущий runtime использует transitional static target identity; полноценный versioned provider
-registry ещё не реализован.
+Текущий runtime использует transitional static target identity; полноценный versioned provider registry ещё не реализован.
 
 ### Outcome certainty
 
@@ -4112,16 +3696,13 @@ HARD monthly budget
 OR policy.max_request_cost_usd
 ```
 
-Таким образом cost upper-bound reservation не может быть нарушен скрытым retry. Blind retry/fallback
-после
-`AMBIGUOUS`, `SUCCEEDED` или physically executed protocol rejection не допускается.
+Таким образом cost upper-bound reservation не может быть нарушен скрытым retry. Blind retry/fallback после `AMBIGUOUS`, `SUCCEEDED` или physically executed protocol rejection не допускается.
 
 ### Resolved model validation
 
 Provider response model сверяется с approved target.
 
-Если provider фактически выполнил запрос, но вернул неразрешённый resolved model, физическое
-evidence сохраняется до governance rejection.
+Если provider фактически выполнил запрос, но вернул неразрешённый resolved model, физическое evidence сохраняется до governance rejection.
 
 ### HTTP hardening
 
@@ -4145,10 +3726,7 @@ Provider base URL:
 
 #### Физический settlement и проверка целостности
 
-`VersionedCatalogPricingResolver` принимает `operationId` и проверяет непрерывную
-цепочку `operation → execution plan → ALLOWED route decision → exact catalog version`.
-Без identity либо при несовпадении provider, physical model, tenant, chat turn,
-`decisionIntegrityVersion=3` и версии каталога результат `UNPRICED`.
+`VersionedCatalogPricingResolver` принимает `operationId` и проверяет непрерывную цепочку `operation → execution plan → ALLOWED route decision → exact catalog version`. Без identity либо при несовпадении provider, physical model, tenant, chat turn, `decisionIntegrityVersion=3` и версии каталога результат `UNPRICED`.
 
 - Только `FLAT_TOKEN_V1`, полный тариф и обязательные rate dimensions допускают расчёт.
 - Статусы `FREE` и `PRICED` различаются: неизвестную стоимость нельзя заменить нулём.
@@ -4159,11 +3737,7 @@ Provider base URL:
 - Денежные суммы округляются до 12 знаков; идентификатор price book строится из
   immutable catalog snapshot с SHA-256, не из изменяемого YAML.
 
-`ModelRoutingCostPolicy` использует worst-case reservation cost и отдельные
-`actual`, `reserved`, `unknown` commitment states. Для `HARD` budget неизвестная
-стоимость не должна обходить ограничение. Read-only preview использует snapshot
-без data-plane budget lock и всегда `nonBinding=true`: он не обещает результата
-следующей транзакционной маршрутизации.
+`ModelRoutingCostPolicy` использует worst-case reservation cost и отдельные `actual`, `reserved`, `unknown` commitment states. Для `HARD` budget неизвестная стоимость не должна обходить ограничение. Read-only preview использует snapshot без data-plane budget lock и всегда `nonBinding=true`: он не обещает результата следующей транзакционной маршрутизации.
 
 
 `VersionedCatalogPricingResolver` привязывает calculation evidence к:
@@ -4194,13 +3768,9 @@ UNSUPPORTED_COMPLEX_V1
 
 Legacy `CONFIGURED` pricing после migration не должен автоматически считаться доказуемым современным
 расчетом:
-governed path обязан fail closed, пока новая audited catalog version не выберет поддерживаемую
-scheme.
+governed path обязан fail closed, пока новая audited catalog version не выберет поддерживаемую scheme.
 
-`VersionedCatalogPricingResolver` — единственный pricing resolver и для
-governed provider adapters, и для mock path. Static YAML resolver удалён.
-Без operation identity нет доказанной стоимости; mock не является обходом
-проверки exact catalog evidence.
+`VersionedCatalogPricingResolver` — единственный pricing resolver и для governed provider adapters, и для mock path. Static YAML resolver удалён. Без operation identity нет доказанной стоимости; mock не является обходом проверки exact catalog evidence.
 
 ### Usage / response evidence
 
@@ -4214,9 +3784,7 @@ V66 отдельно фиксирует факт физически наблюд
 - `protocol_failure_code`;
 - `PROTOCOL_REJECTED` outcome.
 
-Это позволяет сохранить billable `KNOWN_EXECUTED` evidence даже когда ответ нельзя принять на
-application/protocol layer.
-Pricing/usage evidence остаётся на physical attempt для reconciliation.
+Это позволяет сохранить billable `KNOWN_EXECUTED` evidence даже когда ответ нельзя принять на application/protocol layer. Pricing/usage evidence остаётся на physical attempt для reconciliation.
 
 ---
 
@@ -4426,29 +3994,15 @@ knowledge/
     └── StoredObject
 ```
 
-**Примечание к inventory.** Эта карта основана на предоставленных исходниках
-и снимках проекта. При добавлении классов сверяйте актуальный checkout
-через `git ls-files` и обновляйте раздел без переноса секретов в документацию.
+**Примечание к inventory.** Эта карта основана на предоставленных исходниках и снимках проекта. При добавлении классов сверяйте актуальный checkout через `git ls-files` и обновляйте раздел без переноса секретов в документацию.
 
 ### Конкурентный ingestion, lease fencing и bounded processing
 
-`KnowledgeIngestionProperties` добавляет `workerThreads` с default 1,
-допустимыми значениями 1–8 и legacy constructor без нового аргумента.
-`KnowledgeIngestionScheduler` создаёт фиксированный pool и claim-ит задачи
-только на свободные слоты в пределах `batchSize`. После каждой волны он
-ожидает `Future.get()`; shutdown вызывает `shutdownNow()`.
+`KnowledgeIngestionProperties` добавляет `workerThreads` с default 1, допустимыми значениями 1–8 и legacy constructor без нового аргумента. `KnowledgeIngestionScheduler` создаёт фиксированный pool и claim-ит задачи только на свободные слоты в пределах `batchSize`. После каждой волны он ожидает `Future.get()`; shutdown вызывает `shutdownNow()`.
 
-`KnowledgeIngestionProcessor` отдельно поддерживает heartbeat leases с
-`processingToken`, регулярное продление во время extraction/embedding и
-fenced publication. При потере ownership публикация запрещена. Проверяются
-точные document/version/tenant IDs, длина S3-объекта, SHA-256 содержимого,
-валидность embedding dimensions (384), finite/non-zero values и batch size.
+`KnowledgeIngestionProcessor` отдельно поддерживает heartbeat leases с `processingToken`, регулярное продление во время extraction/embedding и fenced publication. При потере ownership публикация запрещена. Проверяются точные document/version/tenant IDs, длина S3-объекта, SHA-256 содержимого, валидность embedding dimensions (384), finite/non-zero values и batch size.
 
-**Открытые проверки:** failure/cancellation, shutdown, multi-worker race,
-lease renewal во время долгих операций, pool starvation и monotonic state
-transitions. У heartbeat pool фиксировано два потока: проверить capacity под
-фактическую ingest-конкурентность. Наличие кода не доказывает корректность
-поведения при многопроцессном сбое или остановке JVM.
+**Открытые проверки:** failure/cancellation, shutdown, multi-worker race, lease renewal во время долгих операций, pool starvation и monotonic state transitions. У heartbeat pool фиксировано два потока: проверить capacity под фактическую ingest-конкурентность. Наличие кода не доказывает корректность поведения при многопроцессном сбое или остановке JVM.
 
 ### Knowledge Base access
 
@@ -4670,11 +4224,7 @@ evidence flags
 
 Это provenance document, а не обещание семантической истинности ответа.
 
-V64 добавляет более раннюю execution-time proof-точку — immutable
-`knowledge_rag_context_receipts_v64`.
-Она доказывает, что exact retrieval/context assembly был связан с exact final prepared AI request
-**до**
-физического provider execution.
+V64 добавляет более раннюю execution-time proof-точку — immutable `knowledge_rag_context_receipts_v64`. Она доказывает, что exact retrieval/context assembly был связан с exact final prepared AI request **до** физического provider execution.
 
 ### Index generations — V57/V59/V63
 
@@ -4715,16 +4265,11 @@ COLLECTED
 | `lifecycle_state=DELETING` | запрещён | очистка ожидает/выполняется | нет через обычный API |
 | `knowledge_document_deletions_v78.state=DELETED` | запрещён | онлайн-очистка должна быть доказана | нет |
 
-`DELETED` — **состояние независимой операции**, не строка в `knowledge_documents`:
-после завершения документ и его версии физически удаляются из online DB.
-Статусы операции: `DELETING`, `NEEDS_REVIEW`, `BLOCKED_BY_RETENTION`, `DELETED`.
-Состояние `BLOCKED_BY_RETENTION` означает, что Object Lock/legal hold/retention
-препятствует обещанию очистки. Обозначение не подменяется успехом.
+`DELETED` — **состояние независимой операции**, не строка в `knowledge_documents`: после завершения документ и его версии физически удаляются из online DB. Статусы операции: `DELETING`, `NEEDS_REVIEW`, `BLOCKED_BY_RETENTION`, `DELETED`. Состояние `BLOCKED_BY_RETENTION` означает, что Object Lock/legal hold/retention препятствует обещанию очистки. Обозначение не подменяется успехом.
 
 #### Принятие запроса и закрытие доступа
 
-`KnowledgeDocumentDeletionController` зарегистрирован только при обоих feature flags.
-`KnowledgeDocumentDeletionAcceptanceService` выполняет принятие в короткой транзакции:
+`KnowledgeDocumentDeletionController` зарегистрирован только при обоих feature flags. `KnowledgeDocumentDeletionAcceptanceService` выполняет принятие в короткой транзакции:
 
 1. Проверяет `OWNER` своей базы/организацию на сервере, а не по кнопке UI.
 2. Проверяет `Idempotency-Key` (12–128 символов) и `If-Match` — кавычки вокруг
@@ -4734,10 +4279,7 @@ COLLECTED
    и обязательное событие аудита `KNOWLEDGE_DOCUMENT_DELETION_REQUESTED`.
 5. Отвечает `202 Accepted`; **это принятие**, а не факт физического удаления.
 
-Повтор с тем же ключом и той же семантикой возвращает исходную операцию;
-повтор с другим документом/версией — конфликт. Права и организация повторно
-проверяются при чтении операции. V78 дополнительно ограничивает запись новых
-версий и публикацию после перехода в `DELETING`.
+Повтор с тем же ключом и той же семантикой возвращает исходную операцию; повтор с другим документом/версией — конфликт. Права и организация повторно проверяются при чтении операции. V78 дополнительно ограничивает запись новых версий и публикацию после перехода в `DELETING`.
 
 #### Фоновая очистка: lease, fencing, S3 и PostgreSQL
 
@@ -4776,47 +4318,22 @@ DB completion guard + DELETED acknowledgement
 
 #### Сохранение независимых аудиторских свидетельств
 
-V80 создаёт `knowledge_document_version_identities_v80` и
-`knowledge_chunk_identities_v80` и переносит к ним внешние ключи после backfill
-и `VALIDATE CONSTRAINT`. В этих таблицах нет самого извлечённого текста,
-векторов или storage keys. Исторические retrieval hits и generation records
-сохраняют корректную ссылочную целостность. V81 допускает ограниченную
-санитизацию `document_name_snapshot` до `Удалённый документ` под fenced lease.
+V80 создаёт `knowledge_document_version_identities_v80` и `knowledge_chunk_identities_v80` и переносит к ним внешние ключи после backfill и `VALIDATE CONSTRAINT`. В этих таблицах нет самого извлечённого текста, векторов или storage keys. Исторические retrieval hits и generation records сохраняют корректную ссылочную целостность. V81 допускает ограниченную санитизацию `document_name_snapshot` до `Удалённый документ` под fenced lease.
 
-**Граница обещания удаления:** исторические чаты, ранее отправленные ответы,
-RAG context receipts, prompts, аудит, backup snapshots, внешние OCR/embedding/AI
-провайдеры и реплики имеют самостоятельный retention/erasure контракт.
-Без инвентаризации этих мест нельзя обещать тотальное удаление каждого следа
-содержимого. Нельзя каскадно уничтожать immutable RAG receipts или историю аудита.
+**Граница обещания удаления:** исторические чаты, ранее отправленные ответы, RAG context receipts, prompts, аудит, backup snapshots, внешние OCR/embedding/AI провайдеры и реплики имеют самостоятельный retention/erasure контракт. Без инвентаризации этих мест нельзя обещать тотальное удаление каждого следа содержимого. Нельзя каскадно уничтожать immutable RAG receipts или историю аудита.
 
 #### UI: capability и подтверждение
 
-`KnowledgeDocumentDeletionCapabilityController` зарегистрирован независимо от
-feature flags. Его ответ защищён ACL/tenant/OWNER и не является разрешением на
-обход backend checks. В интерфейсе владельцу показывается «Удалить…»;
-при `allowed:false` команда неактивна с понятной причиной. При `allowed:true`
-требуется точное название документа; после `202` показывается ход операции.
-Повтор при timeout использует тот же `Idempotency-Key`; успешное сообщение
-«Файл удалён» допустимо только после терминального `DELETED` от сервера.
+`KnowledgeDocumentDeletionCapabilityController` зарегистрирован независимо от feature flags. Его ответ защищён ACL/tenant/OWNER и не является разрешением на обход backend checks. В интерфейсе владельцу показывается «Удалить…»; при `allowed:false` команда неактивна с понятной причиной. При `allowed:true` требуется точное название документа; после `202` показывается ход операции. Повтор при timeout использует тот же `Idempotency-Key`; успешное сообщение «Файл удалён» допустимо только после терминального `DELETED` от сервера.
 
 #### Удаление Knowledge Base — V82 (подготовлено, opt-in)
 
-V78–V81 относятся к документам; V82 отдельно вводит durable
-`knowledge_base_deletions_v82`, `knowledge_bases.lifecycle_state`, неизменяемую
-base identity и транзакционные ограничения на новые загрузки/retrieval/ссылки.
-`KnowledgeBaseDeletionService` принимает и координирует удаление дочерних
-документов, а `KnowledgeBaseDeletionExecutor` удаляет live base row только
-при подтверждённой очистке. `DELETE knowledge_bases` вручную запрещён
-DB fencing. Frontend подтверждения базы подготовлен, но V82–V84 UI/CI release
-приёмка текущей ветки отдельно не подтверждена.
+V78–V81 относятся к документам; V82 отдельно вводит durable `knowledge_base_deletions_v82`, `knowledge_bases.lifecycle_state`, неизменяемую base identity и транзакционные ограничения на новые загрузки/retrieval/ссылки. `KnowledgeBaseDeletionService` принимает и координирует удаление дочерних документов, а `KnowledgeBaseDeletionExecutor` удаляет live base row только при подтверждённой очистке. `DELETE knowledge_bases` вручную запрещён DB fencing. Frontend подтверждения базы подготовлен, но V82–V84 UI/CI release приёмка текущей ветки отдельно не подтверждена.
 
 
 ### RAG permits и защита удаления (V85)
 
-`KnowledgeRagExecutionPermitService` выдаёт durable permit для
-**конкретного ChatTurn**, версии Knowledge Base и конкретного retrieval run.
-Источники привязаны к идентификаторам документов и их версий; сохранённый
-SHA-256 контекста не заменяется историческим plaintext.
+`KnowledgeRagExecutionPermitService` выдаёт durable permit для **конкретного ChatTurn**, версии Knowledge Base и конкретного retrieval run. Источники привязаны к идентификаторам документов и их версий; сохранённый SHA-256 контекста не заменяется историческим plaintext.
 
 ```text
 RetrievalRun + exact document versions
@@ -4833,24 +4350,13 @@ RetrievalRun + exact document versions
 - `knowledge_rag_execution_permit_sources_v85`;
 - `knowledge_rag_execution_attempt_leases_v85`.
 
-Каждая новая физическая попытка проверяет доступность Knowledge-источников
-и базу. Приём удаления запрещает новые permits и retry. Ранее созданный
-`ACTIVE` attempt lease остаётся препятствием для завершения удаления даже
-при истечении wall-clock срока: неоднозначный outcome нужно выяснять,
-а не стирать его след SQL-операцией. При финализации ответ повторно
-проверяется против актуального lifecycle источника/базы.
+Каждая новая физическая попытка проверяет доступность Knowledge-источников и базу. Приём удаления запрещает новые permits и retry. Ранее созданный `ACTIVE` attempt lease остаётся препятствием для завершения удаления даже при истечении wall-clock срока: неоднозначный outcome нужно выяснять, а не стирать его след SQL-операцией. При финализации ответ повторно проверяется против актуального lifecycle источника/базы.
 
-**V86 дополнительно** запрещает создавать новый RAG permit/attempt для
-заархивированного или стираемого чата. Для тестового permit нужен
-реальный tenant-matched ChatTurn, а не отключённый триггер.
+**V86 дополнительно** запрещает создавать новый RAG permit/attempt для заархивированного или стираемого чата. Для тестового permit нужен реальный tenant-matched ChatTurn, а не отключённый триггер.
 
 ### Изолированный worker, commit receipts и recovery (V89)
 
-V89 исправляет опасную последовательность `external COMMITTED → DB cleanup`:
-квитанция `knowledge_erasure_commit_outbox_v89` создаётся AFTER UPDATE
-в **той же транзакции**, в которой operation переходит в `DELETED`.
-Публикация `DOCUMENT_ERASURE_COMMITTED` или
-`KNOWLEDGE_BASE_ERASURE_COMMITTED` выполняется только после DB commit.
+V89 исправляет опасную последовательность `external COMMITTED → DB cleanup`: квитанция `knowledge_erasure_commit_outbox_v89` создаётся AFTER UPDATE в **той же транзакции**, в которой operation переходит в `DELETED`. Публикация `DOCUMENT_ERASURE_COMMITTED` или `KNOWLEDGE_BASE_ERASURE_COMMITTED` выполняется только после DB commit.
 
 ```text
 S3 versions purged and verified
@@ -4861,11 +4367,7 @@ S3 versions purged and verified
     -> receipt DELIVERED, or durable retry on failure
 ```
 
-Для уже завершённых до V89 operations предусмотрен backfill receipts.
-Новые receipts содержат безопасные UUID/provenance, состояние `PENDING`,
-число попыток и время retry; `DELIVERED` требует живого worker lease.
-Внешний journal может иметь at-least-once доставку, поэтому событие
-должно быть идемпотентным по идентификатору операции.
+Для уже завершённых до V89 operations предусмотрен backfill receipts. Новые receipts содержат безопасные UUID/provenance, состояние `PENDING`, число попыток и время retry; `DELIVERED` требует живого worker lease. Внешний journal может иметь at-least-once доставку, поэтому событие должно быть идемпотентным по идентификатору операции.
 
 **Разделение SQL-прав:**
 
@@ -4879,23 +4381,13 @@ S3 versions purged and verified
 - `safeai_knowledge_erasure_operator` является отдельной `NOLOGIN` группой;
   два разных человеческих DB login подтверждают повторное рассмотрение.
 
-Ранее `BLOCKED_BY_RETENTION` оставался терминально неподвижным.
-В V89 предусмотрено **исключение только для повторной верификации** через
-`review_blocked_knowledge_erasure_v89(...)`: два независимых ревью,
-совпадающие ticket/evidence SHA, актуальный `blocked_updated_at`,
-проверка lifecycle/дочерних операций и обязательный audit.
-Эта процедура **не снимает Object Lock**. Если объект всё ещё защищён,
-обычный executor снова фиксирует retention block.
+Ранее `BLOCKED_BY_RETENTION` оставался терминально неподвижным. В V89 предусмотрено **исключение только для повторной верификации** через `review_blocked_knowledge_erasure_v89(...)`: два независимых ревью, совпадающие ticket/evidence SHA, актуальный `blocked_updated_at`, проверка lifecycle/дочерних операций и обязательный audit. Эта процедура **не снимает Object Lock**. Если объект всё ещё защищён, обычный executor снова фиксирует retention block.
 
-Не выполнять прямой `UPDATE state='DELETING'` и не выдавать обычному
-веб-ADMIN полномочия отдельного DB-оператора.
+Не выполнять прямой `UPDATE state='DELETING'` и не выдавать обычному веб-ADMIN полномочия отдельного DB-оператора.
 
 ### Least-privilege GC поколений индекса (V90)
 
-`KnowledgeGenerationGc` сохраняет bounded batch, retention,
-`FOR UPDATE SKIP LOCKED` и запрет сбора searchable/retrieval-pinned
-поколений. V90 **закрывает app direct `DELETE knowledge_document_chunks`**.
-Вместо него после перехода generation в `COLLECTING` приложение вызывает:
+`KnowledgeGenerationGc` сохраняет bounded batch, retention, `FOR UPDATE SKIP LOCKED` и запрет сбора searchable/retrieval-pinned поколений. V90 **закрывает app direct `DELETE knowledge_document_chunks`**. Вместо него после перехода generation в `COLLECTING` приложение вызывает:
 
 ```sql
 SELECT public.gc_knowledge_generation_chunks_v90(
@@ -4904,22 +4396,13 @@ SELECT public.gc_knowledge_generation_chunks_v90(
 );
 ```
 
-Функция `SECURITY DEFINER` захватывает строку generation `FOR UPDATE`,
-проверяет точное состояние `COLLECTING`, удаляет только соответствующие
-chunks в вызывающей транзакции. V57 chunk deletion trigger по-прежнему
-защищает операцию. `PUBLIC EXECUTE` отозван; `safeai_app` получает
-только ограниченный `EXECUTE`.
+Функция `SECURITY DEFINER` захватывает строку generation `FOR UPDATE`, проверяет точное состояние `COLLECTING`, удаляет только соответствующие chunks в вызывающей транзакции. V57 chunk deletion trigger по-прежнему защищает операцию. `PUBLIC EXECUTE` отозван; `safeai_app` получает только ограниченный `EXECUTE`.
 
-**GC старой индексной версии не является стиранием документа из S3.**
-Ограничения хранения, цитаты и независимые audit/provenance identities
-по-прежнему должны соблюдаться.
+**GC старой индексной версии не является стиранием документа из S3.** Ограничения хранения, цитаты и независимые audit/provenance identities по-прежнему должны соблюдаться.
 
 ## Безопасное удаление Knowledge — V78–V90
 
-Раздел охватывает SQL V78–V90 и связанную Java-логику,
-классы и эксплуатационный контракт. Миграции **добавляют ограничения и аудит**;
-сами по себе они не удаляют документов, объектов S3 или базы. Runtime-операции разрушительны,
-поэтому отделены feature flags и проверками прав, lease, fencing и состояния провайдера.
+Раздел охватывает SQL V78–V90 и связанную Java-логику, классы и эксплуатационный контракт. Миграции **добавляют ограничения и аудит**; сами по себе они не удаляют документов, объектов S3 или базы. Runtime-операции разрушительны, поэтому отделены feature flags и проверками прав, lease, fencing и состояния провайдера.
 
 ### Состояния и граница подтверждения
 
@@ -4936,12 +4419,7 @@ BLOCKED_BY_RETENTION ──► [V89: 2 DB-оператора, только по�
 DELETED ──► [нет переходов]
 ```
 
-`DELETING` — защитное состояние, не факт окончания физической очистки. `NEEDS_REVIEW`
-не подразумевает, что S3 уже очищен. `BLOCKED_BY_RETENTION` фиксирует подтверждённое
-ограничение хранения; нельзя заменять его generic ошибкой, автоматически снимать hold
-или переписывать terminal evidence. `DELETED` устанавливается только после проверок
-executor и внутренних БД-ограничений; оно **не** обещает удаления из backup,
-исторического аудита и внешних копий.
+`DELETING` — защитное состояние, не факт окончания физической очистки. `NEEDS_REVIEW` не подразумевает, что S3 уже очищен. `BLOCKED_BY_RETENTION` фиксирует подтверждённое ограничение хранения; нельзя заменять его generic ошибкой, автоматически снимать hold или переписывать terminal evidence. `DELETED` устанавливается только после проверок executor и внутренних БД-ограничений; оно **не** обещает удаления из backup, исторического аудита и внешних копий.
 
 ### Миграции V78–V90: точные обязанности
 
@@ -4987,43 +4465,17 @@ executor и внутренних БД-ограничений; оно **не** о
   
 
 
-V78: после принятия durable document operation состояние документа монотонно;
-новые версии, ingestion и chunk publication после `DELETING` отвергаются. Серверная
-проверка наличия operation при переходе в `DELETING` не заменяет tenant/RBAC checks.
+V78: после принятия durable document operation состояние документа монотонно; новые версии, ingestion и chunk publication после `DELETING` отвергаются. Серверная проверка наличия operation при переходе в `DELETING` не заменяет tenant/RBAC checks.
 
-V80: сначала копируются immutable identities из уже существующих версий/chunks,
-затем новая составная FK добавляется как `NOT VALID`, **проверяется** через
-`VALIDATE CONSTRAINT` и лишь после этого удаляется старый RESTRICT FK.
-Это смена provenance reference, а не каскадное удаление исторических цитирований.
+V80: сначала копируются immutable identities из уже существующих версий/chunks, затем новая составная FK добавляется как `NOT VALID`, **проверяется** через `VALIDATE CONSTRAINT` и лишь после этого удаляется старый RESTRICT FK. Это смена provenance reference, а не каскадное удаление исторических цитирований.
 
-V81: разрешение на удаление chunks устанавливается по **действующему DB lease**
-(`operation_id`, `lease_token`, `lease_until`), lifecycle и состоянию operation.
-Простое `SET safeai.knowledge.erasure_*` не даёт достаточного права без живой
-строки с совпадающим токеном. Нарушение inventory/completion guard должно
-останавливать финализацию, а не игнорироваться в Java.
+V81: разрешение на удаление chunks устанавливается по **действующему DB lease** (`operation_id`, `lease_token`, `lease_until`), lifecycle и состоянию operation. Простое `SET safeai.knowledge.erasure_*` не даёт достаточного права без живой строки с совпадающим токеном. Нарушение inventory/completion guard должно останавливать финализацию, а не игнорироваться в Java.
 
-V82: базовый identity сохраняется после удаления live-row. Три исторические ссылки
-(`chat_turns`, `knowledge_retrieval_runs`, `knowledge_evaluation_runs`) переходят
-на `knowledge_base_identities_v82` после валидации. Дополнительные запреты
-сериализуют новые документы/версии/upload intents/retrieval/evaluation/generation/hits,
-изменение memberships и повторную публикацию относительно перехода базы в `DELETING`.
-Физический `DELETE knowledge_bases` разрешён только актуальному base-erasure owner
-после завершения дочерних операций и очистки активных зависимостей.
+V82: базовый identity сохраняется после удаления live-row. Три исторические ссылки (`chat_turns`, `knowledge_retrieval_runs`, `knowledge_evaluation_runs`) переходят на `knowledge_base_identities_v82` после валидации. Дополнительные запреты сериализуют новые документы/версии/upload intents/retrieval/evaluation/generation/hits, изменение memberships и повторную публикацию относительно перехода базы в `DELETING`. Физический `DELETE knowledge_bases` разрешён только актуальному base-erasure owner после завершения дочерних операций и очистки активных зависимостей.
 
-V83: только регистрация audited operator-resume types; реальное разрешение, requeue
-и валидация находятся в `KnowledgeDeletionOperatorController` и
-`KnowledgeDeletionOperatorService`. **Не** объявлять ручным recovery SQL-обновление
-статуса или удаление `knowledge_document_erasure_objects_v81`.
+V83: только регистрация audited operator-resume types; реальное разрешение, requeue и валидация находятся в `KnowledgeDeletionOperatorController` и `KnowledgeDeletionOperatorService`. **Не** объявлять ручным recovery SQL-обновление статуса или удаление `knowledge_document_erasure_objects_v81`.
 
-V84: триггеры фиксируют только **реальное изменение** состояния из `DELETING`
-в `DELETED`, `NEEDS_REVIEW` или `BLOCKED_BY_RETENTION`. Для документа и базы
-записываются соответствующие шесть event types. Поля деталей: `operationId`,
-`knowledgeBaseId`, `documentId` (для базы `null`), текущий/предыдущий state,
-`attempts`, безопасный `last_error_code`. Отсутствуют имя файла, S3 keys,
-текст документа и provider exception text. `actor_user_id=NULL` означает системный
-worker; инициатор запроса остаётся в immutable V78/V82 operation. Уже завершённые
-**до** установки V84 операции не получают синтетического audit-backfill.
-V85: новые RAG execution permits/attempt leases защищают источник до физического AI outcome.
+V84: триггеры фиксируют только **реальное изменение** состояния из `DELETING` в `DELETED`, `NEEDS_REVIEW` или `BLOCKED_BY_RETENTION`. Для документа и базы записываются соответствующие шесть event types. Поля деталей: `operationId`, `knowledgeBaseId`, `documentId` (для базы `null`), текущий/предыдущий state, `attempts`, безопасный `last_error_code`. Отсутствуют имя файла, S3 keys, текст документа и provider exception text. `actor_user_id=NULL` означает системный worker; инициатор запроса остаётся в immutable V78/V82 operation. Уже завершённые **до** установки V84 операции не получают синтетического audit-backfill. V85: новые RAG execution permits/attempt leases защищают источник до физического AI outcome.
 
 V86–V90: см. отдельные разделы Chat, Knowledge и полную карту Flyway ниже.
 
@@ -5056,8 +4508,7 @@ V86–V90: см. отдельные разделы Chat, Knowledge и полну
   результатов; обычный S3 `DELETE` не доказывает отсутствия предыдущих версий
 
 
-Точные Java package names и HTTP signatures сверяются с исходниками в текущей ветке,
-особенно если локальные файлы после ZIP/patch были вручную изменены.
+Точные Java package names и HTTP signatures сверяются с исходниками в текущей ветке, особенно если локальные файлы после ZIP/patch были вручную изменены.
 
 ### Feature flags: default-deny
 
@@ -5069,10 +4520,7 @@ V86–V90: см. отдельные разделы Chat, Knowledge и полну
 | `safeai.knowledge.base-deletion.executor-enabled` | `false` | Base physical executor |
 | `safeai.knowledge.deletion.recovery-enabled` | `false` | V83 operator resume; одного этого флага недостаточно |
 
-Для base DELETE V82 требует четыре document/base флага одновременно. V83
-operator resume требует **все пять**. Чтение диагностики и статусов не должно
-зависеть от включения физического удаления, но авторизация для него обязательна.
-**Ни один из флагов нельзя включать ради проверки UI на существующей БД.**
+Для base DELETE V82 требует четыре document/base флага одновременно. V83 operator resume требует **все пять**. Чтение диагностики и статусов не должно зависеть от включения физического удаления, но авторизация для него обязательна. **Ни один из флагов нельзя включать ради проверки UI на существующей БД.**
 
 ### HTTP, idempotency и операторское продолжение
 
@@ -5091,11 +4539,7 @@ GET    /api/knowledge-bases/{baseId}/base-deletions/{operationId}
 GET    /api/knowledge-bases/base-deletions
 ```
 
-Фактические HTTP mapping annotations и сигнатуры ответа проверять в исходниках.
-Особенно важно, что document read-only GET в V83 находится в отдельном
-`KnowledgeDocumentDeletionReadController`, а не за флагом destructive DELETE.
-`If-Match` и `Idempotency-Key` обязательны для запросов, принимающих удаление;
-ответ `202 Accepted` означает принятие durable request, **не** завершение purge.
+Фактические HTTP mapping annotations и сигнатуры ответа проверять в исходниках. Особенно важно, что document read-only GET в V83 находится в отдельном `KnowledgeDocumentDeletionReadController`, а не за флагом destructive DELETE. `If-Match` и `Idempotency-Key` обязательны для запросов, принимающих удаление; ответ `202 Accepted` означает принятие durable request, **не** завершение purge.
 
 Подтверждённые по V83 пути защищённой диагностики:
 
@@ -5118,17 +4562,9 @@ POST /api/knowledge-bases/{baseId}/base-deletions/{operationId}/resume
 }
 ```
 
-`expectedUpdatedAt` берётся из свежего GET diagnostics; `reasonCode` — короткий
-нормализованный код (не свободное описание инцидента). Service проверяет
-актуальную включённость пользователя/организации и **сохранённую** роль ADMIN,
-точную временную версию, истёкший/отсутствующий lease и неразрешённые upload intents.
-Для базы дополнительно запрещён resume при `NEEDS_REVIEW`/
-`BLOCKED_BY_RETENTION` у дочерних документов. V83 requeue не выполняет S3 I/O:
-следующий штатный executor заново проверяет inventory/ownership.
+`expectedUpdatedAt` берётся из свежего GET diagnostics; `reasonCode` — короткий нормализованный код (не свободное описание инцидента). Service проверяет актуальную включённость пользователя/организации и **сохранённую** роль ADMIN, точную временную версию, истёкший/отсутствующий lease и неразрешённые upload intents. Для базы дополнительно запрещён resume при `NEEDS_REVIEW`/ `BLOCKED_BY_RETENTION` у дочерних документов. V83 requeue не выполняет S3 I/O: следующий штатный executor заново проверяет inventory/ownership.
 
-Отмена ранее принятого destructive request и восстановление `DELETING → AVAILABLE`
-по умолчанию **не** поддерживаются. Конкурентный duplicate request не должен
-приводить к двум несогласованным операциям или повторной физической очистке.
+Отмена ранее принятого destructive request и восстановление `DELETING → AVAILABLE` по умолчанию **не** поддерживаются. Конкурентный duplicate request не должен приводить к двум несогласованным операциям или повторной физической очистке.
 
 ### Физическое удаление, retention и crash safety
 
@@ -5150,10 +4586,7 @@ POST /api/knowledge-bases/{baseId}/base-deletions/{operationId}/resume
 
 ### Monitoring V84 и поведение при сбоях
 
-`KnowledgeErasureObservability` по расписанию (default `PT1M`) читает агрегаты
-PostgreSQL для `scope=document|base` и четырёх states: `DELETING`,
-`NEEDS_REVIEW`, `BLOCKED_BY_RETENTION`, `DELETED`. В каждом bucket публикуются
-count, возраст самой старой операции **от `created_at`** и сумма `max(attempts-1,0)`.
+`KnowledgeErasureObservability` по расписанию (default `PT1M`) читает агрегаты PostgreSQL для `scope=document|base` и четырёх states: `DELETING`, `NEEDS_REVIEW`, `BLOCKED_BY_RETENTION`, `DELETED`. В каждом bucket публикуются count, возраст самой старой операции **от `created_at`** и сумма `max(attempts-1,0)`.
 
 Prometheus names после экспорта Micrometer:
 
@@ -5165,12 +4598,7 @@ safeai_knowledge_erasure_metrics_last_success_epoch_seconds
 safeai_knowledge_erasure_metrics_refresh_failures_total
 ```
 
-24 gauges по scope/state + 1 freshness gauge + 1 failure counter. Метки
-`operationId`, `documentId`, `tenant`, `storageKey`, exception text **не** используются.
-Если SQL refresh завершается ошибкой, сохраняется последний корректный снимок,
-увеличивается failure counter; `last_success=0` до первого успешного сбора,
-после чего устаревание определяется по его возрасту. Повторяющиеся PostgreSQL-backed
-counts от разных replicas следует агрегировать `max`, **не** `sum`.
+24 gauges по scope/state + 1 freshness gauge + 1 failure counter. Метки `operationId`, `documentId`, `tenant`, `storageKey`, exception text **не** используются. Если SQL refresh завершается ошибкой, сохраняется последний корректный снимок, увеличивается failure counter; `last_success=0` до первого успешного сбора, после чего устаревание определяется по его возрасту. Повторяющиеся PostgreSQL-backed counts от разных replicas следует агрегировать `max`, **не** `sum`.
 
 Канонические файлы мониторинга:
 
@@ -5183,16 +4611,9 @@ infra/prometheus/tests/knowledge-erasure.test.yml
 infra/scripts/check-prometheus-config.sh
 ```
 
-`infra/prometheus/prometheus.yml` подключает `/etc/prometheus/rules/*.yml`.
-`infra/docker-compose.yml` монтирует канонический каталог rules read-only.
-**Не** копировать второй dead-letter alert из `ops/prometheus` или
-`backend/deploy/prometheus`: dead-letter уже отслеживает canonical audit rule.
-Prometheus firing без Alertmanager routing не означает уведомления дежурного.
+`infra/prometheus/prometheus.yml` подключает `/etc/prometheus/rules/*.yml`. `infra/docker-compose.yml` монтирует канонический каталог rules read-only. **Не** копировать второй dead-letter alert из `ops/prometheus` или `backend/deploy/prometheus`: dead-letter уже отслеживает canonical audit rule. Prometheus firing без Alertmanager routing не означает уведомления дежурного.
 
-31.10.2026 пользователь подтвердил успешную проверку `promtool`: валидна общая
-конфигурация и **3 файла** правил (audit: 7, erasure: 6, storage review: 3);
-проверка erasure unit rules также прошла. Это не проверка реально активного
-Alertmanager и не доказательство подключённого production Prometheus.
+31.10.2026 пользователь подтвердил успешную проверку `promtool`: валидна общая конфигурация и **3 файла** правил (audit: 7, erasure: 6, storage review: 3); проверка erasure unit rules также прошла. Это не проверка реально активного Alertmanager и не доказательство подключённого production Prometheus.
 
 ### Операторский runbook и release safety
 
@@ -5208,19 +4629,13 @@ Alertmanager и не доказательство подключённого pro
 6. При проблеме — управляемое выключение flags и redeploy с сохранением диагностики;
    не удалять immutable rows и не редактировать применённые миграции.
 
-До любого production enablement нужны: пустая и populated PostgreSQL Flyway
-rehearsal; V78–V90 negative/concurrency/lease/retention/real versioned-S3 tests;
-Frontend CI и staging UX; восстановление из backup; проверка RBAC после revoke;
-реальный Prometheus scrape + Alertmanager notification test; согласованная
-policy для архивов, audit, Answer Passport и provider retention. До прохождения
-этой матрицы feature flags остаются `false`.
+До любого production enablement нужны: пустая и populated PostgreSQL Flyway rehearsal; V78–V90 negative/concurrency/lease/retention/real versioned-S3 tests; Frontend CI и staging UX; восстановление из backup; проверка RBAC после revoke; реальный Prometheus scrape + Alertmanager notification test; согласованная policy для архивов, audit, Answer Passport и provider retention. До прохождения этой матрицы feature flags остаются `false`.
 
 ---
 
 ## Ключевые backend contracts
 
-Ниже — основные публичные API groups. Controllers остаются source of truth для exact query/body
-shape.
+Ниже — основные публичные API groups. Controllers остаются source of truth для exact query/body shape.
 
 ### Auth
 
@@ -5242,10 +4657,7 @@ POST /api/chats/{id}/messages
 GET  /api/chats/{chatId}/turns/by-client-request/{clientRequestId}
 ```
 
-Ручное переименование обслуживает отдельный `ChatTitleController` / `ChatTitleService`; точный HTTP verb и путь сверять
-с текущим кодом контроллера. Доступ только к собственным неархивированным чатам своей организации; повторное одинаковое
-пользовательское название — no-op. Заголовки при создании без пользовательского ввода не должны передаваться как явное
-`"Новый чат"`.
+Ручное переименование обслуживает отдельный `ChatTitleController` / `ChatTitleService`; точный HTTP verb и путь сверять с текущим кодом контроллера. Доступ только к собственным неархивированным чатам своей организации; повторное одинаковое пользовательское название — no-op. Заголовки при создании без пользовательского ввода не должны передаваться как явное `"Новый чат"`.
 
 ### Users
 
@@ -5281,9 +4693,7 @@ GET  /api/admin/audit-events
 POST /api/admin/audit-events/outbox/dead-letters/{eventId}/recover
 ```
 
-Также есть directory/filter endpoints для UI.
-Второй endpoint относится к подготовленному Audit hardening;
-он требует Java-сервис и V75, а не только миграцию.
+Также есть directory/filter endpoints для UI. Второй endpoint относится к подготовленному Audit hardening; он требует Java-сервис и V75, а не только миграцию.
 
 ### Usage
 
@@ -5327,9 +4737,7 @@ GET  /api/admin/models/policies/rub-quote
 GET  /api/admin/models/route-decisions/{decisionId}
 ```
 
-Runtime availability probe — отдельная SUPER_ADMIN operation в `ModelRuntimeController`.
-Quote read — ADMIN/SUPER_ADMIN, preview — non-binding; создание policy
-по-прежнему подчиняется server-side tenant scope и expected version.
+Runtime availability probe — отдельная SUPER_ADMIN operation в `ModelRuntimeController`. Quote read — ADMIN/SUPER_ADMIN, preview — non-binding; создание policy по-прежнему подчиняется server-side tenant scope и expected version.
 
 ### Knowledge Bases
 
@@ -5402,8 +4810,7 @@ POST /api/knowledge-bases/{baseId}/document-deletions/{operationId}/resume
 POST /api/knowledge-bases/{baseId}/base-deletions/{operationId}/resume
 ```
 
-GET сохраняет tenant/RBAC проверки при выключенных destructive flags; POST
-допускается только для `NEEDS_REVIEW` после верификации текущей роли/причины.
+GET сохраняет tenant/RBAC проверки при выключенных destructive flags; POST допускается только для `NEEDS_REVIEW` после верификации текущей роли/причины.
 
 ### Knowledge retrieval / evaluation
 
@@ -5415,16 +4822,9 @@ GET сохраняет tenant/RBAC проверки при выключенны�
 CHECK (query_text = '[REDACTED:SHA256_ONLY]') NOT VALID
 ```
 
-PostgreSQL применяет такой CHECK к новым `INSERT` и `UPDATE`, но не проводит
-ретроспективную валидацию всех старых строк. `query_sha256` сохраняет
-ограниченный provenance поиска; SHA-256 не гарантирует анонимность
-низкоэнтропийного запроса и требует соответствующей privacy policy.
+PostgreSQL применяет такой CHECK к новым `INSERT` и `UPDATE`, но не проводит ретроспективную валидацию всех старых строк. `query_sha256` сохраняет ограниченный provenance поиска; SHA-256 не гарантирует анонимность низкоэнтропийного запроса и требует соответствующей privacy policy.
 
-Миграция предварительно требует успешную Flyway V75, таблицы
-`knowledge_retrieval_runs` / `knowledge_retrieval_hits` и действующий
-`trg_knowledge_retrieval_runs_immutable_v44`. V41/V44/V55/V63 **не редактировать**.
-Исторические plaintext queries **не удаляются и не редактируются этой миграцией**:
-для них необходим отдельный согласованный retention/evidence процесс.
+Миграция предварительно требует успешную Flyway V75, таблицы `knowledge_retrieval_runs` / `knowledge_retrieval_hits` и действующий `trg_knowledge_retrieval_runs_immutable_v44`. V41/V44/V55/V63 **не редактировать**. Исторические plaintext queries **не удаляются и не редактируются этой миграцией**: для них необходим отдельный согласованный retention/evidence процесс.
 
 Добавляется частичный индекс очереди storage review:
 
@@ -5434,12 +4834,7 @@ CREATE INDEX idx_knowledge_upload_needs_review_v76
     WHERE state = 'NEEDS_REVIEW';
 ```
 
-**Проверка совместимости:** все writer paths должны до `INSERT` передавать
-строго `[REDACTED:SHA256_ONLY]`, отдельно сохранять корректный `query_sha256`
-и не писать raw query в trace, audit или metrics. Представленный
-`KnowledgeRetrievalRepository.hybridSearch()` передаёт query в SQL для
-полнотекстового поиска; это само по себе не доказывает сохранение raw text в БД.
-Нужен отдельный тест persist/retrieval-run writer и отрицательный DB test.
+**Проверка совместимости:** все writer paths должны до `INSERT` передавать строго `[REDACTED:SHA256_ONLY]`, отдельно сохранять корректный `query_sha256` и не писать raw query в trace, audit или metrics. Представленный `KnowledgeRetrievalRepository.hybridSearch()` передаёт query в SQL для полнотекстового поиска; это само по себе не доказывает сохранение raw text в БД. Нужен отдельный тест persist/retrieval-run writer и отрицательный DB test.
 
 
 ```http
@@ -5477,20 +4872,12 @@ local seed != production reference data
 
 ### V76: безопасное применение
 
-Исторический privacy-gate V76 остаётся обязательной составной частью
-последовательного V73–V84 upgrade. На реальной БД нельзя перескакивать
-через обязательные версии. V76 нельзя применять без успешного прохождения
-V75; нельзя переигрывать immutable V41/V44/V55/V63. Порядок V73 → V74 → V75
+Исторический privacy-gate V76 остаётся обязательной составной частью последовательного V73–V84 upgrade. На реальной БД нельзя перескакивать через обязательные версии. V76 нельзя применять без успешного прохождения V75; нельзя переигрывать immutable V41/V44/V55/V63. Порядок V73 → V74 → V75
 → V76 — префикс общей последовательности V73–V84.
 
-`NOT VALID` не означает disabled: PostgreSQL проверяет новые строки, но
-разрешает оставаться существующим строкам, которые могли нарушать новый CHECK.
-Исторические данные подлежат отдельному privacy review. Проверить `conname`,
-`convalidated=false`, `CHECK` enforcement, индекс review queue и absence of
-plaintext in newly created retrieval runs на отдельном PostgreSQL стенде.
+`NOT VALID` не означает disabled: PostgreSQL проверяет новые строки, но разрешает оставаться существующим строкам, которые могли нарушать новый CHECK. Исторические данные подлежат отдельному privacy review. Проверить `conname`, `convalidated=false`, `CHECK` enforcement, индекс review queue и absence of plaintext in newly created retrieval runs на отдельном PostgreSQL стенде.
 
-В preflight V76 проверяется наличие таблиц и одного immutable trigger; это
-не заменяет проверки всех write paths и совместимости приложения со схемой.
+В preflight V76 проверяется наличие таблиц и одного immutable trigger; это не заменяет проверки всех write paths и совместимости приложения со схемой.
 
 ### Evolution map
 
@@ -5703,10 +5090,7 @@ plaintext in newly created retrieval runs на отдельном PostgreSQL с�
 
 ### V85–V92: порядок применения и эксплуатационные зависимости
 
-Для чистого окружения последовательно применять **V1 → V92**. Для
-заполненной БД выполнять upgrade с первой отсутствующей версии
-после backup/restore и проверки `flyway_schema_history`; нельзя удалять
-старые версии или менять SQL ради совпадения checksums.
+Для чистого окружения последовательно применять **V1 → V92**. Для заполненной БД выполнять upgrade с первой отсутствующей версии после backup/restore и проверки `flyway_schema_history`; нельзя удалять старые версии или менять SQL ради совпадения checksums.
 
 1. До **V86** DBA создаёт `safeai_chat_erasure_worker` (LOGIN) и
    `safeai_chat_erasure_operator` (NOLOGIN group), отдельные human logins,
@@ -5731,9 +5115,7 @@ plaintext in newly created retrieval runs на отдельном PostgreSQL с�
    версии, отключать immutable triggers или исправлять checksum ради upgrade.
    Успешный upgrade обязан сохранить исторические USD/RUB snapshots.
 
-Для V86–V90 проверять не только `GRANT/REVOKE` в SQL, но и фактические
-`has_table_privilege`, `has_function_privilege`, `session_user`, роль
-владельца таблиц, наследование, публичные grants и pre-existing defaults.
+Для V86–V90 проверять не только `GRANT/REVOKE` в SQL, но и фактические `has_table_privilege`, `has_function_privilege`, `session_user`, роль владельца таблиц, наследование, публичные grants и pre-existing defaults.
 
 ### V78–V92 — эволюция жизненного цикла удаления и финансового governance
 
@@ -5774,19 +5156,10 @@ plaintext in newly created retrieval runs на отдельном PostgreSQL с�
   immutability и sequential-upgrade regression tests, без смены erasure flow.
 
 
-V78–V81 образуют document-erasure фундамент, V82 добавляет удаление всей базы,
-V83 — контролируемое операторское продолжение и отдельный read API, V84 —
-обязательный атомарный аудит переходов. Полные таблицы, бизнес-инварианты,
-feature flags и операторский runbook приведены в главе
+V78–V81 образуют document-erasure фундамент, V82 добавляет удаление всей базы, V83 — контролируемое операторское продолжение и отдельный read API, V84 — обязательный атомарный аудит переходов. Полные таблицы, бизнес-инварианты, feature flags и операторский runbook приведены в главе
 [«Безопасное удаление Knowledge — V78–V90»](#безопасное-удаление-knowledge--v78v90).
 
-**Порядок миграций строго последовательный:** V78 → V79 → … → V92;
-V91/V92 относятся к policy budgets, не к destructive erasure.
-V80/V82 выполняют identity backfill и validated FK переходы; V84 регистрирует
-триггеры и audit types без физического удаления. На populated PostgreSQL нужны
-backup, preflight существующих данных, проверка ограничений и остановка старых
-workers, несовместимых с новым SQL contract. **Не исправлять checksum
-применённых Flyway SQL**, включая V1–V83; schema fix — следующей миграцией.
+**Порядок миграций строго последовательный:** V78 → V79 → … → V92; V91/V92 относятся к policy budgets, не к destructive erasure. V80/V82 выполняют identity backfill и validated FK переходы; V84 регистрирует триггеры и audit types без физического удаления. На populated PostgreSQL нужны backup, preflight существующих данных, проверка ограничений и остановка старых workers, несовместимых с новым SQL contract. **Не исправлять checksum применённых Flyway SQL**, включая V1–V83; schema fix — следующей миграцией.
 
 
 ### V73 — Canonical names организаций
@@ -5797,8 +5170,7 @@ workers, несовместимых с новым SQL contract. **Не испр�
 V73__organization_unicode_whitespace_canonicalization.sql
 ```
 
-Транзакционно заменяет тела существующих функций V20,
-не удаляя их CHECK/trigger и уникальный индекс V23.
+Транзакционно заменяет тела существующих функций V20, не удаляя их CHECK/trigger и уникальный индекс V23.
 
 1. `SHARE ROW EXCLUSIVE` блокирует конкурирующие изменения
    организаций до завершения preflight и UPDATE.
@@ -5815,10 +5187,7 @@ V73__organization_unicode_whitespace_canonicalization.sql
 7. При реальной корректировке имени сохраняется `auth_version`,
    увеличивается optimistic `version`.
 
-**Риск внедрения:** полный preflight / UPDATE может удерживать
-блокировки. Применять сначала на populated backup clone.
-Сверить Java `OrganizationNameNormalizer` с финальной V73;
-проверить Unicode, ISO controls, emoji и SQL collation.
+**Риск внедрения:** полный preflight / UPDATE может удерживать блокировки. Применять сначала на populated backup clone. Сверить Java `OrganizationNameNormalizer` с финальной V73; проверить Unicode, ISO controls, emoji и SQL collation.
 
 ### V74 — Usage: midnight dirty-date и physical indexes
 
@@ -5826,9 +5195,7 @@ V73__organization_unicode_whitespace_canonicalization.sql
 V74__usage_midnight_dirty_date_and_physical_indexes.sql
 ```
 
-Миграция переопределяет функцию V71
-`safeai_mark_usage_date_dirty_v71(date)`; исходные
-триггеры dirty-date tracking сохраняются.
+Миграция переопределяет функцию V71 `safeai_mark_usage_date_dirty_v71(date)`; исходные триггеры dirty-date tracking сохраняются.
 
 - Теперь в очередь попадает и сегодняшний UTC-день:
   транзакция, завершившаяся после полуночи, не должна
@@ -5841,9 +5208,7 @@ V74__usage_midnight_dirty_date_and_physical_indexes.sql
   помогает tenant-scoped joins.
 - Индексы не уникальны и не меняют semantics retry.
 
-**Риск:** ежедневная dirty row может стать точкой
-конкурентной записи. Нужны нагрузочные замеры и мониторинг
-lock waits на production-like PostgreSQL.
+**Риск:** ежедневная dirty row может стать точкой конкурентной записи. Нужны нагрузочные замеры и мониторинг lock waits на production-like PostgreSQL.
 
 ### V76 — Privacy retrieval runs и индекс review queue
 
@@ -5872,16 +5237,9 @@ V76__knowledge_retrieval_query_privacy.sql
 V75__audit_dead_letter_recovery_event_type.sql
 ```
 
-Миграция добавляет `AUDIT_OUTBOX_DEAD_LETTER_RECOVERED`
-в справочник `public.audit_event_types` идемпотентно,
-не редактируя применённую V68 и не заменяя terminal
-`dead_lettered_at` на повторно запланированное событие.
+Миграция добавляет `AUDIT_OUTBOX_DEAD_LETTER_RECOVERED` в справочник `public.audit_event_types` идемпотентно, не редактируя применённую V68 и не заменяя terminal `dead_lettered_at` на повторно запланированное событие.
 
-**V75 не создаёт endpoint, восстановление или алерты.**
-Для восстановления нужны согласованные Java-классы
-`AuditOutboxRecoveryService`,
-`AuditOutboxRecoveryController`, `AuditDeadLetterRecoveryDetails`,
-`AuditEventType` и тесты.
+**V75 не создаёт endpoint, восстановление или алерты.** Для восстановления нужны согласованные Java-классы `AuditOutboxRecoveryService`, `AuditOutboxRecoveryController`, `AuditDeadLetterRecoveryDetails`, `AuditEventType` и тесты.
 
 ### Порядок внедрения
 
@@ -5902,19 +5260,13 @@ V1–V72 → V73 Organization → V74 Usage → V75 Audit → V76 Retrieval priv
        → V92
 ```
 
-Это последовательность **номеров Flyway**, а не инструкция вручную запускать
-каждый SQL на действующей базе. Миграции выполняет Flyway на разрешённом
-стенде после проверки checksum и предварительного резервного копирования.
+Это последовательность **номеров Flyway**, а не инструкция вручную запускать каждый SQL на действующей базе. Миграции выполняет Flyway на разрешённом стенде после проверки checksum и предварительного резервного копирования.
 
 Не копировать ранний конфликтный
 `V73__audit_dead_letter_recovery_event_type.sql`:
 этот номер уже занят миграцией организаций.
 
-В исторически проверенном `main` (PR #8) было подтверждено наличие V1–V72.
-В исторических архивах от 28–31.10.2026 были V73–V84, а в доступном текущем
-SQL-срезе представлены V1–V92. Это **не** подтверждает
-применение V85–V92 к текущей PostgreSQL.
-Истину об установке даёт `flyway_schema_history`.
+В исторически проверенном `main` (PR #8) было подтверждено наличие V1–V72. В исторических архивах от 28–31.10.2026 были V73–V84, а в доступном текущем SQL-срезе представлены V1–V92. Это **не** подтверждает применение V85–V92 к текущей PostgreSQL. Истину об установке даёт `flyway_schema_history`.
 
 ### V91 — Organization model policy RUB budget
 
@@ -5948,8 +5300,7 @@ SQL-срезе представлены V1–V92. Это **не** подтвер
 - **Upgrade safety:** при нарушении существующих данных миграция должна
   завершиться ошибкой, а не переписать immutable record.
 
-Перед V92 на V91-стенде выполнить read-only preflight (сводка количества
-аномальных строк, без вывода tenant evidence):
+Перед V92 на V91-стенде выполнить read-only preflight (сводка количества аномальных строк, без вывода tenant evidence):
 
 ```sql
 SELECT
@@ -5962,22 +5313,13 @@ SELECT
 FROM public.organization_model_policies;
 ```
 
-Оба счётчика должны быть нулевыми. Ненулевой результат — NO-GO до
-отдельно согласованного remediation с сохранением аудиторских доказательств.
+Оба счётчика должны быть нулевыми. Ненулевой результат — NO-GO до отдельно согласованного remediation с сохранением аудиторских доказательств.
 
 ### V77 — безопасный backfill исторических чатов
 
-Перед применением `V77__backfill_legacy_default_chat_titles.sql` проверить, что V58 и все V73–V76 уже успешно применены
-в правильном порядке, сделать snapshot populated БД и провести dry-run подсчёта строк. Данные первого сообщения
-используются **только внутри того же чата**; миграция не меняет `organization_id`, `user_id`, `created_at`,
-`chat_messages` и audit trail. Legacy-заголовок `Новый чат` по своей природе неоднозначен, поэтому возможное намеренное
-название, совпадающее с заглушкой, также будет заменено: это явно принятая политика backfill, а не универсальное
-восстановление provenance.
+Перед применением `V77__backfill_legacy_default_chat_titles.sql` проверить, что V58 и все V73–V76 уже успешно применены в правильном порядке, сделать snapshot populated БД и провести dry-run подсчёта строк. Данные первого сообщения используются **только внутри того же чата**; миграция не меняет `organization_id`, `user_id`, `created_at`, `chat_messages` и audit trail. Legacy-заголовок `Новый чат` по своей природе неоднозначен, поэтому возможное намеренное название, совпадающее с заглушкой, также будет заменено: это явно принятая политика backfill, а не универсальное восстановление provenance.
 
-После применения проверить число оставшихся заглушек с/без сообщений, распределение `title_source`, `version` и
-неизменность названий, отличных от заглушки. Новые транзакционные проверки должны охватывать идемпотентный replay,
-ошибку Redis/quota, ручное rename одновременно с первым сообщением и frontend refresh списка. Если V77 уже есть в
-`flyway_schema_history`, изменять её нельзя; correction требует следующей свободной версии.
+После применения проверить число оставшихся заглушек с/без сообщений, распределение `title_source`, `version` и неизменность названий, отличных от заглушки. Новые транзакционные проверки должны охватывать идемпотентный replay, ошибку Redis/quota, ручное rename одновременно с первым сообщением и frontend refresh списка. Если V77 уже есть в `flyway_schema_history`, изменять её нельзя; correction требует следующей свободной версии.
 
 ### V72 — границы транзакционного допуска и обратная совместимость
 
@@ -6005,20 +5347,11 @@ set enabled=false, auth_version++           check enabled + exact epoch
 commit                                     attempt commit (before provider I/O)
 ```
 
-Операции сериализуются по строке организации: победившая транзакция определяет допустимость нового
-STARTED. **Нет гарантий отмены** уже допущенного сетевого вызова; нельзя менять/удалять его
-исторический attempt evidence.
+Операции сериализуются по строке организации: победившая транзакция определяет допустимость нового STARTED. **Нет гарантий отмены** уже допущенного сетевого вызова; нельзя менять/удалять его исторический attempt evidence.
 
-Миграция V72 сохраняет `NULL` в исторических строках ChatTurn и даёт `DEFAULT 0` лишь новым
-SQL-вставкам, которые не передали значение. Такие исторические turns не могут открыть новую physical
-attempt. Загрузка старых версий backend в смешанном rollout может приводить к fail-closed отказам
-из-за отсутствующего principal epoch: требуется согласованный cutover. Изменять ранее применённые
-V1–V71 вместо нового SQL-файла запрещено.
+Миграция V72 сохраняет `NULL` в исторических строках ChatTurn и даёт `DEFAULT 0` лишь новым SQL-вставкам, которые не передали значение. Такие исторические turns не могут открыть новую physical attempt. Загрузка старых версий backend в смешанном rollout может приводить к fail-closed отказам из-за отсутствующего principal epoch: требуется согласованный cutover. Изменять ранее применённые V1–V71 вместо нового SQL-файла запрещено.
 
-**Статус проверки:** исторический PostgreSQL Testcontainers log подтверждает применение V1–V72 с
-нуля. Позднее получен успешный локальный прогон `./mvnw test` (2259 tests) и трех выбранных
-PostgreSQL/Redis concurrency/integration suites (27 tests). Это не равно проверке всех возможных
-блокировок и не подтверждает upgrade населенной базы V71→V72 или production rollout.
+**Статус проверки:** исторический PostgreSQL Testcontainers log подтверждает применение V1–V72 с нуля. Позднее получен успешный локальный прогон `./mvnw test` (2259 tests) и трех выбранных PostgreSQL/Redis concurrency/integration suites (27 tests). Это не равно проверке всех возможных блокировок и не подтверждает upgrade населенной базы V71→V72 или production rollout.
 
 
 ### Важные DB boundaries
@@ -6074,8 +5407,7 @@ PostgreSQL/Redis concurrency/integration suites (27 tests). Это не равн
 
 Production Flyway должен сохранять совместимую PostgreSQL transactional-lock configuration.
 
-Release runbook также должен проверять `pg_index.indisvalid/indisready` для critical unique/business
-indexes после аварийного interrupted migration.
+Release runbook также должен проверять `pg_index.indisvalid/indisready` для critical unique/business indexes после аварийного interrupted migration.
 
 ---
 
@@ -6106,10 +5438,7 @@ Structured log context включает server request ID и, где приме�
 infra/prometheus/rules/safeai-audit-outbox.yml
 ```
 
-`infra/prometheus/prometheus.yml` загружает
-`/etc/prometheus/rules/*.yml`; каталог rules должен быть
-смонтирован в контейнер Prometheus. Scrape target использует
-внутренний `backend:9091/actuator/prometheus`.
+`infra/prometheus/prometheus.yml` загружает `/etc/prometheus/rules/*.yml`; каталог rules должен быть смонтирован в контейнер Prometheus. Scrape target использует внутренний `backend:9091/actuator/prometheus`.
 
 Главные сигналы:
 
@@ -6121,32 +5450,17 @@ infra/prometheus/rules/safeai-audit-outbox.yml
   сбои фоновой обработки;
 - `up{job="safeai-backend"}` — доступность scrape.
 
-Конфигурация подготовлена с семью оповещениями, включая
-отсутствующую целевую метрику и отсутствие scrape target.
-Несколько инстансов публикуют общую DB backlog метрику:
-использовать `max`, не `sum` для gauge общих строк БД.
+Конфигурация подготовлена с семью оповещениями, включая отсутствующую целевую метрику и отсутствие scrape target. Несколько инстансов публикуют общую DB backlog метрику: использовать `max`, не `sum` для gauge общих строк БД.
 
-**Важный gap:** одни лишь alert rules не доставляют
-уведомления. Необходим реальный Alertmanager, маршруты,
-секреты получателей и проверенный test firing → delivery.
-Без него «firing в Prometheus» не означает извещения
-дежурного. См. `docs/RUNBOOK_AUDIT.md`.
+**Важный gap:** одни лишь alert rules не доставляют уведомления. Необходим реальный Alertmanager, маршруты, секреты получателей и проверенный test firing → delivery. Без него «firing в Prometheus» не означает извещения дежурного. См. `docs/RUNBOOK_AUDIT.md`.
 
 ### Безопасное логирование ошибок
 
-Audit best-effort/scheduler/metrics должны логировать
-без `Throwable`, `exception.toString()` и сырого
-`getMessage()`: сообщения SQL/provider способны содержать
-PII и bind values. Допустим ограниченный safe failure type.
-Required audit failure при этом **не проглатывается**:
-иначе теряется transactional evidence.
+Audit best-effort/scheduler/metrics должны логировать без `Throwable`, `exception.toString()` и сырого `getMessage()`: сообщения SQL/provider способны содержать PII и bind values. Допустим ограниченный safe failure type. Required audit failure при этом **не проглатывается**: иначе теряется transactional evidence.
 
 ### Knowledge erasure: техническая наблюдаемость V84 и V89 receipts
 
-`KnowledgeErasureObservability` регистрирует на старте 26 meters:
-`2 scopes × 4 states × 3 gauges = 24`, плюс freshness gauge и refresh failure counter.
-Период обновления `${safeai.knowledge.erasure.observability.poll-delay:PT1M}`.
-Параметры запроса только агрегированные, без tenant/user/operation labels.
+`KnowledgeErasureObservability` регистрирует на старте 26 meters: `2 scopes × 4 states × 3 gauges = 24`, плюс freshness gauge и refresh failure counter. Период обновления `${safeai.knowledge.erasure.observability.poll-delay:PT1M}`. Параметры запроса только агрегированные, без tenant/user/operation labels.
 
 ```promql
 safeai_knowledge_erasure_operations{scope="document",state="NEEDS_REVIEW"}
@@ -6156,18 +5470,9 @@ safeai_knowledge_erasure_metrics_last_success_epoch_seconds
 safeai_knowledge_erasure_metrics_refresh_failures_total
 ```
 
-Статусы без операций представлены нулями после успешного refresh. При ошибке
-SELECT данные **не обнуляются**, counter сбоя увеличивается, timestamp
-успешного refresh не сдвигается. До первого успешного refresh `last_success=0`.
-У всех этих рядов проверять `absent(...)` и freshness отдельно, а реплики
-агрегировать `max` для PostgreSQL-backed gauges, не `sum`.
+Статусы без операций представлены нулями после успешного refresh. При ошибке SELECT данные **не обнуляются**, counter сбоя увеличивается, timestamp успешного refresh не сдвигается. До первого успешного refresh `last_success=0`. У всех этих рядов проверять `absent(...)` и freshness отдельно, а реплики агрегировать `max` для PostgreSQL-backed gauges, не `sum`.
 
-`infra/prometheus/rules/safeai-knowledge-erasure.yml` содержит 6 правил:
-`NeedsReview`, `RetentionBlocked`, `Stuck`, `MetricsStale`, `MetricsAbsent`,
-и `SafeAIKnowledgeErasureMetricsRefreshFailed` (полные identifiers приведены в YAML).
-Дублирующее правило audit dead letters не добавляется — оно уже находится в
-`safeai-audit-outbox.yml`. Инструментальный endpoint — **внутренний**
-`/actuator/prometheus` на management port 9091, не public Nginx.
+`infra/prometheus/rules/safeai-knowledge-erasure.yml` содержит 6 правил: `NeedsReview`, `RetentionBlocked`, `Stuck`, `MetricsStale`, `MetricsAbsent`, и `SafeAIKnowledgeErasureMetricsRefreshFailed` (полные identifiers приведены в YAML). Дублирующее правило audit dead letters не добавляется — оно уже находится в `safeai-audit-outbox.yml`. Инструментальный endpoint — **внутренний** `/actuator/prometheus` на management port 9091, не public Nginx.
 
 ### Metrics
 
@@ -6179,8 +5484,7 @@ SELECT данные **не обнуляются**, counter сбоя увелич
 - Knowledge storage reconciliation;
 - V84 Knowledge erasure (`KnowledgeErasureObservability`).
 
-Для V84 точные названия метрик, aggregation, freshness и правила приведены
-в отдельной главе «Безопасное удаление Knowledge — V78–V90».
+Для V84 точные названия метрик, aggregation, freshness и правила приведены в отдельной главе «Безопасное удаление Knowledge — V78–V90».
 
 Prometheus endpoint должен быть internal/network-protected.
 
@@ -6200,8 +5504,7 @@ Prometheus endpoint должен быть internal/network-protected.
   (исполняются только при соответствующих feature flags; по умолчанию выключены);
 - `KnowledgeErasureObservability` (V84, read-only, не зависит от destructive flags).
 
-Multi-instance job должен иметь DB/distributed coordination там, где duplicate work нарушит
-semantics.
+Multi-instance job должен иметь DB/distributed coordination там, где duplicate work нарушит semantics.
 
 ---
 
@@ -6231,24 +5534,14 @@ README не утверждает `BUILD SUCCESS` без фактического
 - Upgrade: populated Flyway V72 → V77, application startup, production profile,
   Testcontainers PostgreSQL/Redis и отсутствие регрессии публичных API.
 
-Не заменять падающий тест ослаблением CHECK, удалением assert или
-изменением истории Flyway. Сначала установить фактическую причину и
-соответствие нового контракта ожидаемому поведению теста.
+Не заменять падающий тест ослаблением CHECK, удалением assert или изменением истории Flyway. Сначала установить фактическую причину и соответствие нового контракта ожидаемому поведению теста.
 
 ### Целевой release gate удаления Knowledge (V78–V90)
 
-**Слои проверки должны оставаться раздельными:** unit/API-contract tests,
-PostgreSQL/Testcontainers constraints/concurrency, настоящие versioned MinIO
-purge/Object Lock/legal hold, отдельный JVM SIGKILL/restart, frontend UI,
-Prometheus rule tests и deployment preflight. Положительный результат одного
-слоя **не** подменяет другой. Тесты удаления работают только с одноразовой БД;
-не запускать destructive проверку с текущими рабочими 7 KB / 18 документами.
+**Слои проверки должны оставаться раздельными:** unit/API-contract tests, PostgreSQL/Testcontainers constraints/concurrency, настоящие versioned MinIO purge/Object Lock/legal hold, отдельный JVM SIGKILL/restart, frontend UI, Prometheus rule tests и deployment preflight. Положительный результат одного слоя **не** подменяет другой. Тесты удаления работают только с одноразовой БД; не запускать destructive проверку с текущими рабочими 7 KB / 18 документами.
 
 
-Наличие Java-теста не означает, что он запускался на текущем checkout. Исторический
-V82 `./mvnw clean verify` не подтверждает новое дерево; V83/V84 требуют
-нового прогона уже после объединения всех изменений, а не переиспользования
-старого результата.
+Наличие Java-теста не означает, что он запускался на текущем checkout. Исторический V82 `./mvnw clean verify` не подтверждает новое дерево; V83/V84 требуют нового прогона уже после объединения всех изменений, а не переиспользования старого результата.
 
 Ключевые test categories/classes из ранее предоставленных архивов и ZIP:
 
@@ -6272,8 +5565,7 @@ V82 `./mvnw clean verify` не подтверждает новое дерево;
   `useKnowledgeDeletionController.test.tsx`, `KnowledgeDetailsPage.test.tsx` —
   capability/history/UX даже при выключенных destructive flags.
 
-Фактический набор файлов сверить через `find` — часть тестов поставлялась
-в отдельных предыдущих ZIP и может отличаться по именам/ревизиям.
+Фактический набор файлов сверить через `find` — часть тестов поставлялась в отдельных предыдущих ZIP и может отличаться по именам/ревизиям.
 
 ```bash
 cd ~/Workspace/Projects/Products/SafeAI-Desk
@@ -6294,19 +5586,12 @@ npm ci
 NODE_OPTIONS=--no-experimental-webstorage npm run ci
 ```
 
-Для Testcontainers/S3 tests — только одноразовые PostgreSQL и versioned MinIO.
-Тестирование **не** должно затрагивать пользовательские 7 Knowledge Bases / 18
-документов либо production database, включая Flyway, S3 purge и UI deletion.
-Проверить loss-of-response, retention/legal hold, unknown provider outcomes,
-stale worker, failing JDBC commit, prior provider purge, archive references,
-retry idempotency, tenant isolation, permission revoke и отсутствие утечки
-operation IDs в метрики. Не снижать assertions/guards ради зелёной сборки.
+Для Testcontainers/S3 tests — только одноразовые PostgreSQL и versioned MinIO. Тестирование **не** должно затрагивать пользовательские 7 Knowledge Bases / 18 документов либо production database, включая Flyway, S3 purge и UI deletion. Проверить loss-of-response, retention/legal hold, unknown provider outcomes, stale worker, failing JDBC commit, prior provider purge, archive references, retry idempotency, tenant isolation, permission revoke и отсутствие утечки operation IDs в метрики. Не снижать assertions/guards ради зелёной сборки.
 
 
 ### Исторические проверки до V78 (11.10.2026)
 
-Проверки выполнены пользователем локально перед merge PR #8; это **конкретные команды и их вывод**,
-а не заявление о статусе независимого CI, production или `clean` сборки.
+Проверки выполнены пользователем локально перед merge PR #8; это **конкретные команды и их вывод**, а не заявление о статусе независимого CI, production или `clean` сборки.
 
 - **`./mvnw -Dtest=CommonDependencyArchitectureTest test`**
   - **Фактический результат:** 1 test / 0 failures / 0 errors / `BUILD SUCCESS`
@@ -6329,8 +5614,7 @@ operation IDs в метрики. Не снижать assertions/guards ради 
   - **Фактический результат:** `## main...origin/main` без изменений
 
 
-Число `2259` — summary из Maven для **основного прогона**; запуск 27 целевых интеграционных
-тестов учитывается отдельно, не нужно автоматически складывать их с общим числом.
+Число `2259` — summary из Maven для **основного прогона**; запуск 27 целевых интеграционных тестов учитывается отдельно, не нужно автоматически складывать их с общим числом.
 
 #### Важно различать уровни доказательств
 
@@ -6346,15 +5630,9 @@ operation IDs в метрики. Не снижать assertions/guards ради 
 
 #### Исторические сбои V71/V72 и их уроки (НЕ текущий статус сборки)
 
-Предыдущие логи фиксировали отказ `chk_chat_turns_timestamps`: тестовый `Clock` выставлял
-`ChatTurn.created_at` позднее физического `clock_timestamp()` PostgreSQL, после чего
-DB-триггер корректно отвергал STARTED. Также существовал fixture в Knowledge integration
-suite, который пытался мутировать immutable `created_at`. Эти истории **не следует
-представлять как текущий failing build** после подтвержденного green run 2259 tests.
+Предыдущие логи фиксировали отказ `chk_chat_turns_timestamps`: тестовый `Clock` выставлял `ChatTurn.created_at` позднее физического `clock_timestamp()` PostgreSQL, после чего DB-триггер корректно отвергал STARTED. Также существовал fixture в Knowledge integration suite, который пытался мутировать immutable `created_at`. Эти истории **не следует представлять как текущий failing build** после подтвержденного green run 2259 tests.
 
-При новом изменении этого кода по-прежнему нельзя отключать `chk_chat_turns_timestamps`,
-смягчать state-machine/epoch triggers или делать слепой replay после `AMBIGUOUS`.
-Для двух одноименных классов указывайте fully qualified name:
+При новом изменении этого кода по-прежнему нельзя отключать `chk_chat_turns_timestamps`, смягчать state-machine/epoch triggers или делать слепой replay после `AMBIGUOUS`. Для двух одноименных классов указывайте fully qualified name:
 
 ```bash
 cd backend
@@ -6362,13 +5640,11 @@ cd backend
 ./mvnw -Dtest=ru.safeai.gateway.knowledge.integration.ChatTurnStateMachineIntegrationTest test
 ```
 
-Не интерпретировать `BUILD SUCCESS` одного targeted test как доказательство прохождения
-всей регрессии. Новый PR требует собственного green run, даже если baseline уже зеленый.
+Не интерпретировать `BUILD SUCCESS` одного targeted test как доказательство прохождения всей регрессии. Новый PR требует собственного green run, даже если baseline уже зеленый.
 
 ### Карта размещения backend-тестов
 
-Историческое дерево baseline `backend/src/test/java/ru/safeai/gateway/` содержало следующие Java-файлы
-тестовых пакетов (количество **файлов**, а не JUnit test cases):
+Историческое дерево baseline `backend/src/test/java/ru/safeai/gateway/` содержало следующие Java-файлы тестовых пакетов (количество **файлов**, а не JUnit test cases):
 
 | Пакет | Java-файлов | Что проверять при изменениях |
 |---|---:|---|
@@ -6385,18 +5661,9 @@ cd backend
 | `ai` | 45 | Provider adapters, execution evidence, retry |
 | `knowledge` | 59 | ACL, ingestion, retrieval/RAG, storage, GC |
 
-Также в корне test package находятся `SafeaiBackendApplicationTests`, utility
-`PasswordHashGenerator`, а в `testsupport` — `AbstractPostgresIntegrationTest`.
-Это историческая инвентаризация, не текущие количества; новые Model/AI,
-architecture, migration, security и Knowledge tests описаны отдельными матрицами.
-Для `identity` на этом срезе отдельной папки с тестами нет; его порт проверяется
-в тестах потребителей/реализации. Выборочное добавление dedicated ArchUnit identity rule
-закроет пробел в проверке направленности зависимостей.
+Также в корне test package находятся `SafeaiBackendApplicationTests`, utility `PasswordHashGenerator`, а в `testsupport` — `AbstractPostgresIntegrationTest`. Это историческая инвентаризация, не текущие количества; новые Model/AI, architecture, migration, security и Knowledge tests описаны отдельными матрицами. Для `identity` на этом срезе отдельной папки с тестами нет; его порт проверяется в тестах потребителей/реализации. Выборочное добавление dedicated ArchUnit identity rule закроет пробел в проверке направленности зависимостей.
 
-Maven Surefire настроен для обычных unit/regular integration tests.
-В `backend/pom.xml` есть отдельный opt-in Failsafe профиль `rate-limit-topology-it`
-(`./mvnw verify -Prate-limit-topology-it`), предназначенный для проверок внешнего
-Redis Sentinel/Cluster. Его успешный прогон **не подтвержден** этим README.
+Maven Surefire настроен для обычных unit/regular integration tests. В `backend/pom.xml` есть отдельный opt-in Failsafe профиль `rate-limit-topology-it` (`./mvnw verify -Prate-limit-topology-it`), предназначенный для проверок внешнего Redis Sentinel/Cluster. Его успешный прогон **не подтвержден** этим README.
 
 ### Backend
 
@@ -6405,16 +5672,14 @@ cd backend
 ./mvnw clean test
 ```
 
-Для двух одноимённых интеграционных классов в разных пакетах используйте
-**полное имя** при выборочном запуске:
+Для двух одноимённых интеграционных классов в разных пакетах используйте **полное имя** при выборочном запуске:
 
 ```bash
 ./mvnw -Dtest=ru.safeai.gateway.chat.integration.ChatTurnStateMachineIntegrationTest test
 ./mvnw -Dtest=ru.safeai.gateway.knowledge.integration.ChatTurnStateMachineIntegrationTest test
 ```
 
-Команда с коротким `-Dtest=ChatTurnStateMachineIntegrationTest` потенциально
-выберет оба класса и не подходит для изоляции диагностики.
+Команда с коротким `-Dtest=ChatTurnStateMachineIntegrationTest` потенциально выберет оба класса и не подходит для изоляции диагностики.
 
 
 Windows:
@@ -6453,16 +5718,9 @@ cd backend
   отдельный Maven Failsafe-профиль; тогда дополнительно выполните `./mvnw verify` в соответствии с
   `pom.xml`.
 
-**Конкурентные сценарии, которые должны завершиться без deadlock и без выдачи действительной сессии
-после Disable:** Login ↔ Disable, Refresh ↔ Disable, несколько concurrent Refresh одного token
-family, ожидание `FOR SHARE`/`FOR UPDATE`, epoch change + re-enable, authorization при отказах и
-повторах. Для AI проверить оба порядка гонки: Disable first → попытка запрещена; STARTED first →
-Disable ждёт commit, evidence сохраняется. Добавить проверку deadlock SQLSTATE `40P01`,
-statement/lock timeout и соответствующих retry/fail-closed решений.
+**Конкурентные сценарии, которые должны завершиться без deadlock и без выдачи действительной сессии после Disable:** Login ↔ Disable, Refresh ↔ Disable, несколько concurrent Refresh одного token family, ожидание `FOR SHARE`/`FOR UPDATE`, epoch change + re-enable, authorization при отказах и повторах. Для AI проверить оба порядка гонки: Disable first → попытка запрещена; STARTED first → Disable ждёт commit, evidence сохраняется. Добавить проверку deadlock SQLSTATE `40P01`, statement/lock timeout и соответствующих retry/fail-closed решений.
 
-**Для временных инвариантов** отдельно проверять timestamp ordering с реальными PostgreSQL clock и
-тестовым `Clock`. Нельзя добиться зелёной сборки удалением `chk_chat_turns_timestamps`, смягчением
-V67/V72-триггеров или возвратом service-level `markProviderCallStarted()`.
+**Для временных инвариантов** отдельно проверять timestamp ordering с реальными PostgreSQL clock и тестовым `Clock`. Нельзя добиться зелёной сборки удалением `chk_chat_turns_timestamps`, смягчением V67/V72-триггеров или возвратом service-level `markProviderCallStarted()`.
 
 
 ### Фактически присутствующие test categories
@@ -6567,23 +5825,11 @@ cd backend
 ./mvnw clean test
 ```
 
-Интеграционные тесты с `@Testcontainers` требуют Docker. Если сборка падает, ищите **первый**
-`Caused by`, а не только каскадное `ApplicationContext failure threshold exceeded`. Для проверки V71
-полезны: выборка earliest UTC date (включая `AMBIGUOUS`), последовательность backfill, повторный
-расчёт dirty dates, монотонность watermark, lock contention, идемпотентность aggregate rebuild. Не
-подавляйте проверки SQL-целостности ради зелёного результата.
+Интеграционные тесты с `@Testcontainers` требуют Docker. Если сборка падает, ищите **первый** `Caused by`, а не только каскадное `ApplicationContext failure threshold exceeded`. Для проверки V71 полезны: выборка earliest UTC date (включая `AMBIGUOUS`), последовательность backfill, повторный расчёт dirty dates, монотонность watermark, lock contention, идемпотентность aggregate rebuild. Не подавляйте проверки SQL-целостности ради зелёного результата.
 
 ### Архитектурные регрессии и CI
 
-Пакет `architecture` вырос после исторического PR #8: кроме
-`CommonDependencyArchitectureTest`, актуальный срез содержит
-`AiModelKnowledgeBoundaryArchitectureTest`, `ModelChatBoundaryArchitectureTest`,
-`AuditUserBoundaryArchitectureTest`, `KnowledgeChatBoundaryArchitectureTest`
-и `OrganizationUserBoundaryArchitectureTest`.
-В том числе контролируется единственный production PricingResolver.
-Новые правила добавляются отдельными PR после проверки реальных dependencies/allowed edges.
-Без новых тестов в `common` нельзя возвращать `JwtService`, auth exceptions или BCrypt
-configuration.
+Пакет `architecture` вырос после исторического PR #8: кроме `CommonDependencyArchitectureTest`, актуальный срез содержит `AiModelKnowledgeBoundaryArchitectureTest`, `ModelChatBoundaryArchitectureTest`, `AuditUserBoundaryArchitectureTest`, `KnowledgeChatBoundaryArchitectureTest` и `OrganizationUserBoundaryArchitectureTest`. В том числе контролируется единственный production PricingResolver. Новые правила добавляются отдельными PR после проверки реальных dependencies/allowed edges. Без новых тестов в `common` нельзя возвращать `JwtService`, auth exceptions или BCrypt configuration.
 
 Для запуска всех backend-тестов из корня проекта:
 
@@ -6600,10 +5846,7 @@ npm ci
 npm run check
 ```
 
-`npm run check` выполняет lint, Vitest и build (с проверкой typecheck/production bundle).
-Команды приведены как воспроизводимые проверки. В подготовке Catalog Pricing
-зафиксирован успешный отдельный frontend CI (1387 тестов в 145 файлах);
-это не подтверждение всей сборки V92 или текущего локального HEAD.
+`npm run check` выполняет lint, Vitest и build (с проверкой typecheck/production bundle). Команды приведены как воспроизводимые проверки. В подготовке Catalog Pricing зафиксирован успешный отдельный frontend CI (1387 тестов в 145 файлах); это не подтверждение всей сборки V92 или текущего локального HEAD.
 
 ### Целевые регрессии V91–V92 и Catalog Pricing
 
@@ -6614,9 +5857,7 @@ cd backend
 ./mvnw clean verify
 ```
 
-Если штатный Maven Wrapper недоступен, использовать локальный `mvn` с JDK 21.
-Testcontainers требует запущенный Docker. Не заменять реальный PostgreSQL
-тестом на H2 и не отключать constraints.
+Если штатный Maven Wrapper недоступен, использовать локальный `mvn` с JDK 21. Testcontainers требует запущенный Docker. Не заменять реальный PostgreSQL тестом на H2 и не отключать constraints.
 
 | Проверяемый контракт | Обязательные сценарии |
 | --- | --- |
@@ -6631,44 +5872,21 @@ Testcontainers требует запущенный Docker. Не заменять
 | Catalog pricing | verified FREE vs CONFIGURED/UNPRICED, отсутствие/неверная operation identity, кеширование токенов OpenAI/Anthropic, ambiguous runtime projection |
 | API/UI | sanitized runtime wire model, strict numeric fields, RUB quote mismatch, stale preview, tenant access и history |
 
-`FlywaySequentialUpgradeIT` создаёт populated USD/RUB versions после V91,
-сверяет обе сохранённые версии после V92, проверяет все шесть RUB-колонок через
-`information_schema` и обе validated V92 constraints. Fixture использует
-`TransactionTemplate` на том же DataSource, потому что V20 требует роль у
-пользователя при commit, а V24 ограничивает её единственность.
-Исправление теста не затрагивает production SQL; SQLResolve suppression
-локальна для staged V91 INSERT, реальные DB-проверки сохранены и усилены.
+`FlywaySequentialUpgradeIT` создаёт populated USD/RUB versions после V91, сверяет обе сохранённые версии после V92, проверяет все шесть RUB-колонок через `information_schema` и обе validated V92 constraints. Fixture использует `TransactionTemplate` на том же DataSource, потому что V20 требует роль у пользователя при commit, а V24 ограничивает её единственность. Исправление теста не затрагивает production SQL; SQLResolve suppression локальна для staged V91 INSERT, реальные DB-проверки сохранены и усилены.
 
-Успешный запуск последнего исправления V92 на рабочей машине ещё требуется.
-В среде подготовки Maven не дошёл до компиляции из-за отсутствующего parent
-Spring Boot 4.1.1 и недоступности Docker; синтаксическая проверка и применение
-патча не эквивалентны полному Maven regression.
+Успешный запуск последнего исправления V92 на рабочей машине ещё требуется. В среде подготовки Maven не дошёл до компиляции из-за отсутствующего parent Spring Boot 4.1.1 и недоступности Docker; синтаксическая проверка и применение патча не эквивалентны полному Maven regression.
 
 ### CI/CD — coverage, security и performance evidence
 
-Backend: JUnit/Surefire, opt-in Failsafe topology tests, JaCoCo 0.8.16;
-frontend: TypeScript, ESLint, Vitest coverage gate, production bundle
-verification, Playwright smoke/regression. Actions Summary не заменяет
-blocking thresholds; baseline нельзя понижать из-за регрессии.
+Backend: JUnit/Surefire, opt-in Failsafe topology tests, JaCoCo 0.8.16; frontend: TypeScript, ESLint, Vitest coverage gate, production bundle verification, Playwright smoke/regression. Actions Summary не заменяет blocking thresholds; baseline нельзя понижать из-за регрессии.
 
-Provider-data-assurance workflow выполняет targeted backend/frontend tests
-и standalone operator fingerprint self-check. Prepared Performance CI
-проверяет реальные PostgreSQL usage queries, EXPLAIN ANALYZE и boundary
-erasure batches с `-Dsafeai.usage.performance=true`; verifier не принимает
-отсутствующие, пропущенные или упавшие обязательные scenarios. Release
-publish должен зависеть от обоих gates, а не от одного из них. В частичном
-срезе workflow не представлены все файлы этого объединения; проверка
-актуального checkout через infra security policy и CI обязательна.
+Provider-data-assurance workflow выполняет targeted backend/frontend tests и standalone operator fingerprint self-check. Prepared Performance CI проверяет реальные PostgreSQL usage queries, EXPLAIN ANALYZE и boundary erasure batches с `-Dsafeai.usage.performance=true`; verifier не принимает отсутствующие, пропущенные или упавшие обязательные scenarios. Release publish должен зависеть от обоих gates, а не от одного из них. В частичном срезе workflow не представлены все файлы этого объединения; проверка актуального checkout через infra security policy и CI обязательна.
 
-Docker CI и production release сканируют backend/Nginx/PostgreSQL;
-production deploy использует утверждённые immutable image digests.
-Coverage, performance, provider assurance и security gates независимы;
-ни один нельзя отключить ради успешной сборки.
+Docker CI и production release сканируют backend/Nginx/PostgreSQL; production deploy использует утверждённые immutable image digests. Coverage, performance, provider assurance и security gates независимы; ни один нельзя отключить ради успешной сборки.
 
 ### Дополнительная регрессия V73–V76
 
-Перед релизом обязательны новые проверки, **не входившие**
-в исторические 2259/27 прогонов PR #8:
+Перед релизом обязательны новые проверки, **не входившие** в исторические 2259/27 прогонов PR #8:
 
 - Java ↔ PostgreSQL normalizer: все 24 whitespace,
   ISO controls, UTF-16 длина и названия-коллизии.
@@ -6863,106 +6081,44 @@ Production Knowledge требует:
 
 ### PostgreSQL image, DB identities и release gates
 
-Текущий `infra/postgres/Dockerfile` — release-controlled Ubuntu 24.04 Noble
-candidate: PostgreSQL 16.15, pgvector 0.8.7 собирается против той же PostgreSQL
-ABI; gosu 1.20 собирается Go 1.27.3, pinned source commits и base image digests.
-Официальные entrypoint scripts берутся из pinned pgvector image, не
-копируются Debian runtime libraries. Проверяется минимальная исправленная
-Ubuntu версия libxml2 и отсутствие missing shared libraries.
-Local Compose может использовать отдельный upstream PostgreSQL 16/pgvector
-image, а production — только утверждённый release digest.
+Текущий `infra/postgres/Dockerfile` — release-controlled Ubuntu 24.04 Noble candidate: PostgreSQL 16.15, pgvector 0.8.7 собирается против той же PostgreSQL ABI; gosu 1.20 собирается Go 1.27.3, pinned source commits и base image digests. Официальные entrypoint scripts берутся из pinned pgvector image, не копируются Debian runtime libraries. Проверяется минимальная исправленная Ubuntu версия libxml2 и отсутствие missing shared libraries. Local Compose может использовать отдельный upstream PostgreSQL 16/pgvector image, а production — только утверждённый release digest.
 
-Три базовые PostgreSQL identities: bootstrap (DBA, обычно `safeai`),
-`safeai_migrator` (Flyway/schema owner) и `safeai_app` (runtime DML,
-least privilege). Не использовать одну роль для всех трёх задач. Worker и
-operator roles V86–V89 дополнительно изолированы; application не наследует
-их destructive permissions.
+Три базовые PostgreSQL identities: bootstrap (DBA, обычно `safeai`), `safeai_migrator` (Flyway/schema owner) и `safeai_app` (runtime DML, least privilege). Не использовать одну роль для всех трёх задач. Worker и operator roles V86–V89 дополнительно изолированы; application не наследует их destructive permissions.
 
-Production Compose: `postgres` → `db-bootstrap` → `db-migrate` →
-backend. `db-bootstrap` вызывает `10-create-app-roles.sh`, роли и grants
-проверяются через catalog; `db-migrate` запускает отдельный
-`DatabaseMigrationMain`. Runtime backend имеет `SPRING_FLYWAY_ENABLED=false`.
-Secrets bootstrap/migrator/app не переиспользуются.
+Production Compose: `postgres` → `db-bootstrap` → `db-migrate` → backend. `db-bootstrap` вызывает `10-create-app-roles.sh`, роли и grants проверяются через catalog; `db-migrate` запускает отдельный `DatabaseMigrationMain`. Runtime backend имеет `SPRING_FLYWAY_ENABLED=false`. Secrets bootstrap/migrator/app не переиспользуются.
 
-Release pipeline собирает/сканирует PostgreSQL вместе с backend и Nginx,
-публикует image digests; deploy workflow проверяет approved PostgreSQL digest.
-Trivy v0.76.2: CRITICAL блокирует даже без исправления
-(`ignore-unfixed: false`), отдельно проверяются fixable HIGH/CRITICAL.
-Диагностические JSON/SARIF/SBOM и итоговые gates не взаимозаменяемы.
-Нельзя подменять образ сканирования другим тегом, игнорировать весь CVE класс
-или ослаблять gate для получения green CI.
+Release pipeline собирает/сканирует PostgreSQL вместе с backend и Nginx, публикует image digests; deploy workflow проверяет approved PostgreSQL digest. Trivy v0.76.2: CRITICAL блокирует даже без исправления (`ignore-unfixed: false`), отдельно проверяются fixable HIGH/CRITICAL. Диагностические JSON/SARIF/SBOM и итоговые gates не взаимозаменяемы. Нельзя подменять образ сканирования другим тегом, игнорировать весь CVE класс или ослаблять gate для получения green CI.
 
-До замены существующего PostgreSQL volume обязательны inventory, backup,
-restore rehearsal, проверки collations, pgvector/HNSW, row counts, constraints,
-Flyway history и ACL. `infra/postgres/PRODUCTION-EXECUTION.md`,
-`README-restore-rehearsal.md`, `rehearse-restore.sh` и
-`infra/scripts/test-runtime-acl.sh` — release/runbook sources.
-Это описывает реализованный deployment contract, не утверждает миграцию
-production на Noble или успешное изменение существующего volume.
+До замены существующего PostgreSQL volume обязательны inventory, backup, restore rehearsal, проверки collations, pgvector/HNSW, row counts, constraints, Flyway history и ACL. `infra/postgres/PRODUCTION-EXECUTION.md`, `README-restore-rehearsal.md`, `rehearse-restore.sh` и `infra/scripts/test-runtime-acl.sh` — release/runbook sources. Это описывает реализованный deployment contract, не утверждает миграцию production на Noble или успешное изменение существующего volume.
 
 ### V91–V92 и Catalog Pricing: финансовый rollout
 
-Применить V91/V92 штатным migrator до старта нового backend, проверить
-валидность CHECK и сохранение исторических policies. Перед включением RUB
-input подтвердить TLS egress к ЦБ; USD path должен работать и при его outage.
-При catalog-only переходе проверить наличие effective audited tariffs:
-старый pricing.yml не является fallback. Не выдавать UNPRICED за FREE.
-Новый frontend, backend и policy DTO выпускаются согласованно; rollback
-бинарника не требует удаления колонок или ручного rollback SQL.
+Применить V91/V92 штатным migrator до старта нового backend, проверить валидность CHECK и сохранение исторических policies. Перед включением RUB input подтвердить TLS egress к ЦБ; USD path должен работать и при его outage. При catalog-only переходе проверить наличие effective audited tariffs: старый pricing.yml не является fallback. Не выдавать UNPRICED за FREE. Новый frontend, backend и policy DTO выпускаются согласованно; rollback бинарника не требует удаления колонок или ручного rollback SQL.
 
 ### V78–V90: controlled destructive erasure rollout — NO-GO без отдельной приёмки
 
-Разработаны документы и база: `V78–V81` (document), `V82` (base),
-`V83` (операторское `NEEDS_REVIEW` requeue), `V84` (terminal audit и метрики).
-Наличие SQL, сервисов, готового frontend confirmation и настроенного Prometheus
-**не** означает разрешение включить удаление на реальных данных.
+Разработаны документы и база: `V78–V81` (document), `V82` (base), `V83` (операторское `NEEDS_REVIEW` requeue), `V84` (terminal audit и метрики). Наличие SQL, сервисов, готового frontend confirmation и настроенного Prometheus **не** означает разрешение включить удаление на реальных данных.
 
-Пять flags `safeai.knowledge.deletion.accept-enabled`,
-`safeai.knowledge.deletion.executor-enabled`,
-`safeai.knowledge.base-deletion.accept-enabled`,
-`safeai.knowledge.base-deletion.executor-enabled`,
-`safeai.knowledge.deletion.recovery-enabled` по умолчанию должны оставаться `false`.
-Для операторского resume **все пять** должны быть явно включены только на
-утверждённом окружении. `BLOCKED_BY_RETENTION` нельзя переводить в `DELETING`
-обычной командой. Read-only diagnosis и аудит продолжают работать без включения
-физического удаления.
+Пять flags `safeai.knowledge.deletion.accept-enabled`, `safeai.knowledge.deletion.executor-enabled`, `safeai.knowledge.base-deletion.accept-enabled`, `safeai.knowledge.base-deletion.executor-enabled`, `safeai.knowledge.deletion.recovery-enabled` по умолчанию должны оставаться `false`. Для операторского resume **все пять** должны быть явно включены только на утверждённом окружении. `BLOCKED_BY_RETENTION` нельзя переводить в `DELETING` обычной командой. Read-only diagnosis и аудит продолжают работать без включения физического удаления.
 
-После backup/restore rehearsal и populated V84→V90 Flyway upgrade на отдельной
-БД проверить реальные Object Lock/retention, tenant/RBAC/revoke,
-known vs ambiguous S3 failures, отказ SQL после S3 purge, consumer concurrency,
-frontend UI, audit outbox и Prometheus/Alertmanager end-to-end.
+После backup/restore rehearsal и populated V84→V90 Flyway upgrade на отдельной БД проверить реальные Object Lock/retention, tenant/RBAC/revoke, known vs ambiguous S3 failures, отказ SQL после S3 purge, consumer concurrency, frontend UI, audit outbox и Prometheus/Alertmanager end-to-end.
 
 
 ### V73–V76: порядок release и rollback
 
-V73–V76 должны находиться в одном согласованном release
-наборе, если включаются все четыре набора изменений.
-Перед Flyway: backup, preflight существующих организаций,
-учёт DDL locks, проверка миграционной истории и совместимости
-версий Java-кода с ожидаемой схемой.
+V73–V76 должны находиться в одном согласованном release наборе, если включаются все четыре набора изменений. Перед Flyway: backup, preflight существующих организаций, учёт DDL locks, проверка миграционной истории и совместимости версий Java-кода с ожидаемой схемой.
 
-Для V75 обязательно деплоить recovery Java-классы
-с правильным `AuditEventType`; регистрация event type
-без API не заменяет управляемого восстановления.
+Для V75 обязательно деплоить recovery Java-классы с правильным `AuditEventType`; регистрация event type без API не заменяет управляемого восстановления.
 
-Для V74 проверить, что rollup worker не обрабатывает
-открытый UTC-день и что повторные dirty revisions не теряются.
+Для V74 проверить, что rollup worker не обрабатывает открытый UTC-день и что повторные dirty revisions не теряются.
 
-Для V76 проверить deployment-порядок writer-кода и нового CHECK:
-новые retrieval runs должны сохранять redacted `query_text` и
-`query_sha256`. Исторические raw queries миграция не исправляет.
-Выполнить отдельный privacy review и проверку partial index.
+Для V76 проверить deployment-порядок writer-кода и нового CHECK: новые retrieval runs должны сохранять redacted `query_text` и `query_sha256`. Исторические raw queries миграция не исправляет. Выполнить отдельный privacy review и проверку partial index.
 
-По умолчанию Flyway не откатывает применённый production SQL
-автоматически. Rollback приложения допустим лишь при
-подтверждённой совместимости со схемой; иначе нужен
-подготовленный forward-fix и staged cutover.
+По умолчанию Flyway не откатывает применённый production SQL автоматически. Rollback приложения допустим лишь при подтверждённой совместимости со схемой; иначе нужен подготовленный forward-fix и staged cutover.
 
 ### V72 rollout — согласованное внедрение security epoch и AI kill-switch
 
-V72 нельзя считать обычной независимой SQL-миграцией: новая схема требует от reservation path явно
-записывать `authorized_organization_auth_version`, а physical executor должен уважать database
-rejection. Перед выпуском нужны:
+V72 нельзя считать обычной независимой SQL-миграцией: новая схема требует от reservation path явно записывать `authorized_organization_auth_version`, а physical executor должен уважать database rejection. Перед выпуском нужны:
 
 1. Согласованное обновление backend и Flyway V72: не оставлять старые workers, которые создают
    ChatTurn без текущего epoch.
@@ -6975,10 +6131,7 @@ rejection. Перед выпуском нужны:
 5. Проверка latency и блокировок `organizations FOR SHARE/FOR UPDATE`, retry policy при SQLSTATE
    `40P01` и мониторинг времени ожидания транзакций.
 
-Успешный локальный `./mvnw test` (2259 тестов) подтвержден отдельно и не подменяет
-`clean test`, CI на релизном коммите, populated V71→V72 upgrade rehearsal, production-like
-race tests и runtime/provider smoke. Не считать production release gate выполненным
-только по SQL-файлу, Flyway startup либо единичному green запуску.
+Успешный локальный `./mvnw test` (2259 тестов) подтвержден отдельно и не подменяет `clean test`, CI на релизном коммите, populated V71→V72 upgrade rehearsal, production-like race tests и runtime/provider smoke. Не считать production release gate выполненным только по SQL-файлу, Flyway startup либо единичному green запуску.
 
 
 ### PostgreSQL backup / restore
@@ -6989,14 +6142,9 @@ Backup не считается готовым только потому, что 
 
 ### Prometheus
 
-`/actuator/prometheus` / management endpoints — internal-only.
-Production management слушает отдельный приватный адрес;
-блокировать публичный ingress и проверять reachability из
-сети мониторинга. Используются правила в `infra/prometheus`,
-**не** `deploy/prometheus` и **не** `application-prod.yml`.
+`/actuator/prometheus` / management endpoints — internal-only. Production management слушает отдельный приватный адрес; блокировать публичный ingress и проверять reachability из сети мониторинга. Используются правила в `infra/prometheus`, **не** `deploy/prometheus` и **не** `application-prod.yml`.
 
-Alertmanager и реальную маршрутизацию необходимо настроить
-отдельно: готовый YAML не является доставленным уведомлением.
+Alertmanager и реальную маршрутизацию необходимо настроить отдельно: готовый YAML не является доставленным уведомлением.
 
 ### Provider egress
 
@@ -7008,13 +6156,7 @@ Redirect following с credentials запрещён.
 
 ## Текущие ограничения и production-readiness gaps
 
-Здесь собраны исторические риски и новые release gaps по состоянию
-на 31.10.2026. Некоторые тезисы требуют повторного code audit перед изменением production behavior;
-их наличие в README не подтверждает незакрытый дефект текущего `main`. Пункты, закрытые `V59–V68`,
-из списка удалены: budget-state representability закрыт `V62/V64`, final-request/RAG binding —
-`V62/V64/V65`,
-searchable Knowledge publication — `V63`, physical response vs protocol rejection — `V66`,
-а Chat/Audit evidence получил дополнительные DB backstops в `V67/V68`.
+Здесь собраны исторические риски и новые release gaps по состоянию на 31.10.2026. Некоторые тезисы требуют повторного code audit перед изменением production behavior; их наличие в README не подтверждает незакрытый дефект текущего `main`. Пункты, закрытые `V59–V68`, из списка удалены: budget-state representability закрыт `V62/V64`, final-request/RAG binding — `V62/V64/V65`, searchable Knowledge publication — `V63`, physical response vs protocol rejection — `V66`, а Chat/Audit evidence получил дополнительные DB backstops в `V67/V68`.
 
 ### P0 до production — release validation V72–V92, deletion safety и мониторинг
 
@@ -7044,17 +6186,12 @@ searchable Knowledge publication — `V63`, physical response vs protocol reject
 - API `202 Accepted` означает создание задачи, **не** окончательное удаление;
   `DELETED` не включает backup, RAG/audit provenance и внешних AI providers.
 
-**Запрещено** отключать safety triggers, менять applied SQL checksum,
-ослаблять RBAC/tenant scope и подменять unknown provider result успехом.
+**Запрещено** отключать safety triggers, менять applied SQL checksum, ослаблять RBAC/tenant scope и подменять unknown provider result успехом.
 
 
 ### P1 — Governed provider entry point
 
-DB уже не разрешает новый physical attempt без v2 final-request binding, а `STARTED` требует live
-fenced `PROCESSING`
-turn. При этом provider adapter implementation всё равно должен оставаться недоступным для
-произвольного application
-call-site в обход governed execution scope.
+DB уже не разрешает новый physical attempt без v2 final-request binding, а `STARTED` требует live fenced `PROCESSING` turn. При этом provider adapter implementation всё равно должен оставаться недоступным для произвольного application call-site в обход governed execution scope.
 
 Целевой invariant:
 
@@ -7063,8 +6200,7 @@ no governed execution identity
     → no credential-bearing provider I/O
 ```
 
-Это желательно подкреплять package/module visibility, explicit execution capability/token и
-integration tests.
+Это желательно подкреплять package/module visibility, explicit execution capability/token и integration tests.
 
 ### P1 — ExecutionPlan recovery
 
@@ -7080,26 +6216,17 @@ Attempt #1 ещё не создан
 
 остаётся безопасно recoverable, потому что durable physical `STARTED` evidence отсутствует.
 
-Нужен явный, хорошо протестированный application recovery path, который возобновляет именно эту
-операцию,
-а не создаёт новую route/request identity.
+Нужен явный, хорошо протестированный application recovery path, который возобновляет именно эту операцию, а не создаёт новую route/request identity.
 
 ### P1 — Provider token/context estimation
 
-Governance input units (`UTF8_STRUCTURAL_UNITS_V2`) и provider-native context tokens — разные
-величины.
+Governance input units (`UTF8_STRUCTURAL_UNITS_V2`) и provider-native context tokens — разные величины.
 
-Deterministic governance accounting полезен для policy/budget envelopes, но char/structural
-heuristic нельзя выдавать
-за математически строгий upper bound provider tokenizer. Для моделей с критичным context fit нужен
-provider-aware
-tokenizer либо консервативный fail-closed bound.
+Deterministic governance accounting полезен для policy/budget envelopes, но char/structural heuristic нельзя выдавать за математически строгий upper bound provider tokenizer. Для моделей с критичным context fit нужен provider-aware tokenizer либо консервативный fail-closed bound.
 
 ### P1 — Pricing scheme breadth
 
-V66 вводит explicit `pricing_scheme` и fail-closed legacy/unsupported states, однако текущая
-поддерживаемая схема
-не покрывает весь рынок provider billing semantics.
+V66 вводит explicit `pricing_scheme` и fail-closed legacy/unsupported states, однако текущая поддерживаемая схема не покрывает весь рынок provider billing semantics.
 
 Отдельного versioned model требуют, например:
 
@@ -7110,14 +6237,11 @@ V66 вводит explicit `pricing_scheme` и fail-closed legacy/unsupported sta
 - tool/search/image/audio dimensions;
 - cache read/write variants разных providers.
 
-Неподдерживаемая схема должна оставаться `UNPRICED`/unverifiable, а не аппроксимироваться как
-flat-token pricing.
+Неподдерживаемая схема должна оставаться `UNPRICED`/unverifiable, а не аппроксимироваться как flat-token pricing.
 
 ### P1 — Billing-grade settlement
 
-`model_cost_commitment_ledger_v62` и `chat_physical_spend_v67` дают provider-evidenced accounting и
-unknown-liability
-semantics, но это ещё не бухгалтерский/invoice settlement subsystem.
+`model_cost_commitment_ledger_v62` и `chat_physical_spend_v67` дают provider-evidenced accounting и unknown-liability semantics, но это ещё не бухгалтерский/invoice settlement subsystem.
 
 Для billing-grade слоя потребуются:
 
@@ -7134,9 +6258,7 @@ semantics, но это ещё не бухгалтерский/invoice settlement
 
 ### P1 — Knowledge evidence retention / GC
 
-Retrieval evidence защищает referenced chunks/generations от уничтожения, но без bounded
-retention/legal-hold policy
-historical evidence может удерживать storage indefinitely.
+Retrieval evidence защищает referenced chunks/generations от уничтожения, но без bounded retention/legal-hold policy historical evidence может удерживать storage indefinitely.
 
 Нужен lifecycle:
 
@@ -7148,28 +6270,21 @@ historical evidence может удерживать storage indefinitely.
 
 ### P1 — Mixed scanned PDF fail-closed
 
-Для mixed PDF OCR-required pages не должны тихо подменяться native-only extraction, если OCR
-disabled/unavailable.
+Для mixed PDF OCR-required pages не должны тихо подменяться native-only extraction, если OCR disabled/unavailable.
 
 Strict `KNOWLEDGE_ONLY` не должен публиковать заведомо partial document как полностью готовый.
 
 ### P1 — Parser isolation
 
-Extraction имеет timeout/thread bounds, но untrusted PDF/OOXML всё ещё парсится внутри application
-JVM.
+Extraction имеет timeout/thread bounds, но untrusted PDF/OOXML всё ещё парсится внутри application JVM.
 
-Для hardened enterprise deployment parsing стоит вынести в отдельный worker/container sandbox
-boundary
-с memory/CPU/time/filesystem/network limits.
+Для hardened enterprise deployment parsing стоит вынести в отдельный worker/container sandbox boundary с memory/CPU/time/filesystem/network limits.
 
 ### P1 — Knowledge provider attempt/cost evidence
 
-OCR/embedding external calls пока не имеют такого же полного durable physical-attempt ledger, как
-Chat AI execution.
+OCR/embedding external calls пока не имеют такого же полного durable physical-attempt ledger, как Chat AI execution.
 
-При partial batch success + process crash возможны повторные billable calls. Нужны durable operation
-identity,
-attempt evidence и reconciliation semantics для embedding/OCR pipeline.
+При partial batch success + process crash возможны повторные billable calls. Нужны durable operation identity, attempt evidence и reconciliation semantics для embedding/OCR pipeline.
 
 ### P1/P2 — Concurrent index recovery
 
@@ -7181,9 +6296,7 @@ Interrupted `CREATE INDEX CONCURRENTLY` может оставить invalid inde
 
 ### P2 — Human review workflow for Knowledge storage reconciliation
 
-V63 корректно разделяет `needs_review_at` и `reviewed_at`, но сама полноценная operator workflow
-вокруг
-`NEEDS_REVIEW` должна иметь:
+V63 корректно разделяет `needs_review_at` и `reviewed_at`, но сама полноценная operator workflow вокруг `NEEDS_REVIEW` должна иметь:
 
 - assignee/claim;
 - resolution code;
@@ -7194,12 +6307,9 @@ V63 корректно разделяет `needs_review_at` и `reviewed_at`, н
 
 ### P2 — V58 legacy title ambiguity
 
-До появления `title_source` невозможно доказать, был ли historical title `Новый чат` placeholder-ом
-или осознанным user title.
+До появления `title_source` невозможно доказать, был ли historical title `Новый чат` placeholder-ом или осознанным user title.
 
-V58 deterministic backfill принимает это как migration trade-off; V59 защищает дальнейшее движение
-provenance назад,
-но не может ретроспективно восстановить утраченное историческое намерение пользователя.
+V58 deterministic backfill принимает это как migration trade-off; V59 защищает дальнейшее движение provenance назад, но не может ретроспективно восстановить утраченное историческое намерение пользователя.
 
 ### Audit / Usage — остаточные эксплуатационные риски
 
@@ -7282,23 +6392,15 @@ provider**:
 
 требуют сильных transactional boundaries.
 
-Переход к микросервисам имеет смысл только после появления реальной независимой scaling/ownership
-необходимости и должен сохранять эти invariants.
+Переход к микросервисам имеет смысл только после появления реальной независимой scaling/ownership необходимости и должен сохранять эти invariants.
 
 ---
 
 ## Frontend
 
-В историческом frontend-срезе 31.10.2026 сценарии Knowledge deletion вынесены в feature controllers и
-отдельные API clients. В V84 исправлено поведение чтения истории: выключенный
-capability не должен очищать ранее загруженные операции; network/parse failure
-не маскируется под пустую историю. Acceptance `202` показывает состояние запроса,
-не завершение erasure. Все отрицательные состояния и stale errors должны
-оставаться видимыми после перезагрузки страницы.
+В историческом frontend-срезе 31.10.2026 сценарии Knowledge deletion вынесены в feature controllers и отдельные API clients. В V84 исправлено поведение чтения истории: выключенный capability не должен очищать ранее загруженные операции; network/parse failure не маскируется под пустую историю. Acceptance `202` показывает состояние запроса, не завершение erasure. Все отрицательные состояния и stale errors должны оставаться видимыми после перезагрузки страницы.
 
-Актуальный предоставленный frontend использует React 19 / TypeScript 6 и
-feature-oriented layout (`app`, `entities`, `features`, `pages`, `shared`, `test`),
-не старые корневые `src/api`, `src/auth`, `src/components`.
+Актуальный предоставленный frontend использует React 19 / TypeScript 6 и feature-oriented layout (`app`, `entities`, `features`, `pages`, `shared`, `test`), не старые корневые `src/api`, `src/auth`, `src/components`.
 
 ```text
 frontend/src/
@@ -7313,31 +6415,13 @@ frontend/src/
 └── main.tsx
 ```
 
-Команда «Удалить…» появилась в меню документов только для серверно разрешённого
-владельца; при выключенной функции видна **неактивной** с текстом причины.
-React-модалка требует точного совпадения имени, отправляет `If-Match` и
-стабильный `Idempotency-Key`, не объявляет успех по одному HTTP 202, отображает
-`DELETING` / `NEEDS_REVIEW` / `BLOCKED_BY_RETENTION` / `DELETED`.
-Модальный UI и проверки ролей не заменяют серверную tenant/OWNER авторизацию.
-В предоставленном V82 frontend-снимке есть `knowledgeBaseDeletionApi.ts`,
-`KnowledgeBaseDeleteAction.tsx`, `BaseDeletionHistory.tsx` и тесты подтверждения;
-V84 затрагивает `useKnowledgeDeletionController.ts` и историю/ошибки статуса.
-Фактическая работа текущей локальной UI-ветки и `npm run ci` подлежит отдельной проверке.
+Команда «Удалить…» появилась в меню документов только для серверно разрешённого владельца; при выключенной функции видна **неактивной** с текстом причины. React-модалка требует точного совпадения имени, отправляет `If-Match` и стабильный `Idempotency-Key`, не объявляет успех по одному HTTP 202, отображает `DELETING` / `NEEDS_REVIEW` / `BLOCKED_BY_RETENTION` / `DELETED`. Модальный UI и проверки ролей не заменяют серверную tenant/OWNER авторизацию. В предоставленном V82 frontend-снимке есть `knowledgeBaseDeletionApi.ts`, `KnowledgeBaseDeleteAction.tsx`, `BaseDeletionHistory.tsx` и тесты подтверждения; V84 затрагивает `useKnowledgeDeletionController.ts` и историю/ошибки статуса. Фактическая работа текущей локальной UI-ветки и `npm run ci` подлежит отдельной проверке.
 
-**Ключевые изменения по V84 ZIP:**
-`useKnowledgeDeletionController.ts` и его `.test.tsx`,
-`KnowledgeDetailsWorkspace.tsx`, `KnowledgeDetailsContent.tsx` и
-`KnowledgeDetailsPage.test.tsx`. Они относятся к реакции UI на ошибки/историю
-и не расширяют доступ к destructive DELETE. Источником фактических связей и
-контрактов остаётся `frontend/src` текущей рабочей копии.
+**Ключевые изменения по V84 ZIP:** `useKnowledgeDeletionController.ts` и его `.test.tsx`, `KnowledgeDetailsWorkspace.tsx`, `KnowledgeDetailsContent.tsx` и `KnowledgeDetailsPage.test.tsx`. Они относятся к реакции UI на ошибки/историю и не расширяют доступ к destructive DELETE. Источником фактических связей и контрактов остаётся `frontend/src` текущей рабочей копии.
 
 ### Model Control Plane UI — актуальные изменения 17.11.2026
 
-Административная страница моделей организована как четыре адресуемые
-рабочие области: **Обзор**, **Каталог**, **Доступ**, **Диагностика**.
-Выбранная секция восстанавливается при навигации; клавиатурная навигация
-использует tablist semantics. Обзор отражает configured runtime/effective
-catalog, а не динамическое переключение provider.
+Административная страница моделей организована как четыре адресуемые рабочие области: **Обзор**, **Каталог**, **Доступ**, **Диагностика**. Выбранная секция восстанавливается при навигации; клавиатурная навигация использует tablist semantics. Обзор отражает configured runtime/effective catalog, а не динамическое переключение provider.
 
 - Каталог: latest/effective различаются, scheduled версии не становятся
   активными раньше effectiveFrom. История сохраняет immutable версии.
@@ -7368,22 +6452,9 @@ catalog, а не динамическое переключение provider.
   pricing.yml. Unknown tariff отображается UNPRICED, не FREE; цены
   передаются как decimal strings.
 
-Ключевые компоненты и тесты в подготовленных изменениях:
-`AdminModelsNavigation.tsx`, `modelsNavigationState.ts`,
-`ModelsCatalogWorkspace.tsx`, `ModelsAccessWorkspace.tsx`,
-`ModelCatalogHistoryModal.tsx`, `ModelPolicyModal.tsx`,
-`modelPolicyModal/PolicyBudgetCurrency.tsx`,
-`modelPolicyModal/useModelPolicyModalController.ts`,
-`modelControlPlaneViews/RuntimeCard.tsx`;
-`entities/model/api/model/modelBudgetFx.ts`, `modelPolicyParsers.ts`,
-`modelClient.ts` и соответствующие regression tests.
-Frontend API parsers сохраняют exact-money contract. Все UI ограничения
-дополнены серверной валидацией/RBAC; они не являются самостоятельной
-security boundary.
+Ключевые компоненты и тесты в подготовленных изменениях: `AdminModelsNavigation.tsx`, `modelsNavigationState.ts`, `ModelsCatalogWorkspace.tsx`, `ModelsAccessWorkspace.tsx`, `ModelCatalogHistoryModal.tsx`, `ModelPolicyModal.tsx`, `modelPolicyModal/PolicyBudgetCurrency.tsx`, `modelPolicyModal/useModelPolicyModalController.ts`, `modelControlPlaneViews/RuntimeCard.tsx`; `entities/model/api/model/modelBudgetFx.ts`, `modelPolicyParsers.ts`, `modelClient.ts` и соответствующие regression tests. Frontend API parsers сохраняют exact-money contract. Все UI ограничения дополнены серверной валидацией/RBAC; они не являются самостоятельной security boundary.
 
-Проверка frontend в отдельных пакетах изменений прошла, но браузерные
-Playwright-сценарии требуют проверки на рабочей машине/CI. Не считать
-подтверждённой визуальную desktop/mobile приёмку только по unit tests.
+Проверка frontend в отдельных пакетах изменений прошла, но браузерные Playwright-сценарии требуют проверки на рабочей машине/CI. Не считать подтверждённой визуальную desktop/mobile приёмку только по unit tests.
 
 #### Локальные проверки frontend
 
@@ -7395,31 +6466,15 @@ npm run test
 npm run build
 ```
 
-Для объединенного прогона `npm run check`; CI-ориентированный script — `npm run ci`
-(проверка архитектуры, lint, coverage, production build). Для текущего проекта
-используется `NODE_OPTIONS=--no-experimental-webstorage npm run ci`. `npm run audit:prod` проверяет production
-dependencies
-по npm audit policy. **Эти команды не запускались в предоставленных логах PR #8.**
+Для объединенного прогона `npm run check`; CI-ориентированный script — `npm run ci` (проверка архитектуры, lint, coverage, production build). Для текущего проекта используется `NODE_OPTIONS=--no-experimental-webstorage npm run ci`. `npm run audit:prod` проверяет production dependencies по npm audit policy. **Эти команды не запускались в предоставленных логах PR #8.**
 
-Frontend routes/API contracts в точности определяются актуальными `App.tsx`, `api/`,
-`pages/`, а не этим обзорным деревом; перенос endpoint без проверки обоих слоев запрещен.
+Frontend routes/API contracts в точности определяются актуальными `App.tsx`, `api/`, `pages/`, а не этим обзорным деревом; перенос endpoint без проверки обоих слоев запрещен.
 
 ---
 
 ## Поддержание документации в актуальном состоянии
 
-README предназначен для **реализованных и проверяемых** контрактов. `ROADMAP.md` — для будущих
-возможностей.
-Связанные документы: `docs/00_PROJECT_OVERVIEW.md`, `docs/01_LOCAL_RUNBOOK.md`,
-`docs/02_DOCKER_RUNBOOK.md`, `docs/03_AUTH_JWT_VERIFICATION.md`,
-`docs/04_ORGANIZATION_USER_API.md`, `docs/05_CHAT_CORE_VERIFICATION.md`,
-`docs/08_DATABASE_CHECKS.md`, `docs/09_TESTING_GUIDE.md`,
-`docs/10_TROUBLESHOOTING.md`, `docs/12_KNOWLEDGE_BASE_CORE_VERIFICATION.md`,
-`backend/src/main/resources/db/README_DB.md`, `docs/runMacBook/LOCAL_DEVELOPMENT_MACOS.md`.
-Эти вспомогательные документы существуют в дереве, но их актуальность по отношению к README
-нужно сверять перед выполнением критических команд; они не переопределяют source code. Новая
-миграция требует синхронного обновления: migration map, entity/repository contract, API flows,
-state-machine diagrams, runbook, known-failure status и тестовой матрицы.
+README предназначен для **реализованных и проверяемых** контрактов. `ROADMAP.md` — для будущих возможностей. Связанные документы: `docs/00_PROJECT_OVERVIEW.md`, `docs/01_LOCAL_RUNBOOK.md`, `docs/02_DOCKER_RUNBOOK.md`, `docs/03_AUTH_JWT_VERIFICATION.md`, `docs/04_ORGANIZATION_USER_API.md`, `docs/05_CHAT_CORE_VERIFICATION.md`, `docs/08_DATABASE_CHECKS.md`, `docs/09_TESTING_GUIDE.md`, `docs/10_TROUBLESHOOTING.md`, `docs/12_KNOWLEDGE_BASE_CORE_VERIFICATION.md`, `backend/src/main/resources/db/README_DB.md`, `docs/runMacBook/LOCAL_DEVELOPMENT_MACOS.md`. Эти вспомогательные документы существуют в дереве, но их актуальность по отношению к README нужно сверять перед выполнением критических команд; они не переопределяют source code. Новая миграция требует синхронного обновления: migration map, entity/repository contract, API flows, state-machine diagrams, runbook, known-failure status и тестовой матрицы.
 
 При обновлении проекта сверяйте прежде всего:
 
@@ -7434,9 +6489,7 @@ state-machine diagrams, runbook, known-failure status и тестовой мат
 - concurrency/DB evidence — подтверждение, что ограничения выдерживают не только happy path, но и
   гонки/отказоустойчивость.
 
-Никакие сведения о наличии класса, метода или SQL-файла сами по себе не являются доказательством
-прохождения теста. Статусы «реализовано в исходном патче», «применено в тестовой PostgreSQL»,
-«проверено интеграционным тестом» и «выпущено в production» следует документировать **раздельно**.
+Никакие сведения о наличии класса, метода или SQL-файла сами по себе не являются доказательством прохождения теста. Статусы «реализовано в исходном патче», «применено в тестовой PostgreSQL», «проверено интеграционным тестом» и «выпущено в production» следует документировать **раздельно**.
 
 ---
 
@@ -7501,8 +6554,7 @@ usage / physical spend / Answer Passport / audit
 
 ## Передача контекста в новый AI-чат
 
-Этот раздел предназначен для продолжения работы над SafeAI Desk в **новом диалоге** без повторного
-обсуждения восьми уже завершенных PR. Он фиксирует workflow, а не заменяет чтение исходников.
+Этот раздел предназначен для продолжения работы над SafeAI Desk в **новом диалоге** без повторного обсуждения восьми уже завершенных PR. Он фиксирует workflow, а не заменяет чтение исходников.
 
 ### Исторический baseline PR #8 и доступные исходники 28.10.2026
 
@@ -7518,16 +6570,9 @@ Structure:   modular monolith; common, identity, auth, user, organization,
 PRs merged:  #1–#8; latest adds ArchUnit 1.5.1 architecture rule for common
 ```
 
-**Уже сделано:** module-specific exception handlers выведены из `common.exception`;
-`identity.session` содержит порт отзыва сессий; `auth` владеет JWT runtime/codec,
-RSA ring, Spring Security entry points, JWT converter и BCrypt configuration.
-`common` оставлен за shared error envelope, principal/roles, IP/CORS, Request ID,
-production startup guards, general infrastructure. PR #8 добавил `CommonDependencyArchitectureTest`.
+**Уже сделано:** module-specific exception handlers выведены из `common.exception`; `identity.session` содержит порт отзыва сессий; `auth` владеет JWT runtime/codec, RSA ring, Spring Security entry points, JWT converter и BCrypt configuration. `common` оставлен за shared error envelope, principal/roles, IP/CORS, Request ID, production startup guards, general infrastructure. PR #8 добавил `CommonDependencyArchitectureTest`.
 
-**Проверено до merge PR #8:** `./mvnw test`: 2259 tests, 0 failures, 0 errors, 3 skipped;
-дополнительно 27/27 PostgreSQL/Redis IT, ArchUnit positive/negative test.
-Чистый `main` относился к историческому PR #8. Это **не** статус текущей ветки или доказательство
-того, что другие модули уже архитектурно изолированы.
+**Проверено до merge PR #8:** `./mvnw test`: 2259 tests, 0 failures, 0 errors, 3 skipped; дополнительно 27/27 PostgreSQL/Redis IT, ArchUnit positive/negative test. Чистый `main` относился к историческому PR #8. Это **не** статус текущей ветки или доказательство того, что другие модули уже архитектурно изолированы.
 
 ### Как вести следующий архитектурный PR
 
@@ -7550,17 +6595,9 @@ production startup guards, general infrastructure. PR #8 добавил `CommonD
 
 ### Неприкосновенные инварианты
 
-Сохранять tenant isolation, exactly-one-role RBAC, fail-closed security, cookie JWT/CSRF,
-refresh rotation/reuse/family, user/org security epochs, organization→user→token lock order,
-durable ChatTurn/idempotency/lease/fencing, `AMBIGUOUS` no-blind-retry, physical
-STARTED DB fence V67/V72, sealed request/route/RAG evidence, immutable SQL evidence,
-pricing `unknown != zero`, audit outbox и Knowledge ACL/provenance. **Нельзя** добиваться
-зеленых тестов ослаблением constraints, SQL migrations или security handlers.
+Сохранять tenant isolation, exactly-one-role RBAC, fail-closed security, cookie JWT/CSRF, refresh rotation/reuse/family, user/org security epochs, organization→user→token lock order, durable ChatTurn/idempotency/lease/fencing, `AMBIGUOUS` no-blind-retry, physical STARTED DB fence V67/V72, sealed request/route/RAG evidence, immutable SQL evidence, pricing `unknown != zero`, audit outbox и Knowledge ACL/provenance. **Нельзя** добиваться зеленых тестов ослаблением constraints, SQL migrations или security handlers.
 
-Пользователь предпочитает **небольшие последовательные шаги**: команда → вывод → анализ →
-следующий шаг. Объяснения по-русски; commit/PR описания — на русском, Conventional Commits
-prefix допустим. Не изменять личные файлы, stash и несвязанные ветки, не создавать PR
-без необходимости. При нехватке данных запросить точный файл/лог или проверить repo.
+Пользователь предпочитает **небольшие последовательные шаги**: команда → вывод → анализ → следующий шаг. Объяснения по-русски; commit/PR описания — на русском, Conventional Commits prefix допустим. Не изменять личные файлы, stash и несвязанные ветки, не создавать PR без необходимости. При нехватке данных запросить точный файл/лог или проверить repo.
 
 #### Команды для начала нового диалога
 
@@ -7576,24 +6613,16 @@ cd backend
 ./mvnw -Dtest=CommonDependencyArchitectureTest test
 ```
 
-Указывать границы подтверждения: read-only `git grep` проверяет явные Java imports;
-ArchUnit — class dependencies, а ни один из них не заменяет анализ runtime flow,
-Spring wiring, database triggers и concurrency.
+Указывать границы подтверждения: read-only `git grep` проверяет явные Java imports; ArchUnit — class dependencies, а ни один из них не заменяет анализ runtime flow, Spring wiring, database triggers и concurrency.
 
 ---
 
 ## План следующего этапа
 
-**Ближайший функциональный приоритет — production-like приёмка V85–V92:**
-реальные PostgreSQL-роли, S3 Object Lock, commit receipts после DB commit,
-retention recovery с двумя разными DB login, Chat batch boundaries и V90 GC.
-Отдельно — непрерывная финансовая матрица V91/V92, role-safe sequential
-fixture, provider-data assurance, каталоговый pricing, preview и RUB UI.
-До отдельного GO все destructive flags остаются выключенными.
+**Ближайший функциональный приоритет — production-like приёмка V85–V92:** реальные PostgreSQL-роли, S3 Object Lock, commit receipts после DB commit, retention recovery с двумя разными DB login, Chat batch boundaries и V90 GC. Отдельно — непрерывная финансовая матрица V91/V92, role-safe sequential fixture, provider-data assurance, каталоговый pricing, preview и RUB UI. До отдельного GO все destructive flags остаются выключенными.
 
 
-Приоритет — **не массовый перенос Java-файлов**, а доказуемое выравнивание ownership
-и направление зависимостей в текущем модульном монолите.
+Приоритет — **не массовый перенос Java-файлов**, а доказуемое выравнивание ownership и направление зависимостей в текущем модульном монолите.
 
 - **1. Identity**
   - **Цель:** Аудит `identity.session` и consumers
@@ -7633,23 +6662,17 @@ fixture, provider-data assurance, каталоговый pricing, preview и RUB
     authorization
 
 
-Порядок — гипотеза для **аудита**, а не разрешение сразу вводить все dependency rules.
-Сначала строится фактический dependency graph; архитектура и контракты согласуются с
-доменными инвариантами. Любое изменение — отдельный маленький PR с целевыми тестами.
+Порядок — гипотеза для **аудита**, а не разрешение сразу вводить все dependency rules. Сначала строится фактический dependency graph; архитектура и контракты согласуются с доменными инвариантами. Любое изменение — отдельный маленький PR с целевыми тестами.
 
 ---
 
-**Редакция 17.11.2026:** сохранена предметная документация модулей и исторический
-baseline; актуализированы V1–V92, model governance, RUB budgets,
-provider evidence, catalog-only pricing, PostgreSQL supply chain,
-разделение SQL-ролей и release/test gates.
+**Редакция 17.11.2026:** сохранена предметная документация модулей и исторический baseline; актуализированы V1–V92, model governance, RUB budgets, provider evidence, catalog-only pricing, PostgreSQL supply chain, разделение SQL-ролей и release/test gates.
 Live deployment и итоговый зелёный CI не заявляются.
 ---
 
 ## Релизный контроль V73–V92
 
-Этот checklist задаёт **условия выпуска**, не отчёт об успешном выполнении.
-Не запускайте destructive SQL и тесты стирания на production PostgreSQL.
+Этот checklist задаёт **условия выпуска**, не отчёт об успешном выполнении. Не запускайте destructive SQL и тесты стирания на production PostgreSQL.
 
 #### Репозиторий, миграции и сборка
 
@@ -7740,12 +6763,7 @@ SELECT has_function_privilege(
 ) AS app_can_use_fenced_generation_gc;
 ```
 
-Ожидается, что `app_can_direct_delete_chunks = false`,
-`app_can_use_fenced_generation_gc = true`, а индекс V87 `indisvalid = true`
-и `indisready = true`. Все три V91/V92 CHECK должны существовать и быть
-validated; запрос к information_schema должен вернуть шесть колонок.
-Наличие ограничений и функций не заменяет тесты
-на **реальной** отдельной app/worker/operator роли.
+Ожидается, что `app_can_direct_delete_chunks = false`, `app_can_use_fenced_generation_gc = true`, а индекс V87 `indisvalid = true` и `indisready = true`. Все три V91/V92 CHECK должны существовать и быть validated; запрос к information_schema должен вернуть шесть колонок. Наличие ограничений и функций не заменяет тесты на **реальной** отдельной app/worker/operator роли.
 
 #### Необходимая интеграционная матрица
 
@@ -7770,11 +6788,32 @@ validated; запрос к information_schema должен вернуть шес
 - Replica/multi-worker concurrency, leases/fencing, backup/restore drills.
 - Frontend regression, Prometheus scrape, Alertmanager delivery, CI artifacts.
 
-**Production GO запрещён** без свежего green suite, утверждённого retention
-решения, реальной проверки Object Lock, безопасных SQL grants, backup restore,
-наблюдаемости и операционного runbook. В противном случае destructive flags
-остаются `false`.
+**Production GO запрещён** без свежего green suite, утверждённого retention решения, реальной проверки Object Lock, безопасных SQL grants, backup restore, наблюдаемости и операционного runbook. В противном случае destructive flags остаются `false`.
 
-**Неизменяемое правило:** не редактировать миграции, уже существующие в
-`flyway_schema_history`. Последующие исправления оформлять следующей свободной
-версией после проверки текущей ветки и применённой схемы.
+**Неизменяемое правило:** не редактировать миграции, уже существующие в `flyway_schema_history`. Последующие исправления оформлять следующей свободной версией после проверки текущей ветки и применённой схемы.
+
+## Super Admin Production UX
+
+Пакет от 18.11.2026 развивает административную консоль поверх V1–V92.
+Подробная дорожная карта и критерии приемки:
+[Super Admin UX — этап 2](docs/SUPER_ADMIN_PRODUCTION_UX_STAGE2.md) и
+[единая UI-система — этап 3](docs/SUPER_ADMIN_PRODUCTION_UX_STAGE3.md).
+
+| Этап | Направление | Статус |
+|---|---|---|
+| 1 | Организации, пользователи, компоновка | Установлен локально, визуальная проверка по предоставленным снимкам |
+| 2 | Серверные каталоги, фильтры, карточка и сквозная навигация | Установлен по снимкам пользователей; полный acceptance не подтверждён |
+| 3 | Единая UI-система и терминология | Код подготовлен; требуется установка и acceptance |
+| 4 | Модели, политики, бюджеты и диагностика | Запланирован |
+| 5 | Аудит и использование ресурсов | Запланирован |
+| 6 | Dashboard платформы | Запланирован |
+| 7 | Production Readiness и security review | Запланирован |
+
+### Серверные контракты этапа 2
+
+- `GET /api/organizations/search?query=&type=TENANT&enabled=true&page=0&size=50`: только SUPER_ADMIN. Предикаты имени (LIKE с экранированием), типа (идентификатор системной организации из конфигурации) и статуса применяются до пагинации. Типы API по-прежнему `PLATFORM` и `TENANT`; общее количество каталога получается отдельным серверным запросом, число совпадений — из `totalElements`.
+- `GET /api/users/search?organizationId=...&role=SUPER_ADMIN&page=0&size=50`: SUPER_ADMIN может ограничить область одной организацией; ADMIN — только своей. Для ADMIN запрос чужой организации запрещён до обращения к базе данных. Роль SUPER_ADMIN разрешена как фильтр только в глобальном административном поиске. Сохраняются стабильная сортировка и отдельное получение ассоциаций после выборки идентификаторов.
+- `GET /api/users/search/statistics?organizationId=...`: отдельный серверный снимок счётчиков `total`, `superAdministrators`, `administrators`, `users`, `enabled`, `disabled`. Legacy `/api/users/statistics` и контракты мутаций не изменены. Счётчики ролей относятся к выбранной области, а число совпадений — к активным фильтрам.
+- Карточка организации связывает `/admin/users`, `/admin/models?section=access`, `/admin/usage` и `/admin/audit` с идентификатором конкретной организации. Ссылки не расширяют полномочия: сервер повторно проверяет каждую операцию. Системная организация остаётся защищённой.
+
+Изменения не представляют собой подтверждение Production GO. Обязательны полные frontend/backend тесты, PostgreSQL integration tests, действующие CI security gates и локальная проверка прямых ссылок и сценариев изоляции.

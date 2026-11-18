@@ -8,6 +8,7 @@ import { useAdminOrganizationMutations } from '../features/admin-organizations/l
 import '../features/admin-organizations/styles/AdminOrganizationsPage.css'
 import '../features/admin-organizations/styles/AdminOrganizationsWorkspace.css'
 import '../features/admin-organizations/styles/AdminOrganizationsClarity.css'
+import '../entities/organization/ui/OrganizationDirectoryFilter.css'
 
 function AdminOrganizationsPage() {
     return <PageErrorBoundary><AdminOrganizationsPageContent /></PageErrorBoundary>
@@ -36,6 +37,11 @@ function AdminOrganizationsPageContent() {
             page={directory.page}
             totalPages={directory.totalPages}
             totalOrganizations={directory.totalOrganizations}
+            totalMatched={directory.totalMatched}
+            query={directory.query}
+            type={directory.type}
+            status={directory.status}
+            onFiltersChange={directory.changeFilters}
             name={create.name}
             detailsLoadingId={directory.detailsLoadingId}
             impactLoadingId={mutations.impactLoadingId}

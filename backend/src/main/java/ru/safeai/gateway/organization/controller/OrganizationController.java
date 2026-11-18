@@ -29,6 +29,7 @@ import ru.safeai.gateway.organization.dto.OrganizationDirectoryResponse;
 import ru.safeai.gateway.organization.dto.OrganizationDisableImpactResponse;
 import ru.safeai.gateway.organization.dto.OrganizationPageResponse;
 import ru.safeai.gateway.organization.dto.OrganizationResponse;
+import ru.safeai.gateway.organization.dto.OrganizationType;
 import ru.safeai.gateway.organization.dto.UpdateOrganizationRequest;
 import ru.safeai.gateway.organization.service.OrganizationService;
 
@@ -75,6 +76,18 @@ public class OrganizationController {
                         pageable
                 )
         );
+    }
+
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @GetMapping("/search")
+    public OrganizationPageResponse search(
+            @AuthenticationPrincipal(errorOnInvalidType = true) SafeAiUserPrincipal principal,
+            @RequestParam(required = false) @Size(max = 255) String query,
+            @RequestParam(required = false) OrganizationType type,
+            @RequestParam(required = false) Boolean enabled,
+            @PageableDefault(size = 50, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
+    ) {
+        return OrganizationPageResponse.from(organizationService.search(principal, query, type, enabled, pageable));
     }
 
     @PreAuthorize("hasRole('SUPER_ADMIN')")

@@ -8,6 +8,7 @@ import type { ComponentProps } from 'react'
 import { ModelCatalogVersionModal } from './ModelCatalogVersionModal'
 import { createModelCatalogEntry, createRuntimeModelStatus } from '../../../test/fixtures/modelControlPlaneTestFixtures'
 import { getRubBudgetQuote, moscowBudgetDate } from '../../../entities/model/api/modelApi'
+import { ApiError } from '../../../shared/api/http'
 
 vi.mock('../../../entities/model/api/modelApi', async (importOriginal) => ({
     ...await importOriginal<typeof import('../../../entities/model/api/modelApi')>(),
@@ -56,6 +57,14 @@ describe('ModelCatalogVersionModal — production regression', () => {
             expectedPreviousVersion: 0, maxInputTokens: 64_000,
             maxOutputTokens: 2_048, pricingStatus: 'FREE', pricingComplete: true,
         }))
+    })
+
+    it('не выводит сырое исключение сохранения каталога', async () => {
+        const props = createProps({ onSubmit: vi.fn().mockRejectedValue(new Error('SQL diagnostic private value')) })
+        render(<ModelCatalogVersionModal {...props} />)
+        submitForm()
+        expect(await screen.findByText('Не удалось сохранить модель.')).toBeInTheDocument()
+        expect(screen.queryByText('SQL diagnostic private value')).not.toBeInTheDocument()
     })
 
     it('использует optimistic version и блокирует изменение ключа версии существующей модели', async () => {
@@ -140,11 +149,11 @@ describe('ModelCatalogVersionModal — production regression', () => {
     })
 
     it('показывает ошибку POST и позволяет повторить после завершённой ошибки', async () => {
-        const submit = vi.fn().mockRejectedValueOnce(new Error('Конфликт версии')).mockResolvedValueOnce(undefined)
+        const submit = vi.fn().mockRejectedValueOnce(new ApiError('Конфликт версии', { code: 'CONFLICT' }, 409)).mockResolvedValueOnce(undefined)
         const props = createProps({ onSubmit: submit })
         render(<ModelCatalogVersionModal {...props} />)
         submitForm()
-        expect(await screen.findByText('Конфликт версии')).toBeInTheDocument()
+        expect(await screen.findByText('Данные были изменены. Обновите страницу.')).toBeInTheDocument()
         submitForm()
         await waitFor(() => expect(submit).toHaveBeenCalledTimes(2))
     })

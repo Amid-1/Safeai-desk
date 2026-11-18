@@ -7,11 +7,14 @@ export type AdminUsersFilter =
     | 'ALL'
     | 'USER'
     | 'ADMIN'
+    | 'SUPER_ADMIN'
 
 export type AdminUsersViewProps = {
     users: User[]
     statistics: UserStatistics
     organizations: OrganizationDirectoryItem[]
+    organizationId?: string
+    onOrganizationChange?: (id: string) => void
     loadError: string
     mutationError: string
     success: string

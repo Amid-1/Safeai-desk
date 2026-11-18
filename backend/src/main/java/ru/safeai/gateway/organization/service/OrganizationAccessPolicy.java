@@ -80,6 +80,10 @@ final class OrganizationAccessPolicy {
                 .equals(organizationId);
     }
 
+    UUID platformOrganizationId() {
+        return platformProperties.organizationId();
+    }
+
     ResourceNotFoundException organizationNotFound(
             UUID id
     ) {

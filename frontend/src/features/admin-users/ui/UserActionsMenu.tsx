@@ -170,7 +170,7 @@ function UserActionsMenu({
                 >
                     {canManage && (
                         <button type="button" onClick={() => run(onEdit)}>
-                            Изменить email и имя
+                            Редактировать профиль
                         </button>
                     )}
                     {roleActionAvailable && (
@@ -180,11 +180,11 @@ function UserActionsMenu({
                     )}
                     {canManage && (
                         <>
-                            <button type="button" onClick={() => run(onResetPassword)}>
-                                Установить новый пароль
+                            <button type="button" className="action-menu__security-start" onClick={() => run(onResetPassword)}>
+                                Сбросить пароль
                             </button>
-                            <button type="button" onClick={() => run(onToggleEnabled)}>
-                                {enabled ? 'Отключить пользователя' : 'Включить пользователя'}
+                            <button type="button" className={enabled ? 'action-menu__danger' : undefined} onClick={() => run(onToggleEnabled)}>
+                                {enabled ? 'Отключить доступ' : 'Включить доступ'}
                             </button>
                         </>
                     )}

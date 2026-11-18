@@ -43,6 +43,7 @@ export function useModalResize(resize: ModalResizeOptions | undefined, topmost: 
         resize?.maxScale
     const resizeMaximizable =
         resize?.maximizable
+    const resizeResizable = resize?.resizable
 
     const resizeState =
         useMemo<ResolvedModalResize>(
@@ -81,6 +82,8 @@ export function useModalResize(resize: ModalResizeOptions | undefined, topmost: 
                             resizeMaxScale,
                         maximizable:
                             resizeMaximizable,
+                resizeResizable,
+                        resizable: resizeResizable,
                     },
                 }
             },

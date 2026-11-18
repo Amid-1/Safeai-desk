@@ -25,6 +25,18 @@ function renderWindow() {
 }
 
 describe('Управление окном указателем', () => {
+    it('keeps drag and maximize but hides edge handles for read-only profile windows', () => {
+        render(<Modal title="Профиль" onClose={vi.fn()}
+            resize={{ ...dimensions, resizable: false }}>Карточка</Modal>)
+        const dialog = screen.getByRole('dialog', { name: 'Профиль' })
+        expect(dialog.querySelector('[data-modal-drag-handle="true"]')).not.toBeNull()
+        expect(dialog.querySelector('[data-modal-resize-handle]')).toBeNull()
+        fireEvent.click(screen.getByRole('button', { name: 'Развернуть окно на весь экран' }))
+        expect(dialog).toHaveClass('modal-card--maximized')
+        fireEvent.click(screen.getByRole('button', { name: 'Восстановить размер окна' }))
+        expect(dialog.querySelector('[data-modal-resize-handle]')).toBeNull()
+    })
+
     it('позволяет отключить перемещение окна, сохраняя resize и максимизацию', () => {
         render(
             <Modal

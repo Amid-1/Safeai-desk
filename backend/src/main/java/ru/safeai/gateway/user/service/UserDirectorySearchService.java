@@ -16,6 +16,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.common.exception.BadRequestException;
+import ru.safeai.gateway.common.exception.ForbiddenOperationException;
+import ru.safeai.gateway.common.security.SystemRole;
 import ru.safeai.gateway.common.platform.PlatformProperties;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.user.dto.UserResponse;
@@ -63,21 +65,30 @@ public class UserDirectorySearchService {
             int page,
             int size
     ) {
+        return search(principal, role, enabled, search, page, size, null);
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public Page<UserResponse> search(
+            SafeAiUserPrincipal principal, String role, Boolean enabled,
+            String search, int page, int size, UUID organizationId
+    ) {
         accessPolicy.requireUserManager(principal);
         if (page < 0 || size < 1 || size > MAX_PAGE_SIZE
                 || page > Integer.MAX_VALUE / size) {
             throw new BadRequestException("Некорректная пагинация пользователей");
         }
-        String normalizedRole = accessPolicy.normalizeListRole(role);
-        String pattern = searchPattern(search);
-        UUID tenantId = principal.getOrganizationId();
         boolean superAdmin = accessPolicy.isSuperAdmin(principal);
+        String normalizedRole = superAdmin && "SUPER_ADMIN".equals(role)
+                ? SystemRole.SUPER_ADMIN.roleName() : accessPolicy.normalizeListRole(role);
+        String pattern = searchPattern(search);
+        UUID tenantId = resolveScope(principal, organizationId);
 
         CriteriaBuilder cb = entityManager.getCriteriaBuilder();
         CriteriaQuery<UUID> ids = cb.createQuery(UUID.class);
         Root<UserEntity> user = ids.from(UserEntity.class);
         ids.select(user.get("id"));
-        ids.where(restrictions(cb, ids, user, tenantId, superAdmin,
+        ids.where(restrictions(cb, ids, user, tenantId,
                 normalizedRole, enabled, pattern));
         ids.orderBy(cb.desc(user.get("createdAt")), cb.desc(user.get("id")));
 
@@ -88,7 +99,7 @@ public class UserDirectorySearchService {
         CriteriaQuery<Long> count = cb.createQuery(Long.class);
         Root<UserEntity> counted = count.from(UserEntity.class);
         count.select(cb.count(counted));
-        count.where(restrictions(cb, count, counted, tenantId, superAdmin,
+        count.where(restrictions(cb, count, counted, tenantId,
                 normalizedRole, enabled, pattern));
 
         long total = entityManager.createQuery(count).getSingleResult();
@@ -106,7 +117,7 @@ public class UserDirectorySearchService {
                     throw new IllegalStateException("Неполный page snapshot пользователя");
                 }
                 // Fail closed if a future repository implementation violates scope.
-                if (!superAdmin && !tenantId.equals(entity.getOrganization().getId())) {
+                if (tenantId != null && !tenantId.equals(entity.getOrganization().getId())) {
                     throw new IllegalStateException("Нарушена tenant isolation при поиске");
                 }
                 content.add(responseMapper.toResponse(entity));
@@ -121,13 +132,12 @@ public class UserDirectorySearchService {
             CommonAbstractCriteria query,
             Root<UserEntity> user,
             UUID tenantId,
-            boolean superAdmin,
             String role,
             Boolean enabled,
             String pattern
     ) {
         List<Predicate> all = new ArrayList<>();
-        if (!superAdmin) {
+        if (tenantId != null) {
             all.add(cb.equal(user.get("organization").get("id"), tenantId));
         }
         if (enabled != null) {
@@ -152,6 +162,34 @@ public class UserDirectorySearchService {
         }
         return cb.and(all.toArray(Predicate[]::new));
     }
+
+    private UUID resolveScope(SafeAiUserPrincipal principal, UUID requested) {
+        accessPolicy.requireUserManager(principal);
+        if (accessPolicy.isSuperAdmin(principal)) return requested;
+        if (requested != null && !requested.equals(principal.getOrganizationId())) {
+            throw new ForbiddenOperationException("Организация недоступна");
+        }
+        return principal.getOrganizationId();
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public DirectoryStatistics statistics(SafeAiUserPrincipal principal, UUID organizationId) {
+        UUID scope = resolveScope(principal, organizationId);
+        long total = scope == null ? repository.count() : repository.countByOrganization_Id(scope);
+        long enabled = scope == null ? repository.countByEnabled(true)
+                : repository.countByOrganization_IdAndEnabled(scope, true);
+        return new DirectoryStatistics(total, countRole(scope, SystemRole.ADMIN),
+                countRole(scope, SystemRole.USER), enabled, total - enabled,
+                countRole(scope, SystemRole.SUPER_ADMIN));
+    }
+
+    private long countRole(UUID scope, SystemRole role) {
+        return scope == null ? repository.countByRole(role.roleName())
+                : repository.countByOrganizationIdAndRole(scope, role.roleName());
+    }
+
+    public record DirectoryStatistics(long total, long administrators, long users,
+                                      long enabled, long disabled, long superAdministrators) {}
 
     static String searchPattern(String input) {
         if (input == null) {

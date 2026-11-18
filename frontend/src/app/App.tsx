@@ -21,6 +21,7 @@ import type { UserRole } from '../shared/api/types'
 import { AuthProvider } from '../features/auth/state/AuthContext'
 import { useAuth } from '../features/auth/state/useAuth'
 import { ErrorState, LoadingState } from '../shared/ui/StateBlock'
+import { roleLabel } from '../shared/lib/roleLabel'
 
 const LoginPage = lazy(() => import('../pages/LoginPage'))
 const ChatPage = lazy(() => import('../pages/ChatPage'))
@@ -412,7 +413,7 @@ function AppLayout() {
                                                 : 'role-badge role-user'
                                     }
                                 >
-                                    {displayRole}
+                                    {roleLabel(displayRole)}
                                 </span>
                             </div>
                         )}

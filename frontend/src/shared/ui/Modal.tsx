@@ -98,6 +98,9 @@ function Modal({
                     resizeState.enabled
                         ? 'modal-card--resizable'
                         : '',
+                    resizeState.enabled && resizeState.options.resizable === false
+                        ? 'modal-card--content-fit'
+                        : '',
                     maximized
                         ? 'modal-card--maximized'
                         : '',
@@ -250,6 +253,7 @@ function Modal({
                     )}
 
                 {resizeState.enabled
+                    && resizeState.options.resizable !== false
                     && resizeBounds
                     && !maximized
                     && (

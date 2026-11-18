@@ -48,12 +48,12 @@ describe('UserActionsMenu', () => {
     it('keeps only the details button visible and moves editing into a portal', async () => {
         const user = userEvent.setup()
         const actions = renderMenu()
-        expect(screen.queryByRole('button', {name: 'Изменить email и имя'})).toBeNull()
+        expect(screen.queryByRole('button', {name: 'Редактировать профиль'})).toBeNull()
         const trigger = screen.getByRole('button', {
             name: 'Дополнительные действия для user@test.com',
         })
         await user.click(trigger)
-        const edit = screen.getByRole('button', {name: 'Изменить email и имя'})
+        const edit = screen.getByRole('button', {name: 'Редактировать профиль'})
         expect(document.body.contains(edit)).toBe(true)
         await user.click(edit)
         expect(actions.onEdit).toHaveBeenCalledTimes(1)
@@ -67,7 +67,7 @@ describe('UserActionsMenu', () => {
             name: 'Дополнительные действия для user@test.com',
         }))
         await user.click(document.body)
-        expect(screen.queryByRole('button', {name: 'Установить новый пароль'})).toBeNull()
+        expect(screen.queryByRole('button', {name: 'Сбросить пароль'})).toBeNull()
         expect(actions.onResetPassword).not.toHaveBeenCalled()
     })
 
@@ -138,7 +138,7 @@ describe('UserActionsMenu', () => {
                 'button',
                 {
                     name:
-                        'Установить новый пароль',
+                        'Сбросить пароль',
                 },
             ),
         ).toBeInTheDocument()

@@ -114,7 +114,7 @@ function organizationPath(
 export async function getOrganizations(
     page = 0,
     size = 50,
-    options: RequestOptions = {},
+    options: RequestOptions & { query?: string; type?: OrganizationType; enabled?: boolean } = {},
 ): Promise<PageResponse<Organization>> {
     const query = buildQueryString({
         page: normalizePage(page),
@@ -123,10 +123,13 @@ export async function getOrganizations(
             50,
             100,
         ),
+        query: options.query || undefined,
+        type: options.type,
+        enabled: options.enabled,
     })
 
     const response = await apiRequest<unknown>(
-        `/api/organizations${query}`,
+        `/api/organizations${options.query || options.type || options.enabled !== undefined ? '/search' : ''}${query}`,
         {
             method: 'GET',
             signal: options.signal,

@@ -10,7 +10,7 @@ import type {
 } from '../../../entities/model/api/modelApi'
 import Modal from '../../../shared/ui/Modal'
 import type { ModalResizeOptions } from '../../../shared/ui/Modal'
-import { getApiErrorMessage } from '../../../shared/api/http'
+import { ApiError, getApiErrorMessage } from '../../../shared/api/http'
 import { ErrorState } from '../../../shared/ui/StateBlock'
 import {
     buildCatalogRequest,
@@ -135,12 +135,11 @@ export function ModelCatalogVersionModal({
                 }
             }
             setFormError(
-                failure instanceof Error
-                    ? getApiErrorMessage(
-                        failure,
-                        failure.message,
-                    )
-                    : 'Не удалось сохранить модель.',
+                failure instanceof CatalogDraftValidationError
+                    ? failure.message
+                    : failure instanceof ApiError && failure.status === 409
+                        ? 'Данные были изменены. Обновите страницу.'
+                        : getApiErrorMessage(failure, 'Не удалось сохранить модель.'),
             )
         } finally {
             submittingRef.current = false

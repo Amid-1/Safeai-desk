@@ -5,6 +5,7 @@
 // ============================================================
 import { EmptyState, ErrorState, LoadingState } from '../../../shared/ui/StateBlock'
 import ResizableScrollRegion from '../../../shared/ui/ResizableScrollRegion'
+import { AdminPageHeader } from '../../../shared/ui/AdminPageHeader'
 import AuditDetailsModal from './AuditDetailsModal'
 import AuditFilters from './AuditFilters'
 import AuditPagination from './AuditPagination'
@@ -50,7 +51,7 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
 
     const upper = (
                     <div className="audit-page__upper">
-                        <header className="audit-page__header page-hero page-hero--audit">
+                        <AdminPageHeader className="audit-page__header page-hero page-hero--audit">
                             <div className="audit-page__heading">
                                 <span className="audit-page__eyebrow">
                                     Безопасность и контроль
@@ -74,7 +75,7 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
                                 {' '}
                                 Время показано в вашем часовом поясе
                             </div>
-                        </header>
+                        </AdminPageHeader>
 
                         <AuditFilters
                             draftFilter={
