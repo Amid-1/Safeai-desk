@@ -180,7 +180,7 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
                                     <div className="audit-results-summary">
                                         <h2>Результаты поиска <span>{pageResponse.totalElements.toLocaleString('ru-RU')}</span></h2>
                                         <p>Нажмите на имя для фильтрации событий или откройте карточку пользователя.
-                                            {' '}CSV содержит только события этой страницы.
+                                            {' '}CSV страницы содержит только её события.
                                             {filtersDirty && (
                                                 <span className="audit-csv-unapplied">
                                                     {' '}Не примененные изменения фильтров в файл не входят.
@@ -189,6 +189,7 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
                                         </p>
                                     </div>
 
+                                    <div className="audit-export-actions">
                                     <button
                                         type="button"
                                         className="secondary-button"
@@ -203,6 +204,11 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
                                     >
                                         Скачать CSV текущей страницы
                                     </button>
+                                    <button type="button" className="secondary-button"
+                                        disabled={effectiveLoading || filtersDirty || !!loadError || controller.exportPending}
+                                        onClick={controller.exportFiltered}>CSV по фильтрам (до 100)</button>
+                                    {controller.filteredExportError && <p role="alert">{controller.filteredExportError}</p>}
+                                    </div>
                                 </div>
                             )}
                         <span className="resizable-scroll-region__upper-boundary-marker" data-resizable-upper-preferred-boundary aria-hidden="true" />

@@ -599,6 +599,17 @@
 .models-token-pair > span { display: grid; gap: 1px; }
 .models-page--sections .models-token-pair small { margin: 0; }
 .models-page--sections .models-token-pair strong { font-variant-numeric: tabular-nums; }
+.models-page--sections .models-token-pair strong { white-space: nowrap; overflow-wrap: normal; word-break: normal; }
+@media (min-width: 761px) {
+    .models-page--sections .models-catalog-table th:nth-child(4),
+    .models-page--sections .models-catalog-table td:nth-child(4) {
+        min-width: 108px;
+        width: 108px;
+        white-space: nowrap;
+        overflow-wrap: normal;
+        word-break: normal;
+    }
+}
 .models-page--sections .models-catalog-row-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .models-catalog-row-actions .models-icon { width: 16px; height: 16px; }
 .models-page--sections .models-kv-grid dt { display: flex; align-items: center; gap: 6px; }

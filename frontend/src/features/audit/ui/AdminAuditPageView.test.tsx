@@ -70,6 +70,7 @@ function mount(overrides: Partial<AdminAuditController> = {}) {
         setDraftFilter: vi.fn(), setSelectedEvent: vi.fn(),
         applyDatePreset: vi.fn(), applyFilters: vi.fn(), filterByActor: vi.fn(), resetFilters: vi.fn(),
         retryLoad: vi.fn(), changePage: vi.fn(),
+        exportFiltered: vi.fn(), exportPending: false, filteredExportError: '',
         ...overrides,
     }
     render(<AdminAuditPageView controller={controller} />)

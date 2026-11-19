@@ -11,6 +11,7 @@ import { UsageDailyChart, type UsageDailyMetric } from './UsageDailyChart'
 import { UsageBreakdownChart } from './UsageBreakdownChart'
 import { downloadUsageCsv } from './usageCsv'
 import { EmptyState, ErrorState, LoadingState } from '../../../shared/ui/StateBlock'
+import { trimDecimal } from '../lib/adminUsagePresentation'
 
 export function AdminUsageWorkspace() {
     const report = useAdminUsageReport()
@@ -22,6 +23,7 @@ export function AdminUsageWorkspace() {
     const hasRows = !report.loading && !report.error && report.rows.length > 0
     const hasMore = report.hasPrevious || report.hasNext
     const paged = report.tab === 'summary' || report.tab === 'users'
+    const separateTotals = report.tab !== 'daily'
     const chartExpanded = view === 'chart' && expanded && hasRows
     const dataKey = JSON.stringify([
         report.tab, report.page, report.appliedDateFrom, report.appliedDateTo,
@@ -68,8 +70,19 @@ export function AdminUsageWorkspace() {
                 onResetFilters={() => { setExportError(''); report.resetFilters() }}
                 onSelectTab={tab => { setExportError(''); report.selectTab(tab) }}
             />
-            <UsageKpis rows={hasRows ? report.rows : []} tab={report.tab}
-                hasMore={hasMore} appliedModel={report.appliedModel} />
+            <UsageKpis rows={separateTotals ? report.totals.rows : hasRows ? report.rows : []} tab={report.tab}
+                hasMore={false} appliedModel={report.appliedModel}
+                dailyTotals
+                status={separateTotals && report.totals.loading ? 'Загрузка общих итогов…'
+                    : separateTotals && report.totals.error ? 'Общие итоги недоступны' : undefined} />
+            {report.budget.scoped && <section className="usage-filter-summary" aria-label="Бюджет организации">
+                <strong>Месячный бюджет организации: </strong>
+                {report.budget.loading ? 'Загрузка…' : report.budget.error || !report.budget.policy ? 'Недоступен'
+                    : report.budget.policy.monthlyBudgetUsd === null ? 'Не задан'
+                        : `${trimDecimal(report.budget.policy.monthlyBudgetUsd)} USD`}
+                {report.budget.policy && <> · {report.budget.policy.enabled ? 'Правила включены' : 'Правила отключены'} ·
+                    {' '}текущая версия {report.budget.policy.version}. Календарный месяц UTC, независимо от периода отчёта.</>}
+            </section>}
             <section className={`usage-results-panel usage-results-panel--${view}`} aria-labelledby="usage-report-title">
                 <div className="usage-results-toolbar">
                     <div className="usage-results-heading">
@@ -86,6 +99,9 @@ export function AdminUsageWorkspace() {
                         <button type="button" className="secondary-button" disabled={!hasRows}
                             title={paged ? 'До 50 строк текущей страницы' : 'Все строки текущего ограниченного отчёта'}
                             onClick={exportCsv}>{paged ? 'Скачать CSV страницы' : 'Скачать CSV отчёта'}</button>
+                        {paged && <button type="button" className="secondary-button"
+                            disabled={!hasRows || report.filtersDirty || report.exportPending}
+                            onClick={report.exportFiltered}>CSV по фильтрам (до 100)</button>}
                         {view === 'chart' && <button type="button" className="secondary-button"
                             disabled={!hasRows} title={chartExpanded ? 'Обычный размер графика' : 'Увеличить область графика'}
                             aria-pressed={chartExpanded} onClick={() => setExpanded(value => !value)}>
@@ -94,6 +110,7 @@ export function AdminUsageWorkspace() {
                     </div>
                 </div>
                 {exportError && <p role="alert" className="usage-export-error">{exportError}</p>}
+                {report.filteredExportError && <p role="alert" className="usage-export-error">{report.filteredExportError}</p>}
                 <UsageTableViewport key={dataKey} table={view === 'table'} hasRows={hasRows} loading={report.loading}>
                     {report.loading ? <LoadingState message="Загрузка отчёта…" />
                         : report.error ? <ErrorState title="Ошибка загрузки" message={report.error}

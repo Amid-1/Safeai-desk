@@ -32,6 +32,11 @@ import {
 import {
     useAdminUsageReportQuery,
 } from './useAdminUsageReportQuery'
+import { REPORT_EXPORT_LIMIT, useBoundedReportExport } from '../../../shared/lib/useBoundedReportExport'
+import { loadUsageReport } from '../lib/adminUsageReportLoader'
+import type { UsageAmounts } from '../api/usageApi'
+import { downloadUsageCsv } from '../ui/usageCsv'
+import { useUsageBudget } from './useUsageBudget'
 
 export function useAdminUsageReport() {
     const {
@@ -157,6 +162,35 @@ export function useAdminUsageReport() {
         isSuperAdmin,
         reloadToken,
     })
+    const totals = useAdminUsageReportQuery({
+        enabled: currentUser !== null && tab !== 'daily',
+        userId: currentUser?.id ?? '',
+        userOrganizationId: currentUser?.organizationId ?? '',
+        tab: 'daily', page: 0, dateFrom: appliedDateFrom, dateTo: appliedDateTo,
+        model: appliedModel, filterUserId: appliedUserId,
+        organizationId: appliedOrganizationId, isSuperAdmin, reloadToken,
+    })
+    const budget = useUsageBudget(currentUser?.id ?? '',
+        isSuperAdmin ? appliedOrganizationId : currentUser?.organizationId ?? '', reloadToken)
+    const exportTask = useBoundedReportExport(JSON.stringify([
+        currentUser?.id, currentUser?.organizationId, isSuperAdmin, tab,
+        appliedDateFrom, appliedDateTo, appliedModel, appliedUserId, appliedOrganizationId, reloadToken,
+    ]))
+
+    function exportFiltered() {
+        if (!currentUser || query.loading || query.error || filtersDirty || (tab !== 'summary' && tab !== 'users')) return
+        return exportTask.run<UsageAmounts>(async signal => {
+            const normalized = toUsageFilter({
+                dateFrom: appliedDateFrom, dateTo: appliedDateTo, model: appliedModel,
+                userId: appliedUserId, organizationId: appliedOrganizationId,
+            }, isSuperAdmin)
+            const result = await loadUsageReport({
+                tab, page: 0, pageSize: REPORT_EXPORT_LIMIT, filter: normalized.filter,
+                organizationId: normalized.organizationId || null, superAdmin: isSuperAdmin, signal,
+            })
+            return !result.complete || result.hasNext || result.rows.length > REPORT_EXPORT_LIMIT ? null : result.rows
+        }, rows => downloadUsageCsv(tab, rows, 'filtered'))
+    }
 
     function changeDraftDateFrom(
         value: string,
@@ -408,6 +442,7 @@ export function useAdminUsageReport() {
         : userLabel?.id === appliedUserId ? userLabel.email : appliedUserId
 
     return {
+        totals, budget, exportFiltered, exportPending: exportTask.pending, filteredExportError: exportTask.error,
         tab,
         page,
         hasNext: query.hasNext,

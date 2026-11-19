@@ -44,13 +44,17 @@ describe('Usage report drilldown', () => {
         expect(result.current.tab).toBe('summary')
         expect(result.current.appliedModel).toBe('mock-safeai')
         expect(result.current.page).toBe(0)
-        expect(vi.mocked(useAdminUsageReportQuery)).toHaveBeenLastCalledWith(expect.objectContaining({
+        expect(vi.mocked(useAdminUsageReportQuery).mock.calls.at(-2)?.[0]).toEqual(expect.objectContaining({
             tab: 'summary', page: 0, organizationId: org, model: 'mock-safeai',
             dateFrom: '2026-11-01', dateTo: '2026-11-16',
         }))
         act(() => result.current.inspectDay('2026-11-15'))
-        expect(vi.mocked(useAdminUsageReportQuery)).toHaveBeenLastCalledWith(expect.objectContaining({
+        expect(vi.mocked(useAdminUsageReportQuery).mock.calls.at(-2)?.[0]).toEqual(expect.objectContaining({
             tab: 'summary', page: 0, organizationId: org, model: 'mock-safeai',
+            dateFrom: '2026-11-15', dateTo: '2026-11-15',
+        }))
+        expect(vi.mocked(useAdminUsageReportQuery)).toHaveBeenLastCalledWith(expect.objectContaining({
+            enabled: true, tab: 'daily', page: 0, organizationId: org, model: 'mock-safeai',
             dateFrom: '2026-11-15', dateTo: '2026-11-15',
         }))
         expect(useAdminUsageModelOptions).toHaveBeenLastCalledWith({
@@ -69,13 +73,13 @@ describe('Usage report drilldown', () => {
         act(() => result.current.inspectUser(userId, 'admin@example.test'))
         expect(result.current.appliedUserLabel).toBe('admin@example.test')
         act(() => result.current.selectTab('daily'))
-        expect(useAdminUsageReportQuery).toHaveBeenLastCalledWith(expect.objectContaining({
+        expect(vi.mocked(useAdminUsageReportQuery).mock.calls.at(-2)?.[0]).toEqual(expect.objectContaining({
             tab: 'daily', filterUserId: userId, organizationId: org, model: 'mock-safeai',
         }))
         act(() => result.current.inspectDay('2026-11-15'))
         expect(result.current.appliedUserId).toBe(userId)
         act(() => result.current.clearFilter('model'))
-        expect(useAdminUsageReportQuery).toHaveBeenLastCalledWith(expect.objectContaining({
+        expect(vi.mocked(useAdminUsageReportQuery).mock.calls.at(-2)?.[0]).toEqual(expect.objectContaining({
             tab: 'summary', filterUserId: userId, organizationId: org, model: '',
             dateFrom: '2026-11-15', dateTo: '2026-11-15',
         }))

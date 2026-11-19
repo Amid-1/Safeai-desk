@@ -353,6 +353,32 @@ test('clicking the actor filters the whole journal via server without leaving au
   await expect(page.getByRole('combobox', { name: 'Пользователь' })).toHaveValue(/admin@example.test/)
 })
 
+test('audit filtered CSV requests the applied filter and refuses an oversized report', async ({ page }) => {
+  let oversized = true
+  await page.route('**/api/admin/audit-events?**', route => {
+    const { searchParams } = new NodeURL(route.request().url())
+    const size = Number(searchParams.get('size'))
+    const large = size === 100 && oversized
+    return route.fulfill({json: {
+      content: [event], page: 0, size, totalPages: large ? 2 : 1, totalElements: large ? 101 : 1,
+    }})
+  })
+  await page.goto('/admin/audit?eventType=MODEL_ROUTE_DENIED')
+  const button = page.getByRole('button', {name: 'CSV по фильтрам (до 100)'})
+  await expect(button).toBeEnabled()
+  const requested = page.waitForRequest(request => {
+    const url = new NodeURL(request.url())
+    return url.pathname === '/api/admin/audit-events' && url.searchParams.get('size') === '100'
+  })
+  await button.click()
+  expect(new NodeURL((await requested).url()).searchParams.get('eventType')).toBe('MODEL_ROUTE_DENIED')
+  await expect(page.getByRole('alert')).toContainText('Больше 100')
+  oversized = false
+  const download = page.waitForEvent('download')
+  await button.click()
+  expect((await download).suggestedFilename()).toBe('safeai-audit-filtered.csv')
+})
+
 test('super admin receives entity links and can drag audit divider to the dates and back', async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 })
   await page.route('**/api/auth/me', route => route.fulfill({ json: {

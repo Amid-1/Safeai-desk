@@ -49,6 +49,7 @@
 .usage-page .usage-tabs .filter-button { min-height: 40px; padding: 8px 17px; border-radius: 9px; font-size: 15px; }
 .usage-page .usage-tabs .active { background: #285be6; color: white; border-color: #285be6; box-shadow: 0 3px 8px #285be625; }
 .usage-kpi-section { flex: 0 0 auto; min-width: 0; }
+.usage-filter-summary { flex: 0 0 auto; padding: 8px 14px; border: 1px solid var(--usage-border); border-radius: 10px; background: #fff; color: #33496a; font-size: 13px; }
 .usage-kpis { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
 .usage-kpi { min-width: 0; padding: 14px 18px; background: linear-gradient(130deg,#f1f5ff,#fff 85%); border: 1px solid #dbe5f5; border-top: 3px solid #356de8; border-radius: 12px; display: flex; flex-direction: column; gap: 5px; }
 .usage-kpi:nth-child(2) { background: linear-gradient(130deg,#f3efff,#fff 85%); border-top-color: #7955d7; }

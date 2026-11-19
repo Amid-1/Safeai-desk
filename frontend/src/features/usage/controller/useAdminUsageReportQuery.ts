@@ -64,6 +64,7 @@ export function useAdminUsageReportQuery({
         () => JSON.stringify([
             userId,
             userOrganizationId,
+            isSuperAdmin,
             tab,
             page,
             dateFrom,

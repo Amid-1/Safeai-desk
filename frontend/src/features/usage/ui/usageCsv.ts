@@ -50,13 +50,13 @@ export function serializeUsageCsv(tab: UsageReportTab, rows: UsageAmounts[]): st
         .map(row => row.map(safeCell).join(';')).join('\r\n')
 }
 
-export function downloadUsageCsv(tab: UsageReportTab, rows: UsageAmounts[]): void {
+export function downloadUsageCsv(tab: UsageReportTab, rows: UsageAmounts[], scope: 'displayed' | 'filtered' = 'displayed'): void {
     if (rows.length === 0) return
     const csv = serializeUsageCsv(tab, rows)
     const objectUrl = URL.createObjectURL(new Blob([`\uFEFF${csv}`], {type: 'text/csv;charset=utf-8'}))
     const link = document.createElement('a')
     link.href = objectUrl
-    link.download = `safeai-usage-${tab}-displayed.csv`
+    link.download = `safeai-usage-${tab}-${scope}.csv`
     document.body.appendChild(link)
     try { link.click() } finally {
         link.remove()

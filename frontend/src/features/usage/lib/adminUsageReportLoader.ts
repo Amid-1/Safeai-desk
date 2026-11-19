@@ -36,6 +36,7 @@ export type UsageReportLoadResult = {
     rows: UsageReportRows
     hasNext: boolean
     hasPrevious: boolean
+    complete: boolean
 }
 
 type LoadUsageReportInput = {
@@ -45,6 +46,7 @@ type LoadUsageReportInput = {
     organizationId: string | null
     superAdmin: boolean
     signal: AbortSignal
+    pageSize?: number
 }
 
 export async function loadUsageReport({
@@ -54,6 +56,7 @@ export async function loadUsageReport({
     organizationId,
     superAdmin,
     signal,
+    pageSize = ADMIN_USAGE_PAGE_SIZE,
 }: LoadUsageReportInput): Promise<UsageReportLoadResult> {
     const scopedOrganizationId =
         superAdmin
@@ -65,13 +68,13 @@ export async function loadUsageReport({
             ? await getUsageByOrganization(
                 scopedOrganizationId,
                 page,
-                ADMIN_USAGE_PAGE_SIZE,
+                pageSize,
                 filter,
                 { signal },
             )
             : await getUsageSummary(
                 page,
-                ADMIN_USAGE_PAGE_SIZE,
+                pageSize,
                 filter,
                 { signal },
             )
@@ -83,6 +86,8 @@ export async function loadUsageReport({
             hasNext:
                 page + 1 < normalized.totalPages,
             hasPrevious: page > 0,
+            complete: normalized.page === 0 && normalized.totalPages <= 1
+                && normalized.totalElements === normalized.content.length,
         }
     }
 
@@ -91,13 +96,13 @@ export async function loadUsageReport({
             ? await getOrganizationUsageUsers(
                 scopedOrganizationId,
                 page,
-                ADMIN_USAGE_PAGE_SIZE,
+                pageSize,
                 filter,
                 { signal },
             )
             : await getUsageByUsers(
                 page,
-                ADMIN_USAGE_PAGE_SIZE,
+                pageSize,
                 filter,
                 { signal },
             )
@@ -109,6 +114,8 @@ export async function loadUsageReport({
             hasNext:
                 page + 1 < normalized.totalPages,
             hasPrevious: page > 0,
+            complete: normalized.page === 0 && normalized.totalPages <= 1
+                && normalized.totalElements === normalized.content.length,
         }
     }
 
@@ -128,6 +135,7 @@ export async function loadUsageReport({
             rows,
             hasNext: false,
             hasPrevious: false,
+            complete: true,
         }
     }
 
@@ -146,5 +154,6 @@ export async function loadUsageReport({
         rows,
         hasNext: false,
         hasPrevious: false,
+        complete: true,
     }
 }

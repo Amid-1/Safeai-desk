@@ -4,11 +4,13 @@ import type { UsageReportTab } from '../lib/adminUsageFilterState'
 import { formatCount, trimDecimal } from '../lib/adminUsagePresentation'
 import { summarizeUsageRows } from './usageMetrics'
 
-export function UsageKpis({ rows, tab, hasMore = true, appliedModel }: {
+export function UsageKpis({ rows, tab, hasMore = true, appliedModel, dailyTotals = false, status }: {
     rows: UsageAmounts[]
     tab: UsageReportTab
     hasMore?: boolean
     appliedModel?: string
+    dailyTotals?: boolean
+    status?: string
 }) {
     const sum = summarizeUsageRows(rows)
     const incomplete = sum.unknownCostRows > 0 || sum.incompleteCostRows > 0
@@ -38,11 +40,13 @@ export function UsageKpis({ rows, tab, hasMore = true, appliedModel }: {
                     <span className="usage-kpi__label">Полнота учёта</span>
                     <strong className="usage-kpi__value">{sum.rowCount ? `${Math.floor(sum.completeRows * 100 / sum.rowCount)}%` : '—'}</strong>
                     <small className="usage-kpi__hint">{sum.rowCount
-                        ? `${sum.completeRows} из ${sum.rowCount} строк с полным учётом токенов и цены`
+                        ? `${sum.completeRows} из ${sum.rowCount} ${dailyTotals ? 'дней' : 'строк'} с полным учётом токенов и цены`
                         : 'Нет данных отчёта'}</small>
                 </div>
             </div>
-            {(paged || mock) && <p className="usage-kpi-context">
+            {(dailyTotals || paged || mock || status) && <p className="usage-kpi-context" role="status">
+                {status || (dailyTotals ? 'Весь выбранный период · серверные агрегаты по дням (UTC). '
+                    : !paged ? 'Весь выбранный период · серверные агрегаты. ' : '')}
                 {paged && 'Итоги текущей страницы. Остальные страницы не включены.'}
                 {paged && mock && ' · '}
                 {mock && 'mock-safeai — тестовая модель.'}

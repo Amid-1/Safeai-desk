@@ -1115,6 +1115,19 @@
 .audit-page .audit-advanced-filters { background: rgba(239, 246, 255, .55); border-radius: 11px; }
 .audit-page .audit-advanced-filters summary { font-size: 16px; color: #33496a; }
 .audit-page .audit-filter-submit { grid-column: 1 / -1; }
+.audit-export-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
+.audit-export-actions p { flex-basis: 100%; margin: 0; color: #991b1b; font-size: 13px; }
+@media (min-width: 1200px) {
+    .audit-page .audit-filters .form { gap: 6px 12px; }
+    .audit-page .audit-filters .audit-search-picker { grid-column: span 4; }
+    .audit-page .audit-filters .audit-filter-field--organization { grid-column: span 4; }
+    .audit-page .audit-filters .audit-date-presets { grid-column: span 6; }
+    .audit-page .audit-filters .audit-filter-field--date { grid-column: span 3; }
+    .audit-page .audit-filters .audit-date-help { grid-column: 1 / -1; }
+    .audit-page .audit-filters { padding: 10px 16px; }
+    .audit-page .audit-filters__subtitle { margin-bottom: 4px; }
+    .audit-page .audit-filters .filter-actions { padding-bottom: 0; }
+}
 .audit-search-picker__results { border-radius: 12px; }
 .audit-search-picker__results [role="option"] { font-size: 17px; line-height: 1.35; }
 .audit-search-picker__results small { font-size: 13px; color: #526783; }

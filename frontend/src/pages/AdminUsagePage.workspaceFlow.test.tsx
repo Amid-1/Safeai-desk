@@ -38,6 +38,9 @@ const fixture = {
     changeDraftOrganization: vi.fn(), applyFilters: vi.fn(), inspectModel: vi.fn(),
     inspectUser: vi.fn(), clearFilter: vi.fn(),
     inspectDay: vi.fn(), resetFilters: vi.fn(), selectTab: vi.fn(), goToPage: vi.fn(), reload: vi.fn(),
+    totals: { rows: [row], loading: false, error: '', hasNext: false, hasPrevious: false },
+    budget: { scoped: false, loading: false, error: false, policy: null },
+    exportFiltered: vi.fn(), exportPending: false, filteredExportError: '',
 } satisfies ReturnType<typeof useAdminUsageReport>
 
 describe('Usage dashboard', () => {
@@ -103,7 +106,7 @@ describe('Usage dashboard', () => {
     it('retains pagination and labels the scope of chart and export on paged results', () => {
         vi.mocked(useAdminUsageReport).mockReturnValue({...fixture, hasNext: true})
         render(<AdminUsagePage />)
-        expect(screen.getByText(/Итоги текущей страницы/)).toBeVisible()
+        expect(screen.getByText(/Весь выбранный период/)).toBeVisible()
         fireEvent.click(screen.getByRole('button', {name: 'График'}))
         fireEvent.click(screen.getByRole('button', {name: 'Вперёд'}))
         expect(fixture.goToPage).toHaveBeenCalledWith(1)
@@ -160,14 +163,26 @@ describe('Usage dashboard', () => {
         expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     })
     it('does not represent incomplete prices as zero or incomplete coverage as 100%', () => {
-        vi.mocked(useAdminUsageReport).mockReturnValue({...fixture, rows: [{
+        const unknown = {
             ...row, costUsd: null, coverage: {...row.coverage, pricingComplete: false},
-        }]})
+        }
+        vi.mocked(useAdminUsageReport).mockReturnValue({...fixture, rows: [unknown],
+            totals: {...fixture.totals, rows: [unknown]}})
         render(<AdminUsagePage />)
         expect(screen.getByText('0%')).toBeVisible()
         expect(screen.queryByText('100%')).not.toBeInTheDocument()
         expect(screen.queryByText('0 USD')).not.toBeInTheDocument()
-        expect(screen.getByText('0 из 1 строк с полным учётом токенов и цены')).toBeVisible()
+        expect(screen.getByText('0 из 1 дней с полным учётом токенов и цены')).toBeVisible()
+    })
+    it('does not replace unavailable global totals with the loaded page', () => {
+        vi.mocked(useAdminUsageReport).mockReturnValue({...fixture, hasNext: true,
+            totals: {...fixture.totals, rows: [], error: 'Unavailable'}})
+        render(<AdminUsagePage />)
+        expect(screen.getByText('Общие итоги недоступны')).toBeVisible()
+        expect(screen.queryByText('100%')).not.toBeInTheDocument()
+        expect(screen.getByRole('table')).toBeVisible()
+        fireEvent.click(screen.getByRole('button', {name: 'CSV по фильтрам (до 100)'}))
+        expect(fixture.exportFiltered).toHaveBeenCalledOnce()
     })
     it('shows loading, error with retry and empty state inside the data region', () => {
         vi.mocked(useAdminUsageReport).mockReturnValue({...fixture, loading: true})

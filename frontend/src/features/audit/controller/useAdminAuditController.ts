@@ -5,6 +5,9 @@
 // ============================================================
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { AuditEvent } from '../api/adminAuditApi'
+import { getAuditEvents } from '../api/adminAuditApi'
+import { REPORT_EXPORT_LIMIT, useBoundedReportExport } from '../../../shared/lib/useBoundedReportExport'
+import { downloadAuditCsv } from '../ui/auditCsv'
 import { useAuth } from '../../auth/state/useAuth'
 import { auditDraftFiltersEqual } from '../ui/types'
 import type { AuditDraftFilter, DatePreset } from '../ui/types'
@@ -27,6 +30,7 @@ export function useAdminAuditController() {
         currentUser?.roles.includes(
             'SUPER_ADMIN',
         ) ?? false
+    const authScope = JSON.stringify([currentUser?.id, currentUser?.organizationId, superAdmin])
 
     const initialState =
         useMemo(
@@ -41,11 +45,13 @@ export function useAdminAuditController() {
         )
 
     const [
-        selectedEvent,
-        setSelectedEvent,
-    ] = useState<AuditEvent | null>(
-        null,
-    )
+        selectedEventState,
+        setSelectedEventState,
+    ] = useState<{ scope: string; event: AuditEvent | null }>({scope: authScope, event: null})
+    const selectedEvent = selectedEventState.scope === authScope ? selectedEventState.event : null
+    function setSelectedEvent(event: AuditEvent | null) {
+        setSelectedEventState({scope: authScope, event})
+    }
 
     const [
         page,
@@ -139,6 +145,7 @@ export function useAdminAuditController() {
         error:
             loadError,
     } = useAuditEvents({
+        authScope,
         page,
         filter:
             effectiveAppliedFilter,
@@ -150,6 +157,19 @@ export function useAdminAuditController() {
     const effectiveLoading =
         loading
         || requestTransitioning
+
+    const exportTask = useBoundedReportExport(JSON.stringify([
+        currentUser?.id, currentUser?.organizationId, superAdmin, effectiveAppliedFilter, reloadToken,
+    ]))
+
+    function exportFiltered() {
+        if (!currentUser || effectiveLoading || loadError || filtersDirty) return
+        return exportTask.run(async signal => {
+            const result = await getAuditEvents(0, REPORT_EXPORT_LIMIT, effectiveAppliedFilter, { signal })
+            return result.page !== 0 || result.totalElements > REPORT_EXPORT_LIMIT || result.totalPages > 1
+                || result.content.length !== result.totalElements ? null : result.content
+        }, rows => downloadAuditCsv(rows, 'filtered'))
+    }
 
     useEffect(() => {
         if (!loading) {
@@ -165,18 +185,7 @@ export function useAdminAuditController() {
         loading,
     ])
 
-    const filtersDirty =
-        useMemo(
-            () =>
-                !auditDraftFiltersEqual(
-                    draftFilter,
-                    appliedDraftFilter,
-                ),
-            [
-                draftFilter,
-                appliedDraftFilter,
-            ],
-        )
+    const filtersDirty = !auditDraftFiltersEqual(draftFilter, appliedDraftFilter)
 
     const organizationNameById =
         useMemo(
@@ -435,6 +444,7 @@ export function useAdminAuditController() {
     }] : actors
 
     return {
+        exportFiltered, exportPending: exportTask.pending, filteredExportError: exportTask.error,
         superAdmin,
         selectedEvent,
         draftFilter,
