@@ -38,8 +38,11 @@
         <jackson-2-bom.version>2.21.8</jackson-2-bom.version>
         <jackson-bom.version>3.1.8</jackson-bom.version>
         <tomcat.version>11.0.27</tomcat.version>
-        <netty.version>4.2.18.Final</netty.version>
-        <logback.version>1.6.5</logback.version>
+        <!-- Netty security fixes in 4.2.19/4.2.20 and follow-up 4.2.21
+             (including native Linux compatibility); align all Netty modules. -->
+        <netty.version>4.2.21.Final</netty.version>
+        <!-- Includes the cyclic ThrowableProxyVO deserialization fix. -->
+        <logback.version>1.6.8</logback.version>
         <slf4j.version>2.0.19</slf4j.version>
 
         <!-- ASM 9.11.1 fixes the October 2026 class-file processing advisories,
@@ -60,7 +63,8 @@
         <commons-codec.version>1.23.0</commons-codec.version>
         <hibernate-validator.version>9.1.6.Final</hibernate-validator.version>
         <okhttp.version>5.1.0</okhttp.version>
-        <bouncycastle.version>1.86</bouncycastle.version>
+        <!-- BC 1.87 fixes CVE-2026-103605, 103611–103617 and related issues. -->
+        <bouncycastle.version>1.87</bouncycastle.version>
         <commons-compress.version>1.28.0</commons-compress.version>
         <commons-io.version>2.21.0</commons-io.version>
         <pdfbox.version>3.0.8</pdfbox.version>
@@ -461,6 +465,17 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
+                    <!-- Testcontainers/local test configuration must not inherit
+                         a developer's runtime PostgreSQL or Flyway credentials. -->
+                    <excludedEnvironmentVariables>
+                        <excludedEnvironmentVariable>SPRING_DATASOURCE_URL</excludedEnvironmentVariable>
+                        <excludedEnvironmentVariable>SPRING_DATASOURCE_USERNAME</excludedEnvironmentVariable>
+                        <excludedEnvironmentVariable>SPRING_DATASOURCE_PASSWORD</excludedEnvironmentVariable>
+                        <excludedEnvironmentVariable>SPRING_FLYWAY_URL</excludedEnvironmentVariable>
+                        <excludedEnvironmentVariable>SPRING_FLYWAY_USER</excludedEnvironmentVariable>
+                        <excludedEnvironmentVariable>SPRING_FLYWAY_PASSWORD</excludedEnvironmentVariable>
+                        <excludedEnvironmentVariable>SPRING_FLYWAY_ENABLED</excludedEnvironmentVariable>
+                    </excludedEnvironmentVariables>
                     <!-- Все обычные тесты и локальные *IT выполняются при clean verify. -->
                     <failIfNoTests>true</failIfNoTests>
                     <includes>
@@ -543,6 +558,15 @@
                         <version>${maven-failsafe-plugin.version}</version>
                         <!-- Boot's inherited execution runs integration-test and verify once. -->
                         <configuration>
+                            <excludedEnvironmentVariables>
+                                <excludedEnvironmentVariable>SPRING_DATASOURCE_URL</excludedEnvironmentVariable>
+                                <excludedEnvironmentVariable>SPRING_DATASOURCE_USERNAME</excludedEnvironmentVariable>
+                                <excludedEnvironmentVariable>SPRING_DATASOURCE_PASSWORD</excludedEnvironmentVariable>
+                                <excludedEnvironmentVariable>SPRING_FLYWAY_URL</excludedEnvironmentVariable>
+                                <excludedEnvironmentVariable>SPRING_FLYWAY_USER</excludedEnvironmentVariable>
+                                <excludedEnvironmentVariable>SPRING_FLYWAY_PASSWORD</excludedEnvironmentVariable>
+                                <excludedEnvironmentVariable>SPRING_FLYWAY_ENABLED</excludedEnvironmentVariable>
+                            </excludedEnvironmentVariables>
                             <argLine>
                                 @{argLine}
                                 ${test.jvm.args}

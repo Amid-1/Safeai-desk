@@ -2,11 +2,14 @@
 
 import {
     useEffect,
+    useMemo,
     useRef,
     useState,
 } from 'react'
 import {
     useSearchParams,
+    useLocation,
+    useNavigationType,
 } from 'react-router-dom'
 import {
     useAuth,
@@ -34,7 +37,7 @@ import {
 } from './useAdminUsageReportQuery'
 import { REPORT_EXPORT_LIMIT, useBoundedReportExport } from '../../../shared/lib/useBoundedReportExport'
 import { loadUsageReport } from '../lib/adminUsageReportLoader'
-import type { UsageAmounts } from '../api/usageApi'
+import type { UsageAmounts, UsageSummaryFilter } from '../api/usageApi'
 import { downloadUsageCsv } from '../ui/usageCsv'
 import { useUsageBudget } from './useUsageBudget'
 
@@ -47,6 +50,8 @@ export function useAdminUsageReport() {
         searchParams,
         setSearchParams,
     ] = useSearchParams()
+    const location = useLocation()
+    const navigationType = useNavigationType()
 
     const isSuperAdmin = Boolean(
         currentUser?.roles.includes(
@@ -54,81 +59,49 @@ export function useAdminUsageReport() {
         ),
     )
 
-    const [initial] = useState(() =>
+    // The applied report is the URL, not a second independently mutable state.
+    const urlState = useMemo(() =>
         readUsageUrlState(
-            searchParams.toString(),
+            location.search,
             isSuperAdmin,
         ),
+        [location.search, isSuperAdmin],
     )
-
-    const [tab, setTab] =
-        useState<UsageReportTab>(
-            initial.tab,
-        )
-    const [page, setPage] =
-        useState(initial.page)
+    const {tab, page} = urlState
+    const order = urlState.order ?? 'tokens'
+    const {dateFrom: appliedDateFrom, dateTo: appliedDateTo, model: appliedModel,
+        organizationId: appliedOrganizationId, userId: appliedUserId = ''} = urlState.draft
     const [filterError, setFilterError] =
         useState('')
 
     const [draftDateFrom, setDraftDateFrom] =
-        useState(initial.draft.dateFrom)
+        useState(urlState.draft.dateFrom)
     const [draftDateTo, setDraftDateTo] =
-        useState(initial.draft.dateTo)
+        useState(urlState.draft.dateTo)
     const [draftModel, setDraftModel] =
-        useState(initial.draft.model)
+        useState(urlState.draft.model)
     const [draftOrganizationId, setDraftOrganizationId] =
-        useState(initial.draft.organizationId)
-    const [draftUserId, setDraftUserId] = useState(initial.draft.userId ?? '')
-
-    const [appliedDateFrom, setAppliedDateFrom] =
-        useState(initial.draft.dateFrom)
-    const [appliedDateTo, setAppliedDateTo] =
-        useState(initial.draft.dateTo)
-    const [appliedModel, setAppliedModel] =
-        useState(initial.draft.model)
-    const [appliedOrganizationId, setAppliedOrganizationId] =
-        useState(initial.draft.organizationId)
-    const [appliedUserId, setAppliedUserId] = useState(initial.draft.userId ?? '')
+        useState(urlState.draft.organizationId)
+    const [draftUserId, setDraftUserId] = useState(urlState.draft.userId ?? '')
     const [userLabel, setUserLabel] = useState<{ id: string; email: string } | null>(null)
 
     const [reloadToken, setReloadToken] =
         useState(0)
-
-    /*
-     * Auth may complete after the first render. Restore tenant URL state only
-     * when SUPER_ADMIN authority becomes known; remove it when authority is
-     * lost so an ADMIN can never drive cross-tenant filtering from the URL.
-     */
-    const previousSuperAdminRef =
-        useRef(isSuperAdmin)
-
+    // Preserve unapplied edits when merely switching tabs or sorting. Restore
+    // the editor on Back/Forward, a different applied scope, or authority changes.
+    const draftKey = JSON.stringify([isSuperAdmin, urlState.draft])
+    const previousDraftLocation = useRef({key: location.key, draftKey})
     useEffect(() => {
-        const wasSuperAdmin =
-            previousSuperAdminRef.current
-
-        if (!wasSuperAdmin && isSuperAdmin) {
-            const recovered = readUsageUrlState(
-                searchParams.toString(),
-                true,
-            )
-
-            setDraftOrganizationId(
-                recovered.draft.organizationId,
-            )
-            setAppliedOrganizationId(
-                recovered.draft.organizationId,
-            )
-        } else if (wasSuperAdmin && !isSuperAdmin) {
-            setDraftOrganizationId('')
-            setAppliedOrganizationId('')
-        }
-
-        previousSuperAdminRef.current =
-            isSuperAdmin
-    }, [
-        isSuperAdmin,
-        searchParams,
-    ])
+        const previous = previousDraftLocation.current
+        previousDraftLocation.current = {key: location.key, draftKey}
+        if (previous.draftKey === draftKey && (navigationType !== 'POP' || previous.key === location.key)) return
+        setDraftDateFrom(urlState.draft.dateFrom)
+        setDraftDateTo(urlState.draft.dateTo)
+        setDraftModel(urlState.draft.model)
+        setDraftOrganizationId(urlState.draft.organizationId)
+        setDraftUserId(urlState.draft.userId ?? '')
+        setFilterError('')
+    }, [draftKey, location.key, navigationType, urlState])
 
     const organizations =
         useAdminUsageOrganizationOptions({
@@ -147,7 +120,7 @@ export function useAdminUsageReport() {
     })
 
     const query = useAdminUsageReportQuery({
-        enabled: currentUser !== null,
+        enabled: currentUser !== null && (tab !== 'organizations' || (isSuperAdmin && !appliedOrganizationId)),
         userId: currentUser?.id ?? '',
         userOrganizationId:
             currentUser?.organizationId ?? '',
@@ -161,6 +134,7 @@ export function useAdminUsageReport() {
             appliedOrganizationId,
         isSuperAdmin,
         reloadToken,
+        order: tab === 'daily' || tab === 'models' ? undefined : order,
     })
     const totals = useAdminUsageReportQuery({
         enabled: currentUser !== null && tab !== 'daily',
@@ -174,18 +148,18 @@ export function useAdminUsageReport() {
         isSuperAdmin ? appliedOrganizationId : currentUser?.organizationId ?? '', reloadToken)
     const exportTask = useBoundedReportExport(JSON.stringify([
         currentUser?.id, currentUser?.organizationId, isSuperAdmin, tab,
-        appliedDateFrom, appliedDateTo, appliedModel, appliedUserId, appliedOrganizationId, reloadToken,
+        appliedDateFrom, appliedDateTo, appliedModel, appliedUserId, appliedOrganizationId, reloadToken, order,
     ]))
 
     function exportFiltered() {
-        if (!currentUser || query.loading || query.error || filtersDirty || (tab !== 'summary' && tab !== 'users')) return
+        if (!currentUser || query.loading || query.error || filtersDirty || (tab !== 'summary' && tab !== 'users' && tab !== 'organizations')) return
         return exportTask.run<UsageAmounts>(async signal => {
             const normalized = toUsageFilter({
                 dateFrom: appliedDateFrom, dateTo: appliedDateTo, model: appliedModel,
                 userId: appliedUserId, organizationId: appliedOrganizationId,
             }, isSuperAdmin)
             const result = await loadUsageReport({
-                tab, page: 0, pageSize: REPORT_EXPORT_LIMIT, filter: normalized.filter,
+                tab, page: 0, pageSize: REPORT_EXPORT_LIMIT, filter: {...normalized.filter, order},
                 organizationId: normalized.organizationId || null, superAdmin: isSuperAdmin, signal,
             })
             return !result.complete || result.hasNext || result.rows.length > REPORT_EXPORT_LIMIT ? null : result.rows
@@ -245,10 +219,9 @@ export function useAdminUsageReport() {
                 draft,
                 isSuperAdmin,
             )
+            if (nextTab === 'organizations' && (!isSuperAdmin || normalized.organizationId)) nextTab = 'summary'
 
             setFilterError('')
-            setTab(nextTab)
-            setPage(0)
             setDraftDateFrom(
                 normalized.draft.dateFrom,
             )
@@ -261,20 +234,7 @@ export function useAdminUsageReport() {
             setDraftOrganizationId(
                 normalized.organizationId,
             )
-            setAppliedDateFrom(
-                normalized.draft.dateFrom,
-            )
-            setAppliedDateTo(
-                normalized.draft.dateTo,
-            )
-            setAppliedModel(
-                normalized.draft.model,
-            )
-            setAppliedOrganizationId(
-                normalized.organizationId,
-            )
             setDraftUserId(normalized.draft.userId ?? '')
-            setAppliedUserId(normalized.draft.userId ?? '')
 
             updateUrl({
                 tab: nextTab,
@@ -321,6 +281,23 @@ export function useAdminUsageReport() {
         applyFilters({...applied, dateFrom: date, dateTo: date}, 'summary')
     }
 
+    function inspectRange(dateFrom: string, dateTo: string) {
+        if (filtersDirty || query.loading) return
+        applyFilters({...applied, dateFrom, dateTo}, 'summary')
+    }
+
+    function inspectRow(row: UsageAmounts & {userId?: string; userEmail?: string; model?: string; organizationId?: string}) {
+        if (filtersDirty || query.loading) return
+        if (row.organizationId && !isSuperAdmin) return
+        if (row.organizationId && row.coverage.assistantMessages === '0') return
+        if (row.userId && row.userEmail) setUserLabel({id: row.userId, email: row.userEmail})
+        applyFilters({...applied,
+            ...(row.userId ? {userId: row.userId} : {}),
+            ...(row.model ? {model: row.model} : {}),
+            ...(row.organizationId ? {organizationId: row.organizationId} : {}),
+        }, 'summary')
+    }
+
     function clearFilter(filter: 'period' | 'model' | 'user' | 'organization') {
         if (filtersDirty || query.loading) return
         const defaults = createDefaultUsageDraftFilter()
@@ -347,14 +324,8 @@ export function useAdminUsageReport() {
         setDraftModel('')
         setDraftOrganizationId('')
         setDraftUserId('')
-        setAppliedUserId('')
         setUserLabel(null)
         organizations.setQuery('')
-        setAppliedDateFrom(defaults.dateFrom)
-        setAppliedDateTo(defaults.dateTo)
-        setAppliedModel('')
-        setAppliedOrganizationId('')
-        setPage(0)
 
         updateUrl({
             tab,
@@ -369,12 +340,14 @@ export function useAdminUsageReport() {
     function selectTab(
         nextTab: UsageReportTab,
     ) {
+        if (nextTab === 'organizations' && !isSuperAdmin) return
+        if (nextTab === 'organizations' && appliedOrganizationId) {
+            applyFilters({...applied, organizationId: ''}, 'organizations')
+            return
+        }
         if (appliedUserId && appliedUserLabel) {
             setUserLabel({ id: appliedUserId, email: appliedUserLabel })
         }
-        setTab(nextTab)
-        setPage(0)
-
         updateUrl({
             tab: nextTab,
             page: 0,
@@ -396,8 +369,6 @@ export function useAdminUsageReport() {
             nextPage,
         )
 
-        setPage(safePage)
-
         updateUrl({
             tab,
             page: safePage,
@@ -416,11 +387,11 @@ export function useAdminUsageReport() {
             typeof buildUsageSearchParams
         >[0],
     ) {
+        const next = buildUsageSearchParams({order, ...values})
+        if (next.toString() === searchParams.toString()) return
         setSearchParams(
-            buildUsageSearchParams(values),
-            {
-                replace: true,
-            },
+            next,
+            {replace: false},
         )
     }
 
@@ -445,6 +416,12 @@ export function useAdminUsageReport() {
         reportIdentity: currentUser?.id ?? '', reloadToken,
         totals, budget, exportFiltered, exportPending: exportTask.pending, filteredExportError: exportTask.error,
         tab,
+        order,
+        changeOrder: (value: NonNullable<UsageSummaryFilter['order']>) => {
+            if (value !== order) {
+                updateUrl({tab, page: 0, ...applied, order: value})
+            }
+        },
         page,
         hasNext: query.hasNext,
         hasPrevious: query.hasPrevious,
@@ -492,6 +469,8 @@ export function useAdminUsageReport() {
         inspectModel,
         inspectUser,
         inspectDay,
+        inspectRow,
+        inspectRange,
         clearFilter,
         resetFilters,
         selectTab,

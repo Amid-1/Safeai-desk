@@ -4,6 +4,7 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import { getOrganizationBudgetStatus } from '../api/usage/usageBudget'
 import type { OrganizationBudgetStatus } from '../api/usage/usageBudget'
 import { useUsageBudget } from './useUsageBudget'
+import { ApiError } from '../../../shared/api/httpErrors'
 
 vi.mock('../api/usage/usageBudget', () => ({getOrganizationBudgetStatus: vi.fn()}))
 const read = vi.mocked(getOrganizationBudgetStatus)
@@ -19,6 +20,16 @@ it('does not request a platform-wide budget or substitute zero for missing polic
     await waitFor(() => expect(result.current.error).toBe(true))
     expect(result.current.policy).toBeNull()
 })
+
+it.each([[403, 'Нет доступа'], [404, 'Сервер не предоставил'], [500, 'Ошибка сервера'], [0, 'некорректные сведения']] as const)(
+    'classifies budget failures safely (%s)', async (status, message) => {
+        read.mockRejectedValueOnce(new ApiError('secret SQL diagnostic', {error: status === 0 ? 'INVALID_RESPONSE' : 'ERROR'}, status))
+        const {result} = renderHook(() => useUsageBudget('admin', 'one', 0))
+        await waitFor(() => expect(result.current.error).toBe(true))
+        expect(result.current.errorMessage).toContain(message)
+        expect(result.current.errorMessage).not.toContain('secret')
+        expect(result.current.policy).toBeNull()
+    })
 
 it('discards stale results, accepts an exact zero budget, and rejects a mismatched tenant', async () => {
     let resolve!: (value: OrganizationBudgetStatus) => void

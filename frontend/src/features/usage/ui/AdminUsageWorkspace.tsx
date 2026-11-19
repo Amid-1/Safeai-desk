@@ -5,14 +5,14 @@ import { AdminUsageControls } from './AdminUsageControls'
 import { UsageReportFooter, UsageRows } from './UsageReportView'
 import { useAdminUsageReport } from '../controller/useAdminUsageReport'
 import { reportTitle, reportDescription } from '../lib/adminUsage.helpers'
-import type { UsageDailySummary } from '../api/usageApi'
+import type { UsageDailySummary, UsageOrganizationSummary } from '../api/usageApi'
 import { UsageKpis } from './UsageKpis'
 import { UsageDailyChart, type UsageDailyMetric } from './UsageDailyChart'
 import { UsageBreakdownChart } from './UsageBreakdownChart'
 import { downloadUsageCsv } from './usageCsv'
 import { EmptyState, ErrorState, LoadingState } from '../../../shared/ui/StateBlock'
 import { trimDecimal } from '../lib/adminUsagePresentation'
-import { UsageOrganizationComparison } from './UsageOrganizationComparison'
+import { UsageOrganizationRows } from './UsageOrganizationRows'
 
 export function AdminUsageWorkspace() {
     const report = useAdminUsageReport()
@@ -21,11 +21,10 @@ export function AdminUsageWorkspace() {
     const [expanded, setExpanded] = useState(false)
     const [dailyMetric, setDailyMetric] = useState<UsageDailyMetric>('tokens')
     const [exportError, setExportError] = useState('')
-    const [compareOrganizations, setCompareOrganizations] = useState(false)
-    const canCompare = report.isSuperAdmin && !report.appliedOrganizationId
+    const [limit, setLimit] = useState(12)
     const hasRows = !report.loading && !report.error && report.rows.length > 0
     const hasMore = report.hasPrevious || report.hasNext
-    const paged = report.tab === 'summary' || report.tab === 'users'
+    const paged = report.tab === 'summary' || report.tab === 'users' || report.tab === 'organizations'
     const separateTotals = report.tab !== 'daily'
     const chartExpanded = view === 'chart' && expanded && hasRows
     const dataKey = JSON.stringify([
@@ -47,6 +46,7 @@ export function AdminUsageWorkspace() {
             onKeyDown={event => {
                 if (event.key === 'Escape' && chartExpanded && !event.defaultPrevented) setExpanded(false)
             }}>
+            <div className="usage-workspace-upper">
             <AdminUsageControls
                 tab={report.tab} isSuperAdmin={report.isSuperAdmin} scopeLabel={report.scopeLabel}
                 draftDateFrom={report.draftDateFrom} draftDateTo={report.draftDateTo}
@@ -80,7 +80,9 @@ export function AdminUsageWorkspace() {
                     : separateTotals && report.totals.error ? 'Общие итоги недоступны' : undefined} />
             {report.budget.scoped && <section className="usage-filter-summary" aria-label="Бюджет организации">
                 <strong>Месячный бюджет организации: </strong>
-                {report.budget.loading ? 'Загрузка…' : report.budget.error || !report.budget.policy ? 'Недоступен'
+                {report.budget.loading ? 'Загрузка…' : report.budget.error || !report.budget.policy ? <>Недоступен{' '}
+                    {report.budget.errorMessage && <span role="status">{report.budget.errorMessage}{' '}</span>}
+                    <button type="button" className="secondary-button" onClick={report.reload}>Повторить</button></>
                     : report.budget.policy.monthlyBudgetUsd === null ? 'Не задан'
                         : `${trimDecimal(report.budget.policy.monthlyBudgetUsd)} USD`}
                 {report.budget.policy && <> · {report.budget.policy.policyEnabled ? 'Правила включены' : 'Правила отключены'} ·
@@ -95,17 +97,8 @@ export function AdminUsageWorkspace() {
                     <small>На {report.budget.policy.asOf} · контроль: {report.budget.policy.enforcement === 'HARD' ? 'жёсткий' : 'мягкий'}. Остаток учитывает резервы, а не только списания.</small>
                 </>}
             </section>}
-            {canCompare && <div className="usage-filter-summary">
-                <button type="button" className="secondary-button" aria-pressed={compareOrganizations} disabled={report.filtersDirty}
-                    onClick={() => setCompareOrganizations(value => !value)}>
-                    {compareOrganizations ? 'Вернуться к детализации' : 'Сравнить организации'}
-                </button>
-            </div>}
-            {canCompare && compareOrganizations
-                ? <UsageOrganizationComparison key={JSON.stringify([report.reportIdentity, report.reloadToken, report.appliedDateFrom,
-                    report.appliedDateTo, report.appliedModel, report.appliedUserId])}
-                    dateFrom={report.appliedDateFrom} dateTo={report.appliedDateTo} model={report.appliedModel} userId={report.appliedUserId} />
-                : <section className={`usage-results-panel usage-results-panel--${view}`} aria-labelledby="usage-report-title">
+            </div>
+            <section className={`usage-results-panel usage-results-panel--${view}`} aria-labelledby="usage-report-title">
                 <div className="usage-results-toolbar">
                     <div className="usage-results-heading">
                         <h2 id="usage-report-title">{reportTitle(report.tab)}</h2>
@@ -116,8 +109,24 @@ export function AdminUsageWorkspace() {
                             <button type="button" aria-pressed={view === 'table'}
                                 onClick={() => { setView('table'); setExpanded(false) }}>Таблица</button>
                             <button type="button" aria-pressed={view === 'chart'}
-                                onClick={() => setView('chart')}>График</button>
+                                onClick={() => { setView('chart'); if (paged && report.page > 0) report.goToPage(0) }}>График</button>
                         </div>
+                        {report.tab !== 'daily' && (view === 'chart' || report.tab === 'organizations') &&
+                            <label className="usage-chart-select">Показатель / сортировка
+                                <select value={report.order} onChange={event => report.changeOrder(event.target.value as typeof report.order)}>
+                                    <option value="tokens">Входные / выходные токены</option>
+                                    <option value="total">Всего токенов</option>
+                                    <option value="cost">Известная стоимость, USD</option>
+                                    <option value="responses">Ответы AI</option>
+                                    <option value="coverage">Полнота учёта</option>
+                                </select>
+                            </label>}
+                        {view === 'chart' && report.tab !== 'daily' && <label className="usage-chart-select">Строк на графике
+                            <select value={limit} onChange={event => setLimit(Number(event.target.value))}>
+                                <option value={12}>12</option><option value={10}>10</option>
+                                <option value={20}>20</option><option value={50}>50</option>
+                            </select>
+                        </label>}
                         <button type="button" className="secondary-button" disabled={!hasRows}
                             title={paged ? 'До 50 строк текущей страницы' : 'Все строки текущего ограниченного отчёта'}
                             onClick={exportCsv}>{paged ? 'Скачать CSV страницы' : 'Скачать CSV отчёта'}</button>
@@ -139,6 +148,10 @@ export function AdminUsageWorkspace() {
                             action={<button type="button" onClick={report.reload}>Повторить</button>} />
                         : !hasRows ? <EmptyState title="За этот период использования нет"
                             message="Данные появятся после завершённых обращений к AI. Выберите другой период." />
+                        : view === 'table' && report.tab === 'organizations' ? <UsageOrganizationRows
+                            rows={report.rows as UsageOrganizationSummary[]} onInspect={report.inspectRow}
+                            userId={report.reportIdentity} reloadToken={report.reloadToken}
+                            disabled={report.filtersDirty || report.loading} />
                         : view === 'table' ? <UsageRows tab={report.tab} rows={report.rows}
                             onInspectModel={report.inspectModel} onInspectDay={report.inspectDay}
                             onInspectUser={report.inspectUser} appliedModel={report.appliedModel}
@@ -147,8 +160,12 @@ export function AdminUsageWorkspace() {
                             drilldownDisabled={report.filtersDirty || report.loading} />
                         : report.tab === 'daily' ? <UsageDailyChart rows={report.rows as UsageDailySummary[]}
                             dateFrom={report.appliedDateFrom} dateTo={report.appliedDateTo}
-                            metric={dailyMetric} onMetricChange={setDailyMetric} />
-                        : <UsageBreakdownChart tab={report.tab} rows={report.rows} hasMore={hasMore} />}
+                            metric={dailyMetric} onMetricChange={setDailyMetric}
+                            onInspectRange={report.filtersDirty ? undefined : report.inspectRange} />
+                        : <UsageBreakdownChart tab={report.tab} rows={report.rows} hasMore={hasMore}
+                            limit={limit} metric={report.order} globallyRanked={paged && report.page === 0} serverSorted={paged}
+                            onInspect={report.filtersDirty ? undefined : report.inspectRow}
+                            relatedLinks={report.isSuperAdmin} organizationId={report.appliedOrganizationId} />}
                 </UsageTableViewport>
                 <footer className="usage-results-footer">
                     {!report.loading && !report.error && (hasRows || hasMore)
@@ -157,7 +174,7 @@ export function AdminUsageWorkspace() {
                             loading={report.loading} onPageChange={page => { setExportError(''); report.goToPage(page) }} />
                         : <span className="usage-footer-status">{report.loading ? 'Загрузка…' : report.error ? 'Отчёт недоступен' : 'Нет записей'}</span>}
                 </footer>
-            </section>}
+            </section>
         </div>
     )
 }

@@ -39,8 +39,9 @@ const fixture = {
     changeDraftOrganization: vi.fn(), applyFilters: vi.fn(), inspectModel: vi.fn(),
     inspectUser: vi.fn(), clearFilter: vi.fn(),
     inspectDay: vi.fn(), resetFilters: vi.fn(), selectTab: vi.fn(), goToPage: vi.fn(), reload: vi.fn(),
+    inspectRow: vi.fn(), inspectRange: vi.fn(), order: 'tokens' as const, changeOrder: vi.fn(),
     totals: { rows: [row], loading: false, error: '', hasNext: false, hasPrevious: false },
-    budget: { scoped: false, loading: false, error: false, policy: null },
+    budget: { scoped: false, loading: false, error: false, policy: null, errorMessage: '' },
     exportFiltered: vi.fn(), exportPending: false, filteredExportError: '',
 } satisfies ReturnType<typeof useAdminUsageReport>
 

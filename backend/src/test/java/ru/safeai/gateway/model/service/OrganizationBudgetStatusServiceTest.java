@@ -18,6 +18,15 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class OrganizationBudgetStatusServiceTest {
+    @Test
+    void testJvmDoesNotInheritApplicationDatabaseCredentials() {
+        for (String key : java.util.List.of("SPRING_DATASOURCE_URL", "SPRING_DATASOURCE_USERNAME",
+                "SPRING_DATASOURCE_PASSWORD", "SPRING_FLYWAY_URL", "SPRING_FLYWAY_USER",
+                "SPRING_FLYWAY_PASSWORD", "SPRING_FLYWAY_ENABLED")) {
+            assertFalse(System.getenv().containsKey(key), "Test JVM inherited " + key);
+        }
+    }
+
     private final UUID org = UUID.randomUUID();
     private final SafeAiUserPrincipal principal = mock(SafeAiUserPrincipal.class);
     private final OrganizationModelPolicyService policies = mock(OrganizationModelPolicyService.class);

@@ -29,6 +29,212 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
+test('comparison is a separate super-admin tab, retries, switches reports and restores filters', async ({page}) => {
+  await page.route('**/api/auth/me', route => route.fulfill({json: {id: userId, organizationId: orgId,
+    email: identity.userEmail, fullName: 'Super Admin', enabled: true, roles: ['SUPER_ADMIN']}}))
+  let unavailable = true
+  await page.route('**/api/admin/usage/organizations?**', route => {
+    if (unavailable) return route.fulfill({status: 503, json: {message: 'internal'}})
+    return route.fulfill({json: {page: 0, size: 50, first: true, last: true, hasNext: false, hasPrevious: false, content: [{
+      organizationId: orgId, organizationName: 'Demo Company', responses: {assistantMessages: 1},
+      usage: {confirmedInputTokens: 9, confirmedOutputTokens: 16, availableUsageMessages: 1, partialUsageMessages: 0,
+        missingUsageMessages: 0, usageNotApplicableMessages: 0},
+      cost: {knownCostUsd: '0', currency: 'USD', pricedMessages: 1, freeMessages: 0, unpricedMessages: 0,
+        pricingFailedMessages: 0, pricingNotApplicableMessages: 0},
+    }]}})
+  })
+  await page.goto(`/admin/usage?report=organizations&${dates}`)
+  await expect(page.getByText(/Сравнение организаций недоступно/)).toBeVisible()
+  await page.getByRole('tab', {name: 'По пользователям'}).click()
+  await expect(page).toHaveURL(/report=users/)
+  await expect(page.getByRole('columnheader', {name: 'Пользователь'})).toBeVisible()
+  await page.getByRole('tab', {name: 'По организациям'}).click()
+  await expect(page).toHaveURL(/report=organizations/)
+  await expect(page.getByRole('button', {name: 'Повторить'})).toBeVisible()
+  unavailable = false
+  await page.getByRole('button', {name: 'Повторить'}).click()
+  await expect(page.getByRole('button', {name: 'Demo Company'})).toBeVisible()
+  await page.getByRole('button', {name: 'График', exact: true}).click()
+  const plot = page.locator('.usage-breakdown-chart__frame')
+  const surface = plot.getByRole('application')
+  await expect(surface).toBeVisible()
+  const normal = await plot.evaluate(el => el.clientHeight)
+  const svg = await surface.evaluate(el => el.viewBox.baseVal.height)
+  await page.getByRole('button', {name: 'Развернуть', exact: true}).click()
+  await expect.poll(() => plot.evaluate(el => el.clientHeight)).toBeGreaterThan(normal + 20)
+  await expect.poll(() => surface.evaluate(el => el.viewBox.baseVal.height)).toBeGreaterThan(svg + 20)
+  await expect.poll(() => surface.evaluate(el => Math.abs(el.viewBox.baseVal.height - el.getBoundingClientRect().height))).toBeLessThanOrEqual(1)
+  await expect(page.locator('.usage-results-footer')).toBeInViewport()
+  await page.getByRole('button', {name: 'Свернуть', exact: true}).click()
+  await expect.poll(() => surface.evaluate(el => el.viewBox.baseVal.height)).toBe(svg)
+  await page.getByText('Детализация и карточки · доступно с клавиатуры').click()
+  await page.getByRole('button', {name: 'Demo Company'}).click()
+  const comparisonUrl = page.url()
+  const comparisonIndex = await page.evaluate(() => globalThis.history.state.idx)
+  await page.getByRole('button', {name: 'Детализация использования'}).click()
+  await expect(page).toHaveURL(new RegExp(`organizationId=${orgId}`))
+  await expect(page.getByRole('tab', {name: 'Детализация'})).toHaveAttribute('aria-selected', 'true')
+  const detailUrl = page.url()
+  expect(await page.evaluate(() => globalThis.history.state.idx)).toBe(comparisonIndex + 1)
+  await page.goBack()
+  await expect(page).toHaveURL(comparisonUrl)
+  await expect(page.getByRole('tab', {name: 'По организациям'})).toHaveAttribute('aria-selected', 'true')
+  await expect(page).toHaveURL(/report=organizations/)
+  await expect(page.locator('.usage-scope')).toContainText('Все организации')
+  await page.goForward()
+  await expect(page).toHaveURL(detailUrl)
+  await expect(page.getByRole('tab', {name: 'Детализация'})).toHaveAttribute('aria-selected', 'true')
+})
+
+test('an organization without usage stays in comparison and keeps its card and budget available', async ({page}) => {
+  await page.route('**/api/auth/me', route => route.fulfill({json: {id: userId, organizationId: orgId,
+    email: identity.userEmail, fullName: 'Super Admin', enabled: true, roles: ['SUPER_ADMIN']}}))
+  await page.route('**/api/admin/usage/organizations?**', route => route.fulfill({json: {
+    page: 0, size: 50, first: true, last: true, hasNext: false, hasPrevious: false,
+    content: [{organizationId: orgId, organizationName: 'Сокол', responses: {assistantMessages: 0},
+      usage: {confirmedInputTokens: 0, confirmedOutputTokens: 0, availableUsageMessages: 0, partialUsageMessages: 0,
+        missingUsageMessages: 0, usageNotApplicableMessages: 0},
+      cost: {knownCostUsd: null, currency: 'USD', pricedMessages: 0, freeMessages: 0, unpricedMessages: 0,
+        pricingFailedMessages: 0, pricingNotApplicableMessages: 0}}],
+  }}))
+  await page.route(`**/api/admin/models/policies/${orgId}/budget-status`, route => route.fulfill({json: {
+    organizationId: orgId, policyVersion: 0, policyEnabled: false, enforcement: 'SOFT',
+    periodStart: '2026-11-01T00:00:00Z', periodEnd: '2026-12-01T00:00:00Z', asOf: '2026-11-19T12:00:00Z',
+    monthlyBudgetUsd: null, knownActualUsd: '0', reservedUsd: '0', knownCommittedUsd: '0',
+    unknownCommittedCostCount: 0, remainingUsd: null, status: 'UNCONFIGURED',
+  }}))
+  await page.goto(`/admin/usage?report=organizations&${dates}`)
+  await expect(page.getByText('Нет использования за период')).toBeVisible()
+  await expect(page.getByRole('button', {name: 'Сокол', exact: true})).toHaveCount(0)
+  await page.getByRole('button', {name: 'Показать бюджет'}).click()
+  await expect(page.getByText('Бюджет: Не задан')).toBeVisible()
+  await page.getByRole('button', {name: 'График', exact: true}).click()
+  // Recharts renders tick lines and labels separately; click the visible SVG
+  // text, not the private tick-line container.
+  const label = page.locator('.usage-breakdown-chart__plot text.usage-chart-action-tick').filter({hasText: /^Сокол$/})
+  await expect(label).toBeVisible()
+  await expect(label).toHaveClass(/\busage-chart-action-tick\b/)
+  await label.click()
+  await expect(page.getByRole('region', {name: 'Выбранная запись графика'})).toContainText('Нет использования за выбранный период')
+  await expect(page.getByRole('region', {name: 'Выбранная запись графика'}).getByRole('link', {name: 'Карточка организации'})).toHaveAttribute('href', `/admin/organizations?organizationId=${orgId}`)
+  await expect(page.getByRole('button', {name: 'Детализация использования'})).toHaveCount(0)
+  await expect(page).toHaveURL(/report=organizations/)
+  await expect(page).not.toHaveURL(/organizationId=/)
+  await page.getByRole('button', {name: 'Закрыть сведения'}).click()
+  await expect(page.getByRole('region', {name: 'Выбранная запись графика'})).toHaveCount(0)
+  await page.getByText('Детализация и карточки · доступно с клавиатуры').click()
+  await page.getByRole('button', {name: 'Сокол', exact: true}).focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('region', {name: 'Выбранная запись графика'})).toContainText('Нет использования за выбранный период')
+  await expect(page.getByRole('button', {name: 'Детализация использования'})).toHaveCount(0)
+  await expect(page).not.toHaveURL(/organizationId=/)
+})
+
+test('missing organization endpoint is an error, not zero data; admin cannot request the report', async ({page}) => {
+  let role = 'SUPER_ADMIN'
+  let requests = 0
+  await page.route('**/api/auth/me', route => route.fulfill({json: {id: userId, organizationId: orgId,
+    email: identity.userEmail, fullName: 'Admin', enabled: true, roles: [role]}}))
+  await page.route('**/api/admin/usage/organizations?**', route => {
+    requests++
+    return route.fulfill({status: 404, json: {message: 'internal diagnostic must not be displayed'}})
+  })
+  await page.goto(`/admin/usage?report=organizations&${dates}`)
+  await expect(page.getByText(/Сервер не предоставляет отчёт по организациям/)).toBeVisible()
+  await expect(page.getByText('Отчёт недоступен', {exact: true})).toBeVisible()
+  await expect(page.getByText('internal diagnostic must not be displayed')).toHaveCount(0)
+  await expect(page.getByRole('button', {name: 'Скачать CSV страницы'})).toBeDisabled()
+  const requestsBeforeSwitch = requests
+  expect(requestsBeforeSwitch).toBeGreaterThan(0)
+  await page.getByRole('tab', {name: 'По дням'}).click()
+  await expect(page.getByRole('columnheader', {name: 'Дата'})).toBeVisible()
+  expect(requests).toBe(requestsBeforeSwitch)
+  role = 'ADMIN'
+  await page.goto(`/admin/usage?report=organizations&${dates}`)
+  await expect(page.getByRole('tab', {name: 'По организациям'})).toHaveCount(0)
+  await expect(page.getByRole('table')).toBeVisible()
+  expect(requests).toBe(requestsBeforeSwitch)
+})
+
+test('organization table grip is above rows and budget retries without affecting other tenants', async ({page}) => {
+  await page.setViewportSize({width: 1440, height: 900})
+  await page.route('**/api/auth/me', route => route.fulfill({json: {id: userId, organizationId: orgId,
+    email: identity.userEmail, fullName: 'Super Admin', enabled: true, roles: ['SUPER_ADMIN']}}))
+  await page.route('**/api/admin/usage/organizations?**', route => route.fulfill({json: {
+    page: 0, size: 50, first: true, last: true, hasNext: false, hasPrevious: false,
+    content: Array.from({length: 17}, (_, i) => ({
+      organizationId: i === 0 ? orgId : `aaaaaaaa-aaaa-4aaa-8aaa-${String(i).padStart(12,'0')}`,
+      organizationName: i === 0 ? 'Demo Company' : `Organization ${i}`,
+      responses: {assistantMessages: 1},
+      usage: {confirmedInputTokens: 9, confirmedOutputTokens: 16, availableUsageMessages: 1,
+        partialUsageMessages: 0, missingUsageMessages: 0, usageNotApplicableMessages: 0},
+      cost: {knownCostUsd: '0', currency: 'USD', pricedMessages: 1, freeMessages: 0,
+        unpricedMessages: 0, pricingFailedMessages: 0, pricingNotApplicableMessages: 0},
+    })),
+  }}))
+  let requests = 0
+  await page.route(`**/api/admin/models/policies/${orgId}/budget-status`, route => {
+    requests++
+    if (requests === 1) return route.fulfill({status: 503, json: {message: 'internal'}})
+    return route.fulfill({json: {
+      organizationId: orgId, policyVersion: 2, policyEnabled: true, enforcement: 'HARD',
+      periodStart: '2026-11-01T00:00:00Z', periodEnd: '2026-12-01T00:00:00Z', asOf: '2026-11-19T12:00:00Z',
+      monthlyBudgetUsd: '10', knownActualUsd: '1', reservedUsd: '2', knownCommittedUsd: '3',
+      unknownCommittedCostCount: 0, remainingUsd: '7', status: 'KNOWN',
+    }})
+  })
+  await page.goto(`/admin/usage?report=organizations&${dates}`)
+  await expect(page.getByRole('table').getByRole('row')).toHaveCount(18)
+  const grip = page.getByRole('separator', {name: 'Высота таблицы'})
+  const viewport = page.locator('.usage-data-viewport')
+  const footer = page.locator('.usage-results-footer')
+  const before = await viewport.boundingBox()
+  const handle = await grip.boundingBox()
+  const bottom = await footer.boundingBox()
+  expect(handle.y + handle.height).toBeLessThanOrEqual(before.y + 1)
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2 - 80, {steps: 5})
+  await page.mouse.up()
+  await expect.poll(() => viewport.evaluate(el => el.clientHeight)).toBeGreaterThan(before.height)
+  expect(Math.abs((await footer.boundingBox()).y - bottom.y)).toBeLessThanOrEqual(2)
+  const row = page.getByRole('row', {name: /Demo Company/})
+  await row.getByRole('button', {name: 'Показать бюджет'}).click()
+  await expect(row.getByText('Бюджет недоступен')).toBeVisible()
+  await row.getByRole('button', {name: 'Повторить'}).click()
+  await expect(row.getByText('Бюджет: 10 USD')).toBeVisible()
+  await expect(row.getByText('Остаток: 7 USD')).toBeVisible()
+  expect(requests).toBe(2)
+  await expect(page.getByRole('button', {name: 'Показать бюджет'})).toHaveCount(16)
+})
+
+test('50 ranked bars retain row space and expand the real SVG, with contained scrolling', async ({page}) => {
+  await page.setViewportSize({width: 1600, height: 1000})
+  await page.route('**/api/admin/usage/users?**', route => route.fulfill({json: {
+    content: Array.from({length: 50}, (_, i) => ({
+      ...amounts, userId: `bbbbbbbb-bbbb-4bbb-8bbb-${String(i+1).padStart(12,'0')}`,
+      userEmail: `user-${i+1}@example.test`,
+    })), page: 0, size: 50, hasPrevious: false, hasNext: true,
+  }}))
+  await page.goto(`/admin/usage?report=users&${dates}`)
+  await page.getByRole('button', {name: 'График', exact: true}).click()
+  await page.getByLabel('Строк на графике').selectOption('50')
+  const plot = page.locator('.usage-breakdown-chart__frame')
+  const surface = plot.getByRole('application')
+  await expect.poll(() => surface.evaluate(el => el.viewBox.baseVal.height)).toBeGreaterThanOrEqual(50 * 58)
+  const normal = await plot.evaluate(el => el.clientHeight)
+  await page.getByRole('button', {name: 'Развернуть', exact: true}).click()
+  await expect.poll(() => surface.evaluate(el => el.viewBox.baseVal.height)).toBeGreaterThan(normal + 20)
+  await expect.poll(() => surface.evaluate(el => Math.abs(el.viewBox.baseVal.height - el.getBoundingClientRect().height))).toBeLessThanOrEqual(1)
+  const viewport = page.locator('.usage-data-viewport')
+  expect(await viewport.evaluate(el => el.scrollHeight - el.clientHeight)).toBeGreaterThan(1000)
+  await viewport.evaluate(el => { el.scrollTop = el.scrollHeight })
+  await expect(page.getByRole('tablist')).toBeInViewport()
+  await expect(page.locator('.usage-results-footer')).toBeInViewport()
+  await page.getByRole('button', {name: 'Свернуть', exact: true}).click()
+  await expect.poll(() => surface.evaluate(el => el.viewBox.baseVal.height)).toBe(normal)
+})
+
 for (const [width, height] of [[1440, 800], [1280, 720]]) {
   test(`compact dashboard stays inside ${width}×${height}`, async ({ page }) => {
     await page.setViewportSize({ width, height })
@@ -91,14 +297,30 @@ test('wheel scrolls only the data rows while header and footer stay fixed', asyn
   const handle = page.getByRole('separator', {name: 'Высота таблицы'})
   await expect(handle).toBeVisible()
   const handleBox = await handle.boundingBox()
+  expect(handleBox.y + handleBox.height).toBeLessThanOrEqual(box.y + 1)
+  expect(handleBox.y).toBeGreaterThan((await page.locator('.usage-results-toolbar').boundingBox()).y)
   await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2)
   await page.mouse.down()
   await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2 - 60)
   await page.mouse.up()
-  await expect.poll(() => viewport.evaluate(el => el.clientHeight)).toBeLessThan(box.height)
+  await expect.poll(() => viewport.evaluate(el => el.clientHeight)).toBeGreaterThan(box.height)
   expect((await page.locator('.usage-page__upper').boundingBox()).y).toBe(headerBefore.y)
+  expect(Math.abs((await footer.boundingBox()).y - footerBefore.y)).toBeLessThanOrEqual(2)
+  const moved = await handle.boundingBox()
+  expect(moved.y).toBeLessThan(handleBox.y)
+  const expandedHeight = await viewport.evaluate(el => el.clientHeight)
+  await page.mouse.move(moved.x + moved.width / 2, moved.y + moved.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(moved.x + moved.width / 2, moved.y + moved.height / 2 + 48)
+  await page.mouse.up()
+  await expect.poll(() => viewport.evaluate(el => el.clientHeight)).toBeLessThan(expandedHeight)
+  expect(Math.abs((await footer.boundingBox()).y - footerBefore.y)).toBeLessThanOrEqual(2)
+  await handle.focus()
+  const beforeKeyboard = await viewport.evaluate(el => el.clientHeight)
+  await handle.press('ArrowUp')
+  await expect.poll(() => viewport.evaluate(el => el.clientHeight)).toBeGreaterThan(beforeKeyboard)
   await handle.dblclick()
-  await expect.poll(() => viewport.evaluate(el => el.clientHeight)).toBeGreaterThanOrEqual(box.height - 1)
+  await expect.poll(() => viewport.evaluate((el, initialHeight) => Math.abs(el.clientHeight - initialHeight), box.height)).toBeLessThanOrEqual(2)
 })
 
 test('narrow viewport has a reachable page without vertical nested scroll', async ({page}) => {
