@@ -75,7 +75,7 @@ export function RouteDecisionEvidence({
                     <dd>
                         {decision.estimatedMaxCostUsd === null
                             ? noEstimate && !allowed ? 'Не рассчитывалась' : 'Неизвестно'
-                            : formatUsd(decision.estimatedMaxCostUsd)}
+                            : decision.pricingComplete ? formatUsd(decision.estimatedMaxCostUsd) : 'Не рассчитана полностью'}
                     </dd>
                 </div>
 

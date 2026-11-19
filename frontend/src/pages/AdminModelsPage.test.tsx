@@ -569,11 +569,9 @@ describe('AdminModelsPage', () => {
                 .toHaveBeenCalledTimes(1)
         })
 
-        expect(
-            await screen.findByText(
-                'Локальный mock provider доступен',
-            ),
-        ).toBeInTheDocument()
+        expect(await screen.findByText('Результат последней проверки соединения, не разрешение на AI-запрос.')).toBeInTheDocument()
+        expect(screen.getByText('Результат последней проверки соединения, не разрешение на AI-запрос.').closest('[role="status"]')).toHaveTextContent('Доступна')
+        expect(screen.queryByText('Локальный mock provider доступен')).not.toBeInTheDocument()
     })
 
     it('каталог предоставляет собственный viewport с естественной высотой без лишней ручки', async () => {

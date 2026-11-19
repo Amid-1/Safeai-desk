@@ -6,6 +6,7 @@ import type {
     ModelCatalogEntry,
     OrganizationModelPolicy,
     RuntimeModelStatus,
+    RuntimeModelProbe,
 } from '../../../entities/model/api/modelApi'
 
 import { modelConfigurationReadiness } from './modelConfigurationReadiness'
@@ -13,6 +14,7 @@ import { ModelIcon } from './ModelIcon'
 import type { ModelIconName } from './ModelIcon'
 import { StatusPill } from './modelControlPlaneViews/viewPresentation'
 import type { StatusTone } from './modelControlPlaneViews/viewPresentationLabels'
+import { runtimeHealthLabel, runtimeHealthTone } from './modelControlPlaneViews/viewPresentationLabels'
 
 export function ModelAvailabilitySummary({
     runtime,
@@ -20,27 +22,31 @@ export function ModelAvailabilitySummary({
     policy,
     organizationName,
     onOpenPolicy,
+    probe = null,
 }: {
     runtime: RuntimeModelStatus
     effectiveCatalog: ModelCatalogEntry[]
     policy: OrganizationModelPolicy
     organizationName: string | null
     onOpenPolicy: () => void
+    probe?: RuntimeModelProbe | null
 }) {
-    const result = modelConfigurationReadiness(runtime, effectiveCatalog, policy)
+    const result = modelConfigurationReadiness(runtime, effectiveCatalog, policy, probe)
     const multipleMatches = result.compatibleCount > 1
     const hasWarnings = result.blockers.length > 0 || multipleMatches
     const policyExcludesMatches = result.compatibleCount > 0 && policy.enabled && result.allowedCount === 0
     const steps: { icon: ModelIconName; title: string; description: string; status: string; tone: StatusTone }[] = [
         { icon: 'server', title: 'Подключение', description: `${runtime.provider} / ${runtime.model}`,
-            status: runtime.enabled ? 'Включено в настройках' : 'Отключено', tone: runtime.enabled ? 'success' : 'danger' },
+            status: runtime.enabled ? 'Настроена' : 'Отключена', tone: 'neutral' },
+        { icon: 'activity', title: 'Соединение', description: 'Последняя фактическая проверка, не проверка правил',
+            status: runtimeHealthLabel(runtime, probe), tone: runtimeHealthTone(runtime, probe) },
         { icon: 'layers', title: 'Каталог версий', description: `Совпадающих действующих версий: ${result.compatibleCount}`,
             status: multipleMatches ? 'Несколько совпадений' : result.compatibleCount ? 'Совпадение найдено' : 'Нет совпадения',
             tone: multipleMatches ? 'warning' : result.compatibleCount ? 'success' : 'danger' },
         { icon: 'shield', title: 'Правила организации',
             description: `${organizationName ?? 'Выбранная организация'} · ${policy.configured ? `версия ${policy.version}` : 'нет версии'}`,
             status: !policy.configured ? 'Не настроены' : !policy.enabled ? 'Отключены' : policyExcludesMatches ? 'Исключают модель' : 'Включены',
-            tone: !policy.configured || policyExcludesMatches ? 'danger' : policy.enabled ? 'success' : 'neutral' },
+            tone: !policy.configured || policyExcludesMatches ? 'danger' : 'neutral' },
         { icon: 'activity', title: 'Итоговое решение', description: 'Определяется сервером для конкретного запроса',
             status: 'При выполнении запроса', tone: 'warning' },
     ]

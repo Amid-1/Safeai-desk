@@ -123,9 +123,9 @@ export function useAdminModelsController() {
 
     const {
         routeDecisionId, handleRouteDecisionIdChange, routeDecision,
-        routePending, routeError, runtimeProbe, runtimeProbePending,
+        routePending, routeError, runtimeProbe, runtimeProbePending, runtimeHealthUnconfirmed,
         handleRuntimeProbe, handleRouteLookup, lookupRouteDecision,
-    } = useAdminModelsDiagnostics(isSuperAdmin, setError)
+    } = useAdminModelsDiagnostics(isSuperAdmin, setError, runtime)
 
 
     useEffect(() => {
@@ -197,6 +197,7 @@ export function useAdminModelsController() {
 
         setLoading(true)
         setError('')
+        setNotice('')
 
         void Promise.all([
             getRuntimeModelStatus(
@@ -441,7 +442,8 @@ export function useAdminModelsController() {
     return {
         currentUser,
         isSuperAdmin,
-        runtime,
+        // Do not present an older server observation as the result of a failed or pending recheck.
+        runtime: runtime && runtimeHealthUnconfirmed ? {...runtime, healthStatus: 'NOT_PROBED' as const} : runtime,
         catalog,
         effectiveCatalog,
         policy,

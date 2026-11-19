@@ -100,7 +100,7 @@ export function formatUsd(
         || value === undefined
         || value === ''
     ) {
-        return '—'
+        return 'Не указана'
     }
 
     const normalized =
@@ -126,58 +126,14 @@ export function formatUsd(
             '',
         )
 
-    const isZero =
-        /^0+$/.test(
-            integerPart,
-        )
-        && fractionWithoutTrailingZeroes
-            .length === 0
-
-    if (isZero) {
-        return '$0.0000'
-    }
-
-    const lessThanMicroDollar =
-        /^0+$/.test(
-            integerPart,
-        )
-        && (
-            fractionWithoutTrailingZeroes
-                .slice(
-                    0,
-                    6,
-                )
-                .replace(
-                    /0/g,
-                    '',
-                )
-                .length === 0
-        )
-
-    if (lessThanMicroDollar) {
-        return '< $0.000001'
-    }
-
     const groupedInteger =
         INTEGER_FORMATTER.format(
             BigInt(integerPart),
-        ).replace(
-            /[\u00a0\u202f]/g,
-            ',',
         )
 
-    const displayedFraction =
-        fractionWithoutTrailingZeroes
-            .slice(
-                0,
-                12,
-            )
-            .padEnd(
-                4,
-                '0',
-            )
-
-    return `$${groupedInteger}.${displayedFraction}`
+    // Keep all significant decimal digits, including sub-micro-dollar prices.
+    // Only presentation changes; no rounding or conversion through Number.
+    return `${groupedInteger}${fractionWithoutTrailingZeroes ? ',' + fractionWithoutTrailingZeroes.padEnd(2, '0') : ''} USD`
 }
 
 function normalizeDecimal(
@@ -195,17 +151,16 @@ function normalizeDecimal(
             return null
         }
 
-        normalized =
-            value
-                .toFixed(12)
-                .replace(
-                    /0+$/,
-                    '',
-                )
-                .replace(
-                    /\.$/,
-                    '',
-                )
+        normalized = String(value)
+        if (normalized.includes('e')) {
+            const [mantissa, exponent] = normalized.split('e')
+            const [whole, fraction = ''] = mantissa.split('.')
+            const digits = whole + fraction
+            const position = whole.length + Number(exponent)
+            normalized = position <= 0 ? '0.' + '0'.repeat(-position) + digits
+                : position >= digits.length ? digits + '0'.repeat(position - digits.length)
+                    : digits.slice(0, position) + '.' + digits.slice(position)
+        }
     } else {
         normalized =
             value.trim()

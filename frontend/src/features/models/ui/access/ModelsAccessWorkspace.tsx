@@ -24,6 +24,7 @@ export function ModelsAccessWorkspace({ controller, onOpenPolicy, onOrganization
             </header>
             <div className="models-access-grid">
                 <PolicyCard policy={policy} catalog={catalog} effectiveCatalog={effectiveCatalog}
+                    showOrganizationScope={false}
                     runtime={runtime} organizationId={targetOrganizationId} organizationName={selectedOrganizationName}
                     isSuperAdmin={isSuperAdmin} organizationQuery={organizationQuery}
                     organizationResults={organizationResults} organizationSearchPending={organizationSearchPending}

@@ -6,6 +6,7 @@ import type {ModelPolicyModalProps} from './policyModalTypes'
 import {ErrorState} from '../../../../shared/ui/StateBlock'
 import { previewReasonLabel } from './policyModalLabels'
 import {POLICY_PREVIEW_LABEL, policyPreviewState} from './policyPreviewStatus'
+import {formatUsd} from '../../../../shared/lib/format'
 
 type Props = {control: ModelPolicyModalController; effectiveCatalog: ModelPolicyModalProps['effectiveCatalog']}
 
@@ -17,7 +18,7 @@ const CHECKS = [
 ] as const
 
 function usd(value: string | null): string {
-    return value === null ? 'Не рассчитано' : `${value.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '')} USD`
+    return value === null ? 'Не рассчитано' : formatUsd(value)
 }
 
 export function PolicyFormPreview({control, effectiveCatalog}: Props) {
@@ -111,7 +112,7 @@ export function PolicyFormPreview({control, effectiveCatalog}: Props) {
                                         <small>Версия модели в каталоге: {item.catalogVersion}</small>
                                     </div>
                                     <span className={`models-policy-check__model-outcome models-policy-check__model-outcome--${item.outcome.toLowerCase()}`}>
-                                        {item.outcome === 'ALLOWED' ? 'Предварительно доступна' : 'Предварительно отклонена'}
+                                        {item.outcome === 'ALLOWED' ? 'Разрешена при проверке правил' : 'Отклонена при проверке правил'}
                                     </span>
                                 </div>
                                 <div className="models-policy-check__model-reason">
@@ -124,7 +125,7 @@ export function PolicyFormPreview({control, effectiveCatalog}: Props) {
                                     <div><small>Стоимость · сведения каталога</small>
                                         <strong>{item.pricingComplete ? 'Данные о стоимости полные' : 'Данные о стоимости неполные'}</strong></div>
                                     <div><small>Расчётная стоимость при максимальных лимитах</small>
-                                        <strong>{item.pricingComplete && item.estimatedMaxCostUsd !== null
+                                        <strong>{!item.pricingComplete ? 'Не рассчитано полностью' : item.estimatedMaxCostUsd !== null
                                             && /^0+(?:\.0+)?$/.test(item.estimatedMaxCostUsd)
                                             && effectiveCatalog.some(entry => entry.modelKey === item.modelKey
                                                 && entry.version === item.catalogVersion && entry.pricingStatus === 'FREE')

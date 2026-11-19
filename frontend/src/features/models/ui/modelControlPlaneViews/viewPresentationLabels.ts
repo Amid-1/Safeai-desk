@@ -183,7 +183,8 @@ export function runtimeHealthLabel(
     runtime: RuntimeModelStatus,
     probe: RuntimeModelProbe | null,
 ): string {
-    if (probe) {
+    if (!runtime.enabled) return 'Отключена'
+    if (probe && probe.provider === runtime.provider && probe.model === runtime.model) {
         return probeLabel(probe.status)
     }
 
@@ -197,6 +198,12 @@ export function runtimeHealthLabel(
         default:
             return enumLabel(runtime.healthStatus)
     }
+}
+
+export function runtimeHealthTone(runtime: RuntimeModelStatus, probe: RuntimeModelProbe | null): StatusTone {
+    if (!runtime.enabled) return 'neutral'
+    if (probe && probe.provider === runtime.provider && probe.model === runtime.model) return probeTone(probe.status)
+    return runtime.healthStatus === 'AVAILABLE' ? 'success' : runtime.healthStatus === 'UNAVAILABLE' ? 'danger' : 'warning'
 }
 
 /**

@@ -61,10 +61,12 @@ export function useModelPolicyModalController({
     const [openedPolicy] = useState(() => ({
         id: policy.id,
         version: policy.version,
+        organizationId: policy.organizationId,
     }))
     const policyChangedExternally =
         openedPolicy.version !== policy.version
         || openedPolicy.id !== policy.id
+        || openedPolicy.organizationId !== policy.organizationId
 
     // Защищаем запросы от повторных действий до следующего обновления React.
     const previewInFlightRef = useRef(false)
@@ -224,6 +226,10 @@ export function useModelPolicyModalController({
     // A server preview is valid only for the exact runtime and effective catalog
     // used to request it. Reordering catalog entries must not invalidate it.
     const previewContextFingerprint = JSON.stringify({
+        organizationId,
+        policyOrganizationId: policy.organizationId,
+        policyId: policy.id,
+        policyVersion: policy.version,
         runtime,
         effectiveCatalog: [...effectiveCatalog].sort((a, b) =>
             a.modelKey.localeCompare(b.modelKey) || a.version - b.version,
@@ -239,6 +245,7 @@ export function useModelPolicyModalController({
         && verifiedDraftRevision === draftRevision
         && verifiedContextFingerprint === previewContextFingerprint
         && !policyChangedExternally
+        && organizationId === policy.organizationId
         && policyPreview?.organizationId === policy.organizationId
         && policyPreview.basePolicyVersion === policy.version
         && policyPreview.enabled === draft.enabled

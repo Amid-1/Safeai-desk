@@ -6,17 +6,18 @@ import type {
     RuntimeModelProbe,
     RuntimeModelStatus,
 } from '../../../../entities/model/api/modelApi'
-import {formatDateTime} from '../../../../shared/lib/format'
+import {formatDateTime, formatUsd} from '../../../../shared/lib/format'
 import { useRef, useState } from 'react'
 import { StatusPill, InfoHint } from './viewPresentation'
-import { runtimeModeLabel, runtimeHealthLabel, runtimeCapabilities, pricingStatusLabel, retentionLabel, trainingUseLabel, probeTone, probeLabel } from './viewPresentationLabels'
+import { runtimeModeLabel, runtimeHealthLabel, runtimeHealthTone, runtimeCapabilities, pricingStatusLabel, retentionLabel, trainingUseLabel, probeTone, probeLabel } from './viewPresentationLabels'
 import { ModelIcon } from '../ModelIcon'
 import { DIAGNOSTICS_TARGET_IDS } from '../modelsNavigationState'
+import { runtimeDataGuarantees } from '../modelConfigurationReadiness'
 
 export function RuntimeCard({
     runtime,
     effectiveCatalog,
-    probe,
+    probe: receivedProbe,
     probePending,
     canProbe,
     onProbe,
@@ -45,8 +46,9 @@ export function RuntimeCard({
                 && entry.providerModelId === runtime.model,
         )
     const catalogMatch = catalogMatches.length === 1 ? catalogMatches[0] : null
-    const healthTone = probe ? probeTone(probe.status)
-        : runtime.healthStatus === 'AVAILABLE' ? 'success' : runtime.healthStatus === 'UNAVAILABLE' ? 'danger' : 'warning'
+    const probe = runtime.enabled && receivedProbe?.provider === runtime.provider && receivedProbe.model === runtime.model ? receivedProbe : null
+    const healthTone = runtimeHealthTone(runtime, probe)
+    const guarantees = runtimeDataGuarantees(runtime)
 
     function toggleCharacteristics() {
         const details = detailsRef.current
@@ -73,8 +75,8 @@ export function RuntimeCard({
                 </div>
 
                 <StatusPill
-                    tone={runtime.enabled ? 'success' : 'danger'}
-                    label={runtime.enabled ? 'Включена в настройках' : 'Отключена'}
+                    tone="neutral"
+                    label={runtime.enabled ? 'Настроена' : 'Отключена'}
                 />
             </div>
 
@@ -102,7 +104,7 @@ export function RuntimeCard({
                         <StatusPill tone={healthTone} label={runtimeHealthLabel(runtime, probe)} />
                     </dd>
                     <small>
-                        {probe
+                        {!runtime.enabled ? 'Подключение отключено' : probe
                             ? `${formatDateTime(probe.checkedAt)} · ${probe.latencyMs.toLocaleString('ru-RU')} мс`
                             : runtime.healthStatus === 'NOT_PROBED'
                                 ? 'Доступность не подтверждена'
@@ -138,9 +140,9 @@ export function RuntimeCard({
 
             <div id="models-runtime-retention" className="models-runtime-retention" hidden={!retentionOpen}>
                 <strong>Хранение и использование данных</strong>
-                {runtime.dataAssurance?.source === 'LOCAL_MOCK' ? <p>Локальный тестовый провайдер: данные не отправляются внешнему AI-провайдеру.</p>
+                {runtime.provider === 'mock' && runtime.dataAssurance?.source === 'LOCAL_MOCK' ? <p>Локальный тестовый провайдер: данные не отправляются внешнему AI-провайдеру.</p>
                     : runtime.dataAssurance?.source ? <>
-                        <p>Подтверждение подключения: {runtime.dataAssurance.source}. Запрет обучения: {runtime.dataAssurance.noTraining ? 'подтверждён' : 'не подтверждён'}; ZDR: {runtime.dataAssurance.zeroDataRetention ? 'подтверждён' : 'не подтверждён'}.</p>
+                        <p>Подтверждение подключения: {runtime.dataAssurance.source}. Запрет обучения: {guarantees.noTraining ? 'подтверждён' : 'не подтверждён'}; нулевое хранение: {guarantees.zeroDataRetention ? 'подтверждено' : 'не подтверждено'}.</p>
                         {runtime.dataAssurance.verifiedAt && <p>Проверено: {formatDateTime(runtime.dataAssurance.verifiedAt)}{runtime.dataAssurance.expiresAt && ` · Действует до: ${formatDateTime(runtime.dataAssurance.expiresAt)}`}</p>}
                         <p>Подтверждение внесено оператором на основании условий провайдера. Это не автоматическая проверка соблюдения договора.</p>
                     </> : <p>Нет действующего подтверждения условий для конкретного серверного подключения.</p>}
@@ -199,7 +201,7 @@ export function RuntimeCard({
                                 : 'Тариф подтверждён записью каталога'}
                     </small>
                     {(runtime.inputUsdPer1mTokens !== null || runtime.outputUsdPer1mTokens !== null) && <small>
-                        Вход: {runtime.inputUsdPer1mTokens ?? 'не заявлено'} · выход: {runtime.outputUsdPer1mTokens ?? 'не заявлено'} USD / 1 млн токенов
+                        Вход: {formatUsd(runtime.inputUsdPer1mTokens)} · выход: {formatUsd(runtime.outputUsdPer1mTokens)} / 1 млн токенов
                     </small>}
                 </div>
                 </dl>
@@ -217,7 +219,7 @@ export function RuntimeCard({
 
                     <button
                         type="button"
-                        disabled={probePending}
+                        disabled={probePending || !runtime.enabled}
                         onClick={onProbe}
                     >
                         {probePending
@@ -240,12 +242,11 @@ export function RuntimeCard({
                         tone={probeTone(probe.status)}
                         label={probeLabel(probe.status)}
                     />
-                    <span>
-                        {probe.message}
-                        {probe.httpStatus !== null
-                            ? ` · HTTP ${probe.httpStatus}`
-                            : ''}
-                    </span>
+                    <span>Результат последней проверки соединения, не разрешение на AI-запрос.</span>
+                    {canProbe && probe.httpStatus !== null && <details>
+                        <summary>Технические сведения проверки</summary>
+                        <span>HTTP {probe.httpStatus}</span>
+                    </details>}
                 </div>
             )}
         </section>

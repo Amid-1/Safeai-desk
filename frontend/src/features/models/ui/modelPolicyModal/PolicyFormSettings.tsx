@@ -13,6 +13,7 @@ import { budgetEnforcementLabel } from './policyModalLabels'
 import {PolicyBudgetCurrency} from './PolicyBudgetCurrency'
 import {parsePolicyMoney} from '../modelControlPlane/policyNumericFields'
 import type {PolicyDraft} from '../modelControlPlane/modelTypes'
+import {formatUsd} from '../../../../shared/lib/format'
 
 function budgetUsdEquivalent(value: string, quote: PolicyDraft['rubQuote']): string | null {
     if (!quote) return null
@@ -74,7 +75,7 @@ function PolicyNumericInput({control, field, label, idSuffix, section, pending, 
             )}
             <small id={`${id}-hint`}>{hint}</small>
             {equivalent !== null && !error && <small className="models-policy-fx__equivalent">
-                Расчётный лимит: <strong>{equivalent.replace('.', ',')} USD</strong>
+                Расчётный лимит: <strong>{formatUsd(equivalent)}</strong>
             </small>}
             {error && <small id={`${id}-error`} className="models-policy-form__numeric-error" aria-live="polite">{error}</small>}
             {aboveRuntime && (

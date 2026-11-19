@@ -18,6 +18,8 @@ import { ModelCatalogHistoryModal } from './ModelCatalogHistoryModal'
 import { ModelCatalogVersionModal } from './ModelCatalogVersionModal'
 import { ModelPolicyModal } from './ModelPolicyModal'
 import type { PolicyEditorTarget } from './modelPolicyModal/policyFormTabsConfig'
+import { ModelsOrganizationScope } from './modelControlPlaneViews/PolicyCard'
+import type { OrganizationDirectoryItem } from '../../../entities/organization/api/organizationApi'
 
 export function AdminModelsPageView({ controller }: { controller: AdminModelsController }) {
     const [params, setParams] = useSearchParams()
@@ -34,14 +36,20 @@ export function AdminModelsPageView({ controller }: { controller: AdminModelsCon
         selectedOrganizationName, setPolicyModalOpen, catalogModal, setCatalogModal,
         historyModalEntry, setHistoryModalEntry, policyModalOpen, catalogByKey,
         handleCreateCatalogVersion, handleCreatePolicyVersion, handlePreviewPolicy,
-        notice, isSuperAdmin, setTargetOrganizationId, setSelectedOrganization } = controller
+        notice, isSuperAdmin, setTargetOrganizationId, setSelectedOrganization,
+        organizationQuery, organizationResults, organizationSearchPending, organizationSearchStatus,
+        organizationSearchError, handleOrganizationQueryChange, handleOrganizationSearch,
+        handleRouteDecisionIdChange } = controller
     const requestedOrganizationId = (isSuperAdmin ? directoryUuid(params.get('organizationId')) : '') || currentUser?.organizationId || ''
     useLayoutEffect(() => {
         if (requestedOrganizationId && targetOrganizationId !== requestedOrganizationId) {
             setSelectedOrganization(null)
             setTargetOrganizationId(requestedOrganizationId)
+            setPolicyModalOpen(false)
+            setPolicyTarget(undefined)
+            handleRouteDecisionIdChange('')
         }
-    }, [requestedOrganizationId, targetOrganizationId, setSelectedOrganization, setTargetOrganizationId])
+    }, [requestedOrganizationId, targetOrganizationId, setSelectedOrganization, setTargetOrganizationId, setPolicyModalOpen, handleRouteDecisionIdChange])
     useLayoutEffect(() => {
         if (pageRef.current) pageRef.current.scrollTop = 0
         // The Models route is not a viewport workspace: its scroll owner is the document.
@@ -97,18 +105,44 @@ export function AdminModelsPageView({ controller }: { controller: AdminModelsCon
         setPolicyModalOpen(true)
     }
 
+    function navigateOrganization(id: string) {
+        if (!isSuperAdmin || mutationPending || id === requestedOrganizationId) return
+        const updated = new URLSearchParams(params)
+        updated.set('organizationId', id)
+        // The previous tenant's historical decision and open editor are not the new scope.
+        updated.delete('decisionId')
+        setPolicyModalOpen(false)
+        setPolicyTarget(undefined)
+        setParams(updated, { preventScrollReset: true })
+    }
+    function selectOrganization(organization: OrganizationDirectoryItem) {
+        if (!isSuperAdmin || mutationPending) return
+        handleOrganizationQueryChange('')
+        navigateOrganization(organization.id)
+    }
+    const scope = requestedOrganizationId && <ModelsOrganizationScope
+        organizationId={requestedOrganizationId}
+        organizationName={targetOrganizationId === requestedOrganizationId ? selectedOrganizationName : null}
+        isSuperAdmin={isSuperAdmin} organizationQuery={organizationQuery}
+        organizationResults={organizationResults} organizationSearchPending={organizationSearchPending}
+        organizationSearchStatus={organizationSearchStatus} organizationSearchError={organizationSearchError}
+        onOrganizationQueryChange={handleOrganizationQueryChange} onOrganizationSearch={handleOrganizationSearch}
+        onOrganizationSelect={selectOrganization} editDisabled={mutationPending || policyModalOpen} />
+
     if (!currentUser) return null
-    if (loading) return <div className="page models-page models-page--sections"><LoadingState message="Загрузка настроек моделей..." /></div>
-    if (error && (!runtime || !policy)) return <div className="page models-page models-page--sections"><ErrorState message={error} /></div>
-    if (!runtime || !policy) return <div className="page models-page models-page--sections"><ErrorState message="Сервер вернул неполные данные о настройках моделей." /></div>
+    if (loading) return <div className="page models-page models-page--sections">{scope}<LoadingState message="Загрузка настроек моделей..." /></div>
+    if (error && (!runtime || !policy)) return <div className="page models-page models-page--sections">{scope}<ErrorState message={error} /></div>
+    if (!runtime || !policy) return <div className="page models-page models-page--sections">{scope}<ErrorState message="Сервер вернул неполные данные о настройках моделей." /></div>
     // Security invariant: never render a previous tenant's policy, even for one frame.
     if (loadedOrganizationId !== targetOrganizationId || targetOrganizationId !== requestedOrganizationId) return (
         <div className="page models-page models-page--sections">
+            {scope}
             {error ? <ErrorState message={error} /> : <LoadingState message="Загрузка настроек моделей..." />}
         </div>
     )
     if (policy.organizationId !== targetOrganizationId) return (
         <div className="page models-page models-page--sections">
+            {scope}
             <ErrorState message="Сервер вернул правила другой организации. Обновите страницу." />
         </div>
     )
@@ -127,6 +161,7 @@ export function AdminModelsPageView({ controller }: { controller: AdminModelsCon
     return (
         <div ref={pageRef} className="page models-page models-page--sections">
             <AdminModelsUpper runtime={runtime} />
+            {scope}
             <AdminModelsNavigation section={section} onSelect={navigate} />
             {error && <div className="models-page-alert"><ErrorState message={error} variant="inline" /></div>}
             {notice && <div className="models-notice" role="status">{notice}</div>}
@@ -138,12 +173,7 @@ export function AdminModelsPageView({ controller }: { controller: AdminModelsCon
                 {section === 'overview' && <ModelsOverview controller={controller} navigate={navigate} onOpenPolicy={() => openPolicy('preview')} />}
                 {section === 'catalog' && <ModelsCatalogWorkspace controller={controller} />}
                 {section === 'access' && <ModelsAccessWorkspace controller={controller} onOpenPolicy={openPolicy}
-                    onOrganizationNavigation={id => {
-                        if (!isSuperAdmin) return
-                        const updated = new URLSearchParams(params)
-                        updated.set('organizationId', id)
-                        setParams(updated, { preventScrollReset: true })
-                    }} />}
+                    onOrganizationNavigation={navigateOrganization} />}
                 {section === 'diagnostics' && <ModelsDiagnosticsWorkspace controller={controller} onOpenCatalogVersion={openCatalogVersion} />}
             </div>
             {historyEntry && <ModelCatalogHistoryModal key={`${historyEntry.modelKey}:${linkedEntry ? linkedVersionId : ''}`}
@@ -154,7 +184,7 @@ export function AdminModelsPageView({ controller }: { controller: AdminModelsCon
                 base={catalogModal.base} runtime={runtime} catalogByKey={catalogByKey}
                 pending={mutationPending} onClose={() => setCatalogModal(null)}
                 onSubmit={handleCreateCatalogVersion} />}
-            {policyModalOpen && <ModelPolicyModal
+            {policyModalOpen && <ModelPolicyModal key={targetOrganizationId}
                 initialTarget={policyTarget}
                 policy={policy} catalog={catalog} effectiveCatalog={effectiveCatalog} runtime={runtime}
                 organizationId={targetOrganizationId} organizationName={selectedOrganizationName}

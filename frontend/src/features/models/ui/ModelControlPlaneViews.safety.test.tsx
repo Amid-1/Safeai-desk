@@ -75,6 +75,16 @@ const routeDecision: ModelRouteDecision = {
 }
 
 describe('RuntimeCard: достоверность сведений', () => {
+    it('не показывает успешную проверку другой модели или отключённого подключения', () => {
+        const {rerender} = render(<RuntimeCard runtime={runtime} effectiveCatalog={[entry]}
+            probe={{...probe, model: 'different'}} probePending={false} canProbe onProbe={vi.fn()} />)
+        expect(screen.getByText('Не выполнялась')).toBeVisible()
+        expect(screen.queryByText('Доступна')).not.toBeInTheDocument()
+        rerender(<RuntimeCard runtime={{...runtime, enabled: false}} effectiveCatalog={[entry]}
+            probe={probe} probePending={false} canProbe onProbe={vi.fn()} />)
+        expect(screen.getByRole('button', {name: 'Проверить доступность'})).toBeDisabled()
+        expect(screen.queryByText('Доступна')).not.toBeInTheDocument()
+    })
     it('использует возможности Runtime, а не рекламные возможности каталога', () => {
         render(<RuntimeCard runtime={runtime}
             effectiveCatalog={[createModelCatalogEntry({capabilities: ['TOOLS','VISION','STRUCTURED_OUTPUT']})]}
@@ -163,7 +173,10 @@ describe('RuntimeCard: достоверность сведений', () => {
             probePending canProbe onProbe={onProbe} />)
         expect(screen.getByRole('button', {name: 'Проверяем...'})).toBeDisabled()
         expect(screen.getByRole('status')).toHaveTextContent('Ошибка авторизации')
-        expect(screen.getByRole('status')).toHaveTextContent('HTTP 401')
+        expect(screen.getByText('HTTP 401')).not.toBeVisible()
+        fireEvent.click(screen.getByText('Технические сведения проверки'))
+        expect(screen.getByText('HTTP 401')).toBeVisible()
+        expect(screen.queryByText(probe.message)).not.toBeInTheDocument()
         expect(onProbe).not.toHaveBeenCalled()
     })
 })

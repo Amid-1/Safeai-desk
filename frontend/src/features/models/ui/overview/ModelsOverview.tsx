@@ -3,7 +3,7 @@ import type { AdminModelsController } from '../../controller/useAdminModelsContr
 import { ModelAvailabilitySummary } from '../ModelAvailabilitySummary'
 import { modelConfigurationReadiness } from '../modelConfigurationReadiness'
 import type { DiagnosticsTarget, ModelsSection } from '../modelsNavigationState'
-import { runtimeHealthLabel, probeTone } from '../modelControlPlaneViews/viewPresentationLabels'
+import { runtimeHealthLabel, runtimeHealthTone } from '../modelControlPlaneViews/viewPresentationLabels'
 import { ModelIcon } from '../ModelIcon'
 import type { ModelIconName } from '../ModelIcon'
 import { StatusPill } from '../modelControlPlaneViews/viewPresentation'
@@ -36,8 +36,7 @@ export function ModelsOverview({ controller, navigate, onOpenPolicy }: {
     const { runtime, policy, catalog, effectiveCatalog, selectedOrganizationName, isSuperAdmin, runtimeProbe } = controller
     if (!runtime || !policy) return null
     const readiness = modelConfigurationReadiness(runtime, effectiveCatalog, policy)
-    const healthTone: StatusTone = runtimeProbe ? probeTone(runtimeProbe.status)
-        : runtime.healthStatus === 'AVAILABLE' ? 'success' : runtime.healthStatus === 'UNAVAILABLE' ? 'danger' : 'warning'
+    const healthTone = runtimeHealthTone(runtime, runtimeProbe)
     return (
         <div className="models-section-stack models-overview-workspace">
             <div className="models-section-heading">
@@ -47,7 +46,7 @@ export function ModelsOverview({ controller, navigate, onOpenPolicy }: {
             </div>
             <section className="models-overview-stats" aria-label="Ключевые показатели">
                 <OverviewTile icon="server" label="Подключение модели" value={runtime.model}
-                    status={runtime.enabled ? 'Включено в настройках' : 'Отключено'} tone={runtime.enabled ? 'success' : 'danger'}
+                    status={runtime.enabled ? 'Настроена' : 'Отключена'} tone="neutral"
                     detail={`Провайдер: ${runtime.provider}`} onClick={() => navigate('diagnostics', 'connection')} />
                 <OverviewTile icon="layers" label="Каталог моделей" value={countLabel(catalog.length, 'модель', 'модели', 'моделей')}
                     status={countLabel(effectiveCatalog.length, 'действующая версия', 'действующие версии', 'действующих версий')} tone={readiness.compatibleCount === 1 ? 'success' : 'warning'}
@@ -57,11 +56,11 @@ export function ModelsOverview({ controller, navigate, onOpenPolicy }: {
                     tone={policy.configured && policy.enabled ? 'success' : 'warning'}
                     detail={selectedOrganizationName ?? 'Ваша организация'} onClick={() => navigate('access')} />
                 <OverviewTile icon="activity" label="Проверка соединения" value={runtimeHealthLabel(runtime, runtimeProbe ?? null)}
-                    status={runtimeProbe || runtime.healthStatus !== 'NOT_PROBED' ? 'Результат сервера' : 'Не проверено'} tone={healthTone}
+                    status={!runtime.enabled ? 'Подключение отключено' : runtimeProbe || runtime.healthStatus !== 'NOT_PROBED' ? 'Результат сервера' : 'Не проверено'} tone={healthTone}
                     detail={isSuperAdmin ? 'Перейти к проверке' : 'Проверку запускает суперадминистратор'} onClick={() => navigate('diagnostics', 'probe')} />
             </section>
             <ModelAvailabilitySummary key={policy.organizationId} runtime={runtime} policy={policy} effectiveCatalog={effectiveCatalog}
-                organizationName={selectedOrganizationName} onOpenPolicy={onOpenPolicy} />
+                organizationName={selectedOrganizationName} onOpenPolicy={onOpenPolicy} probe={runtimeProbe} />
         </div>
     )
 }

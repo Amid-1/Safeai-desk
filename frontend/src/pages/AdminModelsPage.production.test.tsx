@@ -411,7 +411,8 @@ describe('AdminModelsPage — контрактные и регрессионны
         await loadPage()
         fireEvent.click(screen.getByRole('tab', { name: 'Диагностика' }))
         fireEvent.click(screen.getByRole('button', { name: 'Проверить доступность' }))
-        expect(await screen.findByText('Не удалось проверить доступность runtime-модели.')).toBeInTheDocument()
+        expect(await screen.findByText('Не удалось проверить доступность подключённой модели.')).toBeInTheDocument()
+        expect(screen.queryByText('Probe failed')).not.toBeInTheDocument()
         expect(screen.queryByText('Доступна')).not.toBeInTheDocument()
     })
 

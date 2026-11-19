@@ -16,6 +16,7 @@ import type { ReactNode } from 'react'
 import { ModelIcon } from '../ModelIcon'
 import type { ModelIconName } from '../ModelIcon'
 import type { PolicyEditorTarget } from '../modelPolicyModal/policyFormTabsConfig'
+import { runtimeDataGuarantees } from '../modelConfigurationReadiness'
 
 function formatRub(value: string) {
     const [whole, fraction = ''] = value.split('.')
@@ -56,6 +57,60 @@ function OrganizationIdentifier({ value }: { value: string }) {
     </div>
 }
 
+type OrganizationScopeProps = {
+    organizationId: string
+    organizationName: string | null
+    isSuperAdmin: boolean
+    organizationQuery: string
+    organizationResults: OrganizationDirectoryItem[]
+    organizationSearchPending: boolean
+    organizationSearchStatus: 'idle' | 'pending' | 'success' | 'empty' | 'error'
+    organizationSearchError: string
+    onOrganizationQueryChange: (value: string) => void
+    onOrganizationSearch: () => void | Promise<void>
+    onOrganizationSelect: (organization: OrganizationDirectoryItem) => void
+    editDisabled?: boolean
+}
+
+export function ModelsOrganizationScope({
+    organizationId, organizationName, isSuperAdmin, organizationQuery, organizationResults,
+    organizationSearchPending, organizationSearchStatus, organizationSearchError,
+    onOrganizationQueryChange, onOrganizationSearch, onOrganizationSelect, editDisabled = false,
+}: OrganizationScopeProps) {
+    return <section className="models-organization-scope" aria-label="Область управления моделями">
+        <div className="models-policy-organization-summary">
+            <span className="models-inline-icon"><ModelIcon name="building" />Организация</span>
+            <strong>{organizationName ?? 'Название не получено'}</strong>
+            <details><summary>Технические сведения</summary>
+                <OrganizationIdentifier key={organizationId} value={organizationId} />
+            </details>
+        </div>
+        {isSuperAdmin && <div className="models-org-picker">
+            <SearchableSelect id="models-organization-search" label="Управляемая организация"
+                value={organizationId} selectedLabel={organizationName ?? 'Название не получено'}
+                options={organizationResults.map(org => ({
+                    value: org.id, label: org.name + (org.enabled ? '' : ' (отключена)'),
+                }))}
+                placeholder="Выберите организацию" searchPlaceholder="Название или идентификатор"
+                emptyMessage={organizationQuery.trim().length < 2
+                    ? 'Введите не менее двух символов.' : 'Ничего не найдено. Уточните название или идентификатор.'}
+                allowClear={false} disabled={editDisabled} filterLocally={false}
+                loading={organizationSearchPending} error={organizationSearchError}
+                onQueryChange={onOrganizationQueryChange}
+                onChange={id => {
+                    const organization = organizationResults.find(row => row.id === id)
+                    if (organization) onOrganizationSelect(organization)
+                }} />
+            {organizationSearchStatus === 'error' && <div role="status">
+                {organizationSearchError}{' '}
+                <button type="button" className="secondary-button" onClick={() => void onOrganizationSearch()}>Повторить поиск</button>
+            </div>}
+            <a className="admin-related-link" href={`/admin/organizations?organizationId=${encodeURIComponent(organizationId)}`}>Карточка организации</a>
+        </div>}
+        <small className="models-scope-note">Правила и бюджеты относятся к выбранной организации. Подключение и каталог — общие настройки сервера.</small>
+    </section>
+}
+
 export function PolicyCard({
     policy,
     catalog,
@@ -74,6 +129,7 @@ export function PolicyCard({
     onOrganizationSelect,
     onEdit,
     editDisabled = false,
+    showOrganizationScope = true,
 }: {
     policy: OrganizationModelPolicy
     catalog: ModelCatalogEntry[]
@@ -92,6 +148,7 @@ export function PolicyCard({
     onOrganizationSelect: (organization: OrganizationDirectoryItem) => void
     onEdit: (target?: PolicyEditorTarget) => void
     editDisabled?: boolean
+    showOrganizationScope?: boolean
 }) {
     const defaultEntry =
         policy.defaultModelKey
@@ -103,6 +160,7 @@ export function PolicyCard({
         ? catalog.find((entry) => entry.modelKey === policy.defaultModelKey)
         : null
     const constraintsActive = policy.configured && policy.enabled
+    const guarantees = runtimeDataGuarantees(runtime)
     const restrictionState = (configured: boolean) => constraintsActive && configured ? 'configured' : 'neutral'
 
     const undeclaredRuntimeModels = constraintsActive && policy.requireNoTraining
@@ -145,38 +203,11 @@ export function PolicyCard({
                 Проверки подключения и каталога остаются обязательными.
             </p>}
 
-            <div className="models-policy-organization-summary">
-                <span className="models-inline-icon"><ModelIcon name="building" />Организация</span>
-                <strong>
-                    {organizationName ?? 'Название загружается…'}
-                </strong>
-                <details><summary>Технические сведения</summary>
-                    <OrganizationIdentifier key={organizationId} value={organizationId} />
-                </details>
-            </div>
-
-            {isSuperAdmin && <div className="models-org-picker">
-                <SearchableSelect id="models-organization-search" label="Управляемая организация"
-                    value={organizationId} selectedLabel={organizationName ?? 'Название загружается…'}
-                    options={organizationResults.map(org => ({
-                        value: org.id, label: org.name + (org.enabled ? '' : ' (отключена)'),
-                    }))}
-                    placeholder="Выберите организацию" searchPlaceholder="Название или UUID"
-                    emptyMessage={organizationQuery.trim().length < 2
-                        ? 'Введите не менее двух символов.' : 'Ничего не найдено. Уточните название или идентификатор.'}
-                    allowClear={false} disabled={editDisabled} filterLocally={false}
-                    loading={organizationSearchPending} error={organizationSearchError}
-                    onQueryChange={onOrganizationQueryChange}
-                    onChange={id => {
-                        const organization = organizationResults.find(row => row.id === id)
-                        if (organization) onOrganizationSelect(organization)
-                    }} />
-                {organizationSearchStatus === 'error' && <div role="status">
-                    {organizationSearchError}{' '}
-                    <button type="button" className="secondary-button" onClick={() => void onOrganizationSearch()}>Повторить поиск</button>
-                </div>}
-                <a className="admin-related-link" href={`/admin/organizations?organizationId=${encodeURIComponent(organizationId)}`}>Карточка организации</a>
-            </div>}
+            {showOrganizationScope && <ModelsOrganizationScope {...{
+                organizationId, organizationName, isSuperAdmin, organizationQuery, organizationResults,
+                organizationSearchPending, organizationSearchStatus, organizationSearchError,
+                onOrganizationQueryChange, onOrganizationSearch, onOrganizationSelect, editDisabled,
+            }} />}
 
             <dl className="models-kv-grid models-policy-tiles">
                 <PolicyTile icon="cpu" title="Модель по умолчанию" target="default"
@@ -196,14 +227,14 @@ export function PolicyCard({
                     restriction={restrictionState(policy.maxInputTokens !== null || policy.maxOutputTokens !== null)}
                     disabled={editDisabled} onEdit={onEdit} />
                 <PolicyTile icon="wallet" title="Лимит стоимости запроса" target="requestCost"
-                    value={policy.rubBudget?.maxRequestCostRub != null ? formatRub(policy.rubBudget.maxRequestCostRub) : policy.maxRequestCostUsd === null ? 'Без лимита' : formatUsd(policy.maxRequestCostUsd)}
-                    detail={policy.rubBudget?.maxRequestCostRub != null ? `${policy.maxRequestCostUsd} USD · фиксированный курс` : 'Максимальная расчётная стоимость одного запроса'}
+                    value={policy.maxRequestCostUsd === null ? 'Без лимита' : formatUsd(policy.maxRequestCostUsd)}
+                    detail={policy.rubBudget?.maxRequestCostRub != null ? `${formatRub(policy.rubBudget.maxRequestCostRub)} · справочно, сохранённый курс` : 'Максимальная расчётная стоимость одного запроса'}
                     restriction={restrictionState(policy.maxRequestCostUsd !== null)}
                     disabled={editDisabled} onEdit={onEdit} />
                 <PolicyTile icon="budget" title="Месячный бюджет" target="monthlyBudget"
-                    value={policy.rubBudget?.monthlyBudgetRub != null ? formatRub(policy.rubBudget.monthlyBudgetRub) : policy.monthlyBudgetUsd === null ? 'Не задан' : formatUsd(policy.monthlyBudgetUsd)}
+                    value={policy.monthlyBudgetUsd === null ? 'Не задан' : formatUsd(policy.monthlyBudgetUsd)}
                     detail={policy.monthlyBudgetUsd === null ? 'Контроль бюджета выключен'
-                        : <>{policy.rubBudget?.monthlyBudgetRub != null && <>{policy.monthlyBudgetUsd} USD · фиксированный курс<br/></>}{policy.budgetEnforcement === 'HARD' ? 'Жёсткий контроль: блокировка превышения' : 'Мягкий контроль: фиксация превышения'}</>}
+                        : <>{policy.rubBudget?.monthlyBudgetRub != null && <>{formatRub(policy.rubBudget.monthlyBudgetRub)} · справочно, сохранённый курс<br/></>}{policy.budgetEnforcement === 'HARD' ? 'Жёсткий контроль: блокировка превышения' : 'Мягкий контроль: фиксация превышения'}</>}
                     restriction={restrictionState(policy.monthlyBudgetUsd !== null)}
                     disabled={editDisabled} onEdit={onEdit} />
                 <PolicyTile icon="shield" title="Требования к данным и стоимости" target="data"
@@ -213,11 +244,12 @@ export function PolicyCard({
                     disabled={editDisabled} onEdit={onEdit} />
             </dl>
 
-            {constraintsActive && ((policy.requireNoTraining && runtime.dataAssurance?.noTraining !== true)
-                || (policy.requireZeroDataRetention && runtime.dataAssurance?.zeroDataRetention !== true)) && (
+            {constraintsActive && ((policy.requireNoTraining && !guarantees.noTraining)
+                || (policy.requireZeroDataRetention && !guarantees.zeroDataRetention)) && (
                 <div className="models-policy-form__warning" role="status">
                     <strong>Условия серверного подключения не подтверждены</strong>
                     <p>Требования к обучению или хранению данных не подтверждены для текущего подключения. Одной записи в каталоге недостаточно.</p>
+                    <button type="button" className="secondary-button" disabled={editDisabled} onClick={() => onEdit('preview')}>Проверить требования на сервере</button>
                 </div>
             )}
             {undeclaredRuntimeModels.length > 0 && (

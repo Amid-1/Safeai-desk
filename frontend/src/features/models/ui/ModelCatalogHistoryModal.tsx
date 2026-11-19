@@ -23,6 +23,7 @@ import {
 } from '../../../shared/api/http'
 import {
     formatDateTime,
+    formatUsd,
 } from '../../../shared/lib/format'
 import Modal from '../../../shared/ui/Modal'
 import type {
@@ -310,23 +311,23 @@ function buildVersionDiff(
         },
         {
             label: 'Input $/1M',
-            before: nullableValue(previous.inputUsdPer1mTokens),
-            after: nullableValue(current.inputUsdPer1mTokens),
+            before: formatUsd(previous.inputUsdPer1mTokens),
+            after: formatUsd(current.inputUsdPer1mTokens),
         },
         {
             label: 'Cached input $/1M',
-            before: nullableValue(previous.cachedInputUsdPer1mTokens),
-            after: nullableValue(current.cachedInputUsdPer1mTokens),
+            before: formatUsd(previous.cachedInputUsdPer1mTokens),
+            after: formatUsd(current.cachedInputUsdPer1mTokens),
         },
         {
             label: 'Cache write $/1M',
-            before: nullableValue(previous.cacheWriteInputUsdPer1mTokens),
-            after: nullableValue(current.cacheWriteInputUsdPer1mTokens),
+            before: formatUsd(previous.cacheWriteInputUsdPer1mTokens),
+            after: formatUsd(current.cacheWriteInputUsdPer1mTokens),
         },
         {
             label: 'Output $/1M',
-            before: nullableValue(previous.outputUsdPer1mTokens),
-            after: nullableValue(current.outputUsdPer1mTokens),
+            before: formatUsd(previous.outputUsdPer1mTokens),
+            after: formatUsd(current.outputUsdPer1mTokens),
         },
         {
             label: 'Pricing version',

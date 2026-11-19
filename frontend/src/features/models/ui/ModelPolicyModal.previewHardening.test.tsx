@@ -73,16 +73,23 @@ function save() {
 }
 
 describe('ModelPolicyModal: production preview hardening', () => {
+    it('не превращает неполную тарификацию в бесплатную модель', async () => {
+        setup({preview: vi.fn(async () => evaluation({models: [{...evaluation().models[0]!,
+            pricingComplete: false, estimatedMaxCostUsd: '0'}]}))})
+        await check()
+        expect(screen.getByText('Не рассчитано полностью')).toBeVisible()
+        expect(screen.queryByText('Бесплатно · 0 USD')).not.toBeInTheDocument()
+    })
     it('сворачивает критерии после проверки и показывает точные расчётные значения бюджета', async () => {
         setup({preview: vi.fn(async () => evaluation({models: [{...evaluation().models[0]!,
             estimatedMaxCostUsd: '0.000000000123', monthlyBudgetUsd: '15.00',
             monthlyProjectedUsd: '3.25', monthlyCostKnown: true}]}))})
         await check()
         expect(screen.getByText('Параметры выполненной проверки').closest('details')).not.toHaveAttribute('open')
-        expect(screen.getByText('0.000000000123 USD')).toBeVisible()
+        expect(screen.getByText('0,000000000123 USD')).toBeVisible()
         fireEvent.click(screen.getByText('Месячный бюджет · Расчёт доступен'))
         expect(screen.getByText('15 USD')).toBeVisible()
-        expect(screen.getByText('3.25 USD')).toBeVisible()
+        expect(screen.getByText('3,25 USD')).toBeVisible()
         expect(screen.getAllByRole('button', {name: 'Проверить правила'})).toHaveLength(1)
     })
     it('A → B → A of retention settings does not revive an obsolete preview', async () => {
@@ -132,7 +139,7 @@ describe('ModelPolicyModal: production preview hardening', () => {
         await check()
         expect(screen.getByText('Доступ заблокирован')).toBeInTheDocument()
         expect(screen.getByText(`Версия модели в каталоге: ${entry.version}`)).toBeInTheDocument()
-        expect(screen.getByText('Предварительно отклонена')).toBeInTheDocument()
+        expect(screen.getByText('Отклонена при проверке правил')).toBeInTheDocument()
         // The reason is shown in both the policy summary and the selected model.
         expect(screen.getAllByText(/Не подтверждено, что данные не используются для обучения/).length)
             .toBeGreaterThan(0)

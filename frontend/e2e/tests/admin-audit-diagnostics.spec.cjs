@@ -56,6 +56,57 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
+test('models organization selector is single, server scoped, and retained across tabs and history', async ({ page }) => {
+  const anotherId = '11111111-1111-4111-8111-111111111111'
+  const tenant = (id, name) => ({ id, name, enabled: true, type: 'TENANT', protected: false,
+    version: 1, createdAt: event.createdAt, updatedAt: event.createdAt })
+  await page.route('**/api/auth/me', route => route.fulfill({ json: {
+    id: userId, organizationId: orgId, email: actor.actorEmail, fullName: actor.actorDisplayName,
+    enabled: true, roles: ['SUPER_ADMIN'],
+  } }))
+  await page.route('**/api/organizations/directory*', route => route.fulfill({ json: [tenant(anotherId, 'Другой tenant')] }))
+  await page.route('**/api/organizations/' + anotherId, route => route.fulfill({ json: tenant(anotherId, 'Другой tenant') }))
+  await page.route('**/api/organizations/' + orgId, route => route.fulfill({ json: tenant(orgId, 'Первый tenant') }))
+  await page.route('**/api/admin/models/policies/' + anotherId, route => route.fulfill({ json: {
+    ...policy, organizationId: anotherId, id: decisionId, configured: true, version: 2,
+    enabled: true, monthlyBudgetUsd: '2.500000000000', createdByUserId: userId, createdAt: event.createdAt,
+  } }))
+  await page.goto('/admin/models')
+  const selector = page.getByRole('combobox', { name: 'Управляемая организация' })
+  await expect(selector).toHaveValue('Первый tenant')
+  const lookup = page.waitForResponse(r => new NodeURL(r.url()).pathname === '/api/organizations/directory'
+    && new NodeURL(r.url()).searchParams.get('query') === 'Другой')
+  await selector.fill('Другой')
+  await lookup
+  const policyResponse = page.waitForResponse(r => new NodeURL(r.url()).pathname === '/api/admin/models/policies/' + anotherId)
+  await page.getByRole('option', { name: 'Другой tenant' }).click()
+  await policyResponse
+  await expect(page).toHaveURL(new RegExp('organizationId=' + anotherId))
+  for (const name of ['Каталог', 'Доступ', 'Диагностика', 'Обзор']) {
+    await page.getByRole('tab', { name }).click()
+    await expect(selector).toHaveCount(1)
+    await expect(selector).toHaveValue('Другой tenant')
+    await expect(page).toHaveURL(new RegExp('organizationId=' + anotherId))
+    if (name === 'Доступ') await expect(page.getByText('2,50 USD', { exact: true })).toBeVisible()
+  }
+  await page.goBack()
+  await expect(page.getByRole('tab', { name: 'Диагностика' })).toHaveAttribute('aria-selected', 'true')
+  await expect(selector).toHaveValue('Другой tenant')
+})
+
+test('tenant admin cannot select foreign model policy by URL', async ({ page }) => {
+  const foreignId = '11111111-1111-4111-8111-111111111111'
+  let foreignRequests = 0
+  await page.route('**/api/admin/models/policies/' + foreignId, route => {
+    foreignRequests++
+    return route.fulfill({ status: 403 })
+  })
+  await page.goto('/admin/models?section=access&organizationId=' + foreignId)
+  await expect(page.getByRole('button', { name: 'Настроить правила' })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Управляемая организация' })).toHaveCount(0)
+  expect(foreignRequests).toBe(0)
+})
+
 for (const width of [1440, 1280]) {
   test(`models overview and diagnostics keep primary actions visible at ${width}×900`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 })
@@ -68,7 +119,7 @@ for (const width of [1440, 1280]) {
     await expect(page.getByText('Как устроено управление моделями?')).toHaveCount(0)
     await readiness.locator('summary').click()
     await expect(readiness).toHaveAttribute('open', '')
-    await expect(readiness.locator('li')).toHaveCount(4)
+    await expect(readiness.locator('li')).toHaveCount(5)
     await readiness.locator('summary').click()
     await page.getByRole('tab', { name: 'Диагностика' }).click()
     const details = page.locator('.models-runtime-details')
