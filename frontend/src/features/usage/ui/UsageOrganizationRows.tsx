@@ -5,7 +5,7 @@ import type { UsageOrganizationSummary } from '../api/usageApi'
 import { useUsageBudget } from '../controller/useUsageBudget'
 import { formatCount, trimDecimal } from '../lib/adminUsagePresentation'
 
-function BudgetCell({id, userId, reloadToken}: {id: string; userId: string; reloadToken: number}) {
+export function UsageOrganizationBudget({id, userId, reloadToken}: {id: string; userId: string; reloadToken: number}) {
     const [open, setOpen] = useState(false)
     const [retry, setRetry] = useState(0)
     const budget = useUsageBudget(open ? userId : '', id, reloadToken, retry)
@@ -62,7 +62,7 @@ export function UsageOrganizationRows({rows, onInspect, userId, reloadToken, dis
                 <td>{empty || row.costUsd === null ? '—' : trimDecimal(row.costUsd) + ' USD'}</td>
                 <td>{empty ? 'Нет данных' : <><span>Токены: {row.coverage.usageComplete === true ? 'полностью' : 'неполные данные'}</span><br/>
                     <span>Стоимость: {row.coverage.pricingComplete === true ? 'полностью' : 'неполные данные'}</span></>}</td>
-                <td><BudgetCell id={row.organizationId} userId={userId} reloadToken={reloadToken}/></td>
+                <td><UsageOrganizationBudget id={row.organizationId} userId={userId} reloadToken={reloadToken}/></td>
             </tr>
         })}</tbody>
     </table>

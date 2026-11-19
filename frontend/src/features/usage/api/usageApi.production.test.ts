@@ -10,7 +10,7 @@ import {
     getOrganizationUsageUsers, getUsageByModels, getOrganizationUsageModels,
     getUsageDaily, getOrganizationUsageDaily, parseUsageSummary,
     parseUsageUserSummary, parseUsageModelSummary, parseUsageDailySummary,
-    parseUsagePageResponse,
+    parseUsagePageResponse, getUsageByOrganizations,
 } from './usageApi'
 
 vi.mock('../../../shared/api/http', async (importOriginal) => {
@@ -42,6 +42,26 @@ const slice = (content: unknown[] = []) => ({
 beforeEach(() => { vi.resetAllMocks() })
 
 describe('usageApi — маршруты и сигналы', () => {
+    it('запрашивает серверное сравнение организаций с сортировкой и принимает реальный Slice', async () => {
+        const {userId: _userId, userEmail: _userEmail, model: _model, ...amounts} = summary()
+        const organization = {...amounts, organizationId: ORG, organizationName: 'Demo'}
+        const signal = new AbortController().signal
+        request.mockResolvedValueOnce({...slice([organization]), size: 1, last: false, hasNext: true})
+        const result = await getUsageByOrganizations(0, 1, {
+            dateFrom: '2026-11-01T00:00:00Z', dateTo: '2026-11-20T00:00:00Z',
+            model: 'mock-safeai', userId: USER, order: 'tokens',
+        }, {signal})
+        const [path, options] = request.mock.calls[0]
+        const url = new URL(path, 'https://safeai.example.test')
+        expect(url.pathname).toBe('/api/admin/usage/organizations')
+        expect(Object.fromEntries(url.searchParams)).toEqual({
+            page: '0', size: '1', dateFrom: '2026-11-01T00:00:00Z', dateTo: '2026-11-20T00:00:00Z',
+            model: 'mock-safeai', userId: USER, order: 'tokens',
+        })
+        expect(options).toEqual(expect.objectContaining({method: 'GET', signal, timeoutMs: API_TIMEOUTS.report}))
+        expect(result.content[0]).toMatchObject({organizationId: ORG, totalTokens: '9007199254741000', costUsd: '0.000000000001'})
+        expect(result.totalPages).toBe(2)
+    })
     it('обслуживает все восемь публичных GET с отчётным deadline', async () => {
         request.mockResolvedValueOnce(slice()).mockResolvedValueOnce(slice())
             .mockResolvedValueOnce(slice()).mockResolvedValueOnce(slice())

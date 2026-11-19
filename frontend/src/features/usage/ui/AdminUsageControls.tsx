@@ -120,6 +120,8 @@ export function AdminUsageControls(p: AdminUsageControlsProps) {
                     ['models', 'По моделям'], ['daily', 'По дням'],
                 ] as const).map(([name, label]) => <TabButton key={name} active={p.tab === name}
                     onClick={() => p.onSelectTab(name)}>{label}</TabButton>)}
+                {p.isSuperAdmin &&
+                    <TabButton active={p.tab === 'organizations'} onClick={() => p.onSelectTab('organizations')}>По организациям</TabButton>}
             </nav>
         </div>
     )

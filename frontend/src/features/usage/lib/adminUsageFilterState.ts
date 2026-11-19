@@ -18,6 +18,7 @@ export type UsageReportTab =
     | 'users'
     | 'models'
     | 'daily'
+    | 'organizations'
 
 export type UsageDraftFilter = {
     dateFrom: string
@@ -30,6 +31,7 @@ export type UsageDraftFilter = {
 export type UsageUrlState = {
     tab: UsageReportTab
     page: number
+    order?: UsageSummaryFilter['order']
     draft: UsageDraftFilter
 }
 
@@ -42,6 +44,7 @@ export type NormalizedUsageFilter = {
 export type UsageUrlValues = {
     tab: UsageReportTab
     page: number
+    order?: UsageSummaryFilter['order']
     dateFrom: string
     dateTo: string
     model: string
@@ -56,6 +59,7 @@ const USAGE_TABS: readonly UsageReportTab[] = [
     'users',
     'models',
     'daily',
+    'organizations',
 ]
 
 const UUID_PATTERN =
@@ -107,6 +111,7 @@ export function readUsageUrlState(
     const requestedDateFrom = params.get('dateFrom') ?? ''
     const requestedDateTo = params.get('dateTo') ?? ''
     const userId = safeNormalizeOptionalUuid(params.get('userId') ?? '')
+    const order = params.get('order')
 
     let dateFrom = fallback.dateFrom
     let dateTo = fallback.dateTo
@@ -127,8 +132,11 @@ export function readUsageUrlState(
     }
 
     return {
-        tab: parseTab(params.get('report')),
+        tab: parseTab(params.get('report')) === 'organizations'
+            && (!superAdmin || Boolean(safeNormalizeOptionalUuid(params.get('organizationId') ?? '')))
+            ? 'summary' : parseTab(params.get('report')),
         page: parsePage(params.get('page')),
+        ...(order === 'total' || order === 'cost' || order === 'responses' || order === 'coverage' ? {order} : {}),
         draft: {
             dateFrom,
             dateTo,
@@ -221,6 +229,7 @@ export function buildUsageSearchParams(
     next.set('report', values.tab)
     next.set('dateFrom', values.dateFrom)
     next.set('dateTo', values.dateTo)
+    if (values.order && values.order !== 'tokens') next.set('order', values.order)
 
     if (values.page > 0) {
         next.set('page', String(values.page))

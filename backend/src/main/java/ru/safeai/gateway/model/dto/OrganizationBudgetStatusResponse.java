@@ -1,5 +1,7 @@
 package ru.safeai.gateway.model.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import ru.safeai.gateway.model.domain.BudgetEnforcement;
 import ru.safeai.gateway.model.repository.ModelRouteDecisionRepository.MonthlyCostSnapshot;
 
@@ -13,15 +15,15 @@ public record OrganizationBudgetStatusResponse(
         int policyVersion,
         boolean policyEnabled,
         BudgetEnforcement enforcement,
-        Instant periodStart,
-        Instant periodEnd,
-        Instant asOf,
-        String monthlyBudgetUsd,
+        @JsonFormat(shape = JsonFormat.Shape.STRING) Instant periodStart,
+        @JsonFormat(shape = JsonFormat.Shape.STRING) Instant periodEnd,
+        @JsonFormat(shape = JsonFormat.Shape.STRING) Instant asOf,
+        @JsonInclude(JsonInclude.Include.ALWAYS) String monthlyBudgetUsd,
         String knownActualUsd,
         String reservedUsd,
         String knownCommittedUsd,
         long unknownCommittedCostCount,
-        String remainingUsd,
+        @JsonInclude(JsonInclude.Include.ALWAYS) String remainingUsd,
         String status
 ) {
     public static OrganizationBudgetStatusResponse from(

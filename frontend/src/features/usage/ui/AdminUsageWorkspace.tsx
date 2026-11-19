@@ -165,7 +165,8 @@ export function AdminUsageWorkspace() {
                         : <UsageBreakdownChart tab={report.tab} rows={report.rows} hasMore={hasMore}
                             limit={limit} metric={report.order} globallyRanked={paged && report.page === 0} serverSorted={paged}
                             onInspect={report.filtersDirty ? undefined : report.inspectRow}
-                            relatedLinks={report.isSuperAdmin} organizationId={report.appliedOrganizationId} />}
+                            relatedLinks={report.isSuperAdmin} organizationId={report.appliedOrganizationId}
+                            reportIdentity={report.reportIdentity} reloadToken={report.reloadToken} />}
                 </UsageTableViewport>
                 <footer className="usage-results-footer">
                     {!report.loading && !report.error && (hasRows || hasMore)

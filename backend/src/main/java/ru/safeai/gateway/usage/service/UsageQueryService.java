@@ -503,7 +503,9 @@ public class UsageQueryService {
             throw new BadRequestException("size должен находиться в диапазоне 1.."
                     + properties.maxPageSize());
         }
-        if (pageable.getSort().isSorted()) {
+        if (pageable.getSort().isSorted() && (pageable.getSort().stream().count() != 1
+                || pageable.getSort().stream().anyMatch(order -> !order.isDescending()
+                || !java.util.Set.of("tokens", "total", "cost", "responses", "coverage").contains(order.getProperty())))) {
             throw new BadRequestException("Произвольная сортировка usage-отчётов запрещена");
         }
         if (pageable.getOffset() > MAX_REPORT_OFFSET) {

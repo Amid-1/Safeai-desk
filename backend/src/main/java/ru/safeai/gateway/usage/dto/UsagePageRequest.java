@@ -4,6 +4,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 
 public record UsagePageRequest(
         @Min(0)
@@ -11,8 +12,14 @@ public record UsagePageRequest(
 
         @Min(1)
         @Max(200)
-        Integer size
+        Integer size,
+        Order order
 ) {
+    public enum Order { tokens, total, cost, responses, coverage }
+
+    public UsagePageRequest(Integer page, Integer size) {
+        this(page, size, null);
+    }
     private static final int DEFAULT_PAGE = 0;
     private static final int DEFAULT_SIZE = 50;
 
@@ -27,7 +34,8 @@ public record UsagePageRequest(
 
         return PageRequest.of(
                 resolvedPage,
-                resolvedSize
+                resolvedSize,
+                order == null ? Sort.unsorted() : Sort.by(Sort.Direction.DESC, order.name())
         );
     }
 }

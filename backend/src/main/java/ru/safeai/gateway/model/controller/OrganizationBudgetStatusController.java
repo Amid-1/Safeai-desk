@@ -9,6 +9,8 @@ import org.springframework.web.bind.annotation.RestController;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.model.dto.OrganizationBudgetStatusResponse;
 import ru.safeai.gateway.model.service.OrganizationBudgetStatusService;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.util.UUID;
 
@@ -17,16 +19,28 @@ import java.util.UUID;
 @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
 public class OrganizationBudgetStatusController {
     private final OrganizationBudgetStatusService service;
+    private final JsonMapper mapper;
 
-    public OrganizationBudgetStatusController(OrganizationBudgetStatusService service) {
+    public OrganizationBudgetStatusController(OrganizationBudgetStatusService service, JsonMapper mapper) {
         this.service = service;
+        this.mapper = mapper;
     }
 
     @GetMapping("/{organizationId}/budget-status")
-    public OrganizationBudgetStatusResponse current(
+    public ObjectNode current(
             @PathVariable UUID organizationId,
             @AuthenticationPrincipal(errorOnInvalidType = true) SafeAiUserPrincipal currentUser
     ) {
-        return service.current(organizationId, currentUser);
+        OrganizationBudgetStatusResponse snapshot = service.current(organizationId, currentUser);
+        ObjectNode response = mapper.valueToTree(snapshot);
+        // These are required nullable fields of the wire contract, not optional
+        // properties. Restore explicit nulls even with NON_NULL bean inclusion.
+        if (snapshot.monthlyBudgetUsd() == null) {
+            response.putNull("monthlyBudgetUsd");
+        }
+        if (snapshot.remainingUsd() == null) {
+            response.putNull("remainingUsd");
+        }
+        return response;
     }
 }

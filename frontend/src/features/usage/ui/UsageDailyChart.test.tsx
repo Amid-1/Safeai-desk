@@ -88,6 +88,15 @@ describe('UsageDailyChart', () => {
         ])
     })
 
+    it('groups exact decimals into clipped UTC weeks and retains entirely empty buckets', () => {
+        const data = buildDailySeries([{...day, usageDate: '2026-09-25', costUsd: '0.000000000001'},
+            {...day, usageDate: '2026-09-26', costUsd: '0.000000000002'}], '2026-09-25', '2026-10-04', 'week')
+        expect(data.map(item => [item.start, item.end, item.exactTotal, item.exactCost])).toEqual([
+            ['2026-09-25', '2026-09-27', '538', '0.000000000003'],
+            ['2026-09-28', '2026-10-04', null, null],
+        ])
+    })
+
     it('renders only the metric control, leaving view switching to the dashboard', () => {
         render(<DailyChart rows={[day]} />)
         expect(screen.getByLabelText('Показатель')).toHaveValue('tokens')

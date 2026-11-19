@@ -185,9 +185,12 @@ describe('KnowledgePage', () => {
             )
         })
 
-        fireEvent.click(screen.getByRole('button', { name: 'Сбросить фильтры' }))
+        const reset = await screen.findByRole('button', { name: 'Сбросить фильтры' })
+        const beforeReset = listMock.mock.calls.length
+        fireEvent.click(reset)
         await waitFor(() => {
-            expect(listMock.mock.calls.length).toBeGreaterThan(1)
+            expect(listMock.mock.calls.length).toBeGreaterThan(beforeReset)
+            expect(listMock).toHaveBeenLastCalledWith(0, 12, expect.any(Object))
         })
     })
 

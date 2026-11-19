@@ -101,4 +101,12 @@ describe('model/user/summary chart data — scoped to loaded rows', () => {
         expect(result.data[0].input).toBe(Number.MAX_SAFE_INTEGER)
     })
 
+    it('supports 50 rows, preserves source identity and ranks tiny known prices before unknown ones', () => {
+        const rows = Array.from({ length: 60 }, (_, index) => ({...base, userEmail: String(index), costUsd: index === 0 ? null : `0.${String(index).padStart(12, '0')}`}))
+        const result = buildUsageBreakdownChartData('users', rows, 50, 'cost')
+        expect(result.shownRows).toBe(50)
+        expect(result.data[0].sourceIndex).toBe(59)
+        expect(result.data[0].exactValue).toBe('0.000000000059')
+    })
+
 })

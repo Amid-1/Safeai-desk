@@ -148,6 +148,7 @@ async function getUsagePage<T>(
     const query = buildQueryString({
         page: normalizePage(page),
         size: normalizePageSize(size, 50, 100),
+        order: filter.order,
         dateFrom: normalizeOptionalString(filter.dateFrom),
         dateTo: normalizeOptionalString(filter.dateTo),
         model: normalizeOptionalString(filter.model),

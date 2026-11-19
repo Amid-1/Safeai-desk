@@ -7,6 +7,7 @@ import type {
     UsageModelSummary,
     UsageSummary,
     UsageUserSummary,
+    UsageOrganizationSummary,
 } from '../api/usageApi'
 import type { UsageReportTab } from '../lib/adminUsagePageSupport'
 import {
@@ -24,6 +25,7 @@ export type UsageRowsType =
     | PagedRows
     | UsageModelSummary[]
     | UsageDailySummary[]
+    | UsageOrganizationSummary[]
 
 export function UsageReportFooter({
     tab,
@@ -45,21 +47,21 @@ export function UsageReportFooter({
 }) {
     const paged =
         tab === 'summary'
-        || tab === 'users'
+        || tab === 'users' || tab === 'organizations'
 
     const summaryLabel =
         tab === 'models'
             ? 'Моделей'
             : tab === 'daily'
                 ? 'Дней'
-                : 'Записей'
+                : tab === 'organizations' ? 'Организаций' : 'Записей'
 
     const allShownTitle =
         tab === 'models'
             ? 'Все модели показаны'
             : tab === 'daily'
                 ? 'Все дни с записями'
-                : 'Все записи показаны'
+                : tab === 'organizations' ? 'Все организации показаны' : 'Все записи показаны'
 
     if (
         !paged

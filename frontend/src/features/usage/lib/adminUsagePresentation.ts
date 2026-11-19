@@ -8,6 +8,8 @@ export function reportTitle(
     tab: UsageReportTab,
 ): string {
     switch (tab) {
+        case 'organizations':
+            return 'Сравнение организаций'
         case 'users':
             return 'Расход по пользователям'
 
@@ -26,6 +28,8 @@ export function reportDescription(
     tab: UsageReportTab,
 ): string {
     switch (tab) {
+        case 'organizations':
+            return 'Все организации, включая организации без использования AI за выбранный период.'
         case 'users':
             return 'Суммарные токены и стоимость для каждого пользователя.'
 

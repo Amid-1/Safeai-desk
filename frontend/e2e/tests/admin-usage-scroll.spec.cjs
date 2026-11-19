@@ -67,6 +67,20 @@ test('comparison is a separate super-admin tab, retries, switches reports and re
   await expect(page.locator('.usage-results-footer')).toBeInViewport()
   await page.getByRole('button', {name: 'Свернуть', exact: true}).click()
   await expect.poll(() => surface.evaluate(el => el.viewBox.baseVal.height)).toBe(svg)
+  const comparisonBeforeSelection = page.url()
+  const activeLabel = plot.locator('text.usage-chart-action-tick').filter({hasText: /^Demo Company$/})
+  await activeLabel.click()
+  const activeSelection = page.getByRole('region', {name: 'Выбранная запись графика'})
+  await expect(activeSelection).toContainText('Всего: 25')
+  await expect(activeSelection).toBeInViewport()
+  await expect(page).toHaveURL(comparisonBeforeSelection)
+  await activeSelection.getByRole('button', {name: 'Закрыть сведения'}).click()
+  const inputBar = surface.locator('path[fill="#356de8"]').first()
+  await expect(inputBar).toBeVisible()
+  await inputBar.click()
+  await expect(activeSelection).toContainText('Demo Company')
+  await expect(page).toHaveURL(comparisonBeforeSelection)
+  await activeSelection.getByRole('button', {name: 'Закрыть сведения'}).click()
   await page.getByText('Детализация и карточки · доступно с клавиатуры').click()
   await page.getByRole('button', {name: 'Demo Company'}).click()
   const comparisonUrl = page.url()
@@ -86,7 +100,9 @@ test('comparison is a separate super-admin tab, retries, switches reports and re
   await expect(page.getByRole('tab', {name: 'Детализация'})).toHaveAttribute('aria-selected', 'true')
 })
 
-test('an organization without usage stays in comparison and keeps its card and budget available', async ({page}) => {
+for (const [width, height] of [[1280, 720], [1920, 1080]]) {
+test(`an organization without usage stays in comparison and keeps its card and budget available at ${width}×${height}`, async ({page}) => {
+  await page.setViewportSize({width, height})
   await page.route('**/api/auth/me', route => route.fulfill({json: {id: userId, organizationId: orgId,
     email: identity.userEmail, fullName: 'Super Admin', enabled: true, roles: ['SUPER_ADMIN']}}))
   await page.route('**/api/admin/usage/organizations?**', route => route.fulfill({json: {
@@ -114,20 +130,104 @@ test('an organization without usage stays in comparison and keeps its card and b
   const label = page.locator('.usage-breakdown-chart__plot text.usage-chart-action-tick').filter({hasText: /^Сокол$/})
   await expect(label).toBeVisible()
   await expect(label).toHaveClass(/\busage-chart-action-tick\b/)
-  await label.click()
+  const viewport = page.locator('.usage-data-viewport')
+  await expect(viewport).toHaveCSS('overflow-anchor', 'none')
+  // A clipped label is not clickable until the user scrolls to it. Measure
+  // the click itself, never Playwright's automatic scroll into view.
+  if (height === 1080) {
+    await expect(label).toBeInViewport({ratio: 1})
+    expect(await viewport.evaluate(el => el.scrollTop)).toBe(0)
+  } else {
+    await label.scrollIntoViewIfNeeded()
+    await expect(label).toBeInViewport({ratio: 1})
+  }
+  const scrollBefore = await viewport.evaluate(el => el.scrollTop)
+  const labelBox = await label.boundingBox()
+  await page.mouse.move(labelBox.x + labelBox.width / 2, labelBox.y + labelBox.height / 2)
+  await page.mouse.down()
+  expect(await viewport.evaluate(el => el.scrollTop)).toBe(scrollBefore)
+  await page.mouse.up()
   await expect(page.getByRole('region', {name: 'Выбранная запись графика'})).toContainText('Нет использования за выбранный период')
   await expect(page.getByRole('region', {name: 'Выбранная запись графика'}).getByRole('link', {name: 'Карточка организации'})).toHaveAttribute('href', `/admin/organizations?organizationId=${orgId}`)
   await expect(page.getByRole('button', {name: 'Детализация использования'})).toHaveCount(0)
   await expect(page).toHaveURL(/report=organizations/)
   await expect(page).not.toHaveURL(/organizationId=/)
-  await page.getByRole('button', {name: 'Закрыть сведения'}).click()
+  await expect(page.getByRole('region', {name: 'Выбранная запись графика'})).toBeInViewport()
+  expect(await viewport.evaluate(el => el.scrollTop)).toBe(scrollBefore)
+  const selection = page.getByRole('region', {name: 'Выбранная запись графика'})
+  await expect(selection).toHaveAttribute('tabindex', '0')
+  await expect(selection).toHaveCSS('overflow-y', 'auto')
+  await expect.poll(() => viewport.evaluate(el => {
+    const card = el.querySelector('.usage-chart-selection--organization')
+    return card ? Math.abs(parseFloat(el.ownerDocument.defaultView.getComputedStyle(card).maxHeight) - el.clientHeight) : Infinity
+  })).toBeLessThanOrEqual(1)
+  expect(await selection.evaluate(el => el.getBoundingClientRect().height)).toBeLessThanOrEqual(await viewport.evaluate(el => el.clientHeight + 1))
+  const budgetButton = selection.getByRole('button', {name: 'Показать бюджет'})
+  // Reaching an action in the sticky card is a separate interaction. If the
+  // compact scroller requires positioning it, do so before taking its baseline.
+  await budgetButton.scrollIntoViewIfNeeded()
+  await expect(budgetButton).toBeInViewport({ratio: 1})
+  const budgetScrollBefore = await viewport.evaluate(el => el.scrollTop)
+  await budgetButton.click()
+  await expect(selection).toContainText('Бюджет: Не задан')
+  expect(await viewport.evaluate(el => el.scrollTop)).toBe(budgetScrollBefore)
+  expect(await selection.evaluate(el => el.getBoundingClientRect().height)).toBeLessThanOrEqual(await viewport.evaluate(el => el.clientHeight + 1))
+  const budgetStatus = selection.getByText('Бюджет: Не задан', {exact: true})
+  await budgetStatus.scrollIntoViewIfNeeded()
+  await expect(budgetStatus).toBeInViewport()
+  const close = page.getByRole('button', {name: 'Закрыть сведения'})
+  await expect(close).toHaveClass(/\bsecondary-button\b/)
+  await close.click()
   await expect(page.getByRole('region', {name: 'Выбранная запись графика'})).toHaveCount(0)
   await page.getByText('Детализация и карточки · доступно с клавиатуры').click()
-  await page.getByRole('button', {name: 'Сокол', exact: true}).focus()
+  const choice = page.getByRole('button', {name: 'Сокол', exact: true})
+  await expect(choice).toHaveAttribute('aria-pressed', 'false')
+  await expect(choice).toHaveCSS('background-color', 'rgb(244, 247, 252)')
+  await choice.focus()
   await page.keyboard.press('Enter')
   await expect(page.getByRole('region', {name: 'Выбранная запись графика'})).toContainText('Нет использования за выбранный период')
+  await expect(choice).toHaveAttribute('aria-pressed', 'true')
+  await expect(choice).toHaveCSS('background-color', 'rgb(40, 91, 230)')
   await expect(page.getByRole('button', {name: 'Детализация использования'})).toHaveCount(0)
   await expect(page).not.toHaveURL(/organizationId=/)
+})
+}
+
+test('a distant organization selection remains visible without scrolling to the chart end', async ({page}) => {
+  await page.setViewportSize({width: 1440, height: 900})
+  await page.route('**/api/auth/me', route => route.fulfill({json: {id: userId, organizationId: orgId,
+    email: identity.userEmail, fullName: 'Super Admin', enabled: true, roles: ['SUPER_ADMIN']}}))
+  await page.route('**/api/admin/usage/organizations?**', route => route.fulfill({json: {
+    page: 0, size: 50, first: true, last: true, hasNext: false, hasPrevious: false,
+    content: Array.from({length: 50}, (_, i) => ({
+      organizationId: `aaaaaaaa-aaaa-4aaa-8aaa-${String(i+1).padStart(12,'0')}`, organizationName: `Организация ${i+1}`,
+      responses: {assistantMessages: 0}, usage: {confirmedInputTokens: 0, confirmedOutputTokens: 0, availableUsageMessages: 0,
+        partialUsageMessages: 0, missingUsageMessages: 0, usageNotApplicableMessages: 0},
+      cost: {knownCostUsd: null, currency: 'USD', pricedMessages: 0, freeMessages: 0, unpricedMessages: 0,
+        pricingFailedMessages: 0, pricingNotApplicableMessages: 0},
+    })),
+  }}))
+  await page.goto(`/admin/usage?report=organizations&${dates}`)
+  await page.getByRole('button', {name: 'График', exact: true}).click()
+  await page.getByLabel('Строк на графике').selectOption('50')
+  const label = page.locator('text.usage-chart-action-tick').filter({hasText: /^Организация 20$/})
+  await label.scrollIntoViewIfNeeded()
+  const viewport = page.locator('.usage-data-viewport')
+  const before = await viewport.evaluate(el => el.scrollTop)
+  expect(before).toBeGreaterThan(500)
+  await expect(label).toBeInViewport()
+  const labelBox = await label.boundingBox()
+  await page.mouse.move(labelBox.x + labelBox.width / 2, labelBox.y + labelBox.height / 2)
+  await page.mouse.down()
+  expect(await viewport.evaluate(el => el.scrollTop)).toBe(before)
+  await page.mouse.up()
+  const panel = page.getByRole('region', {name: 'Выбранная запись графика'})
+  await expect(panel).toContainText('Организация 20')
+  await expect(panel).toBeInViewport()
+  await expect(page).not.toHaveURL(/organizationId=/)
+  await expect(page).toHaveURL(/report=organizations/)
+  const after = await viewport.evaluate(el => el.scrollTop)
+  expect(after).toBe(before)
 })
 
 test('missing organization endpoint is an error, not zero data; admin cannot request the report', async ({page}) => {

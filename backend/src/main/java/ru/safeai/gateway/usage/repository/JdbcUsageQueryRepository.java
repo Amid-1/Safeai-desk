@@ -54,7 +54,9 @@ public class JdbcUsageQueryRepository implements UsageQueryRepository {
                 from public.organizations o
                 left join facts on facts.organization_id = o.id
                 group by o.id, o.name
-                order by known_cost_usd desc, o.id asc
+                order by
+                """ + reportOrder(pageable, "known_cost_usd desc", "o.id asc") + """
+
                 limit :limit offset :offset
                 """;
         return slice(sql, parameters, pageable, UsageRowMapperSupport.organizationSummaryMapper());
@@ -72,7 +74,9 @@ public class JdbcUsageQueryRepository implements UsageQueryRepository {
                 """ + AGGREGATE_COLUMNS + """
                 from facts
                 group by user_id, current_user_email, model
-                order by user_id asc, model asc
+                order by
+                """ + reportOrder(pageable, "", "user_id asc, model asc") + """
+
                 limit :limit offset :offset
                 """;
         return slice(sql, parameters, pageable, UsageRowMapperSupport.summaryMapper());
@@ -90,7 +94,9 @@ public class JdbcUsageQueryRepository implements UsageQueryRepository {
                 """ + AGGREGATE_COLUMNS + """
                 from facts
                 group by user_id, current_user_email
-                order by user_id asc
+                order by
+                """ + reportOrder(pageable, "", "user_id asc") + """
+
                 limit :limit offset :offset
                 """;
         return slice(sql, parameters, pageable, UsageRowMapperSupport.userSummaryMapper());
@@ -199,6 +205,22 @@ public class JdbcUsageQueryRepository implements UsageQueryRepository {
     private static void addPage(MapSqlParameterSource parameters, Pageable pageable) {
         parameters.addValue("limit", Math.addExact(pageable.getPageSize(), 1));
         parameters.addValue("offset", pageable.getOffset());
+    }
+
+    // Sort expressions are a closed allowlist, never request-derived SQL.
+    static String reportOrder(Pageable pageable, String defaultOrder, String tie) {
+        String metric = pageable.getSort().stream().findFirst().map(o -> o.getProperty()).orElse("");
+        String order = switch (metric) {
+            case "tokens", "total" -> "coalesce(sum(input_tokens), 0) + coalesce(sum(output_tokens), 0) desc";
+            case "cost" -> "case when coalesce(sum(priced_message_count + free_message_count), 0) > 0 "
+                    + "then sum(cost_usd) end desc nulls last";
+            case "responses" -> "coalesce(sum(assistant_message_count), 0) desc";
+            case "coverage" -> "case when coalesce(sum(assistant_message_count), 0) > 0 then "
+                    + "least(1 - sum(partial_usage_message_count + missing_usage_message_count)::numeric / sum(assistant_message_count), "
+                    + "1 - sum(unpriced_message_count + pricing_failed_message_count)::numeric / sum(assistant_message_count)) end desc nulls last";
+            default -> defaultOrder;
+        };
+        return order.isEmpty() ? tie : order + ", " + tie;
     }
 
     private <T> Slice<T> slice(

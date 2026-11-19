@@ -99,7 +99,7 @@ export function UsageDailyChart({ rows, dateFrom, dateTo, metric, onMetricChange
                 {' '}Точные значения доступны в таблице и CSV.
             </p>
             {onInspectRange && <details className="usage-chart-links"><summary>Открыть период · доступно с клавиатуры</summary>
-                <div>{data.map((entry, index) => <button type="button" key={entry.start} onClick={() => inspect(index)}>{entry.date} · {entry.records} из {entry.days} дней с записями</button>)}</div>
+                <div>{data.map((entry, index) => <button type="button" key={entry.start} className="usage-chart-choice" onClick={() => inspect(index)}>{entry.date} · {entry.records} из {entry.days} дней с записями</button>)}</div>
             </details>}
             </div>
         </section>

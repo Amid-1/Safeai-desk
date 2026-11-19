@@ -53,7 +53,46 @@ test('@staging exercises the HTTPS browser session lifecycle', async ({ page, co
     expect(cookie && { path: cookie.path, secure: cookie.secure, httpOnly: cookie.httpOnly })
       .toEqual({ path, secure: true, httpOnly })
   }
-  expect((await context.request.get('/api/auth/me')).status()).toBe(200)
+  const meResponse = await context.request.get('/api/auth/me')
+  expect(meResponse.status()).toBe(200)
+  const me = await meResponse.json()
+  expect(Array.isArray(me.roles)).toBe(true)
+  // Real backend through the deployed proxy; never substitute a mock or an empty report.
+  const organizations = await context.request.get('/api/admin/usage/organizations?page=0&size=1&order=tokens')
+  if (me.roles.includes('SUPER_ADMIN')) {
+    expect(organizations.status()).toBe(200)
+    const report = await organizations.json()
+    expect(report).toMatchObject({page: 0, size: 1, first: true, hasPrevious: false})
+    expect(typeof report.hasNext).toBe('boolean')
+    expect(report.content).toHaveLength(1)
+    expect(report.content[0]).toMatchObject({organizationId: expect.any(String), organizationName: expect.any(String),
+      usage: expect.any(Object), cost: expect.any(Object)})
+  } else {
+    expect(organizations.status()).toBe(403)
+  }
+  const budgetOrg = me.organizationId
+  expect(typeof budgetOrg).toBe('string')
+  const budgetResponse = await context.request.get('/api/admin/models/policies/' + encodeURIComponent(budgetOrg) + '/budget-status')
+  if (me.roles.includes('SUPER_ADMIN') || me.roles.includes('ADMIN')) {
+    expect(budgetResponse.status()).toBe(200)
+    const budget = await budgetResponse.json()
+    expect(budget.organizationId).toBe(budgetOrg)
+    for (const key of ['periodStart', 'periodEnd', 'asOf']) {
+      expect(budget[key]).toMatch(/Z$/)
+      expect(Number.isFinite(Date.parse(budget[key]))).toBe(true)
+    }
+    expect(Date.parse(budget.periodStart)).toBeLessThanOrEqual(Date.parse(budget.asOf))
+    expect(Date.parse(budget.periodEnd)).toBeGreaterThan(Date.parse(budget.asOf))
+    for (const key of ['knownActualUsd', 'reservedUsd', 'knownCommittedUsd']) {
+      expect(budget[key]).toMatch(/^\d+(\.\d+)?$/)
+    }
+    for (const key of ['monthlyBudgetUsd', 'remainingUsd']) {
+      expect(Object.hasOwn(budget, key)).toBe(true)
+      if (budget[key] !== null) expect(budget[key]).toMatch(/^\d+(\.\d+)?$/)
+    }
+  } else {
+    expect(budgetResponse.status()).toBe(403)
+  }
 
   const authenticatedUrl = page.url()
   const secondTab = await context.newPage()

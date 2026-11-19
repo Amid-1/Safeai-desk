@@ -21,6 +21,17 @@ import {
 import type {
     UsageReportRows,
 } from '../lib/adminUsageReportLoader'
+import type { UsageSummaryFilter } from '../api/usageApi'
+import { ApiError } from '../../../shared/api/httpErrors'
+
+function organizationReportError(error: unknown): string {
+    if (error instanceof ApiError) {
+        if (error.status === 404) return 'Сервер не предоставляет отчёт по организациям. Проверьте версию backend и маршрутизацию API.'
+        if (error.status === 403) return 'Нет доступа к отчёту по организациям.'
+        if (error.status === 429) return 'Слишком много запросов. Повторите позже.'
+    }
+    return 'Сравнение организаций недоступно. Повторите запрос или обратитесь к администратору.'
+}
 
 type QueryState = {
     key: string
@@ -44,6 +55,7 @@ type UseAdminUsageReportQueryInput = {
     organizationId: string
     isSuperAdmin: boolean
     reloadToken: number
+    order?: UsageSummaryFilter['order']
 }
 
 export function useAdminUsageReportQuery({
@@ -59,6 +71,7 @@ export function useAdminUsageReportQuery({
     organizationId,
     isSuperAdmin,
     reloadToken,
+    order,
 }: UseAdminUsageReportQueryInput) {
     const queryKey = useMemo(
         () => JSON.stringify([
@@ -75,6 +88,7 @@ export function useAdminUsageReportQuery({
                 ? organizationId
                 : '',
             reloadToken,
+            order,
         ]),
         [
             dateFrom,
@@ -85,6 +99,7 @@ export function useAdminUsageReportQuery({
             organizationId,
             page,
             reloadToken,
+            order,
             tab,
             userId,
             userOrganizationId,
@@ -133,7 +148,7 @@ export function useAdminUsageReportQuery({
                 const result = await loadUsageReport({
                     tab,
                     page,
-                    filter: normalized.filter,
+                    filter: {...normalized.filter, ...(order ? {order} : {})},
                     organizationId:
                         normalized.organizationId
                             || null,
@@ -165,7 +180,7 @@ export function useAdminUsageReportQuery({
                 setState({
                     key: queryKey,
                     loading: false,
-                    error: getApiErrorMessage(
+                    error: tab === 'organizations' ? organizationReportError(loadError) : getApiErrorMessage(
                         loadError,
                         'Не удалось загрузить статистику использования.',
                     ),
@@ -189,6 +204,7 @@ export function useAdminUsageReportQuery({
         isSuperAdmin,
         model,
         organizationId,
+        order,
         page,
         queryKey,
         tab,

@@ -5,6 +5,7 @@ import {
     getOrganizationUsageModels,
     getOrganizationUsageUsers,
     getUsageByModels,
+    getUsageByOrganizations,
     getUsageByOrganization,
     getUsageByUsers,
     getUsageDaily,
@@ -16,6 +17,7 @@ import type {
     UsageSummary,
     UsageSummaryFilter,
     UsageUserSummary,
+    UsageOrganizationSummary,
 } from '../api/usageApi'
 import {
     normalizePageResponse,
@@ -31,6 +33,7 @@ export type UsageReportRows =
     | UsageUserSummary[]
     | UsageModelSummary[]
     | UsageDailySummary[]
+    | UsageOrganizationSummary[]
 
 export type UsageReportLoadResult = {
     rows: UsageReportRows
@@ -62,6 +65,18 @@ export async function loadUsageReport({
         superAdmin
             ? organizationId
             : null
+
+    if (tab === 'organizations') {
+        if (!superAdmin || scopedOrganizationId) throw new Error('Сравнение доступно только для всей платформы.')
+        const response = await getUsageByOrganizations(page, pageSize, filter, {signal})
+        if (response.page !== page || response.size !== pageSize) throw new Error('Некорректная страница отчёта.')
+        return {
+            rows: response.content,
+            hasNext: page + 1 < response.totalPages,
+            hasPrevious: page > 0,
+            complete: page === 0 && response.totalPages <= 1,
+        }
+    }
 
     if (tab === 'summary') {
         const response = scopedOrganizationId

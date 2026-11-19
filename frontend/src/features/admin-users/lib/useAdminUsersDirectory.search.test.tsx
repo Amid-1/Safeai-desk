@@ -76,17 +76,32 @@ beforeEach(() => {
 
 describe('Users directory: server-side search and reset', () => {
     it('automatically applies a query and restores the whole list when cleared', async () => {
-        const { result } = renderHook(() => useAdminUsersDirectory(currentUser, false))
-        await waitFor(() => expect(result.current.users).toHaveLength(10))
+        vi.useFakeTimers()
+        try {
+            const { result } = renderHook(() => useAdminUsersDirectory(currentUser, false))
+            await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+            expect(result.current.users).toHaveLength(10)
+            const initialCalls = vi.mocked(searchUsers).mock.calls.length
 
-        act(() => result.current.setSearchDraft('user5'))
-        await waitFor(() => expect(latestQuery()).toBe('user5'))
-        await waitFor(() => expect(result.current.users).toHaveLength(1))
+            act(() => result.current.setSearchDraft('user5'))
+            await act(async () => { await vi.advanceTimersByTimeAsync(349) })
+            expect(searchUsers).toHaveBeenCalledTimes(initialCalls)
+            expect(latestQuery()).toBeUndefined()
+            await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+            expect(searchUsers).toHaveBeenCalledTimes(initialCalls + 1)
+            expect(latestQuery()).toBe('user5')
+            expect(result.current.users).toHaveLength(1)
+            expect(result.current.users[0]?.email).toBe('user5@test.com')
 
-        act(() => result.current.setSearchDraft(''))
-        await waitFor(() => expect(latestQuery()).toBeUndefined())
-        await waitFor(() => expect(result.current.users).toHaveLength(10))
-        expect(result.current.statistics.total).toBe(10)
+            // Clearing resets immediately; no second 350 ms debounce.
+            await act(async () => { result.current.setSearchDraft('') })
+            expect(searchUsers).toHaveBeenCalledTimes(initialCalls + 2)
+            expect(latestQuery()).toBeUndefined()
+            expect(result.current.users).toHaveLength(10)
+            expect(result.current.statistics.total).toBe(10)
+        } finally {
+            vi.useRealTimers()
+        }
     })
 
     it('finds a user by surname, given name and stored full name', async () => {

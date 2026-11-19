@@ -17,6 +17,7 @@ import {
 import type { BreakdownReportTab } from './usageBreakdownChartData'
 import type { RankingMetric } from './usageBreakdownChartData'
 import { formatCount, trimDecimal } from '../lib/adminUsagePresentation'
+import { UsageOrganizationBudget } from './UsageOrganizationRows'
 
 const TITLES: Record<BreakdownReportTab, string> = {
     summary: 'Расход токенов по пользователям и моделям',
@@ -42,11 +43,13 @@ type Props = {
     onInspect?: (row: LinkedRow) => void
     relatedLinks?: boolean
     organizationId?: string
+    reportIdentity?: string
+    reloadToken?: number
 }
 
 /** One chart from the report's existing rows; never an unscoped API request. */
 export function UsageBreakdownChart({ tab, rows, hasMore = tab !== 'models', limit = 12, metric = 'tokens',
-    globallyRanked = false, serverSorted = false, onInspect, relatedLinks, organizationId }: Props) {
+    globallyRanked = false, serverSorted = false, onInspect, relatedLinks, organizationId, reportIdentity, reloadToken = 0 }: Props) {
     const result = useMemo(
         () => buildUsageBreakdownChartData(tab, rows, limit, metric, serverSorted),
         [tab, rows, limit, metric, serverSorted],
@@ -59,20 +62,37 @@ export function UsageBreakdownChart({ tab, rows, hasMore = tab !== 'models', lim
     const row = current ? rows[current.sourceIndex] as LinkedRow : undefined
     const emptyOrganization = tab === 'organizations' && row?.coverage.assistantMessages === '0'
     useEffect(() => {
-        if (row) selectionRef.current?.scrollIntoView?.({block: 'nearest'})
-    }, [row])
+        if (row && tab !== 'organizations') selectionRef.current?.scrollIntoView?.({block: 'nearest'})
+    }, [row, tab])
     const inspect = (sourceIndex: number) => {
         const target = rows[sourceIndex]
         if (!onInspect || !target) return
-        if (tab === 'organizations' && target.coverage.assistantMessages === '0') {
+        if (tab === 'organizations') {
             setSelected(target)
             return
         }
         onInspect(target)
     }
+    const selection = onInspect && row && current && <div ref={selectionRef}
+        className={`usage-chart-selection usage-chart-links${tab === 'organizations' ? ' usage-chart-selection--organization' : ''}`}
+        role="region" aria-label="Выбранная запись графика" tabIndex={tab === 'organizations' ? 0 : undefined}>
+        <strong>{current.label}</strong>
+        {emptyOrganization ? <span role="status">Нет использования за выбранный период. Бюджет не зависит от фильтров отчёта.</span> : <>
+            <span>Вход: {formatCount(row.inputTokens)} · Выход: {formatCount(row.outputTokens)} · Всего: {formatCount(row.totalTokens)}</span>
+            <span>Известная стоимость: {exactMetric(row, 'cost') === null ? '—' : trimDecimal(exactMetric(row, 'cost')!) + ' USD'} · Полнота учёта: {coveragePercent(row.coverage) === null ? '—' : coveragePercent(row.coverage) + '%'}</span>
+            <button type="button" className="usage-chart-primary-action" onClick={() => onInspect(row)}>Детализация использования</button>
+        </>}
+        {relatedLinks && row.userId && <a href={'/admin/users?userId=' + encodeURIComponent(row.userId)}>Карточка пользователя</a>}
+        {relatedLinks && row.model && <a href={'/admin/models?section=catalog&usageModel=' + encodeURIComponent(row.model)
+            + (organizationId ? '&organizationId=' + encodeURIComponent(organizationId) : '')}>Карточка модели</a>}
+        {relatedLinks && row.organizationId && <a href={'/admin/organizations?organizationId=' + encodeURIComponent(row.organizationId)}>Карточка организации</a>}
+        <button type="button" className="secondary-button" onClick={() => setSelected(null)}>Закрыть сведения</button>
+        {tab === 'organizations' && relatedLinks && row.organizationId && reportIdentity &&
+            <UsageOrganizationBudget key={row.organizationId} id={row.organizationId} userId={reportIdentity} reloadToken={reloadToken}/>}
+    </div>
 
     return (
-        <section className="usage-breakdown-chart" aria-label={label}>
+        <section className={`usage-breakdown-chart${tab === 'organizations' ? ' usage-breakdown-chart--organizations' : ''}`} aria-label={label}>
             <div className="usage-breakdown-chart__top">
                 <div>
                     <h3>{metric === 'tokens' ? label : METRICS[metric]}</h3>
@@ -92,8 +112,17 @@ export function UsageBreakdownChart({ tab, rows, hasMore = tab !== 'models', lim
                         </p>
                     ) : (
                         <>
+                            {tab === 'organizations' && selection}
                             <div className="usage-breakdown-chart__plot" role="group"
-                                 aria-label={`${label}. Данные подтвержденных токенов текущего отчета.`}>
+                                 aria-label={`${label}. Данные подтвержденных токенов текущего отчета.`}
+                                 onMouseDownCapture={event => {
+                                     if (tab !== 'organizations' || !onInspect || event.button !== 0 || !(event.target instanceof Element)) return
+                                     const surface = event.target.closest<SVGSVGElement>('svg[role="application"]')
+                                     if (!surface) return
+                                     // Preserve the chart's keyboard focus without its native focus-scroll.
+                                     event.preventDefault()
+                                     surface.focus({preventScroll: true})
+                                 }}>
                                 <div className="usage-breakdown-chart__frame" style={{ '--usage-row-height': `${height}px` } as CSSProperties}>
                                     <ResponsiveContainer width="100%" height="100%">
                                         <BarChart
@@ -134,23 +163,11 @@ export function UsageBreakdownChart({ tab, rows, hasMore = tab !== 'models', lim
                             </div>}
                             {onInspect && <details className="usage-chart-links">
                                 <summary>Детализация и карточки · доступно с клавиатуры</summary>
-                                <div>{result.data.map(item => <button type="button" key={item.sourceIndex}
+                                <div>{result.data.map(item => <button type="button" key={item.sourceIndex} className="usage-chart-choice"
+                                    aria-pressed={row === rows[item.sourceIndex]}
                                     onClick={() => setSelected(rows[item.sourceIndex])}>{item.label}</button>)}</div>
                             </details>}
-                            {onInspect && row && current && <div ref={selectionRef} className="usage-chart-selection usage-chart-links" role="region" aria-label="Выбранная запись графика">
-                                    <strong>{current.label}</strong>
-                                    {emptyOrganization ? <span role="status">Нет использования за выбранный период. Месячный бюджет можно проверить в таблице организаций независимо от отчёта.</span> : <>
-                                    <span>Вход: {formatCount(row.inputTokens)} · Выход: {formatCount(row.outputTokens)} · Всего: {formatCount(row.totalTokens)}</span>
-                                    <span>Известная стоимость: {exactMetric(row, 'cost') === null ? '—' : trimDecimal(exactMetric(row, 'cost')!) + ' USD'}</span>
-                                    <span>Полнота учёта: {coveragePercent(row.coverage) === null ? '—' : coveragePercent(row.coverage) + '%'}</span>
-                                    <button type="button" onClick={() => inspect(current.sourceIndex)}>Детализация использования</button>
-                                    </>}
-                                    {relatedLinks && row.userId && <a href={'/admin/users?userId=' + encodeURIComponent(row.userId)}>Карточка пользователя</a>}
-                                    {relatedLinks && row.model && <a href={'/admin/models?section=catalog&usageModel=' + encodeURIComponent(row.model)
-                                        + (organizationId ? '&organizationId=' + encodeURIComponent(organizationId) : '')}>Карточка модели</a>}
-                                    {relatedLinks && row.organizationId && <a href={'/admin/organizations?organizationId=' + encodeURIComponent(row.organizationId)}>Карточка организации</a>}
-                                    {emptyOrganization && <button type="button" onClick={() => setSelected(null)}>Закрыть сведения</button>}
-                                </div>}
+                            {tab !== 'organizations' && selection}
                             {result.totalRows > result.shownRows && (
                                 <p className="usage-breakdown-chart__warning">
                                     Показаны первые {result.shownRows} по расходу из {result.totalRows}

@@ -1,7 +1,7 @@
 // frontend/src/features/usage/api/usage/usageBudget.ts
 import { API_TIMEOUTS, apiRequest } from '../../../../shared/api/http'
 import { uuidPathSegment } from '../../../../shared/api/query'
-import { contractError, expectBoolean, expectRecord, expectString, expectUuid } from '../../../../shared/api/runtime'
+import { contractError, expectBoolean, expectInstant, expectRecord, expectString, expectUuid } from '../../../../shared/api/runtime'
 import { count, nonNegativeDecimal } from './usageValidation'
 
 const statuses = ['UNCONFIGURED', 'DISABLED', 'NO_LIMIT', 'KNOWN', 'EXCEEDED', 'UNKNOWN', 'EXCEEDED_LOWER_BOUND'] as const
@@ -23,9 +23,11 @@ export function parseBudgetStatus(value: unknown) {
     }
     const nullable = (field: string) => record[field] === null ? null : decimal(field)
     const instant = (field: string) => {
-        const raw = expectString(record[field], field)
-        if (!raw.endsWith('Z') || !Number.isFinite(Date.parse(raw))) throw contractError('Некорректный период бюджета')
-        return raw
+        const raw = expectInstant(record[field], field)
+        // UTC may be serialized as Z or the equivalent explicit zero offset.
+        // Retain nanosecond precision and normalize only the zone spelling.
+        if (!/(Z|\+00:00)$/.test(raw)) throw contractError('Некорректный период бюджета')
+        return raw.replace(/\+00:00$/, 'Z')
     }
     const periodStart = instant('periodStart')
     const periodEnd = instant('periodEnd')
