@@ -167,7 +167,7 @@ describe('ModelPolicyModal', () => {
             screen.getByRole(
                 'option',
                 {
-                    name: 'Мягкий — фиксировать превышение',
+                    name: 'Мягкий',
                 },
             ),
         ).toBeInTheDocument()
@@ -176,7 +176,7 @@ describe('ModelPolicyModal', () => {
             screen.getByRole(
                 'option',
                 {
-                    name: 'Жёсткий — блокировать запрос',
+                    name: 'Жёсткий',
                 },
             ),
         ).toBeInTheDocument()

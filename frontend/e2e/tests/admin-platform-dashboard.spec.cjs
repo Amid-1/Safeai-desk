@@ -1,0 +1,86 @@
+// Dashboard production-bundle browser regressions; no real tenant data.
+const { test, expect } = require('@playwright/test')
+const { URL: NodeURL } = require('node:url')
+
+const orgId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+const userId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+const usage = {
+  responses: { assistantMessages: 1 },
+  usage: { confirmedInputTokens: 9, confirmedOutputTokens: 16, availableUsageMessages: 1,
+    partialUsageMessages: 0, missingUsageMessages: 0, usageNotApplicableMessages: 0 },
+  cost: { knownCostUsd: '0', currency: 'USD', pricedMessages: 1, freeMessages: 0,
+    unpricedMessages: 0, pricingFailedMessages: 0, pricingNotApplicableMessages: 0 },
+}
+async function mockDashboard(page, role) {
+  const requests = []
+  await page.route('**/api/**', route => {
+    const url = new NodeURL(route.request().url())
+    requests.push({ path: url.pathname, query: url.searchParams, method: route.request().method() })
+    switch (url.pathname) {
+      case '/api/auth/me': return route.fulfill({json: {id: userId, organizationId: orgId,
+        email: 'admin@example.test', fullName: 'Admin', enabled: true, roles: [role]}})
+      case '/api/auth/csrf': return route.fulfill({status: 204, headers: {'set-cookie': 'XSRF-TOKEN=test; Path=/; SameSite=Lax'}})
+      case '/api/organizations': return route.fulfill({json: {page: 0, size: 1, totalElements: 17, totalPages: 17,
+        content: [{id: orgId, name: 'Demo Company', type: 'TENANT', enabled: true, protected: false,
+          version: 1, createdAt: '2026-11-01T00:00:00Z', updatedAt: '2026-11-01T00:00:00Z'}]}})
+      case '/api/users/search/statistics': return route.fulfill({json: {total: 42, administrators: 2, users: 40, enabled: 35, disabled: 7}})
+      case '/api/admin/models/runtime': return route.fulfill({json: {provider: 'mock', model: 'mock-safeai', enabled: true,
+        routingMode: 'SINGLE_PROVIDER_STATIC', maxInputTokens: 64000, maxOutputTokens: 2048,
+        toolsSupported: false, visionSupported: false, structuredOutputSupported: false, dataRetentionStatus: 'NOT_DECLARED',
+        healthStatus: 'NOT_PROBED', pricingStatus: 'FREE', inputUsdPer1mTokens: '0', outputUsdPer1mTokens: '0', pricingVersion: 'mock-2026-01'}})
+      case '/api/admin/usage/daily': return route.fulfill({json: [{...usage, usageDate: url.searchParams.get('dateFrom').slice(0, 10), aggregationZone: 'UTC'}]})
+      case '/api/admin/usage/organizations': return route.fulfill({json: {page: 0, size: 5, first: true, last: true,
+        hasNext: false, hasPrevious: false, content: [{...usage, organizationId: orgId, organizationName: 'Demo Company'}]}})
+      default: return route.fulfill({status: 404, json: {message: 'Not found'}})
+    }
+  })
+  return requests
+}
+
+for (const [width, height] of [[1280, 720], [390, 844]]) {
+  test(`dashboard uses global aggregates and bounded server ranking at ${width}×${height}`, async ({page}) => {
+    await page.setViewportSize({width, height})
+    const requests = await mockDashboard(page, 'SUPER_ADMIN')
+    await page.goto('/admin/dashboard')
+    await expect(page.getByRole('heading', {name: 'Dashboard платформы'})).toBeVisible()
+    await expect(page.getByRole('region', {name: 'Организации', exact: true})).toContainText('17')
+    await expect(page.getByRole('region', {name: 'Пользователи'})).toContainText('42')
+    const chart = page.getByRole('region', {name: 'График использования AI по дням'})
+    await expect(chart.locator('svg.recharts-surface').first()).toBeVisible()
+    const rank = page.getByRole('region', {name: 'Организации по подтверждённым токенам'})
+    await expect(rank.getByRole('link', {name: 'Demo Company'})).toHaveAttribute('href', new RegExp('organizationId=' + orgId))
+    expect(requests.find(r => r.path === '/api/admin/usage/organizations').query.get('size')).toBe('5')
+    expect(requests.find(r => r.path === '/api/admin/usage/organizations').query.get('order')).toBe('total')
+    if (width >= 1280) {
+      const scroll = chart.locator('.usage-daily-scroll')
+      await expect.poll(() => scroll.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1)
+    }
+    await page.getByLabel('Период', {exact: true}).selectOption('7')
+    await expect.poll(() => requests.filter(r => r.path === '/api/admin/usage/daily').length).toBe(2)
+    await expect(page.getByRole('link', {name: 'Полный отчёт'})).toHaveAttribute('href', /report=daily&dateFrom=/)
+    expect(requests.some(r => r.path.endsWith('/probe') || r.method !== 'GET')).toBe(false)
+    expect(await page.evaluate(() => globalThis.document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1)
+    const picker = chart.locator('details.usage-chart-links--compact-period')
+    await expect(picker).toBeVisible()
+    await expect(picker).not.toHaveAttribute('open', '')
+    await picker.locator('summary').click()
+    await expect(picker.getByRole('button')).toHaveCount(7)
+    const populated = picker.getByRole('button', {name: /Есть записи/})
+    const empty = picker.getByRole('button', {name: /Нет записей/})
+    await expect(populated).toHaveCount(1)
+    await expect(empty).toHaveCount(6)
+    await expect(populated).toHaveCSS('background-color', 'rgb(238, 244, 255)')
+    await expect(empty.first()).toHaveCSS('background-color', 'rgb(255, 255, 255)')
+    await populated.focus()
+    await populated.press('Enter')
+    await expect(page).toHaveURL(/\/admin\/usage\?report=summary&dateFrom=/)
+  })
+}
+
+test('tenant administrator cannot open dashboard or request platform aggregates', async ({page}) => {
+  const requests = await mockDashboard(page, 'ADMIN')
+  await page.goto('/admin/dashboard')
+  await expect(page.getByRole('alert')).toContainText('Недостаточно прав')
+  await expect(page.getByRole('link', {name: 'Dashboard'})).toHaveCount(0)
+  expect(requests.filter(r => !r.path.startsWith('/api/auth/'))).toHaveLength(0)
+})

@@ -43,6 +43,7 @@ const AdminAuditPage = lazy(
 const AdminUsagePage = lazy(
     () => import('../pages/AdminUsagePage'),
 )
+const AdminDashboardPage = lazy(() => import('../pages/AdminDashboardPage'))
 const AdminModelsPage = lazy(
     () => import('../pages/AdminModelsPage'),
 )
@@ -359,6 +360,7 @@ function AppLayout() {
 
                         {canAccessAdmin && (
                             <>
+                                {canAccessOrganizations && <NavLink to="/admin/dashboard" className={getNavLinkClass}>Dashboard</NavLink>}
                                 <NavLink
                                     to="/admin/users"
                                     className={getNavLinkClass}
@@ -470,6 +472,12 @@ function AppLayout() {
                             element={<ProtectedRoute roles={['ADMIN','USER']}><KnowledgeDetailsPage /></ProtectedRoute>}
                         />
 
+                        <Route
+                            path="/admin/dashboard"
+                            element={<ProtectedRoute roles={['SUPER_ADMIN']}>
+                                {user => <AdminDashboardPage key={user.id} />}
+                            </ProtectedRoute>}
+                        />
                         <Route
                             path="/admin/users"
                             element={

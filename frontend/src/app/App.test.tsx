@@ -121,6 +121,9 @@ vi.mock('../pages/AdminUsagePage', () => ({
         </div>
     ),
 }))
+vi.mock('../pages/AdminDashboardPage', () => ({
+    default: () => <div data-testid="admin-dashboard-page">Dashboard</div>,
+}))
 
 vi.mock('../pages/AdminModelsPage', () => ({
     default: () => (
@@ -390,6 +393,7 @@ describe(
         )
 
         it.each([
+            ['/admin/dashboard', 'admin-dashboard-page'],
             [
                 '/admin/users',
                 'admin-users-page',
@@ -431,6 +435,14 @@ describe(
                 ).toBeInTheDocument()
             },
         )
+
+        it.each([ADMIN, USER])('запрещает доступ к Dashboard без SUPER_ADMIN: $email', async user => {
+            setAuth(user, 'authenticated')
+            renderAt('/admin/dashboard')
+            expect(await screen.findByRole('alert')).toHaveTextContent('Недостаточно прав')
+            expect(screen.queryByTestId('admin-dashboard-page')).not.toBeInTheDocument()
+            expect(screen.queryByRole('link', {name: 'Dashboard'})).not.toBeInTheDocument()
+        })
 
         it(
             'показывает 404 state для неизвестного route',

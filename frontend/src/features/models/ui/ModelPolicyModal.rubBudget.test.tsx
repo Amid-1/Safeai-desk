@@ -24,6 +24,20 @@ function open(policy = createOrganizationModelPolicy({enabled: false}), onSubmit
 }
 
 describe('RUB budget editing', () => {
+    it('shows a read-only RUB reference without switching the USD draft or adding FX metadata', async () => {
+        vi.mocked(getRubBudgetQuote).mockResolvedValueOnce(quote())
+        const submit = open(createOrganizationModelPolicy({enabled: false, monthlyBudgetUsd: '10'}))
+        const input = screen.getByLabelText('Месячный бюджет, USD')
+        fireEvent.click(screen.getByRole('button', {name: 'Показать эквивалент в RUB'}))
+        expect(await screen.findByText('Месячный бюджет: 900 RUB')).toBeVisible()
+        expect(input).toHaveValue('10')
+        expect(screen.getByRole('button', {name: 'USD · Доллары'})).toHaveAttribute('aria-pressed', 'true')
+        fireEvent.change(input, {target: {value: '20'}})
+        expect(screen.getByText('Месячный бюджет: 1800 RUB')).toBeVisible()
+        fireEvent.click(screen.getByRole('button', {name: 'Сохранить правила'}))
+        await waitFor(() => expect(submit).toHaveBeenCalledWith(expect.objectContaining({monthlyBudgetUsd: '20'})))
+        expect(submit).not.toHaveBeenCalledWith(expect.objectContaining({rubBudget: expect.anything()}))
+    })
     it('switches without changing exact ceiling and submits amounts without duplicate USD fields', async () => {
         vi.mocked(getRubBudgetQuote).mockResolvedValueOnce(quote())
         const submit = open(createOrganizationModelPolicy({enabled: false, monthlyBudgetUsd: '10'}))

@@ -2,6 +2,7 @@
 // Currency selector. Switching display preserves the exact USD ceiling.
 import {useEffect, useRef, useState} from 'react'
 import {getRubBudgetQuote, moscowBudgetDate, rubToUsd, usdToRub} from '../../../../entities/model/api/modelApi'
+import type {RubBudgetQuote} from '../../../../entities/model/api/modelApi'
 import {getApiErrorMessage} from '../../../../shared/api/http'
 import {parsePolicyMoney} from '../modelControlPlane/policyNumericFields'
 import type {ModelPolicyModalController} from './useModelPolicyModalController'
@@ -12,7 +13,41 @@ export function PolicyBudgetCurrency({control, pending, onLoadingChange}: {contr
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
     const active = useRef<AbortController | null>(null)
+    const referenceRequest = useRef<AbortController | null>(null)
+    const [reference, setReference] = useState<RubBudgetQuote>()
+    const [referenceLoading, setReferenceLoading] = useState(false)
+    const [referenceError, setReferenceError] = useState('')
     useEffect(() => () => {active.current?.abort(); onLoadingChange(false)}, [onLoadingChange])
+    useEffect(() => () => {referenceRequest.current?.abort()}, [])
+
+    const loadReference = async () => {
+        if (referenceRequest.current) return
+        const request = new AbortController()
+        referenceRequest.current = request
+        setReferenceLoading(true)
+        setReferenceError('')
+        try {
+            const fresh = await getRubBudgetQuote(request.signal)
+            if (!request.signal.aborted) setReference(fresh)
+        } catch (failure) {
+            if (!request.signal.aborted) setReferenceError(getApiErrorMessage(failure, 'Не удалось получить справочный курс.'))
+        } finally {
+            if (!request.signal.aborted) {
+                referenceRequest.current = null
+                setReferenceLoading(false)
+            }
+        }
+    }
+
+    const referenceAmount = (value: string) => {
+        try {
+            if (!reference) return '—'
+            const amount = usdToRub(parsePolicyMoney(value, 'Сумма'), reference.rubPerUsd)
+            return amount === null ? 'Не задан' : amount + ' RUB'
+        } catch {
+            return 'Не рассчитывается'
+        }
+    }
 
     const changeToRub = async () => {
         if (active.current) return
@@ -66,6 +101,7 @@ export function PolicyBudgetCurrency({control, pending, onLoadingChange}: {contr
             <div>
                 <strong>Валюта ввода бюджета</strong>
                 <small>Расчёты и контроль расходов всегда выполняются в USD.</small>
+                <small>Переключатель меняет валюту редактируемых полей. Справочный курс не меняет лимиты.</small>
             </div>
             <div role="group" aria-label="Валюта ввода" className="models-policy-fx__switch">
                 <button type="button" aria-pressed={!quote} disabled={pending || loading || (!!quote && !!(control.numericErrors.maxRequestCostUsd || control.numericErrors.monthlyBudgetUsd))}
@@ -74,6 +110,21 @@ export function PolicyBudgetCurrency({control, pending, onLoadingChange}: {contr
                         onClick={() => {void changeToRub()}}>RUB · Рубли</button>
             </div>
         </div>
+        {!quote && <div className="models-policy-fx__quote">
+            <div>
+                <span className="models-policy-fx__status">Справочный эквивалент в рублях</span>
+                {reference && <>
+                    <strong>1 USD = {reference.rubPerUsd.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '').replace('.', ',')} RUB</strong>
+                    <small>Банк России · действует с {reference.effectiveDate} · получен {reference.quoteDate}</small>
+                    <small>Месячный бюджет: {referenceAmount(draft.monthlyBudgetUsd)}</small>
+                    <small>Лимит запроса: {referenceAmount(draft.maxRequestCostUsd)}</small>
+                </>}
+            </div>
+            <button type="button" disabled={referenceLoading} onClick={() => {void loadReference()}}>
+                {referenceLoading ? 'Получаем…' : reference ? 'Обновить справочный курс' : 'Показать эквивалент в RUB'}
+            </button>
+            {referenceError && <p role="status">{referenceError}</p>}
+        </div>}
         {quote && <div className="models-policy-fx__quote">
             <div>
                 <span className="models-policy-fx__status">{historical ? 'Сохранённый курс' : 'Курс на сегодня'}</span>

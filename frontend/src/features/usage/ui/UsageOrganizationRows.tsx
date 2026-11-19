@@ -23,6 +23,7 @@ export function UsageOrganizationBudget({id, userId, reloadToken}: {id: string; 
     return <div className="usage-budget-cell">
         <small>{p.periodStart.slice(0, 7)} UTC · {p.policyEnabled ? 'Правила включены' : 'Правила отключены'}</small>
         <span>Бюджет: {p.monthlyBudgetUsd === null ? 'Не задан' : money(p.monthlyBudgetUsd)}</span>
+        <span>Контроль: {p.enforcement === 'HARD' ? 'Жёсткий' : 'Мягкий'}{!p.policyEnabled || p.monthlyBudgetUsd === null ? ' (не действует)' : ''}</span>
         {p.status === 'UNCONFIGURED' && <small>Правила организации ещё не настроены.</small>}
         <span>Известные затраты: {money(p.knownActualUsd)}</span>
         <span>Резерв: {money(p.reservedUsd)}</span>

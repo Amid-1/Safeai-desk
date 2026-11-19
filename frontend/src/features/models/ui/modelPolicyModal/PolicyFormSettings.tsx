@@ -9,7 +9,6 @@ import type {PolicyNumericField} from '../modelControlPlane/policyNumericFields'
 import {BUDGET_ENFORCEMENTS, rubToUsd} from '../../../../entities/model/api/modelApi'
 import type {BudgetEnforcement} from '../../../../entities/model/api/modelApi'
 import { InfoHint } from './policyModalPresentation'
-import { budgetEnforcementLabel } from './policyModalLabels'
 import {PolicyBudgetCurrency} from './PolicyBudgetCurrency'
 import {parsePolicyMoney} from '../modelControlPlane/policyNumericFields'
 import type {PolicyDraft} from '../modelControlPlane/modelTypes'
@@ -202,8 +201,11 @@ export function PolicyFormSettings({control, catalog, effectiveCatalog, runtime,
                         </span>
                         <select ref={budgetControlRef} value={draft.budgetEnforcement} disabled={pending}
                                 onChange={event => setDraft(current => ({...current, budgetEnforcement: event.target.value as BudgetEnforcement}))}>
-                            {BUDGET_ENFORCEMENTS.map(value => <option key={value} value={value}>{budgetEnforcementLabel(value)}</option>)}
+                            {BUDGET_ENFORCEMENTS.map(value => <option key={value} value={value}>{value === 'HARD' ? 'Жёсткий' : 'Мягкий'}</option>)}
                         </select>
+                        <small>{draft.budgetEnforcement === 'HARD'
+                            ? 'Блокировать запрос при превышении.'
+                            : 'Фиксировать превышение без блокировки.'}</small>
                     </label>
                     <p className="models-policy-form__field-explainer models-policy-form__full-row">
                         {draft.rubQuote ? 'Суммы в рублях (RUB), конвертация в USD с округлением вниз до 12 знаков.' : 'Суммы в долларах США (USD).'} Допустимы точка или запятая, до 18 цифр до разделителя

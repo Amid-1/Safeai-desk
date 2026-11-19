@@ -102,4 +102,20 @@ describe('UsageDailyChart', () => {
         expect(screen.getByLabelText('Показатель')).toHaveValue('tokens')
         expect(screen.queryByRole('button')).not.toBeInTheDocument()
     })
+
+    it('offers keyboard-accessible compact drilldowns, including days without records', () => {
+        const onInspectRange = vi.fn()
+        render(<DailyChart rows={[day]} dateFrom="2026-09-26" dateTo="2026-09-28" compactPeriodPicker onInspectRange={onInspectRange} />)
+        const picker = screen.getByText('Открыть период отчёта').closest('details')!
+        expect(picker).not.toHaveAttribute('open')
+        fireEvent.click(picker.querySelector('summary')!)
+        const active = screen.getByRole('button', {name: '27.09.2026 Есть записи'})
+        const empty = screen.getByRole('button', {name: '26.09.2026 Нет записей'})
+        expect(active).toHaveAttribute('data-has-records', 'true')
+        expect(empty).toHaveAttribute('data-has-records', 'false')
+        fireEvent.click(empty)
+        expect(onInspectRange).toHaveBeenCalledWith('2026-09-26', '2026-09-26')
+        fireEvent.click(active)
+        expect(onInspectRange).toHaveBeenCalledWith('2026-09-27', '2026-09-27')
+    })
 })

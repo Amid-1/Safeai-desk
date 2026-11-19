@@ -8,13 +8,14 @@ import { compactTick } from './usageBreakdownChartData'
 
 export type UsageDailyMetric = 'tokens' | 'total' | 'cost' | 'responses' | 'coverage'
 
-export function UsageDailyChart({ rows, dateFrom, dateTo, metric, onMetricChange, onInspectRange }: {
+export function UsageDailyChart({ rows, dateFrom, dateTo, metric, onMetricChange, onInspectRange, compactPeriodPicker = false }: {
     rows: UsageDailySummary[]
     dateFrom?: string
     dateTo?: string
     metric: UsageDailyMetric
     onMetricChange: (value: UsageDailyMetric) => void
     onInspectRange?: (from: string, to: string) => void
+    compactPeriodPicker?: boolean
 }) {
     const [grouping, setGrouping] = useState<DailyGrouping>('day')
     const [zoom, setZoom] = useState(1)
@@ -63,7 +64,7 @@ export function UsageDailyChart({ rows, dateFrom, dateTo, metric, onMetricChange
             {unavailable ? (
                 <p role="status">Значения слишком велики для точного изображения на графике. Все исходные числа сохранены в таблице и CSV без округления.</p>
             ) : (
-                <div className="usage-daily-scroll"><div className="usage-chart-viewport" style={{minWidth: Math.max(360, data.length * 42 * zoom)}}>
+                <div className="usage-daily-scroll"><div className="usage-chart-viewport" style={{minWidth: Math.max(360, data.length * (compactPeriodPicker && zoom === 1 && data.length <= 30 ? 24 : 42) * zoom)}}>
                     <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={data} margin={{top: 14, right: 18, bottom: 4, left: 0}}
                             barGap={4} maxBarSize={24}>
@@ -98,8 +99,10 @@ export function UsageDailyChart({ rows, dateFrom, dateTo, metric, onMetricChange
                     : 'Значения взяты из дневного отчёта.'}
                 {' '}Точные значения доступны в таблице и CSV.
             </p>
-            {onInspectRange && <details className="usage-chart-links"><summary>Открыть период · доступно с клавиатуры</summary>
-                <div>{data.map((entry, index) => <button type="button" key={entry.start} className="usage-chart-choice" onClick={() => inspect(index)}>{entry.date} · {entry.records} из {entry.days} дней с записями</button>)}</div>
+            {onInspectRange && <details className={`usage-chart-links${compactPeriodPicker ? ' usage-chart-links--compact-period' : ''}`}><summary>{compactPeriodPicker ? 'Открыть период отчёта' : 'Открыть период · доступно с клавиатуры'}</summary>
+                <div>{data.map((entry, index) => <button type="button" key={entry.start} className="usage-chart-choice" data-has-records={entry.records > 0} onClick={() => inspect(index)}>
+                    {compactPeriodPicker ? <><span>{entry.date}</span>{' '}<small>{entry.records === 0 ? 'Нет записей' : entry.days === 1 ? 'Есть записи' : `${entry.records} из ${entry.days} дней с записями`}</small></> : `${entry.date} · ${entry.records} из ${entry.days} дней с записями`}
+                </button>)}</div>
             </details>}
             </div>
         </section>

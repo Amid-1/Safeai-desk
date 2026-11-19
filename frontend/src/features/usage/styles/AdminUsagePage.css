@@ -96,9 +96,10 @@
 }
 .usage-data-viewport > .state-block { margin: 12px; }
 .usage-page .usage-table { width: 100%; min-width: 940px; margin: 0; border-collapse: separate; border-spacing: 0; }
-.usage-page .usage-table thead th { position: sticky; top: 0; z-index: 2; background: #edf3fc; box-shadow: 0 1px 0 #dce5f2; color: #314b6c; font-size: 14px; text-transform: none; }
-.usage-page .usage-table th, .usage-page .usage-table td { padding: 13px 16px; vertical-align: middle; line-height: 1.45; white-space: normal; overflow-wrap: anywhere; }
-.usage-page .usage-table td { font-size: 16px; border-bottom: 1px solid #e8edf5; }
+.usage-page .usage-table thead tr th { position: sticky; top: 0; z-index: 2; background: #edf3fc; box-shadow: 0 1px 0 #dce5f2; color: #314b6c; font-size: 14px; text-transform: none; }
+/* Keep feature typography independent of the lazy-loaded shared admin stylesheet. */
+.usage-page .usage-table thead tr th, .usage-page .usage-table tbody td { padding: 13px 16px; vertical-align: middle; line-height: 1.45; white-space: normal; overflow-wrap: anywhere; }
+.usage-page .usage-table tbody td { font-size: 16px; border-bottom: 1px solid #e8edf5; }
 .usage-page .usage-table tr > :nth-last-child(n+2):nth-last-child(-n+5) { text-align: right; font-variant-numeric: tabular-nums; }
 .usage-page .usage-table td:nth-last-child(3) { font-weight: 700; color: #203555; }
 .usage-page .usage-table tbody tr:nth-child(even) { background: #f8fafd; }
@@ -133,18 +134,18 @@
 .usage-chart-links summary { cursor: pointer; color: #2357cf; font-weight: 600; }
 .usage-chart-links > div { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .usage-chart-links > div button { min-height: 34px; font-size: 13px; }
-.usage-page button.usage-chart-choice {
+:is(.usage-page, .platform-dashboard) button.usage-chart-choice {
     min-height: 34px; max-width: 100%; padding: 6px 11px; border: 1px solid #cedaee;
     border-radius: 8px; background: #f4f7fc; color: #28518c; box-shadow: none;
     font-size: 13px; font-weight: 650; white-space: normal; overflow-wrap: anywhere;
 }
-.usage-page button.usage-chart-choice:hover:not(:disabled) { background: #e9effc; }
-.usage-page button.usage-chart-choice[aria-pressed=true], .usage-page button.usage-chart-primary-action {
+:is(.usage-page, .platform-dashboard) button.usage-chart-choice:hover:not(:disabled) { background: #e9effc; }
+:is(.usage-page, .platform-dashboard) button.usage-chart-choice[aria-pressed=true], .usage-page button.usage-chart-primary-action {
     background: #285be6; color: #fff; border: 1px solid #285be6; box-shadow: none;
 }
-.usage-page button.usage-chart-choice[aria-pressed=true]:hover:not(:disabled),
+:is(.usage-page, .platform-dashboard) button.usage-chart-choice[aria-pressed=true]:hover:not(:disabled),
 .usage-page button.usage-chart-primary-action:hover:not(:disabled) { background: #204cc8; }
-.usage-page button.usage-chart-choice:focus-visible, .usage-page button.usage-chart-primary-action:focus-visible {
+:is(.usage-page, .platform-dashboard) button.usage-chart-choice:focus-visible, .usage-page button.usage-chart-primary-action:focus-visible {
     outline: 2px solid #356de8; outline-offset: 2px;
 }
 .usage-chart-selection { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
