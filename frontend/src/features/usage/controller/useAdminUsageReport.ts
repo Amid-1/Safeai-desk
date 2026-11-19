@@ -442,6 +442,7 @@ export function useAdminUsageReport() {
         : userLabel?.id === appliedUserId ? userLabel.email : appliedUserId
 
     return {
+        reportIdentity: currentUser?.id ?? '', reloadToken,
         totals, budget, exportFiltered, exportPending: exportTask.pending, filteredExportError: exportTask.error,
         tab,
         page,

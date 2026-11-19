@@ -149,3 +149,8 @@
     .usage-chart-heading { align-items: flex-start; }
     .usage-results-footer .pagination { flex-wrap: wrap; }
 }
+.usage-organization-table {
+    overflow: auto;
+    min-height: 0;
+    max-height: 55vh;
+}

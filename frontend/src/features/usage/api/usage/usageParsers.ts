@@ -4,7 +4,7 @@
 // ============================================================
 
 import { contractError, expectRecord, expectString, expectUuid } from '../../../../shared/api/runtime'
-import type { UsageAmounts, UsageCoverage, UsageSummary, UsageUserSummary, UsageModelSummary, UsageDailySummary } from './usageTypes'
+import type { UsageAmounts, UsageCoverage, UsageSummary, UsageUserSummary, UsageModelSummary, UsageDailySummary, UsageOrganizationSummary } from './usageTypes'
 import { deriveUsageComplete, derivePricingComplete, validateCoverage, assertSum, addCounts, count, optionalCount, nonNegativeDecimal, optionalBoolean, optionalString, isRecord } from './usageValidation'
 
 export function parseUsageSummary(
@@ -30,6 +30,24 @@ export function parseUsageSummary(
             { maxLength: 100 },
         ),
         ...parseUsageAmounts(record, field),
+    }
+}
+
+export function parseUsageOrganizationSummary(
+    value: unknown,
+    field = 'usageOrganizationSummary',
+): UsageOrganizationSummary {
+    const record = expectRecord(value, field)
+    const amounts = parseNestedUsageAmounts(record, field)
+    if (amounts.coverage.assistantMessages === null) {
+        throw contractError(`${field}.responses.assistantMessages отсутствует`)
+    }
+    return {
+        organizationId: expectUuid(record.organizationId, `${field}.organizationId`),
+        organizationName: expectString(record.organizationName, `${field}.organizationName`, { maxLength: 255 }),
+        ...amounts,
+        costUsd: amounts.coverage.pricedMessages === '0' && amounts.coverage.freeMessages === '0'
+            ? null : amounts.costUsd,
     }
 }
 

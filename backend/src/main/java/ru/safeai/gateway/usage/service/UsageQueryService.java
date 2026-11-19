@@ -14,6 +14,7 @@ import ru.safeai.gateway.usage.config.UsageProperties;
 import ru.safeai.gateway.usage.dto.UsageDailySummaryResponse;
 import ru.safeai.gateway.usage.dto.UsageDataQualityResponse;
 import ru.safeai.gateway.usage.dto.UsageModelSummaryResponse;
+import ru.safeai.gateway.usage.dto.UsageOrganizationSummaryResponse;
 import ru.safeai.gateway.usage.dto.UsageSummaryResponse;
 import ru.safeai.gateway.usage.dto.UsageUserSummaryResponse;
 import ru.safeai.gateway.usage.repository.UsageInstantRange;
@@ -72,6 +73,23 @@ public class UsageQueryService {
                 range.from(), range.to(), scope(currentUser), null, normalizeModel(model));
         return reportExecutor.execute("summary", () ->
                 usageQueryRepository.findSummary(criteria, buildPlan(range), pageable));
+    }
+
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    public Slice<UsageOrganizationSummaryResponse> getUsageByOrganizations(
+            Instant dateFrom, Instant dateTo, String model, UUID userId,
+            Pageable pageable, SafeAiUserPrincipal currentUser
+    ) {
+        requireCurrentUser(currentUser);
+        if (!isSuperAdmin(currentUser)) {
+            throw new ForbiddenOperationException("Сравнение организаций недоступно");
+        }
+        requirePageable(pageable);
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
+        UsageQueryCriteria criteria = new UsageQueryCriteria(
+                range.from(), range.to(), null, userId, normalizeModel(model));
+        return reportExecutor.execute("organizations", () ->
+                usageQueryRepository.findOrganizations(criteria, buildPlan(range), pageable));
     }
 
     public Slice<UsageUserSummaryResponse> getUsageByUsers(

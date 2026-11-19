@@ -13,6 +13,7 @@ import ru.safeai.gateway.usage.config.UsageJdbcClients;
 import ru.safeai.gateway.usage.dto.UsageDailySummaryResponse;
 import ru.safeai.gateway.usage.dto.UsageDataQualityResponse;
 import ru.safeai.gateway.usage.dto.UsageModelSummaryResponse;
+import ru.safeai.gateway.usage.dto.UsageOrganizationSummaryResponse;
 import ru.safeai.gateway.usage.dto.UsageProblemModelResponse;
 import ru.safeai.gateway.usage.dto.UsageSummaryResponse;
 import ru.safeai.gateway.usage.dto.UsageUserSummaryResponse;
@@ -35,6 +36,28 @@ public class JdbcUsageQueryRepository implements UsageQueryRepository {
 
     public JdbcUsageQueryRepository(UsageJdbcClients jdbcClients) {
         this.jdbcTemplate = Objects.requireNonNull(jdbcClients, "jdbcClients").query();
+    }
+
+    @Override
+    public Slice<UsageOrganizationSummaryResponse> findOrganizations(
+            UsageQueryCriteria criteria, UsageQueryPlan plan, Pageable pageable
+    ) {
+        if (criteria.organizationId() != null) {
+            throw new IllegalArgumentException("Cross-organization report requires platform scope");
+        }
+        UsageFactSql facts = factQueryBuilder.organizationFacts(criteria, plan, false, true);
+        MapSqlParameterSource parameters = facts.parameters();
+        addPage(parameters, pageable);
+        String sql = facts.cte() + """
+                select o.id as organization_id, o.name as organization_name,
+                """ + AGGREGATE_COLUMNS + """
+                from public.organizations o
+                left join facts on facts.organization_id = o.id
+                group by o.id, o.name
+                order by known_cost_usd desc, o.id asc
+                limit :limit offset :offset
+                """;
+        return slice(sql, parameters, pageable, UsageRowMapperSupport.organizationSummaryMapper());
     }
 
     @Override

@@ -8,7 +8,18 @@ import { buildQueryString, normalizePage, normalizePageSize, uuidPathSegment } f
 import { contractError, expectRecord, parsePageResponse } from '../../../../shared/api/runtime'
 import type { PageResponse } from '../../../../shared/lib/page'
 import type { UsageSummaryFilter, RequestOptions, UsageSummary, UsageUserSummary, UsageModelSummary, UsageDailySummary } from './usageTypes'
-import { parseUsageSummary, parseUsageUserSummary, parseUsageModelSummary, parseUsageDailySummary } from './usageParsers'
+import { parseUsageSummary, parseUsageUserSummary, parseUsageModelSummary, parseUsageDailySummary, parseUsageOrganizationSummary } from './usageParsers'
+import type { UsageOrganizationSummary } from './usageTypes'
+
+export function getUsageByOrganizations(
+    page = 0,
+    size = 50,
+    filter: UsageSummaryFilter = {},
+    options: RequestOptions = {},
+): Promise<PageResponse<UsageOrganizationSummary>> {
+    return getUsagePage('/api/admin/usage/organizations', page, size, filter,
+        parseUsageOrganizationSummary, options)
+}
 
 export function getUsageSummary(
     page = 0,

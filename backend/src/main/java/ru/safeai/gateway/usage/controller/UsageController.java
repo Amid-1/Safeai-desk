@@ -16,6 +16,7 @@ import ru.safeai.gateway.usage.dto.UsageDataQualityResponse;
 import ru.safeai.gateway.usage.dto.UsageDateFilter;
 import ru.safeai.gateway.usage.dto.UsageDateModelFilter;
 import ru.safeai.gateway.usage.dto.UsageModelSummaryResponse;
+import ru.safeai.gateway.usage.dto.UsageOrganizationSummaryResponse;
 import ru.safeai.gateway.usage.dto.UsagePageRequest;
 import ru.safeai.gateway.usage.dto.UsageSummaryResponse;
 import ru.safeai.gateway.usage.dto.UsageUserSummaryResponse;
@@ -55,6 +56,18 @@ public class UsageController {
                         currentUser
                 )
         );
+    }
+
+    @GetMapping("/organizations")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    public PagedResponse<UsageOrganizationSummaryResponse> organizations(
+            @Valid @ModelAttribute UsageDateModelFilter filter,
+            @Valid @ModelAttribute UsagePageRequest pageRequest,
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        return PagedResponse.from(usageQueryService.getUsageByOrganizations(
+                filter.dateFrom(), filter.dateTo(), filter.normalizedModel(), filter.userId(),
+                pageRequest.toPageable(), currentUser));
     }
 
     @GetMapping("/users")

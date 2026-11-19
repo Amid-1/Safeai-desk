@@ -89,6 +89,15 @@ final class UsageFactQueryBuilder {
             UsageQueryPlan plan,
             boolean includeDate
     ) {
+        return organizationFacts(criteria, plan, includeDate, false);
+    }
+
+    UsageFactSql organizationFacts(
+            UsageQueryCriteria criteria,
+            UsageQueryPlan plan,
+            boolean includeDate,
+            boolean includeOrganization
+    ) {
         // Organization rollups have no user dimension. When a user is selected,
         // use user-model rollups and the same tenant restriction for live facts.
         boolean includeUser = criteria.userId() != null;
@@ -120,6 +129,7 @@ final class UsageFactQueryBuilder {
 
             fragments.add(
                     "select "
+                            + (includeOrganization ? "r.organization_id, " : "")
                             + (includeDate
                             ? "r.usage_date, "
                             : "")
@@ -157,7 +167,8 @@ final class UsageFactQueryBuilder {
                 parameters,
                 criteria,
                 plan.liveRanges(),
-                includeDate
+                includeDate,
+                includeOrganization
         );
 
         return facts(
@@ -415,7 +426,8 @@ final class UsageFactQueryBuilder {
             MapSqlParameterSource parameters,
             UsageQueryCriteria criteria,
             List<UsageInstantRange> ranges,
-            boolean includeDate
+            boolean includeDate,
+            boolean includeOrganization
     ) {
         int index = 0;
 
@@ -481,6 +493,7 @@ final class UsageFactQueryBuilder {
 
             fragments.add(
                     "select "
+                            + (includeOrganization ? "m.organization_id, " : "")
                             + usageDate
                             + """
                             coalesce(
@@ -498,6 +511,7 @@ final class UsageFactQueryBuilder {
                             + where
                             + "\n"
                             + groupBy
+                            + (includeOrganization ? ", m.organization_id" : "")
             );
 
             index++;

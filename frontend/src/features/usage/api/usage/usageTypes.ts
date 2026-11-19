@@ -80,3 +80,8 @@ export type UsageDailySummary = UsageAmounts & {
 export type RequestOptions = {
     signal?: AbortSignal
 }
+// Organization dimension uses the same server accounting contract.
+export type UsageOrganizationSummary = UsageAmounts & {
+    organizationId: string
+    organizationName: string
+}

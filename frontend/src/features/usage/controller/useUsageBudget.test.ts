@@ -1,13 +1,13 @@
 // frontend/src/features/usage/controller/useUsageBudget.test.ts
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { getOrganizationModelPolicy } from '../../../entities/model/api/modelApi'
-import type { OrganizationModelPolicy } from '../../../entities/model/api/modelApi'
+import { getOrganizationBudgetStatus } from '../api/usage/usageBudget'
+import type { OrganizationBudgetStatus } from '../api/usage/usageBudget'
 import { useUsageBudget } from './useUsageBudget'
 
-vi.mock('../../../entities/model/api/modelApi', () => ({getOrganizationModelPolicy: vi.fn()}))
-const read = vi.mocked(getOrganizationModelPolicy)
-const policy = { organizationId: 'one', monthlyBudgetUsd: '0', version: 2 } as OrganizationModelPolicy
+vi.mock('../api/usage/usageBudget', () => ({getOrganizationBudgetStatus: vi.fn()}))
+const read = vi.mocked(getOrganizationBudgetStatus)
+const policy = { organizationId: 'one', monthlyBudgetUsd: '0', policyVersion: '2', remainingUsd: '0' } as OrganizationBudgetStatus
 beforeEach(() => read.mockReset())
 
 it('does not request a platform-wide budget or substitute zero for missing policy', async () => {
@@ -21,10 +21,10 @@ it('does not request a platform-wide budget or substitute zero for missing polic
 })
 
 it('discards stale results, accepts an exact zero budget, and rejects a mismatched tenant', async () => {
-    let resolve!: (value: OrganizationModelPolicy) => void
+    let resolve!: (value: OrganizationBudgetStatus) => void
     read.mockImplementationOnce(() => new Promise(r => {resolve = r}))
     const {result, rerender} = renderHook(({org}) => useUsageBudget('admin', org, 0), {initialProps: {org: 'one'}})
-    const signal = read.mock.calls[0][1]?.signal
+    const signal = read.mock.calls[0][1]
     read.mockResolvedValueOnce({...policy, organizationId: 'two'})
     rerender({org: 'two'})
     expect(signal?.aborted).toBe(true)
