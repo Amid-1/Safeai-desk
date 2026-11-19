@@ -57,9 +57,10 @@ describe('Модели: понятный и безопасный интерфе�
 
     it('показывает понятное пустое состояние поиска без выбора другой организации', () => {
         render(<PolicyCard {...policyProps()} />)
-        expect(screen.getByRole('searchbox', {name: 'Проверить другую организацию'}))
-            .toHaveValue('Ромашка')
-        expect(screen.getByRole('status')).toHaveTextContent('Ничего не найдено')
+        const field = screen.getByRole('combobox', {name:'Управляемая организация'})
+        expect(field).toHaveValue('SafeAI Platform')
+        fireEvent.focus(field)
+        expect(screen.getByText(/Ничего не найдено/)).toBeInTheDocument()
         expect(screen.getByText('SafeAI Platform')).toBeInTheDocument()
     })
 
@@ -74,7 +75,7 @@ describe('Модели: понятный и безопасный интерфе�
 
     it('не отображает поиск организации обычному ADMIN', () => {
         render(<PolicyCard {...policyProps()} isSuperAdmin={false} />)
-        expect(screen.queryByRole('searchbox', {name: 'Проверить другую организацию'}))
+        expect(screen.queryByRole('combobox', {name: 'Управляемая организация'}))
             .not.toBeInTheDocument()
     })
 
@@ -83,6 +84,7 @@ describe('Модели: понятный и безопасный интерфе�
         vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
         try {
             render(<PolicyCard {...policyProps()} isSuperAdmin={false} />)
+            fireEvent.click(screen.getByText('Технические сведения'))
             fireEvent.click(screen.getByRole('button', { name: 'Копировать UUID организации' }))
             expect(await screen.findByText('UUID скопирован')).toBeInTheDocument()
             expect(writeText).toHaveBeenCalledWith(policy.organizationId)

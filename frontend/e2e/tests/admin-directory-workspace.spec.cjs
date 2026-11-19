@@ -50,6 +50,10 @@ test.beforeEach(async ({ page }) => {
         json = { total: count, administrators: 0, superAdministrators: 0, users: count, enabled: count, disabled: 0 }; break
       }
       default:
+        if (method === 'GET' && pathname.startsWith('/api/users/')) {
+          const match = users.find(row => row.id === pathname.split('/').at(-1))
+          if (match) { json = {...match, organizationName: 'Компания 1'}; break }
+        }
         if (method === 'GET' && pathname.startsWith('/api/organizations/')) {
           json = organizations.find(org => org.id === pathname.split('/').at(-1))
           if (json) break
@@ -73,12 +77,68 @@ test('organization card opens a scoped users directory', async ({page}) => {
   await expect(page.getByRole('row')).toHaveCount(22)
 })
 
+test('direct user link opens details and links to the organization', async ({page}) => {
+  await page.goto('/admin/users?userId=' + user(1).id)
+  const card = page.getByRole('dialog', {name: 'Карточка пользователя'})
+  await expect(card).toBeVisible()
+  await expect(card.getByRole('link', {name: 'Журнал событий'})).toHaveAttribute('href', /actorUserId=/)
+  await expect(card.getByRole('link', {name: 'Использование и расходы'})).toHaveAttribute('href', /userId=/)
+  await page.keyboard.press('Escape')
+  await expect(card).toHaveCount(0)
+  await expect(page).not.toHaveURL(/userId=/)
+})
+
+for (const [width, height] of [[1440, 900], [390, 844]]) {
+  test(`profile window controls match the light modal shell at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height })
+    for (const [url, name] of [
+      ['/admin/organizations?organizationId=' + tenant(1).id, 'Карточка организации'],
+      ['/admin/users?userId=' + user(1).id, 'Карточка пользователя'],
+    ]) {
+      await page.goto(url)
+      await page.mouse.move(0, 0)
+      const dialog = page.getByRole('dialog', { name })
+      const maximize = dialog.getByRole('button', { name: 'Развернуть окно на весь экран' })
+      const close = dialog.getByRole('button', { name: 'Закрыть окно' })
+      await expect(maximize).toBeVisible()
+      await expect(close).toBeVisible()
+      for (const button of [maximize, close]) {
+        await expect(button).toHaveCSS('background-color', 'rgb(255, 255, 255)')
+        await expect(button).toHaveCSS('border-top-style', 'solid')
+        await expect(button).toHaveCSS('color', 'rgb(31, 42, 59)')
+      }
+      const first = await maximize.boundingBox()
+      const second = await close.boundingBox()
+      expect(first.width).toBeGreaterThanOrEqual(29)
+      expect(Math.abs(first.width - second.width)).toBeLessThan(1)
+      expect(Math.abs(first.height - second.height)).toBeLessThan(1)
+      expect(Math.abs(first.y - second.y)).toBeLessThan(1)
+      expect(second.x - first.x - first.width).toBeGreaterThanOrEqual(4)
+      await expect(maximize.locator('span')).toHaveCSS('border-top-style', 'solid')
+      expect((await maximize.locator('span').boundingBox()).width).toBeGreaterThan(8)
+      await maximize.click()
+      const restore = dialog.getByRole('button', { name: 'Восстановить размер окна' })
+      await expect(restore).toHaveAttribute('aria-pressed', 'true')
+      await expect(dialog).toHaveClass(/modal-card--maximized/)
+      await restore.click()
+      await expect(maximize).toHaveAttribute('aria-pressed', 'false')
+      await page.keyboard.press('Tab')
+      await close.focus()
+      await expect(close).toHaveCSS('outline-style', 'solid')
+      await close.click()
+      await expect(dialog).toHaveCount(0)
+    }
+  })
+}
+
 for (const [width, height] of [[1920, 1080], [1440, 900], [1280, 720]]) {
   test(`directory fills the workspace at ${width}×${height}`, async ({ page }) => {
     await page.setViewportSize({ width, height })
     await page.goto('/admin/users')
     await expect(page.getByRole('row')).toHaveCount(22)
     await expect(page.locator('.admin-page-header')).toHaveCount(1)
+    await expect(page.locator('.users-page')).not.toHaveCSS('background-color', 'rgb(255, 241, 242)')
+    await expect(page.locator('.users-page')).not.toHaveCSS('outline-width', '3px')
     await expect(page.locator('.current-user')).toContainText('Супер администратор')
     await expect.poll(() => page.evaluate(() => globalThis.document.documentElement.scrollWidth <= globalThis.innerWidth)).toBe(true)
     const table = page.locator('.users-table-card')
@@ -91,11 +151,14 @@ for (const [width, height] of [[1920, 1080], [1440, 900], [1280, 720]]) {
     const separator = page.getByRole('separator', { name: /список пользователей/ })
     const original = Number(await separator.getAttribute('aria-valuenow'))
     await separator.focus()
+    await expect(separator).toHaveCSS('outline-style', 'solid')
     await page.keyboard.press('ArrowDown')
     await expect.poll(async () => Number(await separator.getAttribute('aria-valuenow'))).toBeLessThan(original)
     await separator.dblclick()
     await expect.poll(async () => Number(await separator.getAttribute('aria-valuenow'))).toBe(original)
     await page.goto('/admin/organizations')
+    await expect(page.locator('.organizations-page')).not.toHaveCSS('background-color', 'rgb(255, 241, 242)')
+    await expect(page.locator('.organizations-page')).not.toHaveCSS('outline-width', '3px')
     await expect(page.getByRole('row')).toHaveCount(18)
     await expect(page.getByRole('row').filter({ hasText: 'Компания 1' }).first()).toBeInViewport()
     await expect(page.getByRole('columnheader', { name: /ID|Версия/ })).toHaveCount(0)

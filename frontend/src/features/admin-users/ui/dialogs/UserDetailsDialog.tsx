@@ -64,6 +64,13 @@ export function UserDetailsDialog({
                     <Detail term="Последний вход" value={<UserExactDate value={detailsUser.lastLoginAt} />} />
                 </dl>
             </section>
+            {!detailsError && <section className="admin-profile-section" aria-label="Связанные отчёты">
+                <h3>Связанные отчёты</h3>
+                <div className="admin-related-actions">
+                    <a className="admin-related-link" href={`/admin/audit?actorUserId=${encodeURIComponent(detailsUser.id)}`}>Журнал событий</a>
+                    <a className="admin-related-link" href={`/admin/usage?userId=${encodeURIComponent(detailsUser.id)}`}>Использование и расходы</a>
+                </div>
+            </section>}
             {currentUserIsSuperAdmin && <details className="admin-technical-details">
                 <summary>Технические сведения</summary>
                 <dl className="user-details">

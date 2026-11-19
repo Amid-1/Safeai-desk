@@ -87,6 +87,19 @@ describe('Usage dashboard', () => {
         fireEvent.click(screen.getByRole('button', {name: 'Сбросить фильтр по пользователю'}))
         expect(fixture.clearFilter).toHaveBeenCalledWith('user')
     })
+    it('provides distinct scoped card links for SUPER_ADMIN, but not tenant admins', () => {
+        const org = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+        vi.mocked(useAdminUsageReport).mockReturnValue({...fixture, isSuperAdmin: true, appliedOrganizationId: org})
+        const view = render(<AdminUsagePage />)
+        expect(screen.getByRole('link', {name:'Карточка пользователя'})).toHaveAttribute('href', `/admin/users?userId=${row.userId}`)
+        expect(screen.getByRole('link', {name:'Карточка модели'})).toHaveAttribute('href', `/admin/models?section=catalog&usageModel=mock-safeai&organizationId=${org}`)
+        fireEvent.click(screen.getByRole('button', {name: 'mock-safeai →'}))
+        expect(fixture.inspectModel).toHaveBeenCalledWith(row.model)
+        vi.mocked(useAdminUsageReport).mockReturnValue(fixture)
+        view.rerender(<AdminUsagePage />)
+        expect(screen.queryByRole('link', {name:'Карточка пользователя'})).toBeNull()
+        expect(screen.queryByRole('link', {name:'Карточка модели'})).toBeNull()
+    })
     it('retains pagination and labels the scope of chart and export on paged results', () => {
         vi.mocked(useAdminUsageReport).mockReturnValue({...fixture, hasNext: true})
         render(<AdminUsagePage />)

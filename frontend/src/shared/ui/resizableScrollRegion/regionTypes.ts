@@ -74,6 +74,9 @@ export type ResizableScrollRegionProps = {
      */
     preserveUpperContent?: boolean
 
+    /** Reserve the minimum lower height and a usable drag range when the upper content needs scrolling. */
+    reserveLowerHeight?: boolean
+
     /**
      * Небольшой зазор между защищённой границей и разделителем.
      */
@@ -91,6 +94,7 @@ export type DragState = {
 export type LayoutMetrics = {
     containerHeight: number
     protectedUpperHeight: number
+    preferredUpperHeight: number | null
 }
 
 export type BodyDragStyle = {

@@ -3,6 +3,7 @@
 import { useSearchParams } from 'react-router-dom'
 import { useLayoutEffect, useRef, useState } from 'react'
 import { ErrorState, LoadingState } from '../../../shared/ui/StateBlock'
+import { directoryUuid } from '../../../shared/lib/adminDirectoryUrl'
 import type { AdminModelsController } from '../controller/useAdminModelsController'
 import { AdminModelsUpper } from './AdminModelsUpper'
 import { AdminModelsNavigation } from './AdminModelsNavigation'
@@ -25,6 +26,7 @@ export function AdminModelsPageView({ controller }: { controller: AdminModelsCon
     const supportsLinkedHistory = section === 'catalog' || section === 'diagnostics'
     const linkedModelKey = supportsLinkedHistory ? params.get('modelKey') : null
     const linkedVersionId = supportsLinkedHistory ? params.get('versionId') : null
+    const usageModel = section === 'catalog' ? params.get('usageModel') : null
     const pageRef = useRef<HTMLDivElement>(null)
     const [policyTarget, setPolicyTarget] = useState<PolicyEditorTarget | undefined>()
     const { currentUser, loading, loadedOrganizationId, runtime, policy, error,
@@ -32,7 +34,14 @@ export function AdminModelsPageView({ controller }: { controller: AdminModelsCon
         selectedOrganizationName, setPolicyModalOpen, catalogModal, setCatalogModal,
         historyModalEntry, setHistoryModalEntry, policyModalOpen, catalogByKey,
         handleCreateCatalogVersion, handleCreatePolicyVersion, handlePreviewPolicy,
-        notice } = controller
+        notice, isSuperAdmin, setTargetOrganizationId, setSelectedOrganization } = controller
+    const requestedOrganizationId = (isSuperAdmin ? directoryUuid(params.get('organizationId')) : '') || currentUser?.organizationId || ''
+    useLayoutEffect(() => {
+        if (requestedOrganizationId && targetOrganizationId !== requestedOrganizationId) {
+            setSelectedOrganization(null)
+            setTargetOrganizationId(requestedOrganizationId)
+        }
+    }, [requestedOrganizationId, targetOrganizationId, setSelectedOrganization, setTargetOrganizationId])
     useLayoutEffect(() => {
         if (pageRef.current) pageRef.current.scrollTop = 0
         // The Models route is not a viewport workspace: its scroll owner is the document.
@@ -54,6 +63,7 @@ export function AdminModelsPageView({ controller }: { controller: AdminModelsCon
         updated.delete('focus')
         updated.delete('modelKey')
         updated.delete('versionId')
+        updated.delete('usageModel')
         if (next === 'diagnostics' && target) updated.set('focus', target)
         if (next === 'overview') updated.delete('section')
         else updated.set('section', next)
@@ -72,10 +82,11 @@ export function AdminModelsPageView({ controller }: { controller: AdminModelsCon
 
     function closeHistory() {
         setHistoryModalEntry(null)
-        if (linkedModelKey || linkedVersionId) {
+        if (linkedModelKey || linkedVersionId || usageModel) {
             const updated = new URLSearchParams(params)
             updated.delete('modelKey')
             updated.delete('versionId')
+            updated.delete('usageModel')
             setParams(updated, { replace: true, preventScrollReset: true })
         }
     }
@@ -91,7 +102,7 @@ export function AdminModelsPageView({ controller }: { controller: AdminModelsCon
     if (error && (!runtime || !policy)) return <div className="page models-page models-page--sections"><ErrorState message={error} /></div>
     if (!runtime || !policy) return <div className="page models-page models-page--sections"><ErrorState message="Сервер вернул неполные данные о настройках моделей." /></div>
     // Security invariant: never render a previous tenant's policy, even for one frame.
-    if (loadedOrganizationId !== targetOrganizationId) return (
+    if (loadedOrganizationId !== targetOrganizationId || targetOrganizationId !== requestedOrganizationId) return (
         <div className="page models-page models-page--sections">
             {error ? <ErrorState message={error} /> : <LoadingState message="Загрузка настроек моделей..." />}
         </div>
@@ -103,8 +114,14 @@ export function AdminModelsPageView({ controller }: { controller: AdminModelsCon
     )
 
     // Resolve the model only from the accessible catalog; history loads the exact version ID.
+    // Usage reports carry a provider model identifier, not a catalog version.
+    // Only resolve an exact unambiguous match; never guess among providers.
+    const usageMatches = usageModel
+        ? [...effectiveCatalog, ...catalog].filter(entry => entry.providerModelId === usageModel) : []
+    const usageKeys = new Set(usageMatches.map(entry => entry.modelKey))
     const linkedEntry = linkedModelKey && linkedVersionId
-        ? [...effectiveCatalog, ...catalog].find(entry => entry.modelKey === linkedModelKey) : null
+        ? [...effectiveCatalog, ...catalog].find(entry => entry.modelKey === linkedModelKey)
+        : usageKeys.size === 1 ? usageMatches[0] : null
     const historyEntry = linkedEntry ?? (section === 'catalog' ? historyModalEntry : null)
 
     return (
@@ -115,12 +132,18 @@ export function AdminModelsPageView({ controller }: { controller: AdminModelsCon
             {notice && <div className="models-notice" role="status">{notice}</div>}
             <div id="models-section-panel" className="models-section-panel" role="tabpanel"
                 aria-labelledby={`models-tab-${section}`} tabIndex={0}>
-                {(linkedModelKey || linkedVersionId) && !linkedEntry && <div className="models-notice" role="status">
-                    Модель из ссылки не найдена в доступном каталоге. <button type="button" className="secondary-button" onClick={closeHistory}>Закрыть уведомление</button>
+                {(linkedModelKey || linkedVersionId || usageModel) && !linkedEntry && <div className="models-notice" role="status">
+                    {usageKeys.size > 1 ? 'Найдено несколько моделей с этим идентификатором. Выберите нужную в каталоге.' : 'Модель из ссылки не найдена в доступном каталоге.'} <button type="button" className="secondary-button" onClick={closeHistory}>Закрыть уведомление</button>
                 </div>}
                 {section === 'overview' && <ModelsOverview controller={controller} navigate={navigate} onOpenPolicy={() => openPolicy('preview')} />}
                 {section === 'catalog' && <ModelsCatalogWorkspace controller={controller} />}
-                {section === 'access' && <ModelsAccessWorkspace controller={controller} onOpenPolicy={openPolicy} />}
+                {section === 'access' && <ModelsAccessWorkspace controller={controller} onOpenPolicy={openPolicy}
+                    onOrganizationNavigation={id => {
+                        if (!isSuperAdmin) return
+                        const updated = new URLSearchParams(params)
+                        updated.set('organizationId', id)
+                        setParams(updated, { preventScrollReset: true })
+                    }} />}
                 {section === 'diagnostics' && <ModelsDiagnosticsWorkspace controller={controller} onOpenCatalogVersion={openCatalogVersion} />}
             </div>
             {historyEntry && <ModelCatalogHistoryModal key={`${historyEntry.modelKey}:${linkedEntry ? linkedVersionId : ''}`}

@@ -104,6 +104,7 @@ export function AdminUsageWorkspace() {
                             onInspectModel={report.inspectModel} onInspectDay={report.inspectDay}
                             onInspectUser={report.inspectUser} appliedModel={report.appliedModel}
                             appliedUserId={report.appliedUserId}
+                            relatedLinks={report.isSuperAdmin} organizationId={report.appliedOrganizationId}
                             drilldownDisabled={report.filtersDirty || report.loading} />
                         : report.tab === 'daily' ? <UsageDailyChart rows={report.rows as UsageDailySummary[]}
                             dateFrom={report.appliedDateFrom} dateTo={report.appliedDateTo}

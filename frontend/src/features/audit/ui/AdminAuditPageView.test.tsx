@@ -160,6 +160,15 @@ describe('AdminAuditPageView — форма и рабочая область', (
         expect(data.filterByActor).not.toHaveBeenCalled()
     })
 
+    it('разделяет ссылки на карточки и фильтр событий', () => {
+        const actorUserId = '11111111-1111-4111-8111-111111111111'
+        const data = mount({superAdmin: true, events: [{...EVENT, actorUserId}]})
+        expect(screen.getByRole('link', {name: 'Карточка пользователя'})).toHaveAttribute('href', `/admin/users?userId=${actorUserId}`)
+        expect(screen.getByRole('link', {name: 'Демо'})).toHaveAttribute('href', `/admin/organizations?organizationId=${EVENT.targetOrganizationId}`)
+        fireEvent.click(screen.getByRole('button', {name: 'Показать события: admin@example.com'}))
+        expect(data.filterByActor).toHaveBeenCalledWith(actorUserId)
+    })
+
     it('открывает детали выбранного события и передаёт закрытие контроллеру', () => {
         const data = mount({ selectedEvent: EVENT, selectedOrganizationFallback: 'Контур Б' })
         const dialog = screen.getByRole('dialog', { name: 'Подробности события' })

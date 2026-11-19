@@ -3,9 +3,10 @@ import type { AdminModelsController } from '../../controller/useAdminModelsContr
 import { PolicyCard } from '../ModelControlPlaneViews'
 import type { PolicyEditorTarget } from '../modelPolicyModal/policyFormTabsConfig'
 
-export function ModelsAccessWorkspace({ controller, onOpenPolicy }: {
+export function ModelsAccessWorkspace({ controller, onOpenPolicy, onOrganizationNavigation }: {
     controller: AdminModelsController
     onOpenPolicy: (target?: PolicyEditorTarget) => void
+    onOrganizationNavigation: (id: string) => void
 }) {
     const { runtime, policy, catalog, effectiveCatalog, targetOrganizationId,
         selectedOrganizationName, isSuperAdmin,
@@ -32,6 +33,7 @@ export function ModelsAccessWorkspace({ controller, onOpenPolicy }: {
                     onOrganizationSelect={(organization) => {
                         cancelOrganizationSearch()
                         setTargetOrganizationId(organization.id)
+                        onOrganizationNavigation(organization.id)
                         handleOrganizationQueryChange('')
                         setSelectedOrganization({ id: organization.id, name: organization.name })
                         setOrganizationResults([])

@@ -193,21 +193,9 @@ export function AdminOrganizationsView({
                                 onClick={() => void onDetails(organization)}>{organization.name}</button></td>
                             <td><OrganizationTypeBadge type={organization.type} /></td>
                             <td>
-                                {mutable ? (
-                                    <button type="button" className="org-status-action"
-                                            title={`Открыть подтверждение: ${organization.enabled ? 'отключить' : 'включить'} организацию`}
-                                            aria-label={`${organization.enabled ? 'Отключить' : 'Включить'} организацию ${organization.name}: изменить статус`}
-                                            disabled={updating}
-                                            onClick={() => organization.enabled
-                                                ? void onDisable(organization) : onEnable(organization)}>
-                                        <OrganizationStatusBadge enabled={organization.enabled} />
-                                        <span className="org-status-action__hint">{organization.enabled ? 'Отключить' : 'Включить'}</span>
-                                    </button>
-                                ) : (
-                                    <span title={getProtectionLabel(organization)}>
-                                        <OrganizationStatusBadge enabled={organization.enabled} />
-                                    </span>
-                                )}
+                                <span title={mutable ? undefined : getProtectionLabel(organization)}>
+                                    <OrganizationStatusBadge enabled={organization.enabled} />
+                                </span>
                             </td>
                             <td>{formatDateTime(organization.createdAt)}</td>
                             <td className="actions-cell">

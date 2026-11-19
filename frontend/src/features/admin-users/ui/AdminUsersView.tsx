@@ -15,7 +15,7 @@ export function AdminUsersView(props: AdminUsersViewProps) {
     return (
         <>
             <ResizableScrollRegion
-                storageKey="safeai:users-table-height:v3"
+                storageKey="safeai:users-table-height:v4"
                 label="список пользователей"
                 preserveUpperContent
                 upper={<UsersDirectoryUpper {...props} />}

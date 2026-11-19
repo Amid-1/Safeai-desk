@@ -158,6 +158,8 @@ export function UsageRows({
     appliedModel,
     appliedUserId,
     onInspectDay,
+    relatedLinks = false,
+    organizationId = '',
     drilldownDisabled = false,
 }: {
     tab: UsageReportTab
@@ -167,6 +169,8 @@ export function UsageRows({
     appliedModel?: string
     appliedUserId?: string
     onInspectDay?: (date: string) => void
+    relatedLinks?: boolean
+    organizationId?: string
     drilldownDisabled?: boolean
 }) {
     if (
@@ -230,6 +234,7 @@ export function UsageRows({
                                     }
                                     showUser
                                     showModel
+                                    relatedLinks={relatedLinks} organizationId={organizationId}
                                     onInspectModel={row.model === appliedModel ? undefined : onInspectModel}
                                     onInspectUser={row.userId === appliedUserId ? undefined : onInspectUser}
                                     drilldownDisabled={drilldownDisabled}
@@ -289,6 +294,7 @@ export function UsageRows({
                                         row
                                     }
                                     showUser
+                                    relatedLinks={relatedLinks} organizationId={organizationId}
                                     onInspectUser={onInspectUser}
                                     drilldownDisabled={drilldownDisabled}
                                 />
@@ -347,6 +353,7 @@ export function UsageRows({
                                         row
                                     }
                                     showModel
+                                    relatedLinks={relatedLinks} organizationId={organizationId}
                                     onInspectModel={onInspectModel}
                                     drilldownDisabled={drilldownDisabled}
                                 />
@@ -430,6 +437,8 @@ function UsageSummaryRow({
     showModel = false,
     onInspectModel,
     onInspectUser,
+    relatedLinks = false,
+    organizationId = '',
     drilldownDisabled = false,
 }: {
     row:
@@ -443,6 +452,8 @@ function UsageSummaryRow({
     showModel?: boolean
     onInspectModel?: (model: string) => void
     onInspectUser?: (userId: string, email: string) => void
+    relatedLinks?: boolean
+    organizationId?: string
     drilldownDisabled?: boolean
 }) {
     return (
@@ -457,6 +468,8 @@ function UsageSummaryRow({
                         </button> : <span className="usage-user-label">
                             {row.userEmail ?? '—'}
                         </span>}
+                        {relatedLinks && row.userId && <div><a className="admin-related-link usage-related-action"
+                            href={`/admin/users?userId=${encodeURIComponent(row.userId)}`}>Карточка пользователя</a></div>}
                     </td>
                 )}
 
@@ -471,6 +484,8 @@ function UsageSummaryRow({
                                 {row.model} →
                             </button>
                         ) : row.model ?? '—'}
+                        {relatedLinks && row.model && <div><a className="admin-related-link usage-related-action"
+                            href={`/admin/models?section=catalog&usageModel=${encodeURIComponent(row.model)}${organizationId ? '&organizationId=' + encodeURIComponent(organizationId) : ''}`}>Карточка модели</a></div>}
                     </td>
                 )}
 

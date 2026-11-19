@@ -98,7 +98,7 @@ export function ModelsCatalogWorkspace({ controller }: { controller: AdminModels
                     onImportRuntime={() => { void handleImportRuntime() }} onCreateModel={() => setCatalogModal({ base: null })} />
                     : visibleEntries.length === 0 ? <div className="models-filter-empty"><ModelIcon name="search" /><strong>Модели не найдены</strong><span>Измените поиск или сбросьте фильтры.</span></div>
                     : <CatalogTable entries={visibleEntries} effectiveEntries={effectiveCatalog} runtime={runtime}
-                        canEdit={isSuperAdmin}
+                        canEdit={isSuperAdmin} organizationId={isSuperAdmin ? controller.targetOrganizationId : undefined}
                         onCreateVersion={(entry) => setCatalogModal({ base: entry })}
                         onOpenHistory={setHistoryModalEntry} />}
             </div>

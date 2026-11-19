@@ -1184,4 +1184,22 @@
     .audit-page .audit-page__timezone { font-size: 13px; }
     .audit-page .audit-date-presets__actions button { padding-inline: 5px; }
     .audit-page .audit-filters .filter-actions button { min-width: 0; white-space: normal; }
+    .audit-page .resizable-scroll-region__footer { padding: 6px 8px 8px; }
+    .audit-page .resizable-scroll-region__footer .pagination {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 5px 8px;
+    }
+    .audit-page .resizable-scroll-region__footer .pagination__summary {
+        grid-column: 1 / -1;
+        grid-row: 1;
+        justify-content: center;
+        gap: 3px 8px;
+        padding: 4px 6px;
+    }
+    .audit-page .resizable-scroll-region__footer .pagination > button {
+        min-width: 0;
+        min-height: 34px;
+        padding: 5px 8px;
+    }
 }

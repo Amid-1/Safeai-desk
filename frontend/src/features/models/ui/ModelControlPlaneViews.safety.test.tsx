@@ -175,16 +175,15 @@ describe('PolicyCard: права и смысл политики', () => {
         const onSelect = vi.fn()
         const organization = {id:'00000000-0000-0000-0000-000000000088', name:'Дочерняя компания', enabled:true, type:'TENANT' as const, protected:false, version:1}
         const {rerender} = render(<PolicyCard {...policyProps} />)
-        expect(screen.queryByPlaceholderText('Начните вводить название или UUID')).not.toBeInTheDocument()
+        expect(screen.queryByRole('combobox', {name:'Управляемая организация'})).not.toBeInTheDocument()
         rerender(<PolicyCard {...policyProps} isSuperAdmin
             organizationQuery="Доч" organizationResults={[organization]}
             onOrganizationQueryChange={onQueryChange} onOrganizationSearch={onSearch}
             onOrganizationSelect={onSelect} />)
-        fireEvent.change(screen.getByPlaceholderText('Начните вводить название или UUID'), {target:{value:'Дочерняя'}})
+        fireEvent.change(screen.getByRole('combobox', {name:'Управляемая организация'}), {target:{value:'Дочерняя'}})
         expect(onQueryChange).toHaveBeenCalledWith('Дочерняя')
-        fireEvent.click(screen.getByRole('button', {name:'Найти'}))
-        expect(onSearch).toHaveBeenCalledTimes(1)
-        fireEvent.click(screen.getByRole('button', {name:/Дочерняя компания/}))
+        expect(onSearch).not.toHaveBeenCalled()
+        fireEvent.click(screen.getByRole('option', {name:/Дочерняя компания/}))
         expect(onSelect).toHaveBeenCalledWith(organization)
     })
 

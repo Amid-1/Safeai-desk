@@ -153,7 +153,7 @@ export function UsersDirectoryContent({
                                                 {currentUserIsSuperAdmin
                                                     && (
                                                         <td>
-                                                            <a href={`/admin/organizations?organizationId=${user.organizationId}`}>
+                                                            <a className="admin-related-link" href={`/admin/organizations?organizationId=${encodeURIComponent(user.organizationId)}`}>
                                                             {
                                                                 getOrganizationName(
                                                                     user.organizationId,

@@ -103,7 +103,7 @@ describe('AuditFilters — production regression', () => {
         vi.useFakeTimers()
         const props = createProps({ superAdmin: true })
         render(<AuditFilters {...props} />)
-        fireEvent.change(screen.getByPlaceholderText('Название или UUID'), {
+        fireEvent.change(screen.getByRole('combobox', {name: 'Организация'}), {
             target: { value: 'Клиент' },
         })
         fireEvent.change(screen.getByPlaceholderText('Имя или email пользователя'), {
@@ -142,9 +142,11 @@ describe('AuditFilters — production regression', () => {
             superAdmin: true,
             draftFilter: draft({ targetOrganizationId: ORGANIZATION_ID, actorUserId: ACTOR_ID }),
         })} />)
-        expect(screen.getByLabelText('Организация')).toHaveValue(ORGANIZATION_ID)
+        expect(screen.getByLabelText('Организация')).toHaveValue('Название недоступно')
+        fireEvent.focus(screen.getByLabelText('Организация'))
+        expect(screen.getByRole('option', {name:'Название недоступно'})).toHaveAttribute('aria-selected','true')
         expect(screen.getByLabelText('Пользователь')).toHaveValue('Пользователь без имени (' + ACTOR_ID + ')')
-        expect(screen.getByText(/Название недоступно/)).toBeInTheDocument()
+        expect(screen.getByRole('option', {name:'Название недоступно'})).toBeInTheDocument()
     })
 
     it('удаляет дубли справочников и показывает человекочитаемые подписи', () => {
@@ -159,9 +161,10 @@ describe('AuditFilters — production regression', () => {
                 { actorUserId: ACTOR_ID, actorOrganizationId: null, actorEmail: 'admin@test.ru', actorDisplayName: 'Тест' },
             ],
         })} />)
-        const org = screen.getByLabelText('Организация') as HTMLSelectElement
+        const org = screen.getByLabelText('Организация')
         const actor = screen.getByLabelText('Пользователь')
-        expect(org.querySelectorAll(`option[value="${ORGANIZATION_ID}"]`)).toHaveLength(1)
+        fireEvent.focus(org)
+        expect(screen.getAllByRole('option', {name: 'Завод'})).toHaveLength(1)
         fireEvent.focus(actor)
         expect(screen.getAllByRole('option', { name: /admin@test.ru — Тест/ })).toHaveLength(1)
     })
@@ -170,7 +173,7 @@ describe('AuditFilters — production regression', () => {
         vi.useFakeTimers()
         const props = createProps({ superAdmin: true })
         render(<AuditFilters {...props} />)
-        const input = screen.getByPlaceholderText('Название или UUID')
+        const input = screen.getByRole('combobox', {name: 'Организация'})
         fireEvent.change(input, { target: { value: 'Мо' } })
         fireEvent.change(input, { target: { value: 'Москва' } })
         await act(async () => { vi.advanceTimersByTime(299) })
@@ -197,7 +200,7 @@ describe('AuditFilters — production regression', () => {
         vi.useFakeTimers()
         const props = createProps({ superAdmin: true })
         const mounted = render(<AuditFilters {...props} />)
-        fireEvent.change(screen.getByPlaceholderText('Название или UUID'), { target: { value: 'Компания' } })
+        fireEvent.change(screen.getByRole('combobox', {name: 'Организация'}), { target: { value: 'Компания' } })
         fireEvent.change(screen.getByPlaceholderText('Имя или email пользователя'), { target: { value: 'admin' } })
         mounted.unmount()
         await act(async () => { vi.advanceTimersByTime(1_000) })

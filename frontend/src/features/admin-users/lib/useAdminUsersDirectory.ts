@@ -74,6 +74,7 @@ export function useAdminUsersDirectory(
         useState(false)
 
     const { params, change } = useDirectoryUrl()
+    const linkedUserId = directoryUuid(params.get('userId'))
     const organizationId = currentUserIsSuperAdmin ? directoryUuid(params.get('organizationId')) : ''
     const page = directoryPage(params.get('page'))
     const setPage = useCallback((next: number) => change({page: next ? String(next) : ''}), [change])
@@ -109,6 +110,8 @@ export function useAdminUsersDirectory(
         useState<string | null>(null)
     const [detailsError, setDetailsError] =
         useState('')
+    const [linkedDetailsError, setLinkedDetailsError] = useState('')
+    const previousLinkedId = useRef('')
 
     const usersSequenceRef = useRef(0)
     const usersControllerRef =
@@ -407,9 +410,48 @@ export function useAdminUsersDirectory(
         change({query: user.email, page: ''})
     }
 
+    // A direct link is resolved by the existing protected details endpoint,
+    // never by searching a loaded page or trusting an ID supplied in the URL.
+    useEffect(() => {
+        if (!linkedUserId && !previousLinkedId.current) return
+        previousLinkedId.current = linkedUserId
+        const sequence = ++detailsSequenceRef.current
+        detailsControllerRef.current?.abort()
+        setDetailsUser(null)
+        setDetailsError('')
+        setLinkedDetailsError('')
+        setDetailsLoadingUserId(linkedUserId || null)
+        if (!linkedUserId) return
+        const controller = new AbortController()
+        detailsControllerRef.current = controller
+        void getUserDetails(linkedUserId, { signal: controller.signal })
+            .then(details => {
+                if (controller.signal.aborted || sequence !== detailsSequenceRef.current) return
+                if (details.id !== linkedUserId || (!currentUserIsSuperAdmin
+                    && details.organizationId !== currentUser.organizationId)) {
+                    setLinkedDetailsError('Карточка пользователя недоступна.')
+                    return
+                }
+                setDetailsUser(details)
+            })
+            .catch(() => {
+                if (!controller.signal.aborted && sequence === detailsSequenceRef.current) {
+                    setLinkedDetailsError('Не удалось открыть карточку пользователя. Проверьте права доступа или повторите попытку.')
+                }
+            })
+            .finally(() => {
+                if (!controller.signal.aborted && sequence === detailsSequenceRef.current) setDetailsLoadingUserId(null)
+            })
+        return () => controller.abort()
+    }, [linkedUserId, currentUserIsSuperAdmin, currentUser.organizationId, currentUser.id, reloadToken])
+
     async function openDetailsModal(
         user: User,
     ) {
+        if (linkedUserId) {
+            change({userId: user.id})
+            return
+        }
         const sequence =
             ++detailsSequenceRef.current
 
@@ -478,6 +520,7 @@ export function useAdminUsersDirectory(
         setDetailsUser(null)
         setDetailsError('')
         setDetailsLoadingUserId(null)
+        if (linkedUserId) change({userId: ''}, true)
     }
 
     return {
@@ -486,7 +529,7 @@ export function useAdminUsersDirectory(
         statistics,
         organizations,
         displayOrganizations: currentUserIsSuperAdmin ? displayOrganizations : [],
-        loadError,
+        loadError: loadError || linkedDetailsError,
         organizationsError,
         loading,
         organizationsLoading,

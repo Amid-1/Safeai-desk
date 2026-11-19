@@ -7,6 +7,7 @@ import { createPortal } from 'react-dom'
 import { useModalLifecycle } from './modal/useModalLifecycle'
 import { useModalResize } from './modal/useModalResize'
 import type { ModalResizeOptions, ResizeDirection } from './modal/modalGeometry'
+import './ModalWindowControls.css'
 
 export type { ModalResizeOptions } from './modal/modalGeometry'
 

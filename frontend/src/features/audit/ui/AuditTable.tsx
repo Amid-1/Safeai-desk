@@ -30,13 +30,18 @@ export default function AuditTable({ events, organizations, superAdmin, onOpenDe
                 : administrative ? 'audit-row--administrative' : 'audit-row--information'
             return <tr key={event.id} className={rowClass}>
                 <td className="audit-time-cell">{formatDateTime(event.createdAt)}</td>
-                {superAdmin && <td><strong>{event.targetOrganizationName
-                    ?? organizationNames.get(event.targetOrganizationId) ?? 'Название недоступно'}</strong></td>}
+                {superAdmin && <td>{event.targetOrganizationId
+                    ? <a className="admin-related-link" href={`/admin/organizations?organizationId=${encodeURIComponent(event.targetOrganizationId)}`}>
+                        {event.targetOrganizationName ?? organizationNames.get(event.targetOrganizationId) ?? 'Открыть организацию'}
+                    </a>
+                    : <span>Название недоступно</span>}</td>}
                 <td><div className="audit-actor-cell">
                     <span className="audit-actor-avatar" aria-hidden="true">{actorInitials(event)}</span>
-                    <AuditActor event={event} hideIds
+                    <div className="audit-actor-related"><AuditActor event={event} hideIds
                         onFilterActor={onFilterActor && actorId ? () => onFilterActor(actorId) : undefined}
                         filterDisabled={actorFilterDisabled} />
+                    {superAdmin && actorId && <a className="admin-related-link audit-related-action"
+                        href={`/admin/users?userId=${encodeURIComponent(actorId)}`}>Карточка пользователя</a>}</div>
                 </div></td>
                 <td><div className="audit-event-cell"><CategoryIcon group={getAuditEventGroup(event.eventType)} />
                     <span>{auditEventTitle(event.eventType)}</span></div></td>

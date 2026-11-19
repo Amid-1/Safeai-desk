@@ -134,6 +134,49 @@ describe('ResizableScrollRegion: полная регрессия поведен�
         expect(screen.getByText('Таблица')).toBeInTheDocument()
     })
 
+    it('сохраняет доступную таблицу при переполнении верхних фильтров', () => {
+        vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+            .mockImplementation(function (this: HTMLElement) {
+                if (this.classList.contains('resizable-scroll-region')) return boundingRect(500)
+                if (this.hasAttribute('data-resizable-upper-boundary')) return boundingRect(480)
+                return boundingRect(500)
+            })
+        const view = render(region({ preserveUpperContent: true, reserveLowerHeight: true, minHeight: 240 }))
+        expect(height()).toBe(336)
+        const separator = screen.getByRole('separator')
+        expect(separator).toHaveAttribute('aria-valuemax', '336')
+        expect(view.container.querySelector('.resizable-scroll-region')).toHaveStyle('--resizable-upper-min-height: 164px')
+        fireEvent.keyDown(separator, { key: 'Home' })
+        expect(height()).toBe(240)
+        fireEvent.keyDown(separator, { key: 'ArrowUp' })
+        expect(height()).toBe(272)
+        expect(screen.getByText('Верхний блок')).toBeInTheDocument()
+    })
+
+    it('разделяет обычную высоту и границу основных фильтров, сохраняет drag и reset', () => {
+        vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+            .mockImplementation(function (this: HTMLElement) {
+                if (this.classList.contains('resizable-scroll-region')) return boundingRect(1000)
+                if (this.hasAttribute('data-resizable-upper-boundary')) return boundingRect(400)
+                if (this.hasAttribute('data-resizable-upper-preferred-boundary')) return boundingRect(650)
+                return boundingRect(500)
+            })
+        render(region({ preserveUpperContent: true, reserveLowerHeight: true, autoFitHeight: 760,
+            upper: <div><span data-resizable-upper-boundary />Дополнительные фильтры<span data-resizable-upper-preferred-boundary /></div> }))
+        const separator = screen.getByRole('separator')
+        expect(height()).toBe(342)
+        expect(separator).toHaveAttribute('aria-valuemax', '592')
+        fireEvent.pointerDown(separator, { pointerId: 41, button: 0, clientY: 650 })
+        fireEvent.pointerMove(separator, { pointerId: 41, clientY: 250 })
+        expect(height()).toBe(592)
+        fireEvent.pointerMove(separator, { pointerId: 41, clientY: 900 })
+        expect(height()).toBe(170)
+        fireEvent.pointerUp(separator, { pointerId: 41 })
+        fireEvent.doubleClick(separator)
+        expect(height()).toBe(342)
+        expect(screen.getByText('Дополнительные фильтры')).toBeInTheDocument()
+    })
+
     it('при перетаскивании сохраняет прежний cursor/userSelect и блокирует чужой pointerId', () => {
         document.body.style.cursor = 'grab'
         document.body.style.userSelect = 'text'

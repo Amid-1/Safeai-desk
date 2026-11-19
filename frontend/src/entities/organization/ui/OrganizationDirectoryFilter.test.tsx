@@ -1,5 +1,5 @@
 // frontend/src/entities/organization/ui/OrganizationDirectoryFilter.test.tsx
-import { fireEvent, render, screen, waitFor, within, act } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, act } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OrganizationDirectoryItem } from '../api/organizationApi'
 import { getOrganizationDetails, searchOrganizationDirectory } from '../api/organizationApi'
@@ -53,16 +53,17 @@ describe('OrganizationDirectoryFilter: server catalog and tenant selection', () 
         const onChange = vi.fn()
         render(<OrganizationDirectoryFilter value="" onChange={onChange} disabled={false} />)
 
-        expect(screen.getByRole('status')).toHaveTextContent('Поиск организаций…')
-        expect(within(getSelect()).getByRole('option', { name: 'Все организации' })).toBeInTheDocument()
-        await waitFor(() => expect(within(getSelect()).getAllByRole('option')).toHaveLength(4))
+        expect(getSelect()).toHaveValue('Все организации')
+        fireEvent.focus(getSelect())
+        expect(screen.getByRole('status')).toHaveTextContent('Загрузка вариантов…')
+        await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(4))
 
-        expect(within(getSelect()).getByRole('option', { name: 'Отключённая компания (отключена)' }))
+        expect(screen.getByRole('option', { name: 'Отключённая компания (отключена)' }))
             .toBeInTheDocument()
-        expect(within(getSelect()).getByRole('option', { name: 'SafeAI Platform' })).toBeInTheDocument()
+        expect(screen.getByRole('option', { name: 'SafeAI Platform' })).toBeInTheDocument()
         expect(searchMock).toHaveBeenCalledWith('', 50, { signal: expect.any(AbortSignal) })
         expect(detailsMock).not.toHaveBeenCalled()
-        fireEvent.change(getSelect(), { target: { value: DISABLED.id } })
+        fireEvent.click(screen.getByRole('option', {name: 'Отключённая компания (отключена)'}))
         expect(onChange).toHaveBeenCalledOnce()
         expect(onChange).toHaveBeenCalledWith(DISABLED.id)
     })
@@ -77,20 +78,21 @@ describe('OrganizationDirectoryFilter: server catalog and tenant selection', () 
         const onChange = vi.fn()
         render(<OrganizationDirectoryFilter value={DISABLED.id} onChange={onChange} disabled={false} />)
 
-        expect(within(getSelect()).getByRole('option', { name: 'Выбранная организация' })).toBeInTheDocument()
-        await waitFor(() => expect(within(getSelect())
-            .getByRole('option', { name: 'Отключённая компания (отключена)' })).toBeInTheDocument())
-        expect(within(getSelect()).queryByRole('option', { name: 'Выбранная организация' })).toBeNull()
+        expect(getSelect()).toHaveValue('Выбранная организация')
+        await waitFor(() => expect(getSelect()).toHaveValue('Отключённая компания (отключена)'))
+        fireEvent.focus(getSelect())
+        expect(screen.queryByRole('option', { name: 'Выбранная организация' })).toBeNull()
         expect(detailsMock).toHaveBeenCalledWith(DISABLED.id, { signal: expect.any(AbortSignal) })
 
         searchMock.mockResolvedValue([DISABLED])
-        fireEvent.change(screen.getByRole('searchbox', { name: 'Поиск организации' }), {
+        fireEvent.change(getSelect(), {
             target: { value: 'Отключённая' },
         })
         await waitFor(() => expect(searchMock).toHaveBeenCalledWith('Отключённая', 50, {
             signal: expect.any(AbortSignal),
         }))
-        await waitFor(() => expect(within(getSelect()).getAllByRole('option')).toHaveLength(2))
+        await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(1))
+        expect(screen.getByRole('option', {name: 'Отключённая компания (отключена)'})).toHaveAttribute('aria-selected', 'true')
         expect(onChange).not.toHaveBeenCalled()
     })
 
@@ -103,28 +105,28 @@ describe('OrganizationDirectoryFilter: server catalog and tenant selection', () 
         searchMock.mockResolvedValue(rows)
         render(<OrganizationDirectoryFilter value="" onChange={vi.fn()} disabled={false} />)
 
-        await waitFor(() => expect(within(getSelect()).getAllByRole('option')).toHaveLength(51))
-        expect(screen.getByRole('status')).toHaveTextContent('Уточните название для поиска других организаций.')
+        fireEvent.focus(getSelect())
+        await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(51))
+        expect(screen.getByText('Уточните название для поиска других организаций.')).toBeInTheDocument()
         expect(getSelect()).toBeEnabled()
     })
 
     it('shows a failed directory request and recovers on the next server search', async () => {
         searchMock.mockRejectedValueOnce(new Error('private SQL diagnostic'))
         render(<OrganizationDirectoryFilter value="" onChange={vi.fn()} disabled={false} />)
-        await waitFor(() => expect(screen.getByRole('status'))
-            .toHaveTextContent('Не удалось загрузить каталог. Измените поиск.'))
+        await waitFor(() => expect(screen.getByText('Не удалось загрузить каталог. Измените поиск.')).toBeInTheDocument())
         expect(screen.queryByText('private SQL diagnostic')).toBeNull()
-        expect(within(getSelect()).getAllByRole('option')).toHaveLength(1)
+        expect(screen.queryAllByRole('option')).toHaveLength(0)
 
-        fireEvent.change(screen.getByRole('searchbox', { name: 'Поиск организации' }), {
+        fireEvent.change(getSelect(), {
             target: { value: '%_!' },
         })
-        expect(screen.getByRole('searchbox', { name: 'Поиск организации' })).toHaveValue('%_!')
+        expect(getSelect()).toHaveValue('%_!')
         await waitFor(() => expect(searchMock).toHaveBeenCalledWith('%_!', 50, {
             signal: expect.any(AbortSignal),
         }))
-        await waitFor(() => expect(within(getSelect()).getAllByRole('option')).toHaveLength(4))
-        expect(screen.getByRole('status')).toBeEmptyDOMElement()
+        await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(3))
+        expect(screen.queryByText('Не удалось загрузить каталог. Измените поиск.')).toBeNull()
     })
 
     it('does not accept stale search results after a new query aborts the previous request', async () => {
@@ -138,13 +140,13 @@ describe('OrganizationDirectoryFilter: server catalog and tenant selection', () 
         const signal = searchMock.mock.calls[0]?.[2]?.signal
         expect(signal?.aborted).toBe(false)
 
-        fireEvent.change(screen.getByRole('searchbox', { name: 'Поиск организации' }), {
+        fireEvent.change(getSelect(), {
             target: { value: 'Platform' },
         })
         expect(signal?.aborted).toBe(true)
         await act(async () => { resolveStale([DISABLED]); await pending })
-        expect(within(getSelect()).queryByRole('option', { name: /Отключённая компания/ })).toBeNull()
-        await waitFor(() => expect(within(getSelect()).getByRole('option', { name: 'SafeAI Platform' }))
+        expect(screen.queryByRole('option', { name: /Отключённая компания/ })).toBeNull()
+        await waitFor(() => expect(screen.getByRole('option', { name: 'SafeAI Platform' }))
             .toBeInTheDocument())
 
         const latestSignal = searchMock.mock.calls[1]?.[2]?.signal
@@ -158,15 +160,15 @@ describe('OrganizationDirectoryFilter: server catalog and tenant selection', () 
         render(<OrganizationDirectoryFilter value={DISABLED.id} onChange={vi.fn()} disabled={false} />)
         await waitFor(() => expect(detailsMock).toHaveBeenCalledOnce())
         await waitFor(() => expect(searchMock).toHaveBeenCalledOnce())
-        expect(within(getSelect()).getByRole('option', { name: 'Выбранная организация' })).toHaveAttribute('value', DISABLED.id)
+        expect(getSelect()).toHaveValue('Выбранная организация')
+        expect(detailsMock).toHaveBeenCalledWith(DISABLED.id, {signal: expect.any(AbortSignal)})
     })
 
-    it('disables both input controls when the caller has no editing permission', () => {
+    it('disables searchable input when the caller has no editing permission', () => {
         const onChange = vi.fn()
         const { unmount } = render(
             <OrganizationDirectoryFilter value="" onChange={onChange} disabled />,
         )
-        expect(screen.getByRole('searchbox', { name: 'Поиск организации' })).toBeDisabled()
         expect(getSelect()).toBeDisabled()
         expect(onChange).not.toHaveBeenCalled()
         unmount()

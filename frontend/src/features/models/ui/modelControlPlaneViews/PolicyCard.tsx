@@ -11,6 +11,7 @@ import {formatUsd} from '../../../../shared/lib/format'
 import { StatusPill } from './viewPresentation'
 import { policyAccessSummary, policyDataRequirements, policyTokenLimits } from './viewPresentationLabels'
 import { useState } from 'react'
+import { SearchableSelect } from '../../../../shared/ui/SearchableSelect'
 import type { ReactNode } from 'react'
 import { ModelIcon } from '../ModelIcon'
 import type { ModelIconName } from '../ModelIcon'
@@ -149,79 +150,33 @@ export function PolicyCard({
                 <strong>
                     {organizationName ?? 'Название загружается…'}
                 </strong>
-                <OrganizationIdentifier key={organizationId} value={organizationId} />
+                <details><summary>Технические сведения</summary>
+                    <OrganizationIdentifier key={organizationId} value={organizationId} />
+                </details>
             </div>
 
-            {isSuperAdmin && (
-                <form
-                    className="models-org-picker"
-                    onSubmit={(event) => {
-                        event.preventDefault()
-                        void onOrganizationSearch()
-                    }}
-                >
-                    <label htmlFor="models-organization-search">
-                        Проверить другую организацию
-                    </label>
-                    <p className="models-org-picker__description">
-                            Найдите организацию по названию или UUID, затем выберите её
-                            из результатов, чтобы посмотреть действующие правила доступа.
-                    </p>
-                    <div className="models-org-picker__input-row">
-                            <input
-                                id="models-organization-search"
-                                type="search"
-                                autoComplete="off"
-                                aria-controls={organizationResults.length > 0 ? 'models-org-results' : undefined}
-                                aria-describedby="models-org-search-status"
-                                value={organizationQuery}
-                                placeholder="Начните вводить название или UUID"
-                                onChange={(event) => {
-                                    onOrganizationQueryChange(
-                                        event.target.value,
-                                    )
-                                }}
-                            />
-                            <button
-                                type="submit"
-                                disabled={organizationSearchPending}
-                            >
-                                {organizationSearchPending
-                                    ? 'Поиск...'
-                                    : 'Найти'}
-                            </button>
-                    </div>
-
-                    <div
-                        id="models-org-search-status"
-                        className={`models-org-picker__status${organizationSearchStatus === 'error' ? ' models-org-picker__status--error' : ''}`}
-                        role="status"
-                        aria-live="polite"
-                    >
-                        {organizationSearchStatus === 'pending' && 'Ищем организации…'}
-                        {organizationSearchStatus === 'empty' && 'Ничего не найдено. Уточните название или проверьте UUID.'}
-                        {organizationSearchStatus === 'error' && organizationSearchError}
-                        {organizationSearchStatus === 'success' && `Найдено организаций: ${organizationResults.length}. Выберите нужную из списка.`}
-                        {organizationSearchStatus === 'idle' && 'Поиск начнётся после ввода двух символов. Можно также нажать «Найти».'}
-                    </div>
-                    {organizationResults.length > 0 && (
-                        <div className="models-org-results" id="models-org-results" aria-label="Результаты поиска организаций">
-                            {organizationResults.map((organization) => (
-                                <button
-                                    key={organization.id}
-                                    type="button"
-                                    onClick={() => {
-                                        onOrganizationSelect(organization)
-                                    }}
-                                >
-                                    <strong>{organization.name}</strong>
-                                    <small>{organization.id}</small>
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                </form>
-            )}
+            {isSuperAdmin && <div className="models-org-picker">
+                <SearchableSelect id="models-organization-search" label="Управляемая организация"
+                    value={organizationId} selectedLabel={organizationName ?? 'Название загружается…'}
+                    options={organizationResults.map(org => ({
+                        value: org.id, label: org.name + (org.enabled ? '' : ' (отключена)'),
+                    }))}
+                    placeholder="Выберите организацию" searchPlaceholder="Название или UUID"
+                    emptyMessage={organizationQuery.trim().length < 2
+                        ? 'Введите не менее двух символов.' : 'Ничего не найдено. Уточните название или идентификатор.'}
+                    allowClear={false} disabled={editDisabled} filterLocally={false}
+                    loading={organizationSearchPending} error={organizationSearchError}
+                    onQueryChange={onOrganizationQueryChange}
+                    onChange={id => {
+                        const organization = organizationResults.find(row => row.id === id)
+                        if (organization) onOrganizationSelect(organization)
+                    }} />
+                {organizationSearchStatus === 'error' && <div role="status">
+                    {organizationSearchError}{' '}
+                    <button type="button" className="secondary-button" onClick={() => void onOrganizationSearch()}>Повторить поиск</button>
+                </div>}
+                <a className="admin-related-link" href={`/admin/organizations?organizationId=${encodeURIComponent(organizationId)}`}>Карточка организации</a>
+            </div>}
 
             <dl className="models-kv-grid models-policy-tiles">
                 <PolicyTile icon="cpu" title="Модель по умолчанию" target="default"

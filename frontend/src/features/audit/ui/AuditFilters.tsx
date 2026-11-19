@@ -30,7 +30,7 @@ export default function AuditFilters({
         }) ?? null
     })
     const {
-        organizationQuery, actorQuery, scheduleOrganizationSearch, scheduleActorSearch,
+        organizationQuery, organizationSearchScheduled, actorQuery, scheduleOrganizationSearch, scheduleActorSearch,
     } = useAuditDirectoryQueries(onActorSearch, onOrganizationSearch)
 
     return (
@@ -50,7 +50,7 @@ export default function AuditFilters({
                 {superAdmin && (
                     <AuditOrganizationFields
                         draftFilter={draftFilter} organizations={organizations}
-                        loading={loading} directoriesLoading={directoriesLoading}
+                        loading={loading} directoriesLoading={directoriesLoading || organizationSearchScheduled}
                         organizationsError={organizationsError}
                         onFilterChange={onFilterChange}
                         organizationQuery={organizationQuery}

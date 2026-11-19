@@ -4,7 +4,7 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AuthUser } from '../../auth/api/authApi'
 import type { User, UserStatistics } from '../../../entities/user/api/userApi'
-import { getUserStatistics, searchUsers } from '../../../entities/user/api/userApi'
+import { getUserDetails, getUserStatistics, searchUsers } from '../../../entities/user/api/userApi'
 import { searchOrganizationDirectory } from '../../../entities/organization/api/organizationApi'
 import { useAdminUsersDirectory } from './useAdminUsersDirectory'
 
@@ -148,5 +148,24 @@ describe('Users directory: server-side search and reset', () => {
         await waitFor(() => expect(searchUsers).toHaveBeenCalled())
         expect(vi.mocked(searchUsers).mock.lastCall?.[2]?.organizationId).toBeUndefined()
         expect(vi.mocked(searchUsers).mock.lastCall?.[2]?.role).toBeUndefined()
+    })
+
+    it('opens an exact off-page user via the protected details endpoint', async () => {
+        const details = {...users[0]!, id: '22222222-2222-4222-8222-222222222222', organizationName: 'Компания'}
+        vi.mocked(getUserDetails).mockResolvedValueOnce(details)
+        window.history.replaceState({}, '', `/admin/users?userId=${details.id}`)
+        const {result} = renderHook(() => useAdminUsersDirectory({...currentUser, roles: ['SUPER_ADMIN']}, true))
+        await waitFor(() => expect(result.current.detailsUser).toEqual(details))
+        expect(getUserDetails).toHaveBeenCalledWith(details.id, {signal: expect.any(AbortSignal)})
+        expect(result.current.users.every(user => user.id !== details.id)).toBe(true)
+    })
+
+    it('never renders a cross-tenant response to ADMIN and hides technical failures', async () => {
+        const details = {...users[0]!, organizationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', organizationName: 'Чужая'}
+        vi.mocked(getUserDetails).mockResolvedValueOnce(details)
+        window.history.replaceState({}, '', `/admin/users?userId=${details.id}`)
+        const {result} = renderHook(() => useAdminUsersDirectory(currentUser, false))
+        await waitFor(() => expect(result.current.loadError).toContain('Карточка пользователя недоступна'))
+        expect(result.current.detailsUser).toBeNull()
     })
 })

@@ -8,6 +8,7 @@ import type { ResizableScrollRegionProps, DragState, LayoutMetrics } from './reg
 import { beginBodyResizeStyle, restoreBodyResizeStyle, clamp, readSavedHeight } from './regionStorage'
 
 const KEYBOARD_STEP = 32
+const RESERVED_DRAG_RANGE = 96
 
 export function useResizableScrollRegion({
     storageKey,
@@ -20,6 +21,7 @@ export function useResizableScrollRegion({
     viewportResetKey,
     minUpperHeight = 100,
     preserveUpperContent = false,
+    reserveLowerHeight = false,
     upperBoundaryPadding = 8,
 }: ResizableScrollRegionProps) {
     const normalizedMinHeight =
@@ -66,6 +68,7 @@ export function useResizableScrollRegion({
     ] =
         useState<LayoutMetrics>({
             containerHeight: 0,
+            preferredUpperHeight: null,
             protectedUpperHeight:
                 Math.max(
                     0,
@@ -183,42 +186,21 @@ export function useResizableScrollRegion({
                     0,
                     minUpperHeight,
                 )
+            let nextPreferredUpperHeight: number | null = null
 
             if (preserveUpperContent) {
-                const boundary =
-                    upperElement.querySelector<HTMLElement>(
-                        '[data-resizable-upper-boundary]',
-                    )
-
-                if (boundary) {
-                    const upperRect =
-                        upperElement.getBoundingClientRect()
-
-                    const boundaryRect =
-                        boundary.getBoundingClientRect()
-
-                    /**
-                     * Координата boundary в системе самого upper.
-                     * upper.scrollTop добавляется, чтобы измерение
-                     * не зависело от текущего положения внутреннего scroll.
-                     */
-                    const boundaryBottomWithinUpper =
-                        boundaryRect.bottom
-                        - upperRect.top
-                        + upperElement.scrollTop
-
-                    nextProtectedUpperHeight =
-                        Math.max(
-                            nextProtectedUpperHeight,
-                            Math.ceil(
-                                boundaryBottomWithinUpper
-                                + Math.max(
-                                    0,
-                                    upperBoundaryPadding,
-                                ),
-                            ),
-                        )
+                const upperTop = upperElement.getBoundingClientRect().top
+                const measureBoundary = (selector: string) => {
+                    const boundary = upperElement.querySelector<HTMLElement>(selector)
+                    return boundary ? Math.ceil(boundary.getBoundingClientRect().bottom
+                        - upperTop + upperElement.scrollTop + Math.max(0, upperBoundaryPadding)) : null
                 }
+                const primary = measureBoundary('[data-resizable-upper-boundary]')
+                if (primary !== null) nextProtectedUpperHeight = Math.max(nextProtectedUpperHeight, primary)
+                // Optional second marker: initial/reset layout can show all controls,
+                // while the drag limit protects only the primary controls.
+                const preferred = measureBoundary('[data-resizable-upper-preferred-boundary]')
+                if (preferred !== null) nextPreferredUpperHeight = Math.max(nextProtectedUpperHeight, preferred)
             }
 
             setLayoutMetrics(
@@ -228,6 +210,7 @@ export function useResizableScrollRegion({
                             === nextContainerHeight
                         && current.protectedUpperHeight
                             === nextProtectedUpperHeight
+                        && current.preferredUpperHeight === nextPreferredUpperHeight
                     ) {
                         return current
                     }
@@ -237,6 +220,7 @@ export function useResizableScrollRegion({
                             nextContainerHeight,
                         protectedUpperHeight:
                             nextProtectedUpperHeight,
+                        preferredUpperHeight: nextPreferredUpperHeight,
                     }
                 },
             )
@@ -292,6 +276,7 @@ export function useResizableScrollRegion({
 
         observer.observe(root)
         observer.observe(upperElement)
+        if (upperElement.firstElementChild) observer.observe(upperElement.firstElementChild)
 
         const boundary =
             upperElement.querySelector<HTMLElement>(
@@ -327,6 +312,8 @@ export function useResizableScrollRegion({
                 childList: true,
                 subtree: true,
                 characterData: true,
+                attributes: true,
+                attributeFilter: ['open'],
             },
         )
 
@@ -341,14 +328,20 @@ export function useResizableScrollRegion({
     const {
         containerHeight,
         protectedUpperHeight,
+        preferredUpperHeight,
     } =
         layoutMetrics
 
+    // On cramped screens, preserve the scrollable upper controls but reserve
+    // space for a usable lower viewport instead of leaving only its chrome.
+    const protectedUpperLimit = reserveLowerHeight
+        ? Math.max(Math.min(minUpperHeight, containerHeight), containerHeight - normalizedMinHeight - RESERVED_DRAG_RANGE)
+        : containerHeight
     const effectiveProtectedUpperHeight =
         containerHeight > 0
             ? Math.min(
                 protectedUpperHeight,
-                containerHeight,
+                protectedUpperLimit,
             )
             : protectedUpperHeight
 
@@ -378,10 +371,13 @@ export function useResizableScrollRegion({
             effectiveMaxHeight,
         )
 
+    const automaticHeight = autoFitHeight != null && preferredUpperHeight !== null && containerHeight > 0
+        ? Math.min(autoFitHeight, containerHeight - preferredUpperHeight)
+        : autoFitHeight
     const renderedHeight =
         clamp(
-            autoFitHeight != null && !manualHeight
-                ? autoFitHeight
+            automaticHeight != null && !manualHeight
+                ? automaticHeight
                 : requestedHeight,
             effectiveMinHeight,
             effectiveMaxHeight,

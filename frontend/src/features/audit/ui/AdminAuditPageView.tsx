@@ -179,7 +179,7 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
                                 <div className="audit-table-card__toolbar">
                                     <div className="audit-results-summary">
                                         <h2>Результаты поиска <span>{pageResponse.totalElements.toLocaleString('ru-RU')}</span></h2>
-                                        <p>Нажмите на пользователя, чтобы увидеть его события за выбранный период.
+                                        <p>Нажмите на имя для фильтрации событий или откройте карточку пользователя.
                                             {' '}CSV содержит только события этой страницы.
                                             {filtersDirty && (
                                                 <span className="audit-csv-unapplied">
@@ -205,13 +205,16 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
                                     </button>
                                 </div>
                             )}
+                        <span className="resizable-scroll-region__upper-boundary-marker" data-resizable-upper-preferred-boundary aria-hidden="true" />
                     </div>
     )
 
     return (
         <div className="page audit-page">
             {showTable ? <ResizableScrollRegion
-                storageKey="safeai:audit-events-height"
+                storageKey="safeai:audit-events-height:v4"
+                preserveUpperContent
+                reserveLowerHeight
                 label="журнал событий"
                 upper={upper}
                 footer={
@@ -239,9 +242,10 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
                 }
                 lowerClassName="card table-card audit-table-card"
                 viewportClassName="admin-table-wrapper"
-                defaultHeight={430}
-                minHeight={72}
-                maxHeight={760}
+                defaultHeight={1600}
+                autoFitHeight={1600}
+                minHeight={280}
+                maxHeight={1600}
                 minUpperHeight={112}
             >
                 {showTable

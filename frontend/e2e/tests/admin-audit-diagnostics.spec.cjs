@@ -289,6 +289,8 @@ test('clicking the actor filters the whole journal via server without leaving au
   await page.goto('/admin/audit?eventType=MODEL_ROUTE_DENIED')
   const actorButton = page.getByRole('button', { name: 'Показать события: admin@example.test' })
   await expect(actorButton).toBeVisible()
+  // The default mock identity is tenant ADMIN, not SUPER_ADMIN.
+  await expect(page.getByRole('link', { name: 'Карточка пользователя' })).toHaveCount(0)
   const response = page.waitForResponse(r => {
     const url = new NodeURL(r.url())
     return url.pathname === '/api/admin/audit-events' && url.searchParams.get('userId') === userId
@@ -300,11 +302,78 @@ test('clicking the actor filters the whole journal via server without leaving au
   await expect(page.getByRole('combobox', { name: 'Пользователь' })).toHaveValue(/admin@example.test/)
 })
 
+test('super admin receives entity links and can drag audit divider to the dates and back', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 })
+  await page.route('**/api/auth/me', route => route.fulfill({ json: {
+    id: userId, organizationId: orgId, email: actor.actorEmail, fullName: actor.actorDisplayName,
+    enabled: true, roles: ['SUPER_ADMIN'],
+  } }))
+  await page.route('**/api/admin/audit-organizations*', route => route.fulfill({ json: [{
+    targetOrganizationId: orgId, targetOrganizationName: 'Test tenant',
+  }] }))
+  await page.goto('/admin/audit')
+  await expect(page.getByRole('link', { name: 'Карточка пользователя' })).toHaveAttribute('href', '/admin/users?userId=' + userId)
+  await expect(page.getByRole('link', { name: 'Test tenant' })).toHaveAttribute('href', '/admin/organizations?organizationId=' + orgId)
+  const separator = page.getByRole('separator', { name: /журнал событий/ })
+  const advanced = page.locator('.audit-advanced-filters')
+  await advanced.locator('summary').click()
+  await expect(advanced).toHaveAttribute('open', '')
+  const height = async () => Number(await separator.getAttribute('aria-valuenow'))
+  const automaticHeight = async () => page.locator('.audit-page .resizable-scroll-region').evaluate(root => {
+    const upper = root.querySelector('.resizable-scroll-region__upper')
+    const preferred = root.querySelector('[data-resizable-upper-preferred-boundary]')
+    const divider = root.querySelector('[role="separator"]')
+    const preferredHeight = Math.ceil(preferred.getBoundingClientRect().bottom - upper.getBoundingClientRect().top + upper.scrollTop + 8)
+    return Math.max(Number(divider.getAttribute('aria-valuemin')),
+      Math.min(Number(divider.getAttribute('aria-valuemax')), Math.round(root.getBoundingClientRect().height) - preferredHeight))
+  })
+  await expect.poll(async () => (await height()) - (await automaticHeight())).toBe(0)
+  const initial = await height()
+  await expect.poll(async () => Number(await separator.getAttribute('aria-valuemax')) - await height()).toBeGreaterThan(32)
+  const origin = await separator.boundingBox()
+  await page.mouse.move(origin.x + origin.width / 2, origin.y + origin.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(origin.x + origin.width / 2, origin.y - 450, { steps: 12 })
+  await page.mouse.up()
+  await expect.poll(height).toBeGreaterThan(initial + 32)
+  await page.locator('.audit-page .resizable-scroll-region__upper').evaluate(upper => { upper.scrollTop = 0 })
+  const dates = await page.getByLabel('Конец периода').boundingBox()
+  const top = await separator.boundingBox()
+  expect(top.y).toBeGreaterThanOrEqual(dates.y + dates.height - 2)
+  expect(top.y - dates.y - dates.height).toBeLessThan(35)
+  const expandedHeight = await height()
+  await page.mouse.move(top.x + top.width / 2, top.y + top.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(top.x + top.width / 2, top.y + 250, { steps: 12 })
+  await page.mouse.up()
+  await expect.poll(height).toBeLessThan(expandedHeight)
+  await advanced.locator('summary').scrollIntoViewIfNeeded()
+  await expect(advanced).toHaveAttribute('open', '')
+  await advanced.getByRole('searchbox').scrollIntoViewIfNeeded()
+  await expect(advanced.getByRole('searchbox')).toBeInViewport()
+  await expect(page.getByRole('button', { name: 'Подробнее' })).toBeVisible()
+  await separator.dblclick()
+  await expect.poll(height).toBe(initial)
+})
+
 for (const width of [1280, 390]) {
   test(`audit support report never overlaps its event identifier at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 800 })
     await page.goto('/admin/audit')
-    await page.getByRole('button', { name: 'Подробнее' }).click()
+    const detail = page.getByRole('button', { name: 'Подробнее' })
+    const viewport = page.locator('.audit-table-card .resizable-scroll-region__viewport')
+    await expect.poll(async () => (await viewport.boundingBox()).height).toBeGreaterThan(100)
+    if (width === 390) {
+      const separator = page.getByRole('separator', { name: /журнал событий/ })
+      const height = async () => Number(await separator.getAttribute('aria-valuenow'))
+      const initial = await height()
+      await separator.press('End')
+      await expect.poll(height).toBeGreaterThan(initial)
+      await separator.press('Home')
+      await expect.poll(height).toBe(initial)
+      await expect.poll(async () => (await viewport.boundingBox()).height).toBeGreaterThan(100)
+    }
+    await detail.click()
     const modal = page.getByRole('dialog')
     await expect(modal.locator('.audit-json')).toBeHidden()
     await modal.getByText('Сведения для технической поддержки').click()

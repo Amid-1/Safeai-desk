@@ -31,11 +31,13 @@ export function CatalogTable({
     canEdit,
     onCreateVersion,
     onOpenHistory,
+    organizationId,
 }: {
     entries: ModelCatalogEntry[]
     effectiveEntries: ModelCatalogEntry[]
     runtime: RuntimeModelStatus
     canEdit: boolean
+    organizationId?: string
     onCreateVersion: (entry: ModelCatalogEntry) => void
     onOpenHistory: (entry: ModelCatalogEntry) => void
 }) {
@@ -96,7 +98,7 @@ export function CatalogTable({
                     return (
                         <tr key={entry.id}>
                             <td data-label="Модель">
-                                <strong className="models-catalog-model-name"><ModelIcon name="cpu" />{entry.displayName}</strong>
+                                <button type="button" className="admin-related-link models-catalog-model-name" onClick={() => onOpenHistory(entry)}><ModelIcon name="cpu" />{entry.displayName}</button>
                                 <code>{entry.modelKey}</code>
 
                                 <div className="models-catalog-version-flags">
@@ -223,6 +225,7 @@ export function CatalogTable({
                                     >
                                         <ModelIcon name="history" />История версий
                                     </button>
+                                    <a className="admin-related-link" href={`/admin/usage?model=${encodeURIComponent(entry.providerModelId)}${organizationId ? '&organizationId=' + encodeURIComponent(organizationId) : ''}`}>Использование и расходы</a>
 
                                     {canEdit && (
                                         <button

@@ -92,8 +92,10 @@ describe('AdminOrganizationsView: readable UI and protected actions', () => {
 
     it('routes a tenant status click through the existing confirmation handler', () => {
         const actions = renderView({ rows: [customer] })
-        expect(screen.getByText('Отключить')).toBeTruthy()
-        fireEvent.click(screen.getByRole('button', { name: /Отключить организацию ООО «Ромашка»/ }))
+        expect(screen.queryByText('Отключить')).toBeNull()
+        expect(actions.onDisable).not.toHaveBeenCalled()
+        fireEvent.click(screen.getByRole('button', {name: `Действия для организации ${customer.name}`}))
+        fireEvent.click(screen.getByRole('button', { name: 'Отключить организацию' }))
         expect(actions.onDisable).toHaveBeenCalledTimes(1)
         expect(actions.onDisable).toHaveBeenCalledWith(customer)
         expect(actions.onEnable).not.toHaveBeenCalled()
@@ -102,8 +104,10 @@ describe('AdminOrganizationsView: readable UI and protected actions', () => {
     it('routes an inactive tenant through enable confirmation; never auto-mutates', () => {
         const inactive = { ...customer, enabled: false }
         const actions = renderView({ rows: [inactive] })
-        expect(screen.getByText('Включить')).toBeTruthy()
-        fireEvent.click(screen.getByRole('button', { name: /Включить организацию ООО «Ромашка»/ }))
+        expect(screen.queryByText('Включить')).toBeNull()
+        expect(actions.onEnable).not.toHaveBeenCalled()
+        fireEvent.click(screen.getByRole('button', {name: `Действия для организации ${customer.name}`}))
+        fireEvent.click(screen.getByRole('button', { name: 'Включить организацию' }))
         expect(actions.onEnable).toHaveBeenCalledTimes(1)
         expect(actions.onEnable).toHaveBeenCalledWith(inactive)
         expect(actions.onDisable).not.toHaveBeenCalled()

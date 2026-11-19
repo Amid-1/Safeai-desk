@@ -129,6 +129,17 @@ describe('AdminModelsPage — контрактные и регрессионны
             .not.toBeInTheDocument()
     })
 
+    it('не угадывает модель при совпадении идентификатора разных провайдеров', async () => {
+        auth.currentUser = user('SUPER_ADMIN')
+        const entries = [createModelCatalogEntry({modelKey:'one:shared', providerModelId:'shared'}),
+            createModelCatalogEntry({modelKey:'two:shared', providerModelId:'shared', id: SECOND_ORG})]
+        vi.mocked(getModelCatalog).mockResolvedValue(entries)
+        vi.mocked(getEffectiveModelCatalog).mockResolvedValue(entries)
+        render(<MemoryRouter initialEntries={['/admin/models?section=catalog&usageModel=shared']}><AdminModelsPage /></MemoryRouter>)
+        expect(await screen.findByText(/Найдено несколько моделей/)).toBeInTheDocument()
+        expect(screen.queryByRole('dialog')).toBeNull()
+    })
+
     it('не показывает старую политику во время смены организации', async () => {
         auth.currentUser = user('SUPER_ADMIN')
         const secondPolicy = deferred<OrganizationModelPolicy>()
@@ -148,11 +159,10 @@ describe('AdminModelsPage — контрактные и регрессионны
 
         await loadPage()
         fireEvent.click(screen.getByRole('tab', { name: 'Доступ' }))
-        fireEvent.change(screen.getByPlaceholderText('Начните вводить название или UUID'), {
+        fireEvent.change(screen.getByRole('combobox', {name: 'Управляемая организация'}), {
             target: { value: 'Second' },
         })
-        fireEvent.click(screen.getByRole('button', { name: 'Найти' }))
-        fireEvent.click(await screen.findByRole('button', { name: /Second Organization/ }))
+        fireEvent.click(await screen.findByRole('option', { name: /Second Organization/ }))
 
         expect(screen.queryByRole('heading', { name: 'Управление AI-моделями' }))
             .not.toBeInTheDocument()
@@ -180,18 +190,16 @@ describe('AdminModelsPage — контрактные и регрессионны
             }])
         await loadPage()
         fireEvent.click(screen.getByRole('tab', { name: 'Доступ' }))
-        const query = screen.getByPlaceholderText('Начните вводить название или UUID')
+        const query = screen.getByRole('combobox', {name: 'Управляемая организация'})
         fireEvent.change(query, { target: { value: 'first' } })
-        fireEvent.click(screen.getByRole('button', { name: 'Найти' }))
         await waitFor(() => {
             expect(searchOrganizationDirectory).toHaveBeenCalledTimes(1)
         })
         fireEvent.change(query, { target: { value: 'second' } })
         // Смена запроса отменяет прежний поиск, даже если тот ещё в полёте.
-        fireEvent.submit(query.closest('form')!)
         const previousSignal = vi.mocked(searchOrganizationDirectory).mock.calls[0]?.[2]?.signal
         expect(previousSignal?.aborted).toBe(true)
-        expect(await screen.findByRole('button', { name: /Second Organization/ }))
+        expect(await screen.findByRole('option', { name: /Second Organization/ }))
             .toBeInTheDocument()
         first.resolve([{
             id: ORG,
