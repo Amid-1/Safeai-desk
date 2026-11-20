@@ -20,9 +20,12 @@ docker run --rm \
 high=$?
 set -e
 printf 'CRITICAL exit code: %s\nHIGH/CRITICAL fixed exit code: %s\n' "$critical" "$high"
-tail -n 80 "$here/reports/noble-critical.log"
+printf '\n=== CRITICAL (including unfixed) ===\n'
+cat "$here/reports/noble-critical.log"
+printf '\n=== HIGH/CRITICAL (fixable) ===\n'
+cat "$here/reports/noble-high-critical.log"
 if [[ $critical -ne 0 || $high -ne 0 ]]; then
-  echo "FAIL: blocking Trivy findings remain (reports in $here/reports)" >&2
+  echo "FAIL: Trivy gate failed (blocking findings or scanner error; reports in $here/reports)" >&2
   exit 1
 fi
 echo 'PASS: both vulnerability gates'

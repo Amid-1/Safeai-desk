@@ -2,7 +2,8 @@
 # syntax=docker/dockerfile:1.7
 
 ARG NODE_IMAGE=node:24.19.0-alpine
-ARG NGINX_IMAGE=nginxinc/nginx-unprivileged:stable-alpine
+# Official unprivileged NGINX, pinned to the patched multi-platform release.
+ARG NGINX_IMAGE=ghcr.io/nginx/nginx-unprivileged:1.30.7-alpine@sha256:0c53a1f2890c3526bfd201440f0fd3970e5b78f80630f58284aad0d34b5ec7bd
 
 FROM ${NODE_IMAGE} AS build
 
@@ -32,8 +33,15 @@ FROM ${NGINX_IMAGE} AS runtime
 USER root
 # Не подавляем Trivy: реально обновляем уязвимые пакеты и
 # требуем исправленный Brotli (CVE-2026-111497).
-RUN apk --no-cache upgrade \
-    && apk --no-cache add 'brotli-libs>=1.2.1-r0'
+RUN set -eux; \
+    apk --no-cache upgrade; \
+    apk --no-cache add 'brotli-libs>=1.2.1-r0'; \
+    nginx_pkg="$(apk info -v nginx)"; \
+    case "$nginx_pkg" in nginx-*) ;; *) exit 1 ;; esac; \
+    case "$(apk version -t "${nginx_pkg#nginx-}" 1.30.7-r0)" in \
+      '='|'>') ;; *) echo "BLOCKED: vulnerable NGINX package: $nginx_pkg" >&2; exit 1 ;; \
+    esac; \
+    nginx -v
 
 ARG APP_VERSION=dev
 ARG VCS_REF=unknown

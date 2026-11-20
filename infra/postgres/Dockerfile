@@ -2,15 +2,19 @@
 # SafeAI-Desk/infra/postgres/Dockerfile
 # Ubuntu Noble PostgreSQL 16. Restored-data approval is required before changing a live PostgreSQL volume.
 ARG UBUNTU_IMAGE=ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
-ARG GOSU_BUILDER_IMAGE=golang:1.27.3-trixie@sha256:c65ecfe613b539ac74c62a4c3b2c27e8f8a6076384c8f27e8a3c0f3be17cc385
+# CVE-2026-97054: rebuild gosu with the patched Go standard library.
+ARG GOSU_BUILDER_IMAGE=golang:1.27.4-trixie@sha256:f18c3d73a184fb0582828510722e723b63a93f7188d11dd223d9be6f6880e65d
 ARG ENTRYPOINT_SOURCE_IMAGE=pgvector/pgvector:0.8.7-pg16-trixie@sha256:9cf8b511f0e9a2c209b61430fc139f1ab9c75edbb31fb1751db6617b246a897a
 
 FROM ${GOSU_BUILDER_IMAGE} AS gosu-build
 RUN set -eux; \
+    export GOTOOLCHAIN=local; \
+    test "$(go env GOVERSION)" = go1.27.4; \
     git clone --depth 1 --branch 1.20 https://github.com/tianon/gosu.git /src/gosu; \
     cd /src/gosu; \
     test "$(git rev-parse HEAD)" = 29b939aa5bd4dc588af765b8248f6e39150d2565; \
     CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/gosu .; \
+    test "$(go version /out/gosu)" = '/out/gosu: go1.27.4'; \
     /out/gosu --version; \
     go version -m /out/gosu
 

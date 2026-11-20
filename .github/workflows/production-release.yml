@@ -130,7 +130,13 @@ jobs:
           java_build_image="$(pin_image eclipse-temurin:21-jdk)"
           java_runtime_image="$(pin_image eclipse-temurin:21-jre)"
           node_build_image="$(pin_image node:24-alpine)"
-          nginx_base_image="$(pin_image nginxinc/nginx-unprivileged:stable-alpine)"
+          # Use the same immutable patched NGINX base as Docker CI (Dockerfile default).
+          nginx_base_image="$(sed -n 's/^ARG NGINX_IMAGE=//p' infra/nginx/Dockerfile)"
+          [[ "$nginx_base_image" =~ ^ghcr\.io/nginx/nginx-unprivileged:[^@[:space:]]+@sha256:[0-9a-f]{64}$ ]] || {
+            echo "Expected digest-pinned official unprivileged NGINX base image" >&2
+            exit 1
+          }
+          docker pull "$nginx_base_image" >/dev/null
           postgres_base_image="$(cat infra/postgres/base-image.txt)"
           [[ "$postgres_base_image" =~ ^ubuntu:24[.]04@sha256:[0-9a-f]{64}$ ]] || {
             echo "Expected digest-pinned Ubuntu Noble PostgreSQL base image" >&2
