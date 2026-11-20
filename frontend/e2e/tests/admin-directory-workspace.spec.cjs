@@ -31,7 +31,8 @@ test.beforeEach(async ({ page }) => {
           return route.fulfill({ status: 201, json: created })
         }
         json = { content: organizations, page: 0, size: 50, totalPages: 1, totalElements: organizations.length }; break
-      case '/api/organizations/directory': json = organizations; break
+      case '/api/organizations/directory':
+        json = organizations.filter(org => org.name.toLowerCase().includes((searchParams.get('query') || '').toLowerCase())); break
       case '/api/organizations/search': {
         const matches = organizations.filter(org =>
           (!searchParams.get('query') || org.name.toLowerCase().includes(searchParams.get('query').toLowerCase())) &&
@@ -109,6 +110,42 @@ test('users search applies from the first character without submit and preserves
   await expect(page.getByRole('row')).toHaveCount(22)
   await expect(page).not.toHaveURL(/query=/)
   await expect(page).toHaveURL(/role=USER&status=ACTIVE/)
+})
+
+test('organization suggestions overlay the users filters without moving the workspace', async ({page}) => {
+  await page.setViewportSize({width: 1440, height: 900})
+  await page.goto('/admin/users')
+  await expect(page.getByRole('row')).toHaveCount(22)
+  const select = page.getByRole('combobox', {name: 'Организация'})
+  const search = page.getByRole('searchbox')
+  const separator = page.getByRole('separator', {name: /список пользователей/})
+  const menu = page.getByRole('listbox', {name: 'Организация: варианты'})
+  await select.click()
+  await expect(menu.getByRole('option')).toHaveCount(18)
+  await select.press('Escape')
+  const baseline = [await search.boundingBox(), await separator.boundingBox()]
+  const sameLayout = async () => {
+    const current = [await search.boundingBox(), await separator.boundingBox()]
+    for (let i = 0; i < baseline.length; i++) {
+      expect(Math.abs(current[i].y - baseline[i].y)).toBeLessThan(2)
+    }
+  }
+  for (const [query, count] of [['КОМПАНИЯ', 16], ['Компания 16', 1], ['несуществующая', 0], ['', 18]]) {
+    await select.fill(query)
+    await expect(menu).toBeVisible()
+    await sameLayout()
+    await expect(menu.getByRole('option')).toHaveCount(count)
+    await expect(menu).toHaveCSS('position', 'fixed')
+    expect(await menu.evaluate(el => el.parentElement === el.ownerDocument.body)).toBe(true)
+    await sameLayout()
+  }
+  await expect(page.getByRole('row')).toHaveCount(22)
+  await select.press('Escape')
+  await expect(menu).toHaveCount(0)
+  await sameLayout()
+  await select.fill('Компания 16')
+  await menu.getByRole('option', {name: 'Компания 16', exact: true}).click()
+  await expect(page).toHaveURL(new RegExp('organizationId=' + tenant(16).id))
 })
 
 for (const [width, height] of [[1440, 900], [390, 844]]) {

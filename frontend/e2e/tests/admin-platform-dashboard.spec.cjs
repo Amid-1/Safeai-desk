@@ -119,3 +119,56 @@ test('budget drill-down sends server filter even for a zero category, and clears
   await expect(page).not.toHaveURL(/budgetStatus=/)
   await expect(page.getByRole('region', {name: 'Фильтр бюджета'})).toHaveCount(0)
 })
+
+test('dashboard search preserves scroll position and layout while results change', async ({page}) => {
+  await page.setViewportSize({width: 1440, height: 900})
+  await mockDashboard(page, 'SUPER_ADMIN')
+  const matches = query => query === 'many' ? 10 : query === 'one' ? 1 : 0
+  await page.route('**/api/organizations/search?*', route => {
+    const query = new NodeURL(route.request().url()).searchParams.get('query')
+    const count = matches(query)
+    return route.fulfill({json: {page: 0, size: 1, totalElements: count, totalPages: count,
+      content: count ? [{id: orgId, name: 'Demo Company', type: 'TENANT', enabled: true, protected: false,
+        version: 1, createdAt: '2026-11-01T00:00:00Z', updatedAt: '2026-11-01T00:00:00Z'}] : []}})
+  })
+  await page.route('**/api/admin/usage/organizations?*', async route => {
+    const query = new NodeURL(route.request().url()).searchParams.get('organizationQuery')
+    if (!query) return route.fallback()
+    const count = matches(query)
+    await new Promise(resolve => globalThis.setTimeout(resolve, 350))
+    return route.fulfill({json: {page: 0, size: 10, first: true, last: true, hasNext: false, hasPrevious: false,
+      content: Array.from({length: count}, (_, i) => ({...usage,
+        organizationId: 'aaaaaaaa-aaaa-4aaa-8aaa-' + String(i + 1).padStart(12, '0'), organizationName: 'Компания ' + (i + 1)}))}})
+  })
+  await page.goto('/admin/dashboard')
+  const region = page.getByRole('region', {name: 'Организации по подтверждённым токенам'})
+  const results = region.getByRole('region', {name: 'Результаты поиска организаций'})
+  const input = region.getByRole('searchbox')
+  const footer = page.getByRole('region', {name: 'Безопасность и управление'})
+  await expect(region.getByRole('link', {name: 'Demo Company'})).toBeVisible()
+  await expect(page.locator('.usage-kpis--four')).toBeVisible()
+  await footer.scrollIntoViewIfNeeded()
+  await input.scrollIntoViewIfNeeded()
+  const locators = [input, results, footer]
+  const baseline = await Promise.all(locators.map(locator => locator.boundingBox()))
+  const sameLayout = async () => {
+    const current = await Promise.all(locators.map(locator => locator.boundingBox()))
+    for (let i = 0; i < baseline.length; i++) {
+      expect(Math.abs(current[i].y - baseline[i].y)).toBeLessThan(2)
+      expect(Math.abs(current[i].height - baseline[i].height)).toBeLessThan(2)
+    }
+  }
+  for (const [query, count] of [['many', 10], ['one', 1], ['none', 0]]) {
+    await input.fill(query)
+    await expect(results).toHaveAttribute('aria-busy', 'true')
+    await sameLayout()
+    await expect(region.getByText('Найдено: ' + count, {exact: true})).toBeVisible()
+    await expect(results).toHaveAttribute('aria-busy', 'false')
+    await expect(results.getByRole('button', {name: 'Показать на графике'})).toHaveCount(count)
+    await sameLayout()
+  }
+  await expect(results.getByText('Организации не найдены.')).toBeVisible()
+  await region.getByRole('button', {name: 'Сбросить'}).click()
+  await expect(results.getByRole('link', {name: 'Demo Company'})).toBeVisible()
+  await sameLayout()
+})

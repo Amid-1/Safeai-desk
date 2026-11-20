@@ -45,9 +45,9 @@ export function OrganizationDirectoryFilter({ value, onChange, disabled }: {
             selectedLabel={chosen?.label ?? 'Выбранная организация'}
             placeholder="Все организации" searchPlaceholder="Название организации"
             emptyMessage="Организации не найдены" disabled={disabled}
-            loading={status === 'loading'} filterLocally={false}
+            loading={status === 'loading'} filterLocally={false} overlay
             error={status === 'error' ? 'Не удалось загрузить каталог. Измените поиск.' : ''}
-            helperText={options.length === 50 ? 'Уточните название для поиска других организаций.' : undefined}
+            helperText={options.length === 50 ? 'Уточните название для поиска других организаций.' : 'Поиск выполняется на сервере.'}
             onQueryChange={next => {
                 if (next !== query) { setStatus('loading'); setQuery(next) }
             }}

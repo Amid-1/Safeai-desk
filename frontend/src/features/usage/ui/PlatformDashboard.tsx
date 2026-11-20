@@ -44,6 +44,7 @@ export function PlatformDashboard() {
     const [page, setPage] = useState(0)
     const [scope, setScope] = useState<{id: string; name: string} | null>(null)
     const analyticsHeading = useRef<HTMLHeadingElement>(null)
+    const resultsViewport = useRef<HTMLDivElement>(null)
     function showOrganization(id: string, name: string) {
         setScope(previous => previous?.id === id ? previous : {id, name})
         analyticsHeading.current?.focus({preventScroll: true})
@@ -80,6 +81,10 @@ export function PlatformDashboard() {
     const daily = useDashboardResource(periodKey + ':' + (scope?.id ?? 'all'), loadDaily)
     const top = useDashboardResource(periodKey + ':' + search + ':' + page, loadTop)
     const searching = draft.trim() !== search
+    const resultsLoading = searching || top.loading
+    useEffect(() => {
+        if (resultsViewport.current) resultsViewport.current.scrollTop = 0
+    }, [search, page, periodKey])
     const rows = top.data?.content.filter(row => search || BigInt(row.totalTokens) > 0n) ?? []
     const responses = daily.data?.every(row => row.coverage.assistantMessages !== null)
         ? daily.data.reduce((sum, row) => sum + BigInt(row.coverage.assistantMessages ?? '0'), 0n).toString() : null
@@ -148,13 +153,17 @@ export function PlatformDashboard() {
                 <input id="dashboard-org-search" type="search" maxLength={255} placeholder="Название организации" value={draft} onChange={e => setDraft(e.target.value)} />
                 <button type="button" className="secondary-button" onClick={() => {setDraft(''); setSearch(''); setPage(0)}}>Сбросить</button>
             </div>
-            <p>{search ? 'Поиск по всему каталогу, включая организации без использования.' : 'До 5 организаций с наибольшим числом подтверждённых токенов за выбранный период.'}</p>
-            {searching || top.loading ? <LoadingState variant="inline" /> : top.failed ? <ErrorState variant="inline" message="Рейтинг недоступен." action={<button onClick={top.retry}>Повторить</button>} /> : <>
-            {search && <p role="status">Найдено: {top.data?.matched ?? '—'}</p>}
-            <div className="platform-dashboard__table-scroll"><table><thead><tr>
+            <p>Поиск по всему каталогу, включая организации без использования. Без запроса — до 5 организаций с подтверждёнными токенами за выбранный период.</p>
+            <p className="platform-dashboard__result-status" role="status">
+                {resultsLoading || top.failed ? 'Найдено: —' : search ? 'Найдено: ' + (top.data?.matched ?? '—') : 'Показано: ' + rows.length}
+            </p>
+            <div ref={resultsViewport} className="platform-dashboard__table-scroll" role="region" aria-label="Результаты поиска организаций" aria-busy={resultsLoading} tabIndex={0}><table><thead><tr>
                 <th scope="col">Организация</th><th scope="col">Токены</th><th scope="col">Известная стоимость</th>
                 <th scope="col">Аналитика</th>
-            </tr></thead><tbody>{rows.map(row => {
+            </tr></thead><tbody>{resultsLoading ? <tr><td colSpan={4}><LoadingState variant="inline" /></td></tr>
+                : top.failed ? <tr><td colSpan={4}><ErrorState variant="inline" message="Рейтинг недоступен." action={<button onClick={top.retry}>Повторить</button>} /></td></tr>
+                : rows.length === 0 ? <tr><td colSpan={4}>{search ? 'Организации не найдены.' : 'Нет организаций с подтверждёнными токенами.'}</td></tr>
+                : rows.map(row => {
                 const empty = row.coverage.assistantMessages === '0'
                 return <tr key={row.organizationId} className={scope?.id === row.organizationId ? 'platform-dashboard__selected-row' : undefined}>
                     <td>{empty ? <Link to={'/admin/organizations?organizationId=' + encodeURIComponent(row.organizationId)}>{row.organizationName}</Link>
@@ -165,13 +174,13 @@ export function PlatformDashboard() {
                         onClick={() => showOrganization(row.organizationId, row.organizationName)}>Показать на графике</button></td>
                 </tr>
             })}</tbody></table></div>
-            {rows.length === 0 && <p>{search ? 'Организации не найдены.' : 'Нет организаций с подтверждёнными токенами.'}</p>}
-            {search && <div className="platform-dashboard__links">
-                <button className="secondary-button" disabled={page === 0} onClick={() => setPage(v => v - 1)}>Назад</button>
+            <div className="platform-dashboard__search-pager">
+            {search && <>
+                <button className="secondary-button" disabled={resultsLoading || top.failed || page === 0} onClick={() => setPage(v => v - 1)}>Назад</button>
                 <span>Страница {page + 1}</span>
-                <button className="secondary-button" disabled={page + 1 >= (top.data?.totalPages ?? 0)} onClick={() => setPage(v => v + 1)}>Далее</button>
-            </div>}
+                <button className="secondary-button" disabled={resultsLoading || top.failed || page + 1 >= (top.data?.totalPages ?? 0)} onClick={() => setPage(v => v + 1)}>Далее</button>
             </>}
+            </div>
             <Link to={usageLink('organizations')}>Сравнить все организации</Link>
         </section>
         <section className="platform-dashboard__panel" aria-label="Безопасность и управление">

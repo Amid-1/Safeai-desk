@@ -23,3 +23,9 @@
 .org-management-links h3 {margin: 0;}
 .org-management-links a {padding: 10px 12px; border: 1px solid #d6deea; border-radius: 10px; font-weight: 650;}
 .organization-directory-filter :focus-visible, .org-management-links a:focus-visible {outline: 2px solid #2563eb; outline-offset: 2px;}
+
+/* Две строки для подсказки, ограничения выдачи и ошибки запроса. */
+.organization-searchable-filter .usage-filter-combobox__helper {
+    block-size: 2.7em;
+    overflow: auto;
+}

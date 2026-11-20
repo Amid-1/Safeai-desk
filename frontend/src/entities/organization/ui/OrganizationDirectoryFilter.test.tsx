@@ -1,6 +1,6 @@
 // frontend/src/entities/organization/ui/OrganizationDirectoryFilter.test.tsx
 import { fireEvent, render, screen, waitFor, act } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OrganizationDirectoryItem } from '../api/organizationApi'
 import { getOrganizationDetails, searchOrganizationDirectory } from '../api/organizationApi'
 import { OrganizationDirectoryFilter } from './OrganizationDirectoryFilter'
@@ -41,6 +41,12 @@ function getSelect() {
 describe('OrganizationDirectoryFilter: server catalog and tenant selection', () => {
     beforeEach(() => {
         vi.resetAllMocks()
+        const original = HTMLElement.prototype.getBoundingClientRect
+        vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+            return this.classList.contains('usage-filter-combobox__control')
+                ? DOMRect.fromRect({x: 24, y: 120, width: 260, height: 34})
+                : original.call(this)
+        })
         searchMock.mockResolvedValue([ENABLED, DISABLED, PLATFORM])
         detailsMock.mockResolvedValue({
             ...ENABLED,
@@ -48,6 +54,7 @@ describe('OrganizationDirectoryFilter: server catalog and tenant selection', () 
             updatedAt: '2026-11-01T11:00:00Z',
         })
     })
+    afterEach(() => vi.restoreAllMocks())
 
     it('loads all kinds of organizations from the server and delegates the selection', async () => {
         const onChange = vi.fn()
@@ -57,6 +64,7 @@ describe('OrganizationDirectoryFilter: server catalog and tenant selection', () 
         fireEvent.focus(getSelect())
         expect(screen.getByRole('status')).toHaveTextContent('Загрузка вариантов…')
         await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(4))
+        expect(screen.getByRole('listbox').closest('.usage-filter-combobox__menu')?.parentElement).toBe(document.body)
 
         expect(screen.getByRole('option', { name: 'Отключённая компания (отключена)' }))
             .toBeInTheDocument()
@@ -108,6 +116,10 @@ describe('OrganizationDirectoryFilter: server catalog and tenant selection', () 
         fireEvent.focus(getSelect())
         await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(51))
         expect(screen.getByText('Уточните название для поиска других организаций.')).toBeInTheDocument()
+        const helper = screen.getByText('Уточните название для поиска других организаций.')
+        searchMock.mockResolvedValue([ENABLED])
+        fireEvent.change(getSelect(), {target: {value: 'Активная'}})
+        await waitFor(() => expect(screen.getByText('Поиск выполняется на сервере.')).toBe(helper))
         expect(getSelect()).toBeEnabled()
     })
 
