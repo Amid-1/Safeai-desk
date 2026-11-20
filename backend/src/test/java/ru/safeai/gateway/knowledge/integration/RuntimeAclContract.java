@@ -24,6 +24,7 @@ import ru.safeai.gateway.audit.service.AuditOutboxProcessor;
 import ru.safeai.gateway.knowledge.ingestion.KnowledgeIngestionClaim;
 import ru.safeai.gateway.knowledge.ingestion.KnowledgeIngestionProcessor;
 import ru.safeai.gateway.knowledge.ingestion.KnowledgeIngestionQueueRepository;
+import ru.safeai.gateway.model.repository.ModelPolicyPreviewConfirmationRepository;
 import ru.safeai.gateway.testsupport.SafeAiJacksonJsonPathExtension;
 
 import java.nio.charset.StandardCharsets;
@@ -88,6 +89,7 @@ class RuntimeAclContract {
     @Autowired KnowledgeIngestionQueueRepository queue;
     @Autowired KnowledgeIngestionProcessor ingestion;
     @Autowired AuditOutboxProcessor audit;
+    @Autowired ModelPolicyPreviewConfirmationRepository confirmations;
 
     record Actor(UUID id, UUID org, String email, String password) {}
     record Session(Cookie access, Cookie refresh) {}
@@ -132,6 +134,7 @@ class RuntimeAclContract {
                 WHERE organization_id=? AND outcome='DENIED' AND reason='MODEL_NOT_ALLOWED' AND policy_id IS NULL
                 """, Long.class, a.org()));
         allowMockModel(a);
+        verifyPolicyPreviewConfirmationAcl(a, b);
         request = UUID.randomUUID();
         message = "{\"content\":\"Stage5 synthetic question\",\"clientRequestId\":\"" + request + "\"}";
         mvc.perform(json(post("/api/chats/{id}/messages", chat), sa, message))
@@ -193,6 +196,62 @@ class RuntimeAclContract {
                 .andExpect(status().isNoContent());
         System.out.println("STAGE5 AUDIT/USAGE PASS: real read and delivery");
         System.out.println("STAGE5 BACKEND RUNTIME PASS");
+    }
+
+    private void verifyPolicyPreviewConfirmationAcl(Actor a, Actor b) {
+        assertEquals(Boolean.TRUE, jdbc.queryForObject("""
+                SELECT has_table_privilege(current_user,'public.model_policy_preview_confirmations','SELECT')
+                    AND has_table_privilege(current_user,'public.model_policy_preview_confirmations','DELETE')
+                    AND NOT has_table_privilege(current_user,'public.model_policy_preview_confirmations','INSERT')
+                    AND NOT has_table_privilege(current_user,'public.model_policy_preview_confirmations','UPDATE')
+                    AND NOT has_table_privilege(current_user,'public.model_policy_preview_confirmations','TRUNCATE')
+                    AND NOT has_column_privilege(current_user,'public.model_policy_preview_confirmations','organization_id','UPDATE')
+                    AND NOT has_column_privilege(current_user,'public.model_policy_preview_confirmations','actor_id','UPDATE')
+                    AND NOT has_column_privilege(current_user,'public.model_policy_preview_confirmations','result_policy_id','INSERT')
+                    AND has_column_privilege(current_user,'public.model_policy_preview_confirmations','result_policy_id','UPDATE')
+                """, Boolean.class), "Unexpected confirmation ACL");
+
+        UUID policyId = jdbc.queryForObject("""
+                SELECT id FROM public.organization_model_policies
+                WHERE organization_id=? AND version=1
+                """, UUID.class, a.org());
+        assertNotNull(policyId);
+
+        Instant now = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+        String firstToken = "a".repeat(64);
+        String replacementToken = "b".repeat(64);
+        String otherToken = "c".repeat(64);
+        String draft = "d".repeat(64);
+        String context = "e".repeat(64);
+
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            confirmations.issue(a.org(), a.id(), firstToken, draft, context, false, now.plusSeconds(300));
+            var pending = confirmations.lock(a.org(), a.id(), firstToken).orElseThrow();
+            assertEquals(draft, pending.draftHash());
+            assertEquals(context, pending.contextHash());
+            assertFalse(pending.lockout());
+            assertEquals(now.plusSeconds(300), pending.expiresAt());
+            assertNull(pending.resultPolicyId());
+
+            assertTrue(confirmations.complete(a.org(), a.id(), firstToken, policyId, now));
+            assertFalse(confirmations.complete(a.org(), a.id(), firstToken, policyId, now));
+            assertEquals(policyId, confirmations.lock(a.org(), a.id(), firstToken)
+                    .orElseThrow().resultPolicyId());
+
+            confirmations.issue(b.org(), b.id(), otherToken, draft, context, false, now.plusSeconds(300));
+            confirmations.issue(a.org(), a.id(), replacementToken, draft, context, true, now.minusSeconds(1));
+            assertTrue(confirmations.lock(a.org(), a.id(), firstToken).isEmpty());
+            var replaced = confirmations.lock(a.org(), a.id(), replacementToken).orElseThrow();
+            assertTrue(replaced.lockout());
+            assertNull(replaced.resultPolicyId());
+            assertFalse(confirmations.complete(a.org(), a.id(), replacementToken, policyId, now));
+
+            confirmations.purgeExpired(now);
+            assertTrue(confirmations.lock(a.org(), a.id(), replacementToken).isEmpty());
+            assertTrue(confirmations.lock(b.org(), b.id(), otherToken).isPresent());
+        });
+
+        System.out.println("V93 PREVIEW ACL PASS: issue, lock, complete, replace, purge, restricted columns");
     }
 
     private Actor fixture() {
