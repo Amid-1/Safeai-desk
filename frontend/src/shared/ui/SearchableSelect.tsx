@@ -3,10 +3,12 @@
 import {
     useEffect,
     useId,
+    useLayoutEffect,
     useMemo,
     useRef,
     useState,
 } from 'react'
+import { createPortal } from 'react-dom'
 import type {
     ChangeEvent,
     KeyboardEvent,
@@ -41,6 +43,8 @@ type UsageFilterComboboxProps = {
     disabled?: boolean
     allowClear?: boolean
     filterLocally?: boolean
+    /** Выпадающий список поверх прокручиваемой панели, без изменения её высоты. */
+    overlay?: boolean
 
     /**
      * Hard upper bound for the search query sent to local/server filtering.
@@ -74,6 +78,7 @@ export function SearchableSelect({
     disabled = false,
     allowClear = true,
     filterLocally = true,
+    overlay = false,
     maxQueryLength = DEFAULT_MAX_QUERY_LENGTH,
     onChange,
     onQueryChange,
@@ -88,6 +93,8 @@ export function SearchableSelect({
         useRef<HTMLDivElement | null>(null)
     const inputRef =
         useRef<HTMLInputElement | null>(null)
+    const controlRef = useRef<HTMLDivElement>(null)
+    const menuRef = useRef<HTMLDivElement>(null)
 
     const [expanded, setExpanded] =
         useState(false)
@@ -182,9 +189,7 @@ export function SearchableSelect({
 
             if (
                 target instanceof Node
-                && rootRef.current?.contains(
-                    target,
-                )
+                && (rootRef.current?.contains(target) || menuRef.current?.contains(target))
             ) {
                 return
             }
@@ -204,6 +209,64 @@ export function SearchableSelect({
             )
         }
     }, [expanded])
+
+    useLayoutEffect(() => {
+        if (!overlay || !expanded || disabled) return
+        const control = controlRef.current
+        const menu = menuRef.current
+        if (!control || !menu) return
+        const clippingParents: HTMLElement[] = []
+        for (let parent = control.parentElement; parent && parent !== document.body; parent = parent.parentElement) {
+            if (/(auto|scroll|hidden|clip)/.test(getComputedStyle(parent).overflowY)) clippingParents.push(parent)
+        }
+        const edge = 8
+        const gap = 5
+        const maximum = 290
+        function reposition() {
+            if (!control || !menu) return
+            const rect = control.getBoundingClientRect()
+            const viewportWidth = document.documentElement.clientWidth || window.innerWidth
+            const viewportHeight = window.innerHeight
+            const bounds = clippingParents.map(parent => parent.getBoundingClientRect())
+            const visibleTop = Math.max(edge, ...bounds.map(parent => parent.top))
+            const visibleBottom = Math.min(viewportHeight - edge, ...bounds.map(parent => parent.bottom))
+            const below = Math.max(0, viewportHeight - rect.bottom - gap - edge)
+            const above = Math.max(0, rect.top - gap - edge)
+            const flip = below < maximum && above > below
+            const width = Math.max(0, Math.min(rect.width, viewportWidth - 2 * edge))
+            Object.assign(menu.style, {
+                width: `${width}px`,
+                left: `${Math.max(edge, Math.min(rect.left, viewportWidth - edge - width))}px`,
+                top: flip ? 'auto' : `${rect.bottom + gap}px`,
+                bottom: flip ? `${viewportHeight - rect.top + gap}px` : 'auto',
+                maxHeight: `${Math.min(maximum, flip ? above : below)}px`,
+                visibility: width === 0 || rect.bottom <= visibleTop || rect.top >= visibleBottom
+                    ? 'hidden' : 'visible',
+            })
+        }
+        reposition()
+        window.addEventListener('resize', reposition)
+        window.addEventListener('scroll', reposition, true)
+        const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(reposition)
+        observer?.observe(control)
+        clippingParents.forEach(parent => observer?.observe(parent))
+        return () => {
+            window.removeEventListener('resize', reposition)
+            window.removeEventListener('scroll', reposition, true)
+            observer?.disconnect()
+        }
+    }, [overlay, expanded, disabled])
+
+    useLayoutEffect(() => {
+        if (!overlay || !expanded || loading || error) return
+        const menu = menuRef.current
+        const option = document.getElementById(`${listboxId}-option-${activeIndex}`)
+        if (!menu || !option) return
+        const bounds = menu.getBoundingClientRect()
+        const item = option.getBoundingClientRect()
+        if (item.bottom > bounds.bottom) menu.scrollTop += item.bottom - bounds.bottom
+        else if (item.top < bounds.top) menu.scrollTop -= bounds.top - item.top
+    }, [overlay, expanded, loading, error, listboxId, activeIndex, visibleOptions])
 
     useEffect(() => {
         if (visibleOptions.length === 0) {
@@ -297,7 +360,7 @@ export function SearchableSelect({
                 {label}
             </label>
 
-            <div className="usage-filter-combobox__control">
+            <div className="usage-filter-combobox__control" ref={controlRef}>
                 <span
                     className="usage-filter-combobox__search-icon"
                     aria-hidden="true"
@@ -315,11 +378,11 @@ export function SearchableSelect({
                     disabled={disabled}
                     maxLength={safeMaxQueryLength}
                     value={displayValue}
-                    aria-expanded={expanded}
+                    aria-expanded={expanded && !disabled}
                     aria-controls={listboxId}
                     aria-autocomplete="list"
                     aria-activedescendant={
-                        expanded
+                        expanded && !disabled
                         && !loading && !error && visibleOptions.length > 0
                             ? `${listboxId}-option-${activeIndex}`
                             : undefined
@@ -448,10 +511,11 @@ export function SearchableSelect({
                     )}
             </div>
 
-            {expanded && (
-                <div
+            {expanded && !disabled && (() => {
+                const menu = <div
                     id={listboxId}
-                    className="usage-filter-combobox__menu"
+                    ref={menuRef}
+                    className={`usage-filter-combobox__menu${overlay ? ' usage-filter-combobox__menu--overlay' : ''}`}
                     role="listbox"
                     aria-label={`${label}: варианты`}
                 >
@@ -570,7 +634,8 @@ export function SearchableSelect({
                             ),
                         )}
                 </div>
-            )}
+                return overlay ? createPortal(menu, document.body) : menu
+            })()}
 
             {(helperText || error) && (
                 <small

@@ -123,7 +123,7 @@ export function AuditDateFields({
                     />
                 </label>
 
-                <label className="audit-filter-field audit-filter-field--date" data-resizable-upper-boundary>
+                <label className="audit-filter-field audit-filter-field--date">
                     Конец периода
 
                     <input

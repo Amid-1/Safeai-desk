@@ -11,8 +11,10 @@ import { downloadAuditCsv } from './auditCsv'
 import { AdminAuditPageView } from './AdminAuditPageView'
 
 vi.mock('../../../shared/ui/ResizableScrollRegion', () => ({
-    default: ({ upper, footer, children }: { upper: ReactNode; footer?: ReactNode; children: ReactNode }) => (
-        <section data-testid="audit-scroll-region">
+    default: ({ upper, footer, children, showUpperRequest, showLowerRequest }: {
+        upper: ReactNode; footer?: ReactNode; children: ReactNode; showUpperRequest?: number; showLowerRequest?: number
+    }) => (
+        <section data-testid="audit-scroll-region" data-raise={showLowerRequest} data-lower={showUpperRequest}>
             <div data-testid="audit-upper">{upper}</div>
             <div data-testid="audit-viewport">{children}</div>
             <div data-testid="audit-footer">{footer}</div>
@@ -82,6 +84,30 @@ function mount(overrides: Partial<AdminAuditController> = {}) {
 beforeEach(() => vi.clearAllMocks())
 
 describe('AdminAuditPageView — форма и рабочая область', () => {
+    it('поднимает таблицу по карточке, показывает период и возвращает форму по кнопке', () => {
+        const controller = mount()
+        const region = screen.getByTestId('audit-scroll-region')
+        fireEvent.click(screen.getByRole('button', { name: 'Успешные 100' }))
+        expect(controller.selectAuditMetric).toHaveBeenCalledWith('SUCCESS')
+        expect(region).toHaveAttribute('data-raise', '1')
+        expect(screen.queryByRole('heading', { name: 'Поиск событий' })).not.toBeInTheDocument()
+        expect(screen.getByText('Период: 01.10.2026 — 20.10.2026')).toBeVisible()
+        expect(screen.getByRole('button', { name: 'Скачать CSV текущей страницы' })).toBeVisible()
+        fireEvent.click(screen.getByRole('button', { name: 'Показать фильтры' }))
+        expect(region).toHaveAttribute('data-lower', '1')
+        expect(screen.getByRole('heading', { name: 'Поиск событий' })).toBeVisible()
+        fireEvent.click(screen.getByRole('button', { name: 'Безопасность' }))
+        expect(controller.selectAuditCategory).toHaveBeenCalledWith('SECURITY')
+        expect(region).toHaveAttribute('data-raise', '2')
+        expect(screen.getByRole('button', { name: 'Показать фильтры' })).toHaveAttribute('aria-expanded', 'false')
+    })
+
+    it('не скрывает неприменённые фильтры быстрым переходом', () => {
+        const controller = mount({ filtersDirty: true })
+        expect(screen.getByRole('button', { name: 'Свернуть фильтры' })).toBeDisabled()
+        expect(screen.getByRole('button', { name: 'Успешные 100' })).toBeDisabled()
+        expect(controller.selectAuditMetric).not.toHaveBeenCalled()
+    })
     it('оставляет фильтры и экспорт в upper, таблицу в viewport и пагинацию в footer', () => {
         mount()
         expect(within(screen.getByTestId('audit-upper')).getByText('Журнал событий')).toBeInTheDocument()

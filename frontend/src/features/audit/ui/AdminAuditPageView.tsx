@@ -3,6 +3,7 @@
 // frontend/src/features/audit/ui/AdminAuditPageView.tsx
 // Представление журнала аудита: рабочая область, таблица, CSV, детали.
 // ============================================================
+import { useEffect, useRef, useState } from 'react'
 import { EmptyState, ErrorState, LoadingState } from '../../../shared/ui/StateBlock'
 import ResizableScrollRegion from '../../../shared/ui/ResizableScrollRegion'
 import { AdminPageHeader } from '../../../shared/ui/AdminPageHeader'
@@ -13,6 +14,8 @@ import AuditTable from './AuditTable'
 import AuditSummaryPanel from './AuditSummaryPanel'
 import { downloadAuditCsv } from './auditCsv'
 import type { AdminAuditController } from '../controller/useAdminAuditController'
+import { getAuditEventTypeLabel } from '../constants/auditEvents'
+import type { AuditCategory, AuditMetric } from '../api/adminAuditApi'
 
 export type AdminAuditPageViewProps = {
     controller: AdminAuditController
@@ -49,9 +52,61 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
         retryLoad,
         changePage,
     } = controller
+    const [compact, setCompact] = useState(false)
+    const [lowerRequest, setLowerRequest] = useState(0)
+    const [upperRequest, setUpperRequest] = useState(0)
+    const upperRef = useRef<HTMLDivElement>(null)
+    const hadTable = useRef(showTable)
+
+    // При возвращении из пустого результата новая область тоже раскрывается.
+    useEffect(() => {
+        if (showTable && !hadTable.current && compact) {
+            setLowerRequest(value => value + 1)
+        }
+        hadTable.current = showTable
+    }, [showTable, compact])
+
+    function revealResults() {
+        setCompact(true)
+        setLowerRequest(value => value + 1)
+        if (upperRef.current) upperRef.current.scrollTop = 0
+        const pane = upperRef.current?.closest('.resizable-scroll-region__upper')
+        if (pane) pane.scrollTop = 0
+    }
+
+    function selectMetric(metric?: AuditMetric) {
+        controller.selectAuditMetric(metric)
+        revealResults()
+    }
+
+    function selectCategory(category?: AuditCategory) {
+        controller.selectAuditCategory(category)
+        revealResults()
+    }
+
+    function toggleFilters() {
+        if (compact) {
+            setCompact(false)
+            setUpperRequest(value => value + 1)
+        } else {
+            revealResults()
+        }
+    }
+
+    const activeFilters = [
+        draftFilter.eventType && getAuditEventTypeLabel(draftFilter.eventType),
+        superAdmin && draftFilter.targetOrganizationId && (
+            organizations.find(org => org.targetOrganizationId === draftFilter.targetOrganizationId)?.targetOrganizationName
+            || draftFilter.targetOrganizationId),
+        draftFilter.actorUserId && (
+            actors.find(actor => actor.actorUserId === draftFilter.actorUserId)?.actorEmail || draftFilter.actorUserId),
+        draftFilter.actorEmail && 'История email: ' + draftFilter.actorEmail,
+    ].filter(Boolean).join(' · ')
+    const period = [draftFilter.dateFrom, draftFilter.dateTo]
+        .map(date => date.split('-').reverse().join('.')).join(' — ')
 
     const upper = (
-                    <div className="audit-page__upper">
+                    <div className="audit-page__upper" ref={upperRef}>
                         <AdminPageHeader className="audit-page__header page-hero page-hero--audit">
                             <div className="audit-page__heading">
                                 <span className="audit-page__eyebrow">
@@ -81,9 +136,24 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
                         <AuditSummaryPanel summary={controller.summary} loading={controller.summaryLoading}
                             error={controller.summaryError} disabled={effectiveLoading || filtersDirty}
                             category={draftFilter.category} metric={draftFilter.metric}
-                            onMetric={controller.selectAuditMetric} onCategory={controller.selectAuditCategory}
+                            onMetric={selectMetric} onCategory={selectCategory}
                             onRetry={retryLoad} />
 
+                        <div className="audit-workspace-switch"
+                            data-resizable-upper-boundary={compact && showTable ? undefined : ''}>
+                            <button type="button" className="secondary-button"
+                                aria-expanded={!compact} aria-controls="audit-workspace-filters"
+                                disabled={!compact && filtersDirty}
+                                onClick={toggleFilters}>
+                                {compact ? 'Показать фильтры' : 'Свернуть фильтры'}
+                            </button>
+                            <span className="muted">
+                                {compact ? <>Период: {period}{activeFilters && <> · {activeFilters}</>}</>
+                                    : 'Карточки и категории открывают результаты; высоту можно менять вручную.'}
+                                {filtersDirty && ' · Есть неприменённые изменения'}
+                            </span>
+                        </div>
+                        <div id="audit-workspace-filters" hidden={compact}>
                         <AuditFilters
                             draftFilter={
                                 draftFilter
@@ -140,6 +210,7 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
                                 resetFilters
                             }
                         />
+                        </div>
 
                         {effectiveLoading
                             && events.length === 0
@@ -188,6 +259,7 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
                                         <h2>Результаты поиска <span>{pageResponse.totalElements.toLocaleString('ru-RU')}</span></h2>
                                         <p>Нажмите на имя для фильтрации событий или откройте карточку пользователя.
                                             {' '}CSV страницы содержит только её события.
+                                            {effectiveLoading && <span role="status"> Обновляем результаты…</span>}
                                             {filtersDirty && (
                                                 <span className="audit-csv-unapplied">
                                                     {' '}Не примененные изменения фильтров в файл не входят.
@@ -218,7 +290,9 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
                                     </div>
                                 </div>
                             )}
-                        <span className="resizable-scroll-region__upper-boundary-marker" data-resizable-upper-preferred-boundary aria-hidden="true" />
+                        <span className="resizable-scroll-region__upper-boundary-marker"
+                            data-resizable-upper-boundary={compact && showTable ? '' : undefined}
+                            data-resizable-upper-preferred-boundary aria-hidden="true" />
                     </div>
     )
 
@@ -229,6 +303,9 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
                 preserveUpperContent
                 reserveLowerHeight
                 collapseToFooter
+                showLowerRequest={lowerRequest}
+                showUpperRequest={upperRequest}
+                viewportResetKey={`${pageResponse.page}:${events.map(event => event.id).join(',')}`}
                 label="журнал событий"
                 upper={upper}
                 footer={

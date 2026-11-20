@@ -448,7 +448,7 @@ test('audit filtered CSV requests the applied filter and refuses an oversized re
   expect((await download).suggestedFilename()).toBe('safeai-audit-filtered.csv')
 })
 
-test('super admin receives entity links and can drag audit divider to the dates and back', async ({ page }) => {
+test('super admin receives entity links and can drag audit divider to the summary and back', async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 })
   await page.route('**/api/auth/me', route => route.fulfill({ json: {
     id: userId, organizationId: orgId, email: actor.actorEmail, fullName: actor.actorDisplayName,
@@ -484,10 +484,10 @@ test('super admin receives entity links and can drag audit divider to the dates 
   await page.mouse.up()
   await expect.poll(height).toBeGreaterThan(initial + 32)
   await page.locator('.audit-page .resizable-scroll-region__upper').evaluate(upper => { upper.scrollTop = 0 })
-  const dates = await page.getByLabel('Конец периода').boundingBox()
+  const boundary = await page.locator('.audit-workspace-switch').boundingBox()
   const top = await separator.boundingBox()
-  expect(top.y).toBeGreaterThanOrEqual(dates.y + dates.height - 2)
-  expect(top.y - dates.y - dates.height).toBeLessThan(35)
+  expect(top.y).toBeGreaterThanOrEqual(boundary.y + boundary.height - 2)
+  expect(top.y - boundary.y - boundary.height).toBeLessThan(35)
   const expandedHeight = await height()
   await page.mouse.move(top.x + top.width / 2, top.y + top.height / 2)
   await page.mouse.down()
@@ -515,6 +515,63 @@ test('super admin receives entity links and can drag audit divider to the dates 
   await expect(footer.getByText(/Всего событий/)).toBeInViewport()
   await separator.dblclick()
   await expect.poll(height).toBe(initial)
+})
+
+test('audit card raises results, preserves summary and CSV, and restores the filters', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/admin/audit')
+  const grip = page.getByRole('separator', { name: /журнал событий/ })
+  const summary = page.getByRole('region', { name: 'Сводка аудита' })
+  await expect(summary.getByRole('button', { name: 'Отказы 9' })).toBeEnabled()
+  await grip.press('Home')
+  const before = Number(await grip.getAttribute('aria-valuenow'))
+  await summary.getByRole('button', { name: 'Отказы 9' }).click()
+  await expect(page).toHaveURL(/metric=DENIED/)
+  await expect.poll(async () => Number(await grip.getAttribute('aria-valuenow'))).toBeGreaterThan(before)
+  await expect(page.getByRole('heading', { name: 'Поиск событий' })).toBeHidden()
+  await expect(summary.getByText(/Категории и карточки/)).toBeInViewport()
+  await expect(page.getByRole('button', { name: 'Скачать CSV текущей страницы' })).toBeInViewport()
+  await expect(page.getByRole('button', { name: 'Подробнее' })).toBeInViewport()
+  await page.getByRole('button', { name: 'Показать фильтры' }).click()
+  await expect(page.getByRole('heading', { name: 'Поиск событий' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Отказы 9' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: 'Вперёд' })).toBeInViewport()
+})
+
+test('audit organization overlay never moves date fields when server matches shrink or expand', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.route('**/api/auth/me', route => route.fulfill({ json: {
+    id: userId, organizationId: orgId, email: actor.actorEmail, fullName: actor.actorDisplayName,
+    enabled: true, roles: ['SUPER_ADMIN'],
+  } }))
+  const rows = Array.from({ length: 12 }, (_, i) => ({
+    targetOrganizationId: `11111111-1111-4111-8111-1111111111${String(i).padStart(2, '0')}`,
+    targetOrganizationName: `Devcom ${i}`,
+  }))
+  await page.route('**/api/admin/audit-organizations*', route => {
+    const query = new NodeURL(route.request().url()).searchParams.get('query') || ''
+    return route.fulfill({ json: rows.filter(row => row.targetOrganizationName.toLowerCase().includes(query.toLowerCase())) })
+  })
+  await page.goto('/admin/audit')
+  const org = page.getByRole('combobox', { name: 'Организация' })
+  const dates = page.getByLabel('Конец периода')
+  const grip = page.getByRole('separator', { name: /журнал событий/ })
+  await grip.press('Home')
+  await org.scrollIntoViewIfNeeded()
+  const baseline = await dates.boundingBox()
+  const baselineGrip = await grip.boundingBox()
+  for (const [query, count] of [['DEV', 12], ['Devcom 11', 1], ['no-such-org', 0], ['dev', 12]]) {
+    await org.fill(query)
+    const list = page.getByRole('listbox', { name: 'Организация: варианты' })
+    await expect(list).toBeVisible()
+    await expect(list.getByRole('option')).toHaveCount(count)
+    if (count === 0) await expect(list.getByText('Организации не найдены')).toBeVisible()
+    expect(await list.evaluate(el => el.parentElement === el.ownerDocument.body)).toBeTruthy()
+    expect(Math.abs((await dates.boundingBox()).y - baseline.y)).toBeLessThan(2)
+    expect(Math.abs((await grip.boundingBox()).y - baselineGrip.y)).toBeLessThan(2)
+  }
+  await org.press('Escape')
+  await expect(page.getByRole('listbox', { name: 'Организация: варианты' })).toHaveCount(0)
 })
 
 for (const width of [1280, 390]) {

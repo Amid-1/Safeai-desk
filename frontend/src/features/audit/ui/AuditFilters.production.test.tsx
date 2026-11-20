@@ -36,7 +36,16 @@ function createProps(overrides: Partial<ComponentProps<typeof AuditFilters>> = {
 }
 
 describe('AuditFilters — production regression', () => {
-    beforeEach(() => { vi.useRealTimers() })
+    beforeEach(() => {
+        vi.useRealTimers()
+        const original = HTMLElement.prototype.getBoundingClientRect
+        vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+            if (this.classList.contains('usage-filter-combobox__control')) {
+                return DOMRect.fromRect({ x: 24, y: 120, width: 260, height: 34 })
+            }
+            return original.call(this)
+        })
+    })
     afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
 
     it('отделяет локальный поиск типов от отправки фильтров и сохраняет выбор события', () => {
@@ -114,6 +123,33 @@ describe('AuditFilters — production regression', () => {
         expect(props.onApply).not.toHaveBeenCalled()
         expect(props.onOrganizationSearch).toHaveBeenCalledWith('Клиент')
         expect(props.onActorSearch).toHaveBeenCalledWith('admin@')
+    })
+
+    it('список организаций — портал: выбор, прокрутка и Escape не перестраивают форму', () => {
+        const props = createProps({ superAdmin: true, organizations: [
+            { targetOrganizationId: ORGANIZATION_ID, targetOrganizationName: 'Завод' },
+        ] })
+        const { container } = render(<AuditFilters {...props} />)
+        const input = screen.getByRole('combobox', { name: 'Организация' })
+        const anchor = input.parentElement!
+        let top = 120
+        vi.spyOn(anchor, 'getBoundingClientRect').mockImplementation(() =>
+            DOMRect.fromRect({ x: 24, y: top, width: 260, height: 34 }))
+        fireEvent.focus(input)
+        const menu = screen.getByRole('listbox', { name: 'Организация: варианты' })
+        expect(menu.parentElement).toBe(document.body)
+        expect(container).not.toContainElement(menu)
+        expect(menu).toHaveStyle({ left: '24px', top: '159px', width: '260px' })
+        top = 200
+        fireEvent.scroll(window)
+        expect(menu).toHaveStyle({ top: '239px' })
+        fireEvent.pointerDown(screen.getByRole('option', { name: 'Завод' }))
+        fireEvent.click(screen.getByRole('option', { name: 'Завод' }))
+        expect(props.onFilterChange).toHaveBeenCalledOnce()
+        expect(props.onApply).not.toHaveBeenCalled()
+        fireEvent.click(input)
+        fireEvent.keyDown(input, { key: 'Escape' })
+        expect(screen.queryByRole('listbox', { name: 'Организация: варианты' })).not.toBeInTheDocument()
     })
 
     it('использует актуальный callback, когда поиск ещё находится в debounce', async () => {

@@ -135,6 +135,17 @@
     cursor: pointer;
 }
 
+.usage-filter-combobox__menu--overlay {
+    position: fixed;
+    z-index: 90;
+    top: auto;
+    left: auto;
+    margin: 0;
+    box-sizing: border-box;
+    overscroll-behavior: contain;
+    visibility: hidden;
+}
+
 .usage-filter-combobox__option--active {
     background: #eef4ff;
 }

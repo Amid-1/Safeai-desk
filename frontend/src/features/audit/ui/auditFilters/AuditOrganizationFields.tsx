@@ -35,7 +35,7 @@ export function AuditOrganizationFields({
                 }))]}
                 placeholder="Все организации" searchPlaceholder="Название или UUID"
                 emptyMessage="Организации не найдены" disabled={loading}
-                loading={directoriesLoading} error={organizationsError} filterLocally={false}
+                loading={directoriesLoading} error={organizationsError} filterLocally={false} overlay
                 helperText="Организация, которой касается событие. Поиск выполняется на сервере."
                 onQueryChange={next => { if (next !== organizationQuery) onOrganizationQueryChange(next) }}
                 onChange={targetOrganizationId => onFilterChange(current => ({...current, targetOrganizationId}))} />

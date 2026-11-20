@@ -67,6 +67,17 @@
 .audit-investigation button:focus-visible { outline: 3px solid #275ded; outline-offset: 2px; }
 .audit-investigation__hint { margin: 9px 0 0; font-size: .82rem; }
 .audit-investigation__error { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.audit-workspace-switch {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    min-width: 0;
+}
+.audit-workspace-switch > span { min-width: 0; overflow-wrap: anywhere; font-size: .85rem; }
+#audit-workspace-filters { flex: 0 0 auto; min-width: 0; }
+#audit-workspace-filters[hidden] { display: none; }
 @media (max-width: 760px) { .audit-investigation__cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* ============================================================
