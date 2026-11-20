@@ -197,6 +197,10 @@
     scrollbar-gutter: stable;
 }
 
+.resizable-scroll-region--collapsed .resizable-scroll-region__viewport[hidden] {
+    display: none;
+}
+
 /* ============================================================
    FOOTER
    ============================================================ */

@@ -153,6 +153,44 @@ describe('ResizableScrollRegion: полная регрессия поведен�
         expect(screen.getByText('Верхний блок')).toBeInTheDocument()
     })
 
+    it('сворачивает только таблицу до панели навигации и учитывает изменение высоты footer', () => {
+        let footerHeight = 56
+        vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+            .mockImplementation(function (this: HTMLElement) {
+                if (this.classList.contains('resizable-scroll-region')) return boundingRect(900)
+                if (this.classList.contains('resizable-scroll-region__handle')) return boundingRect(15)
+                if (this.classList.contains('resizable-scroll-region__footer')) return boundingRect(footerHeight)
+                return boundingRect(500)
+            })
+        const view = render(region({collapseToFooter: true, autoFitHeight: 350, minHeight: 280}))
+        const separator = screen.getByRole('separator')
+        const viewport = view.container.querySelector('.resizable-scroll-region__viewport')
+        expect(height()).toBe(350)
+        expect(separator).toHaveAttribute('aria-valuemin', '71')
+        fireEvent.pointerDown(separator, {pointerId: 1, button: 0, clientY: 400})
+        fireEvent.pointerMove(separator, {pointerId: 1, clientY: 900})
+        fireEvent.pointerUp(separator, {pointerId: 1})
+        expect(height()).toBe(71)
+        expect(viewport).toHaveAttribute('hidden')
+        expect(screen.getByText('Итог')).toBeVisible()
+        expect(window.localStorage.getItem(KEY)).toBe('0')
+
+        footerHeight = 100
+        view.rerender(region({collapseToFooter: true, autoFitHeight: 350, minHeight: 280}))
+        expect(height()).toBe(115)
+        expect(viewport).toHaveAttribute('hidden')
+        fireEvent.keyDown(separator, {key: 'ArrowUp'})
+        expect(height()).toBe(147)
+        expect(viewport).not.toHaveAttribute('hidden')
+        fireEvent.keyDown(separator, {key: 'Home'})
+        expect(height()).toBe(115)
+        view.unmount()
+        render(region({collapseToFooter: true, autoFitHeight: 350, minHeight: 280}))
+        expect(height()).toBe(115)
+        fireEvent.doubleClick(screen.getByRole('separator'))
+        expect(height()).toBe(350)
+    })
+
     it('разделяет обычную высоту и границу основных фильтров, сохраняет drag и reset', () => {
         vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
             .mockImplementation(function (this: HTMLElement) {

@@ -221,6 +221,7 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
                 storageKey="safeai:audit-events-height:v4"
                 preserveUpperContent
                 reserveLowerHeight
+                collapseToFooter
                 label="журнал событий"
                 upper={upper}
                 footer={

@@ -22,6 +22,7 @@ export function useResizableScrollRegion({
     minUpperHeight = 100,
     preserveUpperContent = false,
     reserveLowerHeight = false,
+    collapseToFooter = false,
     upperBoundaryPadding = 8,
 }: ResizableScrollRegionProps) {
     const normalizedMinHeight =
@@ -69,6 +70,7 @@ export function useResizableScrollRegion({
         useState<LayoutMetrics>({
             containerHeight: 0,
             preferredUpperHeight: null,
+            collapsedLowerHeight: null,
             protectedUpperHeight:
                 Math.max(
                     0,
@@ -91,7 +93,7 @@ export function useResizableScrollRegion({
             readSavedHeight(
                 storageKey,
                 defaultHeight,
-                normalizedMinHeight,
+                collapseToFooter ? 0 : normalizedMinHeight,
                 normalizedMaxHeight,
             ),
         )
@@ -187,6 +189,21 @@ export function useResizableScrollRegion({
                     minUpperHeight,
                 )
             let nextPreferredUpperHeight: number | null = null
+            let nextCollapsedLowerHeight: number | null = null
+
+            if (collapseToFooter) {
+                const lower = root.querySelector<HTMLElement>('.resizable-scroll-region__lower')
+                const handle = lower?.querySelector<HTMLElement>('.resizable-scroll-region__handle')
+                const footer = lower?.querySelector<HTMLElement>('.resizable-scroll-region__footer')
+                if (lower && handle && footer) {
+                    const style = window.getComputedStyle(lower)
+                    const pixels = (value: string) => Number.parseFloat(value) || 0
+                    const height = handle.getBoundingClientRect().height + footer.getBoundingClientRect().height
+                        + pixels(style.paddingTop) + pixels(style.paddingBottom)
+                        + pixels(style.borderTopWidth) + pixels(style.borderBottomWidth) + pixels(style.rowGap)
+                    if (height > 0) nextCollapsedLowerHeight = Math.ceil(height)
+                }
+            }
 
             if (preserveUpperContent) {
                 const upperTop = upperElement.getBoundingClientRect().top
@@ -211,6 +228,7 @@ export function useResizableScrollRegion({
                         && current.protectedUpperHeight
                             === nextProtectedUpperHeight
                         && current.preferredUpperHeight === nextPreferredUpperHeight
+                        && current.collapsedLowerHeight === nextCollapsedLowerHeight
                     ) {
                         return current
                     }
@@ -221,6 +239,7 @@ export function useResizableScrollRegion({
                         protectedUpperHeight:
                             nextProtectedUpperHeight,
                         preferredUpperHeight: nextPreferredUpperHeight,
+                        collapsedLowerHeight: nextCollapsedLowerHeight,
                     }
                 },
             )
@@ -228,6 +247,7 @@ export function useResizableScrollRegion({
             minUpperHeight,
             preserveUpperContent,
             upperBoundaryPadding,
+            collapseToFooter,
         ])
 
     /**
@@ -277,6 +297,10 @@ export function useResizableScrollRegion({
         observer.observe(root)
         observer.observe(upperElement)
         if (upperElement.firstElementChild) observer.observe(upperElement.firstElementChild)
+        if (collapseToFooter) {
+            root.querySelectorAll('.resizable-scroll-region__handle, .resizable-scroll-region__footer')
+                .forEach(element => observer.observe(element))
+        }
 
         const boundary =
             upperElement.querySelector<HTMLElement>(
@@ -323,12 +347,14 @@ export function useResizableScrollRegion({
         }
     }, [
         measureLayout,
+        collapseToFooter,
     ])
 
     const {
         containerHeight,
         protectedUpperHeight,
         preferredUpperHeight,
+        collapsedLowerHeight,
     } =
         layoutMetrics
 
@@ -367,7 +393,7 @@ export function useResizableScrollRegion({
      */
     const effectiveMinHeight =
         Math.min(
-            normalizedMinHeight,
+            collapsedLowerHeight ?? normalizedMinHeight,
             effectiveMaxHeight,
         )
 
@@ -379,9 +405,13 @@ export function useResizableScrollRegion({
             automaticHeight != null && !manualHeight
                 ? automaticHeight
                 : requestedHeight,
-            effectiveMinHeight,
+            automaticHeight != null && !manualHeight
+                ? Math.min(Math.max(normalizedMinHeight, effectiveMinHeight), effectiveMaxHeight)
+                : effectiveMinHeight,
             effectiveMaxHeight,
         )
+    const collapsed = collapseToFooter && collapsedLowerHeight !== null
+        && renderedHeight <= collapsedLowerHeight
 
     useLayoutEffect(() => {
         renderedHeightRef.current =
@@ -401,12 +431,14 @@ export function useResizableScrollRegion({
                     effectiveMaxHeight,
                 )
 
-            setRequestedHeight(next)
+            setRequestedHeight(collapseToFooter && collapsedLowerHeight !== null && next <= effectiveMinHeight ? 0 : next)
             if (autoFitHeight != null) setManualHeight(true)
         }, [
             effectiveMinHeight,
             effectiveMaxHeight,
             autoFitHeight,
+            collapseToFooter,
+            collapsedLowerHeight,
         ])
 
     useEffect(() => {
@@ -636,7 +668,7 @@ export function useResizableScrollRegion({
     }
 
         return {
-        rootRef, upperRef, viewportRef, manualHeight, renderedHeight,
+        rootRef, upperRef, viewportRef, manualHeight, renderedHeight, collapsed,
         effectiveProtectedUpperHeight, effectiveMinHeight, effectiveMaxHeight,
         beginResize, moveResize, finishResize, restoreBodyState,
         resetHeight, handleKeyDown,

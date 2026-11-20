@@ -447,8 +447,9 @@ test('super admin receives entity links and can drag audit divider to the dates 
     const preferred = root.querySelector('[data-resizable-upper-preferred-boundary]')
     const divider = root.querySelector('[role="separator"]')
     const preferredHeight = Math.ceil(preferred.getBoundingClientRect().bottom - upper.getBoundingClientRect().top + upper.scrollTop + 8)
-    return Math.max(Number(divider.getAttribute('aria-valuemin')),
-      Math.min(Number(divider.getAttribute('aria-valuemax')), Math.round(root.getBoundingClientRect().height) - preferredHeight))
+    const max = Number(divider.getAttribute('aria-valuemax'))
+    return Math.max(Math.min(280, max), Number(divider.getAttribute('aria-valuemin')),
+      Math.min(max, Math.round(root.getBoundingClientRect().height) - preferredHeight))
   })
   await expect.poll(async () => (await height()) - (await automaticHeight())).toBe(0)
   const initial = await height()
@@ -477,6 +478,20 @@ test('super admin receives entity links and can drag audit divider to the dates 
   await expect(page.getByRole('button', { name: 'Подробнее' })).toBeVisible()
   await separator.dblclick()
   await expect.poll(height).toBe(initial)
+  const grip = await separator.boundingBox()
+  const footer = page.locator('.audit-page .resizable-scroll-region__footer')
+  const footerBounds = await footer.boundingBox()
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(grip.x + grip.width / 2, footerBounds.y + footerBounds.height - 2, {steps: 12})
+  await page.mouse.up()
+  await expect.poll(async () => await height()).toBe(Number(await separator.getAttribute('aria-valuemin')))
+  await expect(page.locator('.audit-page .resizable-scroll-region__viewport')).toBeHidden()
+  await expect(footer.getByRole('button', {name: 'Назад'})).toBeInViewport()
+  await expect(footer.getByRole('button', {name: 'Вперёд'})).toBeInViewport()
+  await expect(footer.getByText(/Всего событий/)).toBeInViewport()
+  await separator.dblclick()
+  await expect.poll(height).toBe(initial)
 })
 
 for (const width of [1280, 390]) {
@@ -493,6 +508,10 @@ for (const width of [1280, 390]) {
       await separator.press('End')
       await expect.poll(height).toBeGreaterThan(initial)
       await separator.press('Home')
+      await expect.poll(height).toBe(Number(await separator.getAttribute('aria-valuemin')))
+      await expect(viewport).toBeHidden()
+      await expect(page.getByRole('button', {name: 'Вперёд'})).toBeInViewport()
+      await separator.dblclick()
       await expect.poll(height).toBe(initial)
       await expect.poll(async () => (await viewport.boundingBox()).height).toBeGreaterThan(100)
     }

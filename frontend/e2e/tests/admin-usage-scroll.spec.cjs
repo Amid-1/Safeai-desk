@@ -229,8 +229,20 @@ test('a distant organization selection remains visible without scrolling to the 
   await page.goto(`/admin/usage?report=organizations&${dates}`)
   await page.getByRole('button', {name: 'График', exact: true}).click()
   await page.getByLabel('Строк на графике').selectOption('50')
-  const label = page.locator('text.usage-chart-action-tick').filter({hasText: /^Организация 20$/})
-  await label.scrollIntoViewIfNeeded()
+  const plot = page.locator('.usage-breakdown-chart__frame')
+  const surface = plot.getByRole('application')
+  const label = plot.locator('text.usage-chart-action-tick').filter({hasText: /^Организация 20$/})
+  // Recharts applies the new rows and ResizeObserver dimensions asynchronously.
+  // Do not interact with a tick from the intermediate SVG tree.
+  await expect.poll(() => surface.evaluate(el => el.viewBox.baseVal.height)).toBeGreaterThanOrEqual(50 * 58)
+  await expect.poll(() => surface.evaluate(el => Math.abs(el.viewBox.baseVal.height - el.getBoundingClientRect().height))).toBeLessThanOrEqual(1)
+  await expect(plot.locator('text.usage-chart-action-tick')).toHaveCount(50)
+  // A final render can replace the tick during scrollIntoViewIfNeeded.
+  // Retry only the pre-click positioning with a fresh locator, never the assertions after the real click.
+  await expect(async () => {
+    await label.scrollIntoViewIfNeeded({timeout: 1000})
+    await expect(label).toBeInViewport({timeout: 1000})
+  }).toPass({timeout: 7500})
   const viewport = page.locator('.usage-data-viewport')
   const before = await viewport.evaluate(el => el.scrollTop)
   expect(before).toBeGreaterThan(500)
