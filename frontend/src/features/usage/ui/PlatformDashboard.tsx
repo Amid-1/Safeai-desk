@@ -1,5 +1,5 @@
 // frontend/src/features/usage/ui/PlatformDashboard.tsx
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { getOrganizations } from '../../../entities/organization/api/organizationApi'
 import { getUserStatistics } from '../../../entities/user/api/userApi'
@@ -13,6 +13,7 @@ import { toUsageFilter } from '../lib/adminUsageFilterState'
 import { formatCount, trimDecimal } from '../lib/adminUsagePresentation'
 import { UsageDailyChart, type UsageDailyMetric } from './UsageDailyChart'
 import { UsageKpis } from './UsageKpis'
+import { BUDGET_CATEGORIES } from '../lib/usageBudgetStatus'
 
 const loadUsers = (signal: AbortSignal) => getUserStatistics({signal, directory: true})
 const loadOrganizations = (signal: AbortSignal) => getOrganizations(0, 1, {signal})
@@ -41,6 +42,14 @@ export function PlatformDashboard() {
     const [search, setSearch] = useState('')
     const [page, setPage] = useState(0)
     const [scope, setScope] = useState<{id: string; name: string} | null>(null)
+    const analyticsHeading = useRef<HTMLHeadingElement>(null)
+    function showOrganization(id: string, name: string) {
+        setScope(previous => previous?.id === id ? previous : {id, name})
+        analyticsHeading.current?.focus({preventScroll: true})
+        analyticsHeading.current?.scrollIntoView?.({
+            block: 'start', behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+        })
+    }
     useEffect(() => {
         const timeout = window.setTimeout(() => {setSearch(draft.trim()); setPage(0)}, 300)
         return () => window.clearTimeout(timeout)
@@ -78,7 +87,7 @@ export function PlatformDashboard() {
     return <div className="page platform-dashboard">
         <header className="platform-dashboard__header">
             <div><span className="usage-eyebrow">SAFEAI DESK · ПЛАТФОРМА</span><h1>Обзор платформы</h1>
-                <p>Сводка по всем организациям · только для супер администратора.</p></div>
+                <p>Сводка по всем организациям · только для суперадминистратора.</p></div>
             <button className="secondary-button" onClick={() => {setNow(new Date()); setRefresh(v => v + 1)}}>Обновить данные</button>
         </header>
         <div className="platform-dashboard__grid">
@@ -92,26 +101,41 @@ export function PlatformDashboard() {
             </Panel>
             <Panel title="Подключённая модель" {...runtime}>
                 <strong className="platform-dashboard__model">{runtime.data?.model}</strong>
-                <p>{runtime.data?.enabled ? 'Включена в конфигурации' : 'Отключена'} · {runtime.data?.provider}</p>
-                {runtime.data?.provider === 'mock' && <p className="platform-dashboard__badge">Тестовая модель</p>}
+                <p>{runtime.data?.enabled ? 'Включена в конфигурации' : 'Отключена'} · {runtime.data?.provider}
+                    {runtime.data?.provider === 'mock' && <> <span className="platform-dashboard__badge">Тестовая модель</span></>}</p>
                 <p>Связь с провайдером здесь не проверяется.</p><Link to="/admin/models?section=diagnostics">Диагностика моделей</Link>
             </Panel>
         </div>
+        <Panel title="Контроль бюджетов организаций" {...budget}>
+            {budget.data && <>
+                <p>Текущий календарный месяц (UTC) · {dateLabel(budget.data.periodStart)} — до {dateLabel(budget.data.periodEnd)} (не включительно). Все организации, включая отключённые.</p>
+                <div className="platform-dashboard__budget-grid">
+                    {BUDGET_CATEGORIES.map(({status, key, label, tone, description}) => <Link key={status}
+                        to={usageLink('organizations', {budgetStatus: status})}
+                        title={description} aria-label={label + ': ' + budget.data?.[key] + '. Показать организации'}
+                        className={`platform-dashboard__budget-item platform-dashboard__budget-item--${tone}`}>
+                        <span>{label}</span><span className="platform-dashboard__budget-value"><strong>{budget.data?.[key].toLocaleString('ru-RU')}</strong><span aria-hidden="true">↗</span></span>
+                    </Link>)}
+                </div>
+                <p>Учитываются известные расходы и действующие резервы. Неизвестные затраты не считаются нулевыми; подтверждённое превышение показывается даже при неполных данных.</p>
+                <Link to={usageLink('organizations')}>Посмотреть бюджеты организаций</Link>
+            </>}
+        </Panel>
         <section className="platform-dashboard__panel" aria-label="Период аналитики">
-            <div className="platform-dashboard__toolbar"><div><h2>Использование AI</h2>
+            <div className="platform-dashboard__toolbar"><div><h2 ref={analyticsHeading} tabIndex={-1} className="platform-dashboard__analytics-heading">Использование AI</h2>
                 <p>{dateLabel(range.dateFrom)} — {dateLabel(range.dateTo)} · UTC</p>
                 <p className="platform-dashboard__scope">Область отчёта: <strong>{scope?.name ?? 'Все организации'}</strong>
                     {scope && <button type="button" className="secondary-button" onClick={() => setScope(null)}>Все организации</button>}</p>
-                {daily.loadedAt && <small>Аналитика обновлена: {daily.loadedAt.toLocaleString('ru-RU')}</small>}</div>
-                <div className="platform-dashboard__period"><label htmlFor="platform-dashboard-period">Период</label><select id="platform-dashboard-period" value={days} onChange={e => {setDays(Number(e.target.value)); setNow(new Date()); setPage(0); setPeriodRevision(v => v + 1)}}>
+                {daily.loadedAt && <small>Аналитика обновлена: {daily.loadedAt.toLocaleString('ru-RU', {timeZone: 'UTC'})} UTC</small>}</div>
+                <div className="platform-dashboard__analytics-actions"><div className="platform-dashboard__period"><label htmlFor="platform-dashboard-period">Период</label><select id="platform-dashboard-period" value={days} onChange={e => {setDays(Number(e.target.value)); setNow(new Date()); setPage(0); setPeriodRevision(v => v + 1)}}>
                     {[7, 30, 90, 365].map(n => <option key={n} value={n}>{n} дней</option>)}
-                </select></div><Link to={usageLink('daily', scope ? {organizationId: scope.id} : {})}>Полный отчёт</Link></div>
+                </select></div><Link to={usageLink('daily', scope ? {organizationId: scope.id} : {})}>Полный отчёт</Link></div></div>
             {daily.loading ? <LoadingState variant="inline" /> : daily.failed
                 ? <ErrorState variant="inline" message="Дневные агрегаты недоступны."
                     action={<button onClick={daily.retry}>Повторить</button>} />
                 : daily.data && <>
-                    <UsageKpis rows={daily.data} tab="daily" dailyTotals hasMore={false} />
-                    <p className="platform-dashboard__responses">Ответы AI (записи ассистента): <strong>{responses === null || !daily.data.length ? '—' : formatCount(responses)}</strong></p>
+                    <UsageKpis rows={daily.data} tab="daily" dailyTotals hasMore={false}
+                        assistantResponses={daily.data.length ? responses : null} />
                     <UsageDailyChart rows={daily.data} {...range} metric={metric} onMetricChange={setMetric} compactPeriodPicker expandable
                         onInspectRange={(dateFrom, dateTo) => navigate(usageLink('summary', {dateFrom, dateTo, ...(scope ? {organizationId: scope.id} : {})}))} />
                 </>}
@@ -131,13 +155,13 @@ export function PlatformDashboard() {
                 <th scope="col">Аналитика</th>
             </tr></thead><tbody>{rows.map(row => {
                 const empty = row.coverage.assistantMessages === '0'
-                return <tr key={row.organizationId}>
+                return <tr key={row.organizationId} className={scope?.id === row.organizationId ? 'platform-dashboard__selected-row' : undefined}>
                     <td>{empty ? <Link to={'/admin/organizations?organizationId=' + encodeURIComponent(row.organizationId)}>{row.organizationName}</Link>
                         : <Link to={usageLink('summary', {organizationId: row.organizationId})}>{row.organizationName}</Link>}</td>
                     <td>{empty ? '—' : formatCount(row.totalTokens)}</td>
                     <td>{empty || row.costUsd === null ? '—' : trimDecimal(row.costUsd) + ' USD'}{!empty && row.coverage.pricingComplete !== true && <small> · Неполный учёт</small>}</td>
                     <td><button type="button" className="secondary-button" aria-pressed={scope?.id === row.organizationId}
-                        onClick={() => setScope({id: row.organizationId, name: row.organizationName})}>Показать</button></td>
+                        onClick={() => showOrganization(row.organizationId, row.organizationName)}>Показать на графике</button></td>
                 </tr>
             })}</tbody></table></div>
             {rows.length === 0 && <p>{search ? 'Организации не найдены.' : 'Нет организаций с подтверждёнными токенами.'}</p>}
@@ -149,23 +173,6 @@ export function PlatformDashboard() {
             </>}
             <Link to={usageLink('organizations')}>Сравнить все организации</Link>
         </section>
-        <Panel title="Контроль бюджетов организаций" {...budget}>
-            {budget.data && <>
-                <p>Текущий календарный месяц (UTC) · {dateLabel(budget.data.periodStart)} — до {dateLabel(budget.data.periodEnd)} (не включительно). Все организации, включая отключённые.</p>
-                <div className="platform-dashboard__budget-grid">
-                    {([
-                        ['within', 'В пределах бюджета', 'ok'], ['nearLimit', 'От 80% до лимита', 'warn'],
-                        ['exceeded', 'Превысили лимит', 'danger'], ['noLimit', 'Без лимита', 'neutral'],
-                        ['unknown', 'Неизвестные расходы', 'warn'], ['disabled', 'Правила отключены', 'neutral'],
-                        ['unconfigured', 'Правила не заданы', 'neutral'],
-                    ] as const).map(([key, label, tone]) => <div key={key} className={`platform-dashboard__budget-item platform-dashboard__budget-item--${tone}`}>
-                        <span>{label}</span><strong>{budget.data?.[key].toLocaleString('ru-RU')}</strong>
-                    </div>)}
-                </div>
-                <p>Учитываются известные расходы и действующие резервы. Неизвестные затраты не считаются нулевыми; подтверждённое превышение показывается даже при неполных данных.</p>
-                <Link to={usageLink('organizations')}>Посмотреть бюджеты организаций</Link>
-            </>}
-        </Panel>
         <section className="platform-dashboard__panel" aria-label="Безопасность и управление">
             <h2>Безопасность и управление</h2>
             <div className="platform-dashboard__links">

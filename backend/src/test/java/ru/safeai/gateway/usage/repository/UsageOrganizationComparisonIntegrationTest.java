@@ -11,6 +11,7 @@ import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
+import ru.safeai.gateway.common.budget.PlatformBudgetClassification.Status;
 import ru.safeai.gateway.model.service.OrganizationBudgetStatusService;
 import ru.safeai.gateway.model.service.OrganizationModelPolicyService;
 import ru.safeai.gateway.model.domain.BudgetEnforcement;
@@ -131,6 +132,26 @@ class UsageOrganizationComparisonIntegrationTest extends UsagePostgresIntegratio
         var unlimited = budgetStatus.platformSummary(principal);
         assertThat(unlimited.nearLimit()).isEqualTo(summary.nearLimit());
         assertThat(unlimited.noLimit()).isEqualTo(summary.noLimit() + 1);
+        var counts = java.util.Map.of(
+                Status.WITHIN, unlimited.within(), Status.NEAR, unlimited.nearLimit(),
+                Status.EXCEEDED, unlimited.exceeded(), Status.NO_LIMIT, unlimited.noLimit(),
+                Status.UNKNOWN, unlimited.unknown(), Status.DISABLED, unlimited.disabled(),
+                Status.UNCONFIGURED, unlimited.unconfigured());
+        for (var entry : counts.entrySet()) {
+            var filter = new UsageQueryCriteria(RANGE_FROM, RANGE_TO, null, null, "unused-model", null, false,
+                    new UsageQueryCriteria.BudgetFilter(entry.getKey(), unlimited.periodStart(), unlimited.periodEnd()));
+            var ids = new java.util.HashSet<UUID>();
+            int page = 0;
+            boolean next;
+            do {
+                var slice = repository.findOrganizations(filter, livePlan(RANGE_FROM, RANGE_TO),
+                        PageRequest.of(page++, 1, Sort.by(Sort.Direction.DESC, "tokens")));
+                for (var row : slice.getContent()) assertThat(ids.add(row.organizationId())).isTrue();
+                next = slice.hasNext();
+            } while (next);
+            assertThat((long) ids.size()).isEqualTo(entry.getValue());
+            if (entry.getKey() == Status.NO_LIMIT) assertThat(ids).contains(ORGANIZATION_B_ID);
+        }
     }
 
     private UsageOrganizationSummaryResponse row(

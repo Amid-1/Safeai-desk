@@ -251,3 +251,5 @@
     min-height: 0;
     max-height: 55vh;
 }
+.usage-budget-drilldown { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; justify-content: space-between; padding: 12px 16px; border: 1px solid #b1c5ee; border-radius: 10px; background: #eef4ff; color: #213756; margin-block: 8px; }
+.usage-budget-drilldown p { margin: 3px 0 0; font-size: 13px; }

@@ -89,6 +89,18 @@ describe('usageApi — маршруты и сигналы', () => {
             expect(options).toEqual(expect.objectContaining({ method: 'GET', timeoutMs: API_TIMEOUTS.report }))
         }
     })
+    it('передаёт бюджетную категорию только глобальному отчёту организаций, включая экспортный размер', async () => {
+        request.mockResolvedValue(slice())
+        await getUsageByOrganizations(0, 100, {budgetStatus: 'UNKNOWN', order: 'cost'})
+        await getUsageSummary(0, 50, {budgetStatus: 'UNKNOWN'})
+        await getUsageByUsers(0, 50, {budgetStatus: 'UNKNOWN'})
+        await getUsageByOrganization(ORG, 0, 50, {budgetStatus: 'UNKNOWN'})
+        const urls = request.mock.calls.map(([path]) => new URL(path, 'https://safeai.example.test'))
+        expect(urls[0].searchParams.get('budgetStatus')).toBe('UNKNOWN')
+        expect(urls[0].searchParams.get('size')).toBe('100')
+        expect(urls[0].searchParams.get('order')).toBe('cost')
+        expect(urls.slice(1).every(url => !url.searchParams.has('budgetStatus'))).toBe(true)
+    })
     it('сохраняет параметры дат, модели, ограничения страницы и AbortSignal', async () => {
         request.mockResolvedValue(slice())
         const controller = new AbortController()

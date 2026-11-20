@@ -26,6 +26,7 @@ const row = parseUsageSummary({
 
 const fixture = {
     reportIdentity: 'admin', reloadToken: 0,
+    budgetStatus: undefined, clearBudgetStatus: vi.fn(),
     tab: 'summary', rows: [row], loading: false, error: '', page: 0,
     hasNext: false, hasPrevious: false, filterError: '', filtersDirty: false,
     appliedDateFrom: '2026-09-21', appliedDateTo: '2026-10-20',

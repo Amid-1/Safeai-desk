@@ -144,7 +144,7 @@ export function UsersDirectoryUpper({
                             />
 
                             {currentUserIsSuperAdmin && <FilterButton active={filter === 'SUPER_ADMIN'}
-                                label="Супер администраторы" count={loading || loadError ? '—' : statistics.superAdministrators ?? '—'}
+                                label="Суперадминистраторы" count={loading || loadError ? '—' : statistics.superAdministrators ?? '—'}
                                 disabled={hasPendingMutation} onClick={() => onFilterChange('SUPER_ADMIN')} />}
                             <FilterButton
                                 active={

@@ -151,6 +151,7 @@ async function getUsagePage<T>(
         order: filter.order,
         organizationQuery: normalizeOptionalString(filter.organizationQuery),
         usedOnly: filter.usedOnly,
+        budgetStatus: path === '/api/admin/usage/organizations' ? filter.budgetStatus : undefined,
         dateFrom: normalizeOptionalString(filter.dateFrom),
         dateTo: normalizeOptionalString(filter.dateTo),
         model: normalizeOptionalString(filter.model),

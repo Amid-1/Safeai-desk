@@ -62,7 +62,7 @@ export function UsageDailyChart({ rows, dateFrom, dateTo, metric, onMetricChange
                 </label>
                 {expandable && <button type="button" className="secondary-button" aria-expanded={expanded}
                     aria-controls="usage-daily-chart-content" onClick={() => setExpanded(value => !value)}>
-                    {expanded ? 'Свернуть график' : 'Развернуть график'}
+                    <span aria-hidden="true">{expanded ? '↙' : '↗'}</span>{' '}{expanded ? 'Свернуть график' : 'Развернуть график'}
                 </button>}
                 </div>
             </div>

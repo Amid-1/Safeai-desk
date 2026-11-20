@@ -26,6 +26,7 @@ import ru.safeai.gateway.auth.security.UserStatusFilter;
 import ru.safeai.gateway.common.exception.ApiErrorResponseFactory;
 import ru.safeai.gateway.common.exception.GlobalExceptionHandler;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.common.budget.PlatformBudgetClassification.Status;
 import ru.safeai.gateway.model.controller.OrganizationBudgetStatusController;
 import ru.safeai.gateway.model.domain.BudgetEnforcement;
 import ru.safeai.gateway.model.dto.OrganizationBudgetStatusResponse;
@@ -128,8 +129,25 @@ class UsageOrganizationControllerSecurityTest {
         for (String role : List.of("ADMIN", "USER")) {
             mvc.perform(get(PATH).with(authentication(auth(principal(role)))))
                     .andExpect(status().isForbidden());
+            mvc.perform(get(PATH).with(authentication(auth(principal(role)))).param("budgetStatus", "NEAR"))
+                    .andExpect(status().isForbidden());
         }
         verifyNoInteractions(usageQueryService);
+    }
+
+    @Test
+    void acceptsTypedBudgetCategoryAndRejectsUnknownCategory() throws Exception {
+        var principal = principal("SUPER_ADMIN");
+        var pageable = PageRequest.of(0, 1, Sort.by(Sort.Direction.DESC, "tokens"));
+        when(usageQueryService.getUsageByOrganizations(FROM, TO, null, null, pageable, principal, null, false, Status.EXCEEDED))
+                .thenReturn(new SliceImpl<>(List.of(), pageable, false));
+        mvc.perform(get(PATH).with(authentication(auth(principal)))
+                        .param("dateFrom", FROM.toString()).param("dateTo", TO.toString())
+                        .param("page", "0").param("size", "1").param("order", "tokens").param("budgetStatus", "EXCEEDED"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(0));
+        mvc.perform(get(PATH).with(authentication(auth(principal))).param("budgetStatus", "INVALID"))
+                .andExpect(status().isBadRequest());
+        verify(usageQueryService).getUsageByOrganizations(FROM, TO, null, null, pageable, principal, null, false, Status.EXCEEDED);
     }
 
     @Test

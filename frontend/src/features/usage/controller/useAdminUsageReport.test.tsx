@@ -39,6 +39,25 @@ describe('Usage report drilldown', () => {
         })
     })
 
+    it('preserves a budget filter across page and sort, clears it on other tabs and suppresses global totals', () => {
+        const wrapper = ({children}: PropsWithChildren) => <MemoryRouter initialEntries={['/admin/usage?report=organizations&budgetStatus=NEAR']}>{children}</MemoryRouter>
+        const {result} = renderHook(useAdminUsageReport, {wrapper})
+        expect(result.current.budgetStatus).toBe('NEAR')
+        expect(useAdminUsageReportQuery).toHaveBeenLastCalledWith(expect.objectContaining({tab: 'daily', enabled: false}))
+        act(() => result.current.goToPage(2))
+        expect(result.current.page).toBe(2)
+        expect(result.current.budgetStatus).toBe('NEAR')
+        act(() => result.current.changeOrder('cost'))
+        expect(result.current.page).toBe(0)
+        expect(result.current.budgetStatus).toBe('NEAR')
+        expect(useAdminUsageReportQuery).toHaveBeenCalledWith(expect.objectContaining({tab: 'organizations', order: 'cost', budgetStatus: 'NEAR'}))
+        act(() => result.current.clearBudgetStatus())
+        expect(result.current.budgetStatus).toBeUndefined()
+        expect(useAdminUsageReportQuery).toHaveBeenLastCalledWith(expect.objectContaining({tab: 'daily', enabled: true}))
+        act(() => result.current.selectTab('users'))
+        expect(result.current.budgetStatus).toBeUndefined()
+    })
+
     it('does not navigate or change period for an organization without responses', () => {
         const empty = parseUsageOrganizationSummary({organizationId: org, organizationName: 'Organization A',
             responses: {assistantMessages: 0}, usage: {confirmedInputTokens: 0, confirmedOutputTokens: 0,

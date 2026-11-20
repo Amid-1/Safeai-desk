@@ -10,12 +10,15 @@ export type UsageDateRangeFilter = {
     dateTo?: string
 }
 
+export type BudgetStatus = 'WITHIN' | 'NEAR' | 'EXCEEDED' | 'NO_LIMIT' | 'UNKNOWN' | 'DISABLED' | 'UNCONFIGURED'
+
 export type UsageSummaryFilter =
     UsageDateRangeFilter & {
         model?: string
         userId?: string
         organizationQuery?: string
         usedOnly?: boolean
+        budgetStatus?: BudgetStatus
         order?: 'tokens' | 'total' | 'cost' | 'responses' | 'coverage'
     }
 

@@ -4,13 +4,14 @@ import type { UsageReportTab } from '../lib/adminUsageFilterState'
 import { formatCount, trimDecimal } from '../lib/adminUsagePresentation'
 import { summarizeUsageRows } from './usageMetrics'
 
-export function UsageKpis({ rows, tab, hasMore = true, appliedModel, dailyTotals = false, status }: {
+export function UsageKpis({ rows, tab, hasMore = true, appliedModel, dailyTotals = false, status, assistantResponses }: {
     rows: UsageAmounts[]
     tab: UsageReportTab
     hasMore?: boolean
     appliedModel?: string
     dailyTotals?: boolean
     status?: string
+    assistantResponses?: string | null
 }) {
     const sum = summarizeUsageRows(rows)
     const incomplete = sum.unknownCostRows > 0 || sum.incompleteCostRows > 0
@@ -21,7 +22,7 @@ export function UsageKpis({ rows, tab, hasMore = true, appliedModel, dailyTotals
     const mock = appliedModel === 'mock-safeai' || rows.some(row => 'model' in row && row.model === 'mock-safeai')
     return (
         <section className="usage-kpi-section" aria-label="Ключевые показатели загруженного отчета">
-            <div className="usage-kpis">
+            <div className={`usage-kpis${assistantResponses !== undefined ? ' usage-kpis--four' : ''}`}>
                 <div className="usage-kpi">
                     <span className="usage-kpi__label">Подтверждённые токены</span>
                     <strong className="usage-kpi__value">{sum.rowCount ? formatCount(sum.total) : '—'}</strong>
@@ -43,6 +44,11 @@ export function UsageKpis({ rows, tab, hasMore = true, appliedModel, dailyTotals
                         ? `${sum.completeRows} из ${sum.rowCount} ${dailyTotals ? 'дней с записями' : 'строк'} · полный учёт токенов и цены`
                         : 'Нет данных отчёта'}</small>
                 </div>
+                {assistantResponses !== undefined && <div className="usage-kpi usage-kpi--responses">
+                    <span className="usage-kpi__label">Ответы AI</span>
+                    <strong className="usage-kpi__value">{assistantResponses === null ? '—' : formatCount(assistantResponses)}</strong>
+                    <small className="usage-kpi__hint">Записи ассистента, включая неуспешные ответы.</small>
+                </div>}
             </div>
             {(dailyTotals || paged || mock || status) && <p className="usage-kpi-context" role="status">
                 {status || (dailyTotals ? 'Весь выбранный период · серверные агрегаты по дням (UTC). '

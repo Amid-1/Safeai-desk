@@ -25,11 +25,29 @@
 .platform-dashboard__search input { flex: 1 1 220px; min-width: 0; max-width: 460px; }
 .platform-dashboard__search label { font-size: 14px; font-weight: 650; }
 .platform-dashboard__scope { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.platform-dashboard__responses { padding: 8px 12px; background: #f1f5fb; border-radius: 8px; }
+.platform-dashboard__grid .platform-dashboard__panel { padding-block: 12px; }
+.platform-dashboard__grid h2 { margin-bottom: 5px; }
+.platform-dashboard__grid p { margin: 3px 0 6px; }
+.platform-dashboard__analytics-actions { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
+.platform-dashboard__toolbar { align-items: flex-start; margin-bottom: 10px; }
+.platform-dashboard__analytics-heading { scroll-margin-top: 135px; }
+.platform-dashboard .usage-kpis--four { grid-template-columns: repeat(4,minmax(0,1fr)); }
+.platform-dashboard .usage-kpi--responses { border-top-color: #65829e; }
+.platform-dashboard__selected-row { background: #eef4ff; }
+.platform-dashboard__selected-row td:first-child { box-shadow: inset 3px 0 #2357cf; }
 .platform-dashboard__badge { display: inline-block; padding: 3px 8px; border-radius: 8px; background: #eef1ff; }
 .platform-dashboard__budget-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 155px), 1fr)); gap: 10px; }
 .platform-dashboard__budget-item { display: grid; gap: 5px; border: 1px solid #dbe3ef; border-radius: 10px; padding: 12px; background: #f7f9fc; }
 .platform-dashboard__budget-item strong { font-size: 26px; }
+.platform-dashboard a.platform-dashboard__budget-item { color: inherit; font-weight: 500; text-decoration: none; transition: box-shadow .15s, border-color .15s; }
+.platform-dashboard a.platform-dashboard__budget-item--ok { color: #17613b; }
+.platform-dashboard a.platform-dashboard__budget-item--warn { color: #855208; }
+.platform-dashboard a.platform-dashboard__budget-item--danger { color: #ad2630; }
+.platform-dashboard a.platform-dashboard__budget-item:hover { border-color: #7c9edc; box-shadow: 0 2px 8px #16244418; }
+.platform-dashboard a.platform-dashboard__budget-item:focus-visible { outline: 3px solid #2357cf; outline-offset: 2px; }
+.platform-dashboard__budget-value { display: flex; align-items: center; justify-content: space-between; }
+@media (max-width: 1050px) { .platform-dashboard .usage-kpis--four { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 420px) { .platform-dashboard .usage-kpis--four { grid-template-columns: 1fr; } }
 .platform-dashboard__budget-item--ok { background: #effaf3; color: #17613b; }
 .platform-dashboard__budget-item--warn { background: #fff8e7; color: #855208; }
 .platform-dashboard__budget-item--danger { background: #fff0f0; color: #ad2630; }

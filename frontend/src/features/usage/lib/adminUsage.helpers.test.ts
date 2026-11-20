@@ -12,6 +12,15 @@ import {
 } from './adminUsage.helpers'
 
 describe('admin usage helpers', () => {
+    it('round trips budget status only for a platform organization report', () => {
+        const state = readUsageUrlState('?report=organizations&budgetStatus=UNKNOWN', true)
+        expect(state.budgetStatus).toBe('UNKNOWN')
+        expect(buildUsageSearchParams({...state.draft, tab: state.tab, page: 2, budgetStatus: state.budgetStatus}).get('budgetStatus')).toBe('UNKNOWN')
+        expect(readUsageUrlState('?report=organizations&budgetStatus=UNKNOWN', false).budgetStatus).toBeUndefined()
+        expect(readUsageUrlState('?report=users&budgetStatus=UNKNOWN', true).budgetStatus).toBeUndefined()
+        expect(readUsageUrlState('?report=organizations&budgetStatus=bogus', true).budgetStatus).toBeUndefined()
+        expect(readUsageUrlState('?report=organizations&budgetStatus=UNKNOWN&organizationId=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', true).budgetStatus).toBeUndefined()
+    })
     it('по умолчанию показывает явный 30-дневный UTC диапазон', () => {
         const state = readUsageUrlState(
             '',

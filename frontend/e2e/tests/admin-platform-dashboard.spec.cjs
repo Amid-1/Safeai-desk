@@ -29,9 +29,9 @@ async function mockDashboard(page, role) {
         toolsSupported: false, visionSupported: false, structuredOutputSupported: false, dataRetentionStatus: 'NOT_DECLARED',
         healthStatus: 'NOT_PROBED', pricingStatus: 'FREE', inputUsdPer1mTokens: '0', outputUsdPer1mTokens: '0', pricingVersion: 'mock-2026-01'}})
       case '/api/admin/usage/daily': return route.fulfill({json: [{...usage, usageDate: url.searchParams.get('dateFrom').slice(0, 10), aggregationZone: 'UTC'}]})
-      case '/api/admin/models/policies/budget-summary': return route.fulfill({json: {periodStart: '2026-11-01T00:00:00Z', periodEnd: '2026-12-01T00:00:00Z', asOf: '2026-11-20T00:00:00Z', total: 17, enabled: 15, within: 1, nearLimit: 2, exceeded: 3, noLimit: 4, unknown: 1, disabled: 1, unconfigured: 5}})
+      case '/api/admin/models/policies/budget-summary': return route.fulfill({json: {periodStart: '2026-11-01T00:00:00Z', periodEnd: '2026-12-01T00:00:00Z', asOf: '2026-11-20T00:00:00Z', total: 17, enabled: 15, within: 1, nearLimit: 2, exceeded: 0, noLimit: 4, unknown: 1, disabled: 1, unconfigured: 8}})
       case '/api/admin/usage/organizations': return route.fulfill({json: {page: 0, size: Number(url.searchParams.get('size')), first: true, last: true,
-        hasNext: false, hasPrevious: false, content: [{...usage, organizationId: orgId, organizationName: 'Demo Company'}]}})
+        hasNext: false, hasPrevious: false, content: url.searchParams.get('budgetStatus') === 'EXCEEDED' ? [] : [{...usage, organizationId: orgId, organizationName: 'Demo Company'}]}})
       default: return route.fulfill({status: 404, json: {message: 'Not found'}})
     }
   })
@@ -89,4 +89,17 @@ test('tenant administrator cannot open dashboard or request platform aggregates'
   await expect(page.getByRole('alert')).toContainText('Недостаточно прав')
   await expect(page.getByRole('link', {name: 'Обзор'})).toHaveCount(0)
   expect(requests.filter(r => !r.path.startsWith('/api/auth/'))).toHaveLength(0)
+})
+
+test('budget drill-down sends server filter even for a zero category, and clears it', async ({page}) => {
+  const requests = await mockDashboard(page, 'SUPER_ADMIN')
+  await page.goto('/admin/dashboard')
+  await page.getByRole('link', {name: /Превысили лимит: 0/}).click()
+  await expect(page).toHaveURL(/report=organizations.*budgetStatus=EXCEEDED/)
+  await expect(page.getByRole('region', {name: 'Фильтр бюджета'})).toBeVisible()
+  await expect(page.getByText('Нет организаций в этой категории')).toBeVisible()
+  expect(requests.some(r => r.path === '/api/admin/usage/organizations' && r.query.get('budgetStatus') === 'EXCEEDED')).toBe(true)
+  await page.getByRole('button', {name: 'Снять фильтр бюджета'}).click()
+  await expect(page).not.toHaveURL(/budgetStatus=/)
+  await expect(page.getByRole('region', {name: 'Фильтр бюджета'})).toHaveCount(0)
 })

@@ -7,6 +7,7 @@ import { useAdminUsageReport } from '../controller/useAdminUsageReport'
 import { reportTitle, reportDescription } from '../lib/adminUsage.helpers'
 import type { UsageDailySummary, UsageOrganizationSummary } from '../api/usageApi'
 import { UsageKpis } from './UsageKpis'
+import { BUDGET_CATEGORIES } from '../lib/usageBudgetStatus'
 import { UsageDailyChart, type UsageDailyMetric } from './UsageDailyChart'
 import { UsageBreakdownChart } from './UsageBreakdownChart'
 import { downloadUsageCsv } from './usageCsv'
@@ -77,7 +78,7 @@ export function AdminUsageWorkspace() {
     const chartExpanded = view === 'chart' && expanded && hasRows
     const dataKey = JSON.stringify([
         report.tab, report.page, report.appliedDateFrom, report.appliedDateTo,
-        report.appliedModel, report.appliedUserId, report.appliedOrganizationId, view,
+        report.appliedModel, report.appliedUserId, report.appliedOrganizationId, report.budgetStatus, view,
     ])
 
     function exportCsv() {
@@ -122,13 +123,18 @@ export function AdminUsageWorkspace() {
                 onResetFilters={() => { setExportError(''); report.resetFilters() }}
                 onSelectTab={tab => { setExportError(''); report.selectTab(tab) }}
             />
+            {report.budgetStatus && <section className="usage-budget-drilldown" aria-label="Фильтр бюджета">
+                <div><strong>Бюджет: {BUDGET_CATEGORIES.find(item => item.status === report.budgetStatus)?.label}</strong>
+                    <p>Текущий календарный месяц UTC, независимо от периода отчёта. Общие KPI скрыты: они не учитывают этот фильтр.</p></div>
+                <button type="button" className="secondary-button" onClick={report.clearBudgetStatus}>Снять фильтр бюджета</button>
+            </section>}
             <div className="usage-summary-viewport" id="usage-summary-viewport" ref={summary}>
             <div className="usage-summary-content" ref={summaryContent}>
-            <UsageKpis rows={separateTotals ? report.totals.rows : hasRows ? report.rows : []} tab={report.tab}
+            {!report.budgetStatus && <UsageKpis rows={separateTotals ? report.totals.rows : hasRows ? report.rows : []} tab={report.tab}
                 hasMore={false} appliedModel={report.appliedModel}
                 dailyTotals
                 status={separateTotals && report.totals.loading ? 'Загрузка общих итогов…'
-                    : separateTotals && report.totals.error ? 'Общие итоги недоступны' : undefined} />
+                    : separateTotals && report.totals.error ? 'Общие итоги недоступны' : undefined} />}
             {report.budget.scoped && <section className="usage-filter-summary" aria-label="Бюджет организации">
                 <strong>Месячный бюджет организации: </strong>
                 {report.budget.loading ? 'Загрузка…' : report.budget.error || !report.budget.policy ? <>Недоступен{' '}
@@ -231,8 +237,8 @@ export function AdminUsageWorkspace() {
                     {report.loading ? <LoadingState message="Загрузка отчёта…" />
                         : report.error ? <ErrorState title="Ошибка загрузки" message={report.error}
                             action={<button type="button" onClick={report.reload}>Повторить</button>} />
-                        : !hasRows ? <EmptyState title="За этот период использования нет"
-                            message="Данные появятся после завершённых обращений к AI. Выберите другой период." />
+                        : !hasRows ? <EmptyState title={report.budgetStatus ? 'Нет организаций в этой категории' : 'За этот период использования нет'}
+                            message={report.budgetStatus ? 'В текущем месяце нет организаций с таким состоянием бюджета. Можно снять фильтр бюджета.' : 'Данные появятся после завершённых обращений к AI. Выберите другой период.'} />
                         : view === 'table' && report.tab === 'organizations' ? <UsageOrganizationRows
                             rows={report.rows as UsageOrganizationSummary[]} onInspect={report.inspectRow}
                             userId={report.reportIdentity} reloadToken={report.reloadToken}

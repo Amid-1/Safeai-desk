@@ -20,6 +20,8 @@ import ru.safeai.gateway.usage.dto.UsageUserSummaryResponse;
 
 import java.util.List;
 import java.util.Objects;
+import java.sql.Timestamp;
+import ru.safeai.gateway.common.budget.PlatformBudgetClassification;
 
 import static ru.safeai.gateway.usage.repository.UsageSqlFragments.AGGREGATE_COLUMNS;
 import static ru.safeai.gateway.usage.repository.UsageSqlFragments.AGGREGATE_COLUMNS_WITHOUT_ASSISTANT;
@@ -60,6 +62,15 @@ public class JdbcUsageQueryRepository implements UsageQueryRepository {
         }
         String having = criteria.usedOnly()
                 ? " having coalesce(sum(input_tokens), 0) + coalesce(sum(output_tokens), 0) > 0 " : "";
+        if (criteria.budgetFilter() != null) {
+            var budget = criteria.budgetFilter();
+            parameters.addValue("budgetStart", Timestamp.from(budget.start()))
+                    .addValue("budgetEnd", Timestamp.from(budget.end()))
+                    .addValue("budgetStatus", budget.status().name());
+            where += (where.isEmpty() ? " where " : " and ")
+                    + "o.id in (" + PlatformBudgetClassification.CTE
+                    + " select organization_id from classified where state = :budgetStatus) ";
+        }
         String sql = facts.cte() + """
                 select o.id as organization_id, o.name as organization_name,
                 """ + AGGREGATE_COLUMNS + """

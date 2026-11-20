@@ -1,5 +1,7 @@
 package ru.safeai.gateway.usage.controller;
 
+import ru.safeai.gateway.common.budget.PlatformBudgetClassification.Status;
+
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -66,8 +68,14 @@ public class UsageController {
             @Valid @ModelAttribute UsagePageRequest pageRequest,
             @RequestParam(required = false) String organizationQuery,
             @RequestParam(defaultValue = "false") boolean usedOnly,
+            @RequestParam(required = false) Status budgetStatus,
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
+        if (budgetStatus != null) {
+            return PagedResponse.from(usageQueryService.getUsageByOrganizations(
+                    filter.dateFrom(), filter.dateTo(), filter.normalizedModel(), filter.userId(),
+                    pageRequest.toPageable(), currentUser, organizationQuery, usedOnly, budgetStatus));
+        }
         if (organizationQuery == null && !usedOnly) {
             return PagedResponse.from(usageQueryService.getUsageByOrganizations(
                     filter.dateFrom(), filter.dateTo(), filter.normalizedModel(), filter.userId(),

@@ -28,6 +28,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.time.YearMonth;
+import ru.safeai.gateway.common.budget.PlatformBudgetClassification.Status;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -88,6 +90,15 @@ public class UsageQueryService {
             Instant dateFrom, Instant dateTo, String model, UUID userId,
             Pageable pageable, SafeAiUserPrincipal currentUser, String organizationQuery, boolean usedOnly
     ) {
+        return getUsageByOrganizations(dateFrom, dateTo, model, userId, pageable, currentUser, organizationQuery, usedOnly, null);
+    }
+
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    public Slice<UsageOrganizationSummaryResponse> getUsageByOrganizations(
+            Instant dateFrom, Instant dateTo, String model, UUID userId,
+            Pageable pageable, SafeAiUserPrincipal currentUser, String organizationQuery, boolean usedOnly,
+            Status budgetStatus
+    ) {
         requireCurrentUser(currentUser);
         if (!isSuperAdmin(currentUser)) {
             throw new ForbiddenOperationException("Сравнение организаций недоступно");
@@ -99,8 +110,12 @@ public class UsageQueryService {
             throw new BadRequestException("Некорректная строка поиска организаций");
         }
         String query = organizationQuery == null || organizationQuery.isBlank() ? null : organizationQuery.strip();
+        var month = YearMonth.from(clock.instant().atOffset(ZoneOffset.UTC));
+        var budget = budgetStatus == null ? null : new UsageQueryCriteria.BudgetFilter(budgetStatus,
+                month.atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant(),
+                month.plusMonths(1).atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant());
         UsageQueryCriteria criteria = new UsageQueryCriteria(
-                range.from(), range.to(), null, userId, normalizeModel(model), query, usedOnly);
+                range.from(), range.to(), null, userId, normalizeModel(model), query, usedOnly, budget);
         return reportExecutor.execute("organizations", () ->
                 usageQueryRepository.findOrganizations(criteria, buildPlan(range), pageable));
     }

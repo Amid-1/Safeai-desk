@@ -67,7 +67,7 @@ export function useAdminUsageReport() {
         ),
         [location.search, isSuperAdmin],
     )
-    const {tab, page} = urlState
+    const {tab, page, budgetStatus} = urlState
     const order = urlState.order ?? 'tokens'
     const {dateFrom: appliedDateFrom, dateTo: appliedDateTo, model: appliedModel,
         organizationId: appliedOrganizationId, userId: appliedUserId = ''} = urlState.draft
@@ -135,9 +135,10 @@ export function useAdminUsageReport() {
         isSuperAdmin,
         reloadToken,
         order: tab === 'daily' || tab === 'models' ? undefined : order,
+        budgetStatus,
     })
     const totals = useAdminUsageReportQuery({
-        enabled: currentUser !== null && tab !== 'daily',
+        enabled: currentUser !== null && tab !== 'daily' && !budgetStatus,
         userId: currentUser?.id ?? '',
         userOrganizationId: currentUser?.organizationId ?? '',
         tab: 'daily', page: 0, dateFrom: appliedDateFrom, dateTo: appliedDateTo,
@@ -148,7 +149,7 @@ export function useAdminUsageReport() {
         isSuperAdmin ? appliedOrganizationId : currentUser?.organizationId ?? '', reloadToken)
     const exportTask = useBoundedReportExport(JSON.stringify([
         currentUser?.id, currentUser?.organizationId, isSuperAdmin, tab,
-        appliedDateFrom, appliedDateTo, appliedModel, appliedUserId, appliedOrganizationId, reloadToken, order,
+        appliedDateFrom, appliedDateTo, appliedModel, appliedUserId, appliedOrganizationId, reloadToken, order, budgetStatus,
     ]))
 
     function exportFiltered() {
@@ -159,7 +160,7 @@ export function useAdminUsageReport() {
                 userId: appliedUserId, organizationId: appliedOrganizationId,
             }, isSuperAdmin)
             const result = await loadUsageReport({
-                tab, page: 0, pageSize: REPORT_EXPORT_LIMIT, filter: {...normalized.filter, order},
+                tab, page: 0, pageSize: REPORT_EXPORT_LIMIT, filter: {...normalized.filter, order, ...(budgetStatus ? {budgetStatus} : {})},
                 organizationId: normalized.organizationId || null, superAdmin: isSuperAdmin, signal,
             })
             return !result.complete || result.hasNext || result.rows.length > REPORT_EXPORT_LIMIT ? null : result.rows
@@ -330,6 +331,7 @@ export function useAdminUsageReport() {
         updateUrl({
             tab,
             page: 0,
+            budgetStatus: undefined,
             dateFrom: defaults.dateFrom,
             dateTo: defaults.dateTo,
             model: '',
@@ -387,7 +389,7 @@ export function useAdminUsageReport() {
             typeof buildUsageSearchParams
         >[0],
     ) {
-        const next = buildUsageSearchParams({order, ...values})
+        const next = buildUsageSearchParams({order, budgetStatus, ...values})
         if (next.toString() === searchParams.toString()) return
         setSearchParams(
             next,
@@ -416,6 +418,8 @@ export function useAdminUsageReport() {
         reportIdentity: currentUser?.id ?? '', reloadToken,
         totals, budget, exportFiltered, exportPending: exportTask.pending, filteredExportError: exportTask.error,
         tab,
+        budgetStatus,
+        clearBudgetStatus: () => updateUrl({tab, page: 0, ...applied, budgetStatus: undefined}),
         order,
         changeOrder: (value: NonNullable<UsageSummaryFilter['order']>) => {
             if (value !== order) {

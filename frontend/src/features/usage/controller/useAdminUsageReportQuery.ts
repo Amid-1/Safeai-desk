@@ -56,6 +56,7 @@ type UseAdminUsageReportQueryInput = {
     isSuperAdmin: boolean
     reloadToken: number
     order?: UsageSummaryFilter['order']
+    budgetStatus?: UsageSummaryFilter['budgetStatus']
 }
 
 export function useAdminUsageReportQuery({
@@ -72,6 +73,7 @@ export function useAdminUsageReportQuery({
     isSuperAdmin,
     reloadToken,
     order,
+    budgetStatus,
 }: UseAdminUsageReportQueryInput) {
     const queryKey = useMemo(
         () => JSON.stringify([
@@ -89,6 +91,7 @@ export function useAdminUsageReportQuery({
                 : '',
             reloadToken,
             order,
+            budgetStatus,
         ]),
         [
             dateFrom,
@@ -100,6 +103,7 @@ export function useAdminUsageReportQuery({
             page,
             reloadToken,
             order,
+            budgetStatus,
             tab,
             userId,
             userOrganizationId,
@@ -148,7 +152,8 @@ export function useAdminUsageReportQuery({
                 const result = await loadUsageReport({
                     tab,
                     page,
-                    filter: {...normalized.filter, ...(order ? {order} : {})},
+                    filter: {...normalized.filter, ...(order ? {order} : {}),
+                        ...(tab === 'organizations' && isSuperAdmin && budgetStatus ? {budgetStatus} : {})},
                     organizationId:
                         normalized.organizationId
                             || null,
@@ -205,6 +210,7 @@ export function useAdminUsageReportQuery({
         model,
         organizationId,
         order,
+        budgetStatus,
         page,
         queryKey,
         tab,

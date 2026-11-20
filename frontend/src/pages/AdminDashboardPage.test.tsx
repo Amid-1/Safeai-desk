@@ -92,11 +92,27 @@ describe('PlatformDashboard', () => {
         await waitFor(() => expect(getUsageByOrganizations).toHaveBeenLastCalledWith(0, 10,
             expect.objectContaining({organizationQuery: 'КОМ', usedOnly: undefined}), expect.anything()))
         await screen.findByRole('link', {name: 'Компания A'})
-        fireEvent.click(screen.getByRole('button', {name: 'Показать'}))
+        fireEvent.click(screen.getByRole('button', {name: 'Показать на графике'}))
         await waitFor(() => expect(getOrganizationUsageDaily).toHaveBeenCalledWith(org.organizationId, expect.anything(), expect.anything()))
         expect(screen.getByRole('link', {name: 'Полный отчёт'})).toHaveAttribute('href', expect.stringContaining(org.organizationId))
+        expect(screen.getByRole('button', {name: 'Показать на графике'})).toHaveAttribute('aria-pressed', 'true')
         expect(screen.getByText('От 80% до лимита')).toBeVisible()
         fireEvent.click(screen.getByRole('button', {name: 'Все организации'}))
         await waitFor(() => expect(getUsageDaily).toHaveBeenCalledTimes(2))
+    })
+    it('offers all seven budget categories including zero and keeps them above analytics', async () => {
+        vi.mocked(getPlatformBudgetSummary).mockResolvedValue({
+            periodStart: '2026-11-01T00:00:00Z', periodEnd: '2026-12-01T00:00:00Z', asOf: '2026-11-20T00:00:00Z',
+            total: 17, enabled: 17, within: 1, nearLimit: 0, exceeded: 0, noLimit: 2, unknown: 0, disabled: 0, unconfigured: 14,
+        })
+        open()
+        const region = screen.getByRole('region', {name: 'Контроль бюджетов организаций'})
+        await within(region).findByRole('link', {name: /Правила не заданы: 14/})
+        for (const status of ['WITHIN', 'NEAR', 'EXCEEDED', 'NO_LIMIT', 'UNKNOWN', 'DISABLED', 'UNCONFIGURED']) {
+            expect(region.querySelector('a[href*="budgetStatus=' + status + '"]')).toBeVisible()
+        }
+        expect(within(region).getByRole('link', {name: /Превысили лимит: 0/})).toBeEnabled()
+        expect(region.compareDocumentPosition(screen.getByRole('region', {name: 'Период аналитики'})) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        expect(await screen.findByText('Ответы AI')).toBeVisible()
     })
 })

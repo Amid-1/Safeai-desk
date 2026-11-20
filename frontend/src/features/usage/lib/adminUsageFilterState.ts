@@ -3,6 +3,7 @@
 import type {
     UsageSummaryFilter,
 } from '../api/usageApi'
+import { parseBudgetStatus } from './usageBudgetStatus'
 import {
     uuidPathSegment,
 } from '../../../shared/api/query'
@@ -32,6 +33,7 @@ export type UsageUrlState = {
     tab: UsageReportTab
     page: number
     order?: UsageSummaryFilter['order']
+    budgetStatus?: UsageSummaryFilter['budgetStatus']
     draft: UsageDraftFilter
 }
 
@@ -45,6 +47,7 @@ export type UsageUrlValues = {
     tab: UsageReportTab
     page: number
     order?: UsageSummaryFilter['order']
+    budgetStatus?: UsageSummaryFilter['budgetStatus']
     dateFrom: string
     dateTo: string
     model: string
@@ -112,6 +115,9 @@ export function readUsageUrlState(
     const requestedDateTo = params.get('dateTo') ?? ''
     const userId = safeNormalizeOptionalUuid(params.get('userId') ?? '')
     const order = params.get('order')
+    const budgetStatus = superAdmin && params.get('report') === 'organizations'
+        && !safeNormalizeOptionalUuid(params.get('organizationId') ?? '')
+        ? parseBudgetStatus(params.get('budgetStatus')) : undefined
 
     let dateFrom = fallback.dateFrom
     let dateTo = fallback.dateTo
@@ -136,6 +142,7 @@ export function readUsageUrlState(
             && (!superAdmin || Boolean(safeNormalizeOptionalUuid(params.get('organizationId') ?? '')))
             ? 'summary' : parseTab(params.get('report')),
         page: parsePage(params.get('page')),
+        ...(budgetStatus ? {budgetStatus} : {}),
         ...(order === 'total' || order === 'cost' || order === 'responses' || order === 'coverage' ? {order} : {}),
         draft: {
             dateFrom,
@@ -230,6 +237,9 @@ export function buildUsageSearchParams(
     next.set('dateFrom', values.dateFrom)
     next.set('dateTo', values.dateTo)
     if (values.order && values.order !== 'tokens') next.set('order', values.order)
+    if (values.tab === 'organizations' && !values.organizationId && values.budgetStatus) {
+        next.set('budgetStatus', values.budgetStatus)
+    }
 
     if (values.page > 0) {
         next.set('page', String(values.page))
