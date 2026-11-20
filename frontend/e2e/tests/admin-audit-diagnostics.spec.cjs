@@ -5,6 +5,7 @@ const { URL: NodeURL } = require('node:url')
 const orgId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const userId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 const decisionId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+const correlationId = 'b8dcc803-c776-42ff-8b2b-1175f4a229fd'
 const actor = { actorUserId: userId, actorOrganizationId: orgId,
   actorEmail: 'admin@example.test', actorDisplayName: 'Admin' }
 const event = { ...actor, id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', targetOrganizationId: orgId,
@@ -77,6 +78,32 @@ test('audit summary uses server totals and zero cards drill down via server filt
   await summary.getByRole('button', { name: 'Безопасность' }).click()
   await category
   await expect(page).toHaveURL(/category=SECURITY/)
+})
+
+test('audit correlation drill-down uses exact server scope and preserves URL on reload', async ({ page }) => {
+  await page.route('**/api/admin/audit-events?*', route => {
+    const { searchParams } = new NodeURL(route.request().url())
+    const filter = searchParams.get('correlationId')
+    const content = filter && filter !== correlationId ? [] : [{ ...event, correlationId }]
+    return route.fulfill({ json: { content, page: 0, size: 50,
+      totalElements: content.length, totalPages: content.length } })
+  })
+  await page.goto('/admin/audit')
+  await page.getByRole('button', { name: 'Подробнее' }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByText(correlationId, { exact: true })).toBeVisible()
+  const request = page.waitForRequest(r => {
+    const url = new NodeURL(r.url())
+    return url.pathname === '/api/admin/audit-events'
+      && url.searchParams.get('correlationId') === correlationId
+      && !url.searchParams.has('organizationId')
+  })
+  await dialog.getByRole('link', { name: 'Найти связанные события' }).click()
+  await request
+  await expect(page).toHaveURL(new RegExp('correlationId=' + correlationId))
+  await page.reload()
+  await expect(page.getByRole('textbox', { name: 'Correlation ID' })).toHaveValue(correlationId)
+  await expect(page.getByRole('button', { name: 'Подробнее' })).toBeVisible()
 })
 
 test('models organization selector is single, server scoped, and retained across tabs and history', async ({ page }) => {

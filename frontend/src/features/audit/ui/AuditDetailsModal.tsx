@@ -3,6 +3,7 @@ import { useId, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { AuditEvent } from '../api/adminAuditApi'
 import { formatDateTime } from '../../../shared/lib/format'
+import { addCalendarDays, getLocalDateValue } from '../../../shared/lib/date'
 import Modal from '../../../shared/ui/Modal'
 import AuditActor from './AuditActor'
 import { auditEventPresentation } from './auditEventPresentation'
@@ -40,6 +41,14 @@ export default function AuditDetailsModal({ event, organizationFallbackName, onC
                 <Detail term="Пользователь / система"><AuditActor event={event} hideIds /></Detail>
                 {fields.map(({ label, value }) => <Detail key={label} term={label}>{value}</Detail>)}
             </dl>
+            {event.correlationId && <div className="audit-decision-card">
+                <strong>Correlation ID</strong>
+                <CopyValue key={event.correlationId} value={event.correlationId} label="Копировать Correlation ID" />
+                <a className="audit-decision-link" href={correlationSearchHref(event)}>
+                    Найти связанные события
+                </a>
+                <small>Показываются только события, доступные текущему администратору, за период поиска.</small>
+            </div>}
             {decisionId && <div className="audit-decision-card">
                 <strong>Номер решения безопасности</strong>
                 <CopyValue key={decisionId} value={decisionId} label="Копировать номер решения" />
@@ -65,6 +74,7 @@ function SupportDetails({ event }: { event: AuditEvent }) {
     const report = JSON.stringify({
         reportVersion: 1,
         id: event.id,
+        ...(event.correlationId ? { correlationId: event.correlationId } : {}),
         eventType: event.eventType,
         createdAt: event.createdAt,
         targetOrganizationId: event.targetOrganizationId,
@@ -101,6 +111,15 @@ function SupportDetails({ event }: { event: AuditEvent }) {
             <pre className="audit-json" tabIndex={0}>{report}</pre>
         </details>
     </details>
+}
+
+function correlationSearchHref(event: AuditEvent): string {
+    const day = getLocalDateValue(new Date(event.createdAt))
+    return '/admin/audit?' + new URLSearchParams({
+        correlationId: event.correlationId ?? '',
+        dateFrom: addCalendarDays(day, -1),
+        dateTo: addCalendarDays(day, 29),
+    }).toString()
 }
 
 function CopyIcon() {

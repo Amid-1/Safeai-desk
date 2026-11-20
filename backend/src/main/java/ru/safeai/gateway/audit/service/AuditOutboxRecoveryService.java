@@ -22,7 +22,7 @@ import java.util.UUID;
  *
  * <p>V68 forbids resetting dead_lettered_at/attempt_count. Accordingly,
  * this service invokes the same idempotent INSERT ... ON CONFLICT DO NOTHING
- * as the normal processor, removes the original row after successful delivery,
+ * and evidence comparison as the normal processor, removes the original row after successful delivery,
  * and enqueues a separate required audit event in ONE database transaction.
  * Any exception rolls back all three steps, retaining the original dead-letter.
  */
@@ -32,15 +32,18 @@ public class AuditOutboxRecoveryService {
     private final AuditOutboxRepository outboxRepository;
     private final AuditEventRepository eventRepository;
     private final AuditEventService auditEventService;
+    private final AuditOutboxMetrics metrics;
 
     public AuditOutboxRecoveryService(
             AuditOutboxRepository outboxRepository,
             AuditEventRepository eventRepository,
-            AuditEventService auditEventService
+            AuditEventService auditEventService,
+            AuditOutboxMetrics metrics
     ) {
         this.outboxRepository = Objects.requireNonNull(outboxRepository, "outboxRepository");
         this.eventRepository = Objects.requireNonNull(eventRepository, "eventRepository");
         this.auditEventService = Objects.requireNonNull(auditEventService, "auditEventService");
+        this.metrics = Objects.requireNonNull(metrics, "metrics");
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -60,8 +63,12 @@ public class AuditOutboxRecoveryService {
         }
 
         int inserted = eventRepository.insertFromOutbox(deadLetterId);
-        if (inserted != 0 && inserted != 1) {
-            throw new IllegalStateException("Unexpected audit delivery result");
+        try {
+            AuditDeliveryEvidence.requireDelivered(eventRepository, deadLetterId, inserted);
+        } catch (AuditEvidenceConflictException failure) {
+            metrics.recordIntegrityConflict();
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Обнаружено несовпадение доказательств аудита; запись сохранена");
         }
 
         auditEventService.recordPrincipalSnapshot(

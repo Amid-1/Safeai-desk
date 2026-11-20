@@ -17,6 +17,19 @@ const page={content:[],page:0,size:50,totalElements:0,totalPages:0}
 beforeEach(()=>vi.resetAllMocks())
 
 describe('adminAuditApi — HTTP',()=>{
+  it('передаёт Correlation ID в список и сводку, отклоняет неправильный UUID',async()=>{
+    request.mockResolvedValueOnce(page).mockResolvedValueOnce({total:0,successful:0,denied:0,critical:0})
+    await getAuditEvents(0,50,{correlationId:ID})
+    await getAuditSummary({correlationId:ID})
+    for (const [url] of request.mock.calls) expect(url).toContain('correlationId='+ID)
+    await expect(getAuditEvents(0,50,{correlationId:'not-a-uuid'})).rejects.toThrow()
+    expect(request).toHaveBeenCalledTimes(2)
+  })
+  it('проверяет тип серверного Correlation ID, поддерживает старые записи',()=>{
+    expect(parseAuditEvent({...event(),correlationId:ID}).correlationId).toBe(ID)
+    expect(parseAuditEvent({...event(),correlationId:null}).correlationId).toBeUndefined()
+    expect(()=>parseAuditEvent({...event(),correlationId:'not-a-uuid'})).toThrow()
+  })
   it('использует общие серверные фильтры для сводки и списка',async()=>{
     request.mockResolvedValueOnce(page).mockResolvedValueOnce({total:159,successful:145,denied:9,critical:5})
     const filter={targetOrganizationId:ORG,dateFrom:'2026-08-01',dateTo:'2026-08-31',category:'SECURITY' as const,metric:'DENIED' as const}

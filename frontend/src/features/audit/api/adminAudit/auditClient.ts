@@ -14,6 +14,7 @@ function auditFilterParams(filter: AuditEventFilter) {
     return {
         category: filter.category,
         metric: filter.metric,
+        correlationId: filter.correlationId ? uuidPathSegment(filter.correlationId) : undefined,
         eventType:
             normalizeOptionalString(
                 filter.eventType,

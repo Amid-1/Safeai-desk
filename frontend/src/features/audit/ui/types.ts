@@ -14,6 +14,7 @@ export type DatePreset =
 
 export type AuditDraftFilter = {
     eventType: string
+    correlationId?: string
     category?: AuditCategory
     metric?: AuditMetric
 
@@ -57,6 +58,7 @@ export function auditDraftFiltersEqual(
         === second.eventType
         && first.category === second.category
         && first.metric === second.metric
+        && (first.correlationId ?? '') === (second.correlationId ?? '')
         && first.actorUserId
             === second.actorUserId
         && first.actorEmail

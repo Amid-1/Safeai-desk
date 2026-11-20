@@ -47,6 +47,35 @@ groups:
           summary: "Audit outbox processor failed"
           description: "Investigate safe failureType-only logs; never enable SQL-bind or exception-message logging."
 
+      - alert: SafeAiAuditEvidenceConflict
+        expr: sum(increase(safeai_audit_outbox_integrity_conflicts_total[5m])) > 0
+        labels:
+          severity: critical
+          service: safeai-backend
+        annotations:
+          summary: "Conflicting audit evidence detected"
+          description: "Preserve both records; investigate the incident before attempting recovery."
+
+      - alert: SafeAiAuditOutboxMetricsStale
+        expr: time() - safeai_audit_outbox_metrics_last_success_timestamp_seconds > 90
+        for: 2m
+        labels:
+          severity: critical
+          service: safeai-backend
+        annotations:
+          summary: "Audit backlog heartbeat is stale"
+          description: "Check scheduler execution and database connectivity on the affected backend."
+
+      - alert: SafeAiAuditOutboxHeartbeatMissing
+        expr: absent(safeai_audit_outbox_metrics_last_success_timestamp_seconds)
+        for: 3m
+        labels:
+          severity: critical
+          service: safeai-backend
+        annotations:
+          summary: "Audit backlog heartbeat is missing"
+          description: "Check backend version, metrics registration and scrape configuration."
+
       # Without scrape health, a missing metric may look like an empty backlog.
       - alert: SafeAiBackendMetricsScrapeFailed
         expr: up{job="safeai-backend"} == 0

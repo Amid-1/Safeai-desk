@@ -47,6 +47,10 @@ export function readAuditUrlState(
     const params =
         new URLSearchParams(search)
 
+    const correlationId = safelyNormalize(
+        () => normalizeOptionalUuid(params.get('correlationId') ?? ''), '',
+    )
+
     const eventType =
         safelyNormalize(
             () =>
@@ -121,6 +125,7 @@ export function readAuditUrlState(
     return {
         draftFilter: {
             eventType,
+            ...(correlationId ? { correlationId } : {}),
             ...optionalFacet(AUDIT_CATEGORIES, 'category', params.get('category')),
             ...optionalFacet(AUDIT_METRICS, 'metric', params.get('metric')),
             actorUserId,
@@ -143,8 +148,10 @@ export function toAuditEventFilter(
     draft: AuditDraftFilter
     filter: AuditEventFilter
 } {
+    const correlationId = normalizeOptionalUuid(draft.correlationId ?? '')
     const normalizedDraft:
         AuditDraftFilter = {
+        ...(correlationId ? { correlationId } : {}),
         ...optionalFacet(AUDIT_CATEGORIES, 'category', draft.category),
         ...optionalFacet(AUDIT_METRICS, 'metric', draft.metric),
         eventType:
@@ -189,6 +196,7 @@ export function toAuditEventFilter(
     return {
         draft: normalizedDraft,
         filter: {
+            ...(correlationId ? { correlationId } : {}),
             ...optionalFacet(AUDIT_CATEGORIES, 'category', normalizedDraft.category),
             ...optionalFacet(AUDIT_METRICS, 'metric', normalizedDraft.metric),
             eventType:
@@ -234,6 +242,7 @@ export function buildAuditSearch(
         new URLSearchParams()
     setIfPresent(params, 'category', draft.category ?? '')
     setIfPresent(params, 'metric', draft.metric ?? '')
+    setIfPresent(params, 'correlationId', draft.correlationId ?? '')
 
     setIfPresent(
         params,

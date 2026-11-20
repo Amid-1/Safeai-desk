@@ -9,6 +9,7 @@ import {
 } from 'vitest'
 import {
     applyAuditDatePreset,
+    buildAuditSearch,
     readAuditUrlState,
     toAuditEventFilter,
 } from './adminAudit.helpers'
@@ -17,6 +18,14 @@ import {
 } from '../ui/types'
 
 describe('admin audit filters', () => {
+    it('сохраняет точный Correlation ID в URL и фильтре без изменения tenant scope', () => {
+        const correlationId = '11111111-1111-4111-8111-111111111111'
+        const draft = readAuditUrlState('?correlationId=' + correlationId, false).draftFilter
+        expect(draft.correlationId).toBe(correlationId)
+        expect(toAuditEventFilter(draft, false).filter.correlationId).toBe(correlationId)
+        expect(buildAuditSearch(draft, 0, false)).toContain('correlationId=' + correlationId)
+        expect(() => toAuditEventFilter({...draft, correlationId:'invalid'}, false)).toThrow()
+    })
     it('по умолчанию использует последние 30 локальных дней', () => {
         const filter =
             createDefaultAuditDraftFilter(

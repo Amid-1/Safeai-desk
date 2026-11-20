@@ -64,6 +64,38 @@ class AuditRetentionIntegrationTest extends AbstractAuditPostgresIntegrationTest
     }
 
     @Test
+    void retentionPreservesEvidenceWhileOutboxIsPendingOrDeadLettered() {
+        UUID org = UUID.randomUUID();
+        UUID pending = UUID.randomUUID();
+        UUID terminal = UUID.randomUUID();
+        UUID ordinary = UUID.randomUUID();
+        Instant expired = databaseNow().minus(RETENTION_PERIOD).minus(CUTOFF_MARGIN);
+        insertEvent(pending, org, expired);
+        insertEvent(terminal, org, expired);
+        insertEvent(ordinary, org, expired);
+        jdbcTemplate.update("""
+                insert into public.audit_outbox
+                    (id, organization_id, event_type, details, occurred_at)
+                select id, organization_id, event_type, details, created_at
+                from public.audit_events where id in (?, ?)
+                """, pending, terminal);
+        jdbcTemplate.update("""
+                update public.audit_outbox
+                set attempt_count = 1, last_error = 'test', dead_lettered_at = clock_timestamp(),
+                    next_attempt_at = null
+                where id = ?
+                """, terminal);
+
+        assertThat(batchService.deleteBatch(RETENTION_PERIOD, 100)).isEqualTo(1);
+        assertThat(eventExists(ordinary)).isFalse();
+        assertThat(eventExists(pending)).isTrue();
+        assertThat(eventExists(terminal)).isTrue();
+        assertThat(queryInt("select count(*) from public.audit_outbox where id in (?, ?)", pending, terminal))
+                .isEqualTo(2);
+        assertThat(batchService.deleteBatch(RETENTION_PERIOD, 100)).isZero();
+    }
+
+    @Test
     void batchSizeIsStrictlyRespected() {
         UUID organizationId = UUID.randomUUID();
         Instant expiredAt = databaseNow()

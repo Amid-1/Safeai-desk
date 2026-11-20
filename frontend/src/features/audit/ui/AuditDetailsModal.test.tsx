@@ -19,6 +19,20 @@ const event: AuditEvent = {
 }
 
 describe('Журнал событий — представление и диагностика', () => {
+    it('открывает точный фильтр связанной операции и копирует серверный идентификатор', async () => {
+        const correlationId = 'b8dcc803-c776-42ff-8b2b-1175f4a229fd'
+        const writeText = vi.fn().mockResolvedValue(undefined)
+        vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
+        render(<AuditDetailsModal event={{...event, correlationId}} onClose={vi.fn()} />)
+        const link = screen.getByRole('link', { name: 'Найти связанные события' })
+        const url = new URL(link.getAttribute('href')!, 'http://localhost')
+        expect(url.pathname).toBe('/admin/audit')
+        expect(url.searchParams.get('correlationId')).toBe(correlationId)
+        expect(url.searchParams.has('dateFrom')).toBe(true)
+        fireEvent.click(screen.getByRole('button', {name:'Копировать Correlation ID'}))
+        expect(writeText).toHaveBeenCalledWith(correlationId)
+        expect(await screen.findByText('Скопировано')).toBeVisible()
+    })
     afterEach(() => vi.unstubAllGlobals())
     it.each(['USER_LOGIN_SUCCESS', 'USER_LOGOUT'])('не дублирует email для %s', (eventType) => {
         render(<AuditDetailsModal event={{ ...event, eventType,

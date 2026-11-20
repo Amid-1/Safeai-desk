@@ -1,13 +1,15 @@
 package ru.safeai.gateway.audit.service;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.postgresql.util.PSQLException;
 import org.postgresql.util.ServerErrorMessage;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.jdbc.core.SqlParameterValue;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -15,6 +17,8 @@ import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.details.SecurityRefreshReuseAuditDetails;
 import ru.safeai.gateway.audit.model.AuditActor;
 import ru.safeai.gateway.audit.testsupport.AbstractAuditPostgresIntegrationTest;
+import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.common.security.SystemRole;
 
 import ru.safeai.gateway.ratelimit.DualRateLimitResult;
 import ru.safeai.gateway.ratelimit.LoginRateLimitProperties;
@@ -25,10 +29,7 @@ import ru.safeai.gateway.ratelimit.RateLimitMetrics;
 import ru.safeai.gateway.ratelimit.RedisFixedWindowRateLimiter;
 import ru.safeai.gateway.ratelimit.exception.RateLimitExceededException;
 
-import java.sql.Types;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -58,6 +59,9 @@ class AuditOutboxIntegrationTest extends AbstractAuditPostgresIntegrationTest {
 
     @Autowired
     private AuditOutboxProcessor auditOutboxProcessor;
+
+    @Autowired
+    private AuditOutboxRecoveryService recoveryService;
 
     /** Исключает автоматическую доставку во время проверок ручного запуска. */
     @MockitoBean
@@ -266,8 +270,7 @@ class AuditOutboxIntegrationTest extends AbstractAuditPostgresIntegrationTest {
 
         // Моделируем доставку с потерянным подтверждением: событие уже существует,
         // но исходная запись в outbox всё ещё ожидает обработки.
-        insertDeliveredAuditEvent(eventId, organizationId,
-                Instant.parse("2026-07-30T08:00:00Z"));
+        insertDeliveredAuditEvent(eventId, false, null);
 
         String originalDetails = queryString("""
                 SELECT details::text FROM public.audit_events WHERE id = ?
@@ -289,6 +292,43 @@ class AuditOutboxIntegrationTest extends AbstractAuditPostgresIntegrationTest {
         assertThat(queryString("""
                 SELECT details::text FROM public.audit_events WHERE id = ?
                 """, eventId)).isEqualTo(originalDetails);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void conflictingPayloadOrCorrelationRetainsBothEvidenceRecords(boolean changePayload) {
+        UUID organizationId = UUID.randomUUID();
+        insertOrganization(organizationId, "Conflicting Audit " + organizationId, true);
+        auditEventService.recordSystemStandaloneRequired(organizationId,
+                AuditEventType.USER_CREATED, Map.of("test", true));
+        UUID eventId = auditOutboxIdForOrganization(organizationId);
+        insertDeliveredAuditEvent(eventId, changePayload, changePayload ? null : UUID.randomUUID());
+        var original = jdbcTemplate.queryForMap("select * from public.audit_events where id = ?", eventId);
+
+        var result = auditOutboxProcessor.processBatch();
+        assertThat(result.processed()).isZero();
+        assertThat(result.failed()).isEqualTo(1);
+        assertThat(result.deadLettered()).isEqualTo(1);
+        assertThat(countAuditOutbox()).isEqualTo(1);
+        assertThat(countAuditEvents()).isEqualTo(1);
+        assertThat(queryInt("""
+                select count(*) from public.audit_outbox
+                where id = ? and attempt_count = 1
+                  and dead_lettered_at is not null and next_attempt_at is null
+                """, eventId)).isEqualTo(1);
+        var terminal = jdbcTemplate.queryForMap("select * from public.audit_outbox where id = ?", eventId);
+        var operator = mock(SafeAiUserPrincipal.class);
+        when(operator.authorityNames()).thenReturn(List.of(SystemRole.SUPER_ADMIN.authority()));
+        assertThatThrownBy(() -> recoveryService.recover(eventId, operator))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        error -> assertThat(error.getStatusCode().value()).isEqualTo(409));
+        assertThat(auditOutboxProcessor.processBatch().processed()).isZero();
+        assertThat(countAuditOutbox()).isEqualTo(1);
+        assertThat(countAuditEvents()).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForMap("select * from public.audit_events where id = ?", eventId))
+                .isEqualTo(original);
+        assertThat(jdbcTemplate.queryForMap("select * from public.audit_outbox where id = ?", eventId))
+                .isEqualTo(terminal);
     }
 
     /**
@@ -464,20 +504,18 @@ class AuditOutboxIntegrationTest extends AbstractAuditPostgresIntegrationTest {
      * Создаёт ранее доставленное неизменяемое событие с тем же идентификатором.
      * Сценарий намеренно не изменяет миграции, триггеры или JPA-репозитории.
      */
-    private void insertDeliveredAuditEvent(UUID eventId,
-                                           UUID organizationId,
-                                           Instant createdAt) {
+    private void insertDeliveredAuditEvent(UUID eventId, boolean changePayload, UUID wrongCorrelation) {
         jdbcTemplate.update("""
                 INSERT INTO public.audit_events (
-                    id, actor_user_id, actor_organization_id,
-                    actor_email, actor_display_name,
-                    organization_id, event_type, details, created_at
-                ) VALUES (?, NULL, NULL, NULL, 'SYSTEM', ?, ?, CAST(? AS jsonb), ?)
-                """, eventId, organizationId,
-                AuditEventType.USER_CREATED.name(),
-                "{\"alreadyDelivered\":true}",
-                new SqlParameterValue(Types.TIMESTAMP_WITH_TIMEZONE,
-                        createdAt.atOffset(ZoneOffset.UTC)));
+                    id, actor_user_id, actor_organization_id, actor_email, actor_display_name,
+                    organization_id, target_organization_name, event_type, details, created_at, correlation_id
+                )
+                SELECT id, actor_user_id, actor_organization_id, actor_email, actor_display_name,
+                    organization_id, target_organization_name, event_type,
+                    CASE WHEN ? THEN '{"differentEvidence":true}'::jsonb ELSE details END,
+                    occurred_at, coalesce(cast(? as uuid), correlation_id)
+                FROM public.audit_outbox WHERE id = ?
+                """, changePayload, wrongCorrelation, eventId);
     }
 }
 

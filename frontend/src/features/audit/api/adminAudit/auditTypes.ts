@@ -19,6 +19,7 @@ export type JsonValue =
 
 export type AuditEvent = {
     id: string
+    correlationId?: string
 
     targetOrganizationId: string
     targetOrganizationName: string | null
@@ -43,6 +44,7 @@ export type AuditEvent = {
 
 export type AuditEventFilter = {
     eventType?: string
+    correlationId?: string
     category?: AuditCategory
     metric?: AuditMetric
 

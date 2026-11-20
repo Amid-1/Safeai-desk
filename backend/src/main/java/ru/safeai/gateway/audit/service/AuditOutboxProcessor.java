@@ -154,19 +154,8 @@ public final class AuditOutboxProcessor {
                                                         item.getId()
                                                 );
 
-                                /*
-                                 * 1 = inserted.
-                                 * 0 = same event id already exists: delivery is
-                                 * idempotently complete.
-                                 */
-                                if (insertedRows != 0
-                                        && insertedRows != 1) {
-
-                                    throw new IllegalStateException(
-                                            "Unexpected insertFromOutbox affected rows: "
-                                                    + insertedRows
-                                    );
-                                }
+                                AuditDeliveryEvidence.requireDelivered(
+                                        eventRepository, item.getId(), insertedRows);
 
                                 outboxRepository.delete(
                                         item
@@ -203,6 +192,13 @@ public final class AuditOutboxProcessor {
             metrics.recordDeliveryFailure(
                     result.deadLettered()
             );
+
+            if (failure instanceof AuditEvidenceConflictException) {
+                metrics.recordIntegrityConflict();
+                if (!result.rowFound()) {
+                    throw failure;
+                }
+            }
 
             if (!result.rowFound()) {
                 /*

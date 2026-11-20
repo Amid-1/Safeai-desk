@@ -94,6 +94,7 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
     }
 
     const activeFilters = [
+        draftFilter.correlationId && 'Correlation ID: ' + draftFilter.correlationId,
         draftFilter.eventType && getAuditEventTypeLabel(draftFilter.eventType),
         superAdmin && draftFilter.targetOrganizationId && (
             organizations.find(org => org.targetOrganizationId === draftFilter.targetOrganizationId)?.targetOrganizationName

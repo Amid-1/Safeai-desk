@@ -68,8 +68,17 @@ export default function AuditFilters({
                     onFilterChange={onFilterChange} onDatePreset={onDatePreset}
                     activePreset={activePreset} setActivePreset={setActivePreset}
                 />
-                <details className="audit-advanced-filters" open={draftFilter.actorEmail ? true : undefined}>
-                    <summary>Дополнительные фильтры{draftFilter.actorEmail ? ' · активны' : ''}</summary>
+                <details className="audit-advanced-filters" open={draftFilter.actorEmail || draftFilter.correlationId ? true : undefined}>
+                    <summary>Дополнительные фильтры{draftFilter.actorEmail || draftFilter.correlationId ? ' · активны' : ''}</summary>
+                    <label>Correlation ID
+                        <input type="text" value={draftFilter.correlationId ?? ''} maxLength={36}
+                            disabled={loading} placeholder="UUID запроса" autoComplete="off" spellCheck={false}
+                            onChange={(event) => {
+                                const correlationId = event.target.value
+                                onFilterChange(current => ({ ...current, correlationId }))
+                            }} />
+                        <small>Точное совпадение серверного идентификатора операции.</small>
+                    </label>
                     <label>Поиск по email в истории
                         <input type="search" value={draftFilter.actorEmail} maxLength={320}
                             disabled={loading} placeholder="Например, admin@company.ru"
