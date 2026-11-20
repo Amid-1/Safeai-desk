@@ -17,7 +17,7 @@ import java.util.regex.Pattern;
 
 /** Explicitly reviewed schema boundary. Never derive approval from latest migration. */
 final class RuntimeAclPolicy {
-    static final int REVIEWED_THROUGH = 92;
+    static final int REVIEWED_THROUGH = 93;
     static final String ACL_RESOURCE = "/db/acl/runtime-v90.sql";
     private static final String MANIFEST = "/db/acl/reviewed-migrations.sha256";
     private static final Pattern ENTRY = Pattern.compile("([a-f0-9]{64})  (V([1-9][0-9]*)__[^/\\\\]+\\.sql(?:\\.conf)?)");

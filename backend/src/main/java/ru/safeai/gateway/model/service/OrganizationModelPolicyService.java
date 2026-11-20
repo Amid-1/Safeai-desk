@@ -27,13 +27,14 @@ public class OrganizationModelPolicyService {
     private final AuditEventService audit;
     private final Clock clock;
     private final RubBudgetRateService rates;
+    private final ModelPolicyPreviewConfirmationService confirmations;
 
     public OrganizationModelPolicyService(
             OrganizationModelPolicyRepository repository,
             AuditEventService audit,
-            Clock clock
+            Clock clock, ModelPolicyPreviewConfirmationService confirmations
     ) {
-        this(repository, audit, clock, new RubBudgetRateService(clock));
+        this(repository, audit, clock, new RubBudgetRateService(clock), confirmations);
     }
 
     @Autowired
@@ -41,7 +42,7 @@ public class OrganizationModelPolicyService {
             OrganizationModelPolicyRepository repository,
             AuditEventService audit,
             Clock clock,
-            RubBudgetRateService rates
+            RubBudgetRateService rates, ModelPolicyPreviewConfirmationService confirmations
     ) {
         this.repository = Objects.requireNonNull(
                 repository,
@@ -56,6 +57,7 @@ public class OrganizationModelPolicyService {
                 "clock не должен быть null"
         );
         this.rates = Objects.requireNonNull(rates);
+        this.confirmations = Objects.requireNonNull(confirmations);
     }
 
     @Transactional(readOnly = true)
@@ -108,10 +110,9 @@ public class OrganizationModelPolicyService {
             }
             OrganizationModelPolicy previous = repository.findLatest(target).orElse(null);
             int observed = previous == null ? 0 : previous.version();
-            if (observed != request.expectedPreviousVersion()) {
-                throw new ConflictException("Правила изменились. Откройте актуальную версию.");
+            if (observed == request.expectedPreviousVersion()) {
+                rubBudget = rates.resolve(request, previous);
             }
-            rubBudget = rates.resolve(request, previous);
         }
 
         if (!repository.lockOrganization(target)) {
@@ -121,6 +122,8 @@ public class OrganizationModelPolicyService {
         }
 
         OrganizationModelPolicy lockedPrevious = repository.findLatest(target).orElse(null);
+        OrganizationModelPolicy retry = confirmations.retry(target, request, currentUser);
+        if (retry != null) return OrganizationModelPolicyResponse.from(retry);
         int previousVersion = lockedPrevious == null ? 0 : lockedPrevious.version();
 
         if (previousVersion != request.expectedPreviousVersion()) {
@@ -144,12 +147,14 @@ public class OrganizationModelPolicyService {
                 rubBudget
         );
 
+        confirmations.requireCurrent(target, request, currentUser);
         repository.insert(policy);
+        confirmations.complete(target, request, currentUser, policy.id());
         audit.recordPrincipalSnapshot(
                 currentUser,
                 policy.organizationId(),
                 AuditEventType.MODEL_POLICY_VERSION_CREATED,
-                OrganizationModelPolicyAuditDetailsFactory.createAuditDetails(policy)
+                OrganizationModelPolicyAuditDetailsFactory.createConfirmedAuditDetails(policy, request.acknowledgeLockout())
         );
 
         return OrganizationModelPolicyResponse.from(policy);

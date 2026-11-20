@@ -364,6 +364,12 @@ Playwright ограничен запуском Chromium в среде прове
   независимых ревью от отдельных DB login, с совпадающим ticket/evidence SHA.
 - **V90:** приложение собирает старые поколения индекса через ограждённую
   PostgreSQL-функцию без самостоятельного доступа к `DELETE` chunks.
+- **V91:**
+
+- **V92:**
+
+- **V93:**
+
 
 `enabled=false`, принятие операции, S3 purge, `DELETED`, доставка квитанции и backup/third-party retention не являются
 взаимозаменяемыми состояниями.
@@ -400,27 +406,28 @@ Playwright ограничен запуском Chromium в среде прове
 Ниже указано назначение версий, а не факт установки в production.
 
 | Версия | Назначение |
-| --- | --- |
-| V73 | Unicode-нормализация названий организаций. |
-| V74 | UTC dirty dates, физический usage, индексы. |
-| V75 | Тип аудита recovery из dead-letter. |
-| V76 | Privacy новых retrieval runs, SHA-256 вместо raw query. |
-| V77 | Backfill заголовков старых чатов. |
-| V78 | Документная operation и lifecycle защиты. |
-| V79 | Аудит принятия удаления документа. |
-| V80 | Независимые version/chunk provenance identities. |
-| V81 | Leases, S3 inventory и DB fences удаления документа. |
-| V82 | Base identity, parent operation и дочерние guards. |
-| V83 | Аудируемый операторский `NEEDS_REVIEW` resume. |
-| V84 | Транзакционный терминальный аудит и наблюдаемость. |
-| V85 | RAG permits и per-attempt leases, erasure guards. |
-| V86 | Chat archive/restore/content erasure и SQL-роли. |
-| V87 | Онлайн-индекс архивных чатов без транзакции. |
-| V88 | Валидация chat CHECK и индекса V87. |
-| V89 | Knowledge worker, commit outbox, dual-control recovery. |
-| V90 | Least-privilege Generation GC через SQL-функцию. |
-| V91 | RUB budget input, immutable CBR quote evidence и точный USD ceiling. |
-| V92 | Запрет NaN USD-лимитов и бесконечных дат/времени RUB evidence. |
+|--------| --- |
+| V73    | Unicode-нормализация названий организаций. |
+| V74    | UTC dirty dates, физический usage, индексы. |
+| V75    | Тип аудита recovery из dead-letter. |
+| V76    | Privacy новых retrieval runs, SHA-256 вместо raw query. |
+| V77    | Backfill заголовков старых чатов. |
+| V78    | Документная operation и lifecycle защиты. |
+| V79    | Аудит принятия удаления документа. |
+| V80    | Независимые version/chunk provenance identities. |
+| V81    | Leases, S3 inventory и DB fences удаления документа. |
+| V82    | Base identity, parent operation и дочерние guards. |
+| V83    | Аудируемый операторский `NEEDS_REVIEW` resume. |
+| V84    | Транзакционный терминальный аудит и наблюдаемость. |
+| V85    | RAG permits и per-attempt leases, erasure guards. |
+| V86    | Chat archive/restore/content erasure и SQL-роли. |
+| V87    | Онлайн-индекс архивных чатов без транзакции. |
+| V88    | Валидация chat CHECK и индекса V87. |
+| V89    | Knowledge worker, commit outbox, dual-control recovery. |
+| V90    | Least-privilege Generation GC через SQL-функцию. |
+| V91    | RUB budget input, immutable CBR quote evidence и точный USD ceiling. |
+| V92    | Запрет NaN USD-лимитов и бесконечных дат/времени RUB evidence. |
+| V93    |  |
 
 **Frontend:** функции удаления Knowledge и чатов зависят от соответствующих backend capability/status API. UI
 не
@@ -997,7 +1004,8 @@ backend/
 │   │       │       ├── V89__knowledge_erasure_reconciliation_and_fencing.sql
 │   │       │       ├── V90__knowledge_generation_gc_least_privilege.sql
 │   │       │       ├── V91__organization_model_policy_rub_budget.sql
-│   │       │       └── V92__organization_model_policy_budget_finite_values.sql
+│   │       │       ├── V92__organization_model_policy_budget_finite_values.sql
+│   │       │       └── V93__model_policy_preview_confirmations.sql
 │   │       │
 │   │       │   └── README_DB.md              # документация DB; структура db/
 │   │       │
@@ -3624,6 +3632,7 @@ model/
 ├── repository/
 │   ├── JdbcTextArrayReader
 │   ├── ModelCatalogRepository
+│   ├── ModelPolicyPreviewConfirmationRepository
 │   ├── ModelRouteDecisionRepository
 │   ├── ModelRouteRequestBindingRepository
 │   ├── ModelRouteRequestMutexRepository
@@ -3641,6 +3650,8 @@ model/
     ├── ModelControlPlaneNumericValidation
     ├── ModelControlPlaneSchemaVerifier
     ├── ModelInputTokenEstimator
+    ├── ModelPolicyPreviewConfirmationService
+    ├── ModelPolicyPreviewFingerprint
     ├── ModelPolicyPreviewService
     ├── ModelRouteDecisionAuditDetails
     ├── ModelRouteDecisionFactory
@@ -5942,6 +5953,8 @@ paths и
     legacy USD-only; `chk_model_policy_rub_dates_finite_v92` запрещает
     infinity/-infinity для четырёх дат/времени RUB-backed policy.
     Existing V45/V91 guards, checksums и исторические snapshots сохранены.
+  - **`V93`**
+  - **Назначение:**
 
 ### V85–V92: порядок применения и эксплуатационные зависимости
 
@@ -5971,6 +5984,7 @@ SQL ради совпадения checksums.
    NaN и non-finite RUB dates. Нельзя удалять или переписывать повреждённые
    версии, отключать immutable triggers или исправлять checksum ради upgrade.
    Успешный upgrade обязан сохранить исторические USD/RUB snapshots.
+9. **V93**
 
 Для V86–V90 проверять не только `GRANT/REVOKE` в SQL, но и фактические `has_table_privilege`, `has_function_privilege`,
 `session_user`, роль владельца таблиц, наследование, публичные grants и pre-existing defaults.
@@ -6014,6 +6028,7 @@ SQL ради совпадения checksums.
 - **V92**. Durable schema / DB enforcement: validated monetary NaN and temporal
   infinity rejection; Java и внешний эффект: finite-value, overflow,
   immutability и sequential-upgrade regression tests, без смены erasure flow.
+- **V93**.
 
 
 V78–V81 образуют document-erasure фундамент, V82 добавляет удаление всей базы, V83 — контролируемое
@@ -6139,6 +6154,7 @@ V1–V72 → V73 Organization → V74 Usage → V75 Audit → V76 Retrieval priv
        → V90
        → V91
        → V92
+       → V93
 ```
 
 Это последовательность **номеров Flyway**, а не инструкция вручную запускать каждый SQL на действующей базе. Миграции

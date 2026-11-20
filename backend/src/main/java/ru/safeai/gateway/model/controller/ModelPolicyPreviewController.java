@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.model.dto.CreateOrganizationModelPolicyVersionRequest;
 import ru.safeai.gateway.model.dto.ModelPolicyPreviewResponse;
-import ru.safeai.gateway.model.service.ModelPolicyPreviewService;
+import ru.safeai.gateway.model.service.ModelPolicyPreviewConfirmationService;
 
 import java.util.Objects;
 import java.util.UUID;
@@ -21,9 +21,9 @@ import java.util.UUID;
 @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
 public class ModelPolicyPreviewController {
 
-    private final ModelPolicyPreviewService service;
+    private final ModelPolicyPreviewConfirmationService service;
 
-    public ModelPolicyPreviewController(ModelPolicyPreviewService service) {
+    public ModelPolicyPreviewController(ModelPolicyPreviewConfirmationService service) {
         this.service = Objects.requireNonNull(service, "service");
     }
 

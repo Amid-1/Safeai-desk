@@ -175,6 +175,8 @@ export function parseModelPolicyPreview(
         })
 
     const result: ModelPolicyPreview = {
+        previewConfirmationId: requireUuid(raw.previewConfirmationId, `${path}.previewConfirmationId`),
+        confirmationExpiresAt: requireInstant(raw.confirmationExpiresAt, `${path}.confirmationExpiresAt`),
         organizationId: requireUuid(
             raw.organizationId,
             `${path}.organizationId`,

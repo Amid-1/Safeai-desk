@@ -8,6 +8,7 @@ import type {
     ModelPolicyPreview,
 } from '../../../entities/model/api/modelApi'
 import {ModelPolicyModal} from './ModelPolicyModal'
+import {ApiError} from '../../../shared/api/http'
 import {
     createModelCatalogEntry,
     createOrganizationModelPolicy,
@@ -20,6 +21,8 @@ const runtime = createRuntimeModelStatus()
 const entry = createModelCatalogEntry()
 type Request = CreateOrganizationModelPolicyVersionRequest
 const preview = (overrides: Partial<ModelPolicyPreview> = {}): ModelPolicyPreview => ({
+    previewConfirmationId: '12345678-1234-4123-8123-123456789abc',
+    confirmationExpiresAt: new Date(Date.now() + 300_000).toISOString(),
     organizationId: orgId,
     basePolicyVersion: 0,
     enabled: true,
@@ -57,7 +60,7 @@ function setup(opts: {
     onSubmit?: (request: Request) => Promise<void>,
     onClose?: () => void,
 } = {}) {
-    const onPreview = opts.onPreview ?? vi.fn(async () => preview())
+    const onPreview = opts.onPreview ?? vi.fn(async (request: Request) => preview({enabled: request.enabled}))
     const onSubmit = opts.onSubmit ?? vi.fn(async () => {})
     const onClose = opts.onClose ?? vi.fn()
     const utils = render(
@@ -87,13 +90,33 @@ function clickSubmit() {
 }
 
 describe('ModelPolicyModal: безопасность изменения правил', () => {
+    it('не сохраняет выключенные правила без preview и отклоняет истёкшее подтверждение', async () => {
+        const {onSubmit} = setup({onPreview: vi.fn(async () => preview({enabled: false,
+            confirmationExpiresAt: new Date(Date.now() - 1_000).toISOString()}))})
+        clickSubmit()
+        expect(onSubmit).not.toHaveBeenCalled()
+        clickPreview()
+        await screen.findByText(/Сервер вернул проверку для другого состояния правил/)
+        expect(screen.getByRole('button', {name: 'Сохранить правила'})).toBeDisabled()
+    })
+
+    it('после 409 требует новый preview, но сохраняет черновик', async () => {
+        const onSubmit = vi.fn(async () => {throw new ApiError('Повторите проверку', {}, 409)})
+        setup({onSubmit})
+        clickPreview()
+        await screen.findByText('Результат проверки правил')
+        clickSubmit()
+        await waitFor(() => expect(screen.getByRole('button', {name: 'Сохранить правила'})).toBeDisabled())
+        clickSubmit()
+        expect(onSubmit).toHaveBeenCalledTimes(1)
+    })
     it('не сохраняет включённые правила без предварительной серверной проверки', () => {
         const {onSubmit} = setup()
         enablePolicy()
         expect(screen.getByRole('button', {name: 'Сохранить правила'})).toBeDisabled()
         clickSubmit()
         expect(onSubmit).not.toHaveBeenCalled()
-        expect(screen.getByText(/Перед сохранением включённых правил выполните/)).toBeInTheDocument()
+        expect(screen.getByText(/Перед сохранением выполните/)).toBeInTheDocument()
     })
 
     it('разрешает включённую политику после актуальной разрешающей проверки', async () => {
@@ -104,6 +127,7 @@ describe('ModelPolicyModal: безопасность изменения прав
         clickSubmit()
         await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
             enabled: true, expectedPreviousVersion: 0,
+            previewConfirmationId: '12345678-1234-4123-8123-123456789abc', acknowledgeLockout: false,
         })))
         expect(onPreview).toHaveBeenCalledTimes(1)
     })
@@ -153,6 +177,8 @@ describe('ModelPolicyModal: безопасность изменения прав
         let resolve!: () => void
         const onSubmit = vi.fn((_request: Request) => new Promise<void>(r => {resolve = r}))
         setup({onSubmit})
+        clickPreview()
+        await screen.findByText('Результат проверки правил')
         clickSubmit()
         clickSubmit()
         expect(onSubmit).toHaveBeenCalledTimes(1)
@@ -187,6 +213,9 @@ describe('ModelPolicyModal: безопасность изменения прав
         expect(screen.getByRole('button', {name: 'Сохранить правила'})).toBeEnabled()
         clickSubmit()
         await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1))
+        expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
+            previewConfirmationId: '12345678-1234-4123-8123-123456789abc', acknowledgeLockout: true,
+        }))
     })
 
     it('не разрешает изменение правил при несовпадении организации и политики', async () => {
@@ -260,9 +289,12 @@ describe('ModelPolicyModal: безопасность изменения прав
         setup({onSubmit})
         fireEvent.click(screen.getByRole('tab', {name: /Лимиты/}))
         fireEvent.change(screen.getByLabelText('Максимум входных токенов'), {target: {value: '32000'}})
+        clickPreview()
+        await screen.findByText('Результат проверки правил')
         clickSubmit()
         await screen.findByText('Не удалось сохранить правила. Попробуйте повторно.')
         expect(screen.queryByText(/SELECT secret/)).not.toBeInTheDocument()
+        fireEvent.click(screen.getByRole('tab', {name: /Лимиты/}))
         expect(screen.getByLabelText('Максимум входных токенов')).toHaveValue('32000')
         clickSubmit()
         await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2))

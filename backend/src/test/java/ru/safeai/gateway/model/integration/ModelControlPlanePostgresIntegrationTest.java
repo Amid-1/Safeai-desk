@@ -18,6 +18,8 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import ru.safeai.gateway.audit.service.AuditEventService;
+import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.details.AuditDetails;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.model.domain.BudgetEnforcement;
@@ -36,6 +38,10 @@ import ru.safeai.gateway.model.domain.OrganizationModelPolicy;
 import ru.safeai.gateway.model.domain.RubBudgetSnapshot;
 import ru.safeai.gateway.model.dto.CreateModelCatalogVersionRequest;
 import ru.safeai.gateway.model.dto.CreateOrganizationModelPolicyVersionRequest;
+import ru.safeai.gateway.model.dto.ModelPolicyPreviewResponse;
+import ru.safeai.gateway.model.repository.ModelPolicyPreviewConfirmationRepository;
+import ru.safeai.gateway.model.service.ModelPolicyPreviewConfirmationService;
+import ru.safeai.gateway.model.service.ModelPolicyPreviewService;
 import ru.safeai.gateway.model.exception.ModelRouteDeniedException;
 import ru.safeai.gateway.model.repository.ModelCatalogRepository;
 import ru.safeai.gateway.model.repository.ModelRouteDecisionRepository;
@@ -66,7 +72,10 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 
 /**
  * End-to-end PostgreSQL coverage for the append-only Model Control Plane.
@@ -868,18 +877,19 @@ class ModelControlPlanePostgresIntegrationTest {
 
     @Test
     void policyServiceCreatesSecondVersionWhenExpectationMatches() {
+        var confirmations = confirmationService();
         OrganizationModelPolicyService service =
                 new OrganizationModelPolicyService(
                         policyRepository,
                         mock(AuditEventService.class),
-                        ModelTestFixtures.CLOCK
+                        ModelTestFixtures.CLOCK, confirmations
                 );
 
         var first = Objects.requireNonNull(
                 transaction.execute(ignoredStatus ->
                         service.createVersion(
                                 organizationId,
-                                policyRequest(0),
+                                confirmedRequest(confirmations, 0),
                                 principal("ROLE_ADMIN")
                         )
                 ),
@@ -890,7 +900,7 @@ class ModelControlPlanePostgresIntegrationTest {
                 transaction.execute(ignoredStatus ->
                         service.createVersion(
                                 organizationId,
-                                policyRequest(1),
+                                confirmedRequest(confirmations, 1),
                                 principal("ROLE_ADMIN")
                         )
                 ),
@@ -907,14 +917,16 @@ class ModelControlPlanePostgresIntegrationTest {
     @Test
     void policyVersionAllocationIsSerializedAcrossConcurrentTransactions()
             throws Exception {
+        var confirmations = confirmationService();
+        var audit = mock(AuditEventService.class);
         OrganizationModelPolicyService service =
                 new OrganizationModelPolicyService(
                         policyRepository,
-                        mock(AuditEventService.class),
-                        ModelTestFixtures.CLOCK
+                        audit,
+                        ModelTestFixtures.CLOCK, confirmations
                 );
         CreateOrganizationModelPolicyVersionRequest request =
-                policyRequest(0);
+                transaction.execute(status -> confirmedRequest(confirmations, 0));
 
         List<ConcurrentOutcome> outcomes = runTwoConcurrent(() ->
                 transaction.execute(status ->
@@ -928,16 +940,70 @@ class ModelControlPlanePostgresIntegrationTest {
 
         assertThat(outcomes)
                 .filteredOn(ConcurrentSuccess.class::isInstance)
-                .hasSize(1);
-        assertThat(outcomes)
-                .filteredOn(outcome ->
-                        outcome instanceof ConcurrentFailure(Throwable cause)
-                                && cause instanceof ConflictException
-                )
-                .hasSize(1);
+                .hasSize(2); // Идентичный retry возвращает уже созданную версию.
         assertThat(policyRepository.findLatest(organizationId)
                 .orElseThrow()
                 .version()).isEqualTo(1);
+        verify(audit).recordPrincipalSnapshot(any(SafeAiUserPrincipal.class), eq(organizationId),
+                eq(AuditEventType.MODEL_POLICY_VERSION_CREATED), any(AuditDetails.class));
+    }
+
+    @Test
+    void policyProofRejectsDirectSaveAndDifferentPayloadAndSurvivesRolledBackSave() {
+        var confirmations = confirmationService();
+        var actor = principal("ROLE_ADMIN");
+        var audit = mock(AuditEventService.class);
+        var service = new OrganizationModelPolicyService(policyRepository, audit, ModelTestFixtures.CLOCK, confirmations);
+        assertThatThrownBy(() -> transaction.execute(status -> service.createVersion(organizationId, policyRequest(0), actor)))
+                .isInstanceOf(ConflictException.class);
+        assertThat(policyRepository.findLatest(organizationId)).isEmpty();
+
+        var request = transaction.execute(status -> confirmedRequest(confirmations, 0));
+        assertThat(request).isNotNull();
+        var changed = new CreateOrganizationModelPolicyVersionRequest(0, false, request.allowModelKeys(),
+                request.denyModelKeys(), request.defaultModelKey(), request.maxInputTokens(), request.maxOutputTokens(),
+                request.maxRequestCostUsd(), request.monthlyBudgetUsd(), request.budgetEnforcement(),
+                request.requireCompletePricing(), request.requireNoTraining(), request.requireZeroDataRetention(),
+                request.rubBudget(), request.previewConfirmationId(), false);
+        assertThatThrownBy(() -> transaction.execute(status -> service.createVersion(organizationId, changed, actor)))
+                .isInstanceOf(ConflictException.class);
+        assertThat(policyRepository.findLatest(organizationId)).isEmpty();
+
+        assertThatThrownBy(() -> transaction.execute(status -> {
+            service.createVersion(organizationId, request, actor);
+            throw new IllegalStateException("Forced rollback after insert and proof completion");
+        })).isInstanceOf(IllegalStateException.class)
+                .hasMessage("Forced rollback after insert and proof completion");
+        assertThat(policyRepository.findLatest(organizationId)).isEmpty();
+        var saved = transaction.execute(status -> service.createVersion(organizationId, request, actor));
+        var retry = transaction.execute(status -> service.createVersion(organizationId, request, actor));
+        assertThat(retry).isEqualTo(saved);
+        assertThat(policyRepository.findLatest(organizationId).orElseThrow().version()).isEqualTo(1);
+        assertThatThrownBy(() -> transaction.execute(status -> service.createVersion(organizationId, changed, actor)))
+                .isInstanceOf(ConflictException.class);
+    }
+
+    private ModelPolicyPreviewConfirmationService confirmationService() {
+        var simulator = mock(ModelPolicyPreviewService.class);
+        when(simulator.preview(any(), any(), any())).thenAnswer(call -> {
+            CreateOrganizationModelPolicyVersionRequest draft = call.getArgument(1);
+            return new ModelPolicyPreviewResponse(call.getArgument(0), draft.expectedPreviousVersion(),
+                    draft.enabled(), ModelTestFixtures.NOW, "mock", "mock-safeai", ModelRouteOutcome.ALLOWED,
+                    ModelRouteReason.RUNTIME_ONLY_MATCH, null, 0, false, List.of());
+        });
+        return new ModelPolicyPreviewConfirmationService(simulator,
+                new ModelPolicyPreviewConfirmationRepository(jdbc), policyRepository, ModelTestFixtures.CLOCK);
+    }
+
+    private CreateOrganizationModelPolicyVersionRequest confirmedRequest(
+            ModelPolicyPreviewConfirmationService confirmations, int version) {
+        var draft = policyRequest(version);
+        var preview = confirmations.preview(organizationId, draft, principal("ROLE_ADMIN"));
+        return new CreateOrganizationModelPolicyVersionRequest(version, draft.enabled(), draft.allowModelKeys(),
+                draft.denyModelKeys(), draft.defaultModelKey(), draft.maxInputTokens(), draft.maxOutputTokens(),
+                draft.maxRequestCostUsd(), draft.monthlyBudgetUsd(), draft.budgetEnforcement(),
+                draft.requireCompletePricing(), draft.requireNoTraining(), draft.requireZeroDataRetention(),
+                draft.rubBudget(), preview.previewConfirmationId(), false);
     }
 
     private void insertAllowAllRoutingPolicy() {

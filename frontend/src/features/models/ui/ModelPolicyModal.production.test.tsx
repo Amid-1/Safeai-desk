@@ -24,6 +24,7 @@ import type {
 import {
     ModelPolicyModal,
 } from './ModelPolicyModal'
+import {createPolicyPreview} from '../../../test/fixtures/modelControlPlaneTestFixtures'
 
 const ORGANIZATION_ID =
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -186,6 +187,8 @@ describe('ModelPolicyModal production safety', () => {
 
     it('explains NOT_DECLARED and displays the server training rejection without changing the draft', async () => {
         const onPreview = vi.fn<PolicyPreviewFn>().mockResolvedValue({
+            previewConfirmationId: '12345678-1234-4123-8123-123456789abc',
+            confirmationExpiresAt: new Date(Date.now() + 300_000).toISOString(),
             organizationId: ORGANIZATION_ID,
             basePolicyVersion: 0,
             enabled: true,
@@ -359,10 +362,13 @@ describe('ModelPolicyModal production safety', () => {
                 organizationName="Demo Company"
                 pending={false}
                 onClose={vi.fn()}
-                onPreview={unusedPreview}
+                onPreview={async request => createPolicyPreview(request, ORGANIZATION_ID, RUNTIME)}
                 onSubmit={onSubmit}
             />,
         )
+
+        fireEvent.click(screen.getByRole('button', {name: 'Проверить правила'}))
+        await waitFor(() => expect(screen.getByRole('button', {name: 'Сохранить правила'})).toBeEnabled())
 
         fireEvent.click(
             screen.getByRole(
@@ -397,6 +403,8 @@ describe('ModelPolicyModal production safety', () => {
                 automaticReason: 'MODEL_NOT_FOUND',
                 automaticModelKey: null,
                 executableModelCount: 0,
+                previewConfirmationId: '12345678-1234-4123-8123-123456789abc',
+                confirmationExpiresAt: new Date(Date.now() + 300_000).toISOString(),
                 wouldLockOutOrganization: true,
                 models: [],
             })

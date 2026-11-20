@@ -22,6 +22,7 @@ import type {
     RuntimeModelStatus,
 } from '../../../entities/model/api/modelApi'
 import { ModelPolicyModal } from './ModelPolicyModal'
+import {createPolicyPreview} from '../../../test/fixtures/modelControlPlaneTestFixtures'
 
 const ORGANIZATION_ID =
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -112,7 +113,7 @@ function renderPolicyModal({
     catalog = [],
     effectiveCatalog = catalog,
     onPreview = vi.fn<PolicyPreviewFn>()
-        .mockRejectedValue(new Error('Preview не ожидался в этом тесте')),
+        .mockImplementation(async request => createPolicyPreview(request, ORGANIZATION_ID, RUNTIME)),
     onSubmit = vi.fn<PolicySubmit>()
         .mockResolvedValue(undefined),
 }: {
@@ -312,6 +313,9 @@ describe('ModelPolicyModal', () => {
             onSubmit,
         })
 
+        fireEvent.click(screen.getByRole('button', {name: 'Проверить правила'}))
+        await waitFor(() => expect(screen.getByRole('button', {name: 'Сохранить правила'})).toBeEnabled())
+
         fireEvent.click(
             screen.getByRole(
                 'button',
@@ -365,6 +369,9 @@ describe('ModelPolicyModal', () => {
             ),
         )
 
+        fireEvent.click(screen.getByRole('button', {name: 'Проверить правила'}))
+        await waitFor(() => expect(screen.getByRole('button', {name: 'Сохранить правила'})).toBeEnabled())
+
         fireEvent.click(
             screen.getByRole(
                 'button',
@@ -409,7 +416,7 @@ describe('ModelPolicyModal', () => {
         fireEvent.click(
             screen.getByRole(
                 'button',
-                {name: 'Сохранить правила'},
+                {name: 'Проверить правила'},
             ),
         )
 

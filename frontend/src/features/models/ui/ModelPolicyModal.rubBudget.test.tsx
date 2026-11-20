@@ -3,7 +3,7 @@ import {fireEvent, render, screen, waitFor} from '@testing-library/react'
 import {describe, expect, it, vi} from 'vitest'
 import {ModelPolicyModal} from './ModelPolicyModal'
 import {getRubBudgetQuote, moscowBudgetDate} from '../../../entities/model/api/modelApi'
-import {createRuntimeModelStatus, createModelCatalogEntry, createOrganizationModelPolicy} from '../../../test/fixtures/modelControlPlaneTestFixtures'
+import {createRuntimeModelStatus, createModelCatalogEntry, createOrganizationModelPolicy, createPolicyPreview} from '../../../test/fixtures/modelControlPlaneTestFixtures'
 
 vi.mock('../../../entities/model/api/modelApi', async importOriginal => ({
     ...await importOriginal<typeof import('../../../entities/model/api/modelApi')>(),
@@ -18,7 +18,7 @@ function open(policy = createOrganizationModelPolicy({enabled: false}), onSubmit
     render(<ModelPolicyModal policy={policy} catalog={catalog} effectiveCatalog={catalog}
         runtime={createRuntimeModelStatus()} organizationId={policy.organizationId}
         organizationName="Тест" pending={false} onClose={vi.fn()}
-        onPreview={vi.fn(async () => {throw new Error('Unexpected preview')})} onSubmit={onSubmit}/>)
+        onPreview={async request => createPolicyPreview(request, policy.organizationId, createRuntimeModelStatus())} onSubmit={onSubmit}/>)
     fireEvent.click(screen.getByRole('tab', {name: 'Бюджет'}))
     return onSubmit
 }
@@ -34,6 +34,8 @@ describe('RUB budget editing', () => {
         expect(screen.getByRole('button', {name: 'USD · Доллары'})).toHaveAttribute('aria-pressed', 'true')
         fireEvent.change(input, {target: {value: '20'}})
         expect(screen.getByText('Месячный бюджет: 1800 RUB')).toBeVisible()
+        fireEvent.click(screen.getByRole('button', {name: 'Проверить правила'}))
+        await waitFor(() => expect(screen.getByRole('button', {name: 'Сохранить правила'})).toBeEnabled())
         fireEvent.click(screen.getByRole('button', {name: 'Сохранить правила'}))
         await waitFor(() => expect(submit).toHaveBeenCalledWith(expect.objectContaining({monthlyBudgetUsd: '20'})))
         expect(submit).not.toHaveBeenCalledWith(expect.objectContaining({rubBudget: expect.anything()}))
@@ -47,6 +49,8 @@ describe('RUB budget editing', () => {
         expect(screen.getByText('1 USD = 90 RUB')).toBeVisible()
         fireEvent.change(input, {target: {value: '10000,00'}})
         expect(screen.getByText('111,111111111111 USD')).toBeVisible()
+        fireEvent.click(screen.getByRole('button', {name: 'Проверить правила'}))
+        await waitFor(() => expect(screen.getByRole('button', {name: 'Сохранить правила'})).toBeEnabled())
         fireEvent.click(screen.getByRole('button', {name: 'Сохранить правила'}))
         await waitFor(() => expect(submit).toHaveBeenCalledWith(expect.objectContaining({
             monthlyBudgetUsd: null, maxRequestCostUsd: null,

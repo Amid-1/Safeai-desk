@@ -16,6 +16,8 @@ const entry = createModelCatalogEntry()
 const runtime = createRuntimeModelStatus()
 const policy = createOrganizationModelPolicy({organizationId: orgId})
 const evaluation = (overrides: Partial<ModelPolicyPreview> = {}): ModelPolicyPreview => ({
+    previewConfirmationId: '12345678-1234-4123-8123-123456789abc',
+    confirmationExpiresAt: new Date(Date.now() + 300_000).toISOString(),
     organizationId: orgId,
     basePolicyVersion: policy.version,
     enabled: true,

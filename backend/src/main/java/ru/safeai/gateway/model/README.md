@@ -202,6 +202,7 @@ model/
 ├── repository/
 │   ├── JdbcTextArrayReader
 │   ├── ModelCatalogRepository
+│   ├── ModelPolicyPreviewConfirmationRepository
 │   ├── ModelRouteDecisionRepository
 │   ├── ModelRouteRequestBindingRepository
 │   ├── ModelRouteRequestMutexRepository
@@ -219,6 +220,8 @@ model/
 │   ├── ModelControlPlaneNumericValidation
 │   ├── ModelControlPlaneSchemaVerifier
 │   ├── ModelInputTokenEstimator
+│   ├── ModelPolicyPreviewConfirmationService
+│   ├── ModelPolicyPreviewFingerprint
 │   ├── ModelPolicyPreviewService
 │   ├── ModelRouteDecisionAuditDetails
 │   ├── ModelRouteDecisionFactory
@@ -1320,6 +1323,7 @@ model/
 │   ├── ModelControlPlaneNumericValidationTest
 │   ├── ModelExecutionBindingTestSupport
 │   ├── ModelInputTokenEstimatorIntegrationTest
+│   ├── ModelPolicyPreviewConfirmationServiceTest
 │   ├── ModelPolicyPreviewServiceTest
 │   ├── ModelRouteDecisionFactoryTest
 │   ├── ModelRouteExecutionBindingServiceTest
@@ -1335,6 +1339,7 @@ model/
 │   ├── ModelRoutingReplayV54Test
 │   ├── ModelRoutingSelectionPolicyTest
 │   ├── ModelRoutingServiceTest
+│   ├── OrganizationBudgetStatusServiceTest
 │   ├── OrganizationModelPolicyRulesTest
 │   ├── OrganizationModelPolicyServiceTest
 │   ├── ProviderDataDispatchGuardTest

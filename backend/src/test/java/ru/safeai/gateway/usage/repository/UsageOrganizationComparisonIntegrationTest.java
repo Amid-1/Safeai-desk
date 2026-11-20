@@ -10,8 +10,10 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.budget.PlatformBudgetClassification.Status;
+import ru.safeai.gateway.model.service.ModelPolicyPreviewConfirmationService;
 import ru.safeai.gateway.model.service.OrganizationBudgetStatusService;
 import ru.safeai.gateway.model.service.OrganizationModelPolicyService;
 import ru.safeai.gateway.model.domain.BudgetEnforcement;
@@ -38,6 +40,9 @@ class UsageOrganizationComparisonIntegrationTest extends UsagePostgresIntegratio
 
     @Autowired
     private OrganizationModelPolicyService policyService;
+
+    @Autowired
+    private ModelPolicyPreviewConfirmationService confirmationService;
 
     @Test
     @WithMockUser(roles = "SUPER_ADMIN")
@@ -119,14 +124,14 @@ class UsageOrganizationComparisonIntegrationTest extends UsagePostgresIntegratio
         assertThat(summary.asOf()).isBetween(summary.periodStart(), summary.periodEnd());
         assertThat(summary.within() + summary.nearLimit() + summary.exceeded() + summary.noLimit()
                 + summary.unknown() + summary.disabled() + summary.unconfigured()).isEqualTo(summary.total());
-        policyService.createVersion(ORGANIZATION_B_ID, new CreateOrganizationModelPolicyVersionRequest(
+        createConfirmedVersion(new CreateOrganizationModelPolicyVersionRequest(
                 0, true, java.util.Set.of(), java.util.Set.of(), null, null, null, null,
                 BigDecimal.ZERO, BudgetEnforcement.SOFT, false, false, false), principal);
         var after = budgetStatus.platformSummary(principal);
         assertThat(after.total()).isEqualTo(summary.total());
         assertThat(after.unconfigured()).isEqualTo(summary.unconfigured() - 1);
         assertThat(after.nearLimit()).isEqualTo(summary.nearLimit() + 1);
-        policyService.createVersion(ORGANIZATION_B_ID, new CreateOrganizationModelPolicyVersionRequest(
+        createConfirmedVersion(new CreateOrganizationModelPolicyVersionRequest(
                 1, true, java.util.Set.of(), java.util.Set.of(), null, null, null, null,
                 null, BudgetEnforcement.SOFT, false, false, false), principal);
         var unlimited = budgetStatus.platformSummary(principal);
@@ -152,6 +157,72 @@ class UsageOrganizationComparisonIntegrationTest extends UsagePostgresIntegratio
             assertThat((long) ids.size()).isEqualTo(entry.getValue());
             if (entry.getKey() == Status.NO_LIMIT) assertThat(ids).contains(ORGANIZATION_B_ID);
         }
+    }
+
+    @Test
+    @WithMockUser(roles = "SUPER_ADMIN")
+    void policySaveWithoutPreviewIsRejectedWithoutCreatingVersion() {
+        var principal = SafeAiUserPrincipal.accessTokenPrincipal(USER_A_ID, ORGANIZATION_A_ID, 0, 0,
+                java.util.List.of(new SimpleGrantedAuthority("ROLE_SUPER_ADMIN")));
+        var draft = new CreateOrganizationModelPolicyVersionRequest(
+                0, true, java.util.Set.of(), java.util.Set.of(), null, null, null, null,
+                BigDecimal.ZERO, BudgetEnforcement.SOFT, false, false, false);
+
+        var before = policyService.current(ORGANIZATION_B_ID, principal);
+        assertThat(before.configured()).isFalse();
+        assertThat(before.version()).isZero();
+
+        assertThatThrownBy(() -> policyService.createVersion(ORGANIZATION_B_ID, draft, principal))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("Подтверждение проверки правил отсутствует");
+
+        var after = policyService.current(ORGANIZATION_B_ID, principal);
+        assertThat(after.configured()).isFalse();
+        assertThat(after.version()).isZero();
+        assertThat(after.organizationId()).isEqualTo(ORGANIZATION_B_ID);
+    }
+
+    private void createConfirmedVersion(
+            CreateOrganizationModelPolicyVersionRequest draft,
+            SafeAiUserPrincipal principal
+    ) {
+        assertThat(draft.previewConfirmationId()).isNull();
+        assertThat(draft.acknowledgeLockout()).isFalse();
+
+        var preview = confirmationService.preview(ORGANIZATION_B_ID, draft, principal);
+
+        assertThat(preview.organizationId()).isEqualTo(ORGANIZATION_B_ID);
+        assertThat(preview.basePolicyVersion()).isEqualTo(draft.expectedPreviousVersion());
+        assertThat(preview.nonBinding()).isTrue();
+        assertThat(preview.previewConfirmationId()).isNotNull();
+        assertThat(preview.confirmationExpiresAt()).isAfter(preview.evaluatedAt());
+        assertThat(policyService.current(ORGANIZATION_B_ID, principal).version())
+                .isEqualTo(draft.expectedPreviousVersion());
+
+        var confirmed = new CreateOrganizationModelPolicyVersionRequest(
+                draft.expectedPreviousVersion(),
+                draft.enabled(),
+                draft.allowModelKeys(),
+                draft.denyModelKeys(),
+                draft.defaultModelKey(),
+                draft.maxInputTokens(),
+                draft.maxOutputTokens(),
+                draft.maxRequestCostUsd(),
+                draft.monthlyBudgetUsd(),
+                draft.budgetEnforcement(),
+                draft.requireCompletePricing(),
+                draft.requireNoTraining(),
+                draft.requireZeroDataRetention(),
+                draft.rubBudget(),
+                preview.previewConfirmationId(),
+                preview.wouldLockOutOrganization()
+        );
+
+        var saved = policyService.createVersion(ORGANIZATION_B_ID, confirmed, principal);
+        assertThat(saved.organizationId()).isEqualTo(ORGANIZATION_B_ID);
+        assertThat(saved.version()).isEqualTo(draft.expectedPreviousVersion() + 1);
+        assertThat(policyService.current(ORGANIZATION_B_ID, principal).version())
+                .isEqualTo(saved.version());
     }
 
     private UsageOrganizationSummaryResponse row(

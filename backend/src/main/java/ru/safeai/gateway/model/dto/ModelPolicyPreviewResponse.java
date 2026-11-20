@@ -1,5 +1,6 @@
 package ru.safeai.gateway.model.dto;
 
+import org.jspecify.annotations.NonNull;
 import ru.safeai.gateway.model.domain.ModelRouteOutcome;
 import ru.safeai.gateway.model.domain.ModelRouteReason;
 
@@ -24,7 +25,9 @@ public record ModelPolicyPreviewResponse(
         int executableModelCount,
         boolean wouldLockOutOrganization,
         List<ModelPolicyPreviewItemResponse> models,
-        boolean nonBinding
+        boolean nonBinding,
+        UUID previewConfirmationId,
+        Instant confirmationExpiresAt
 ) {
     /**
      * Older callers keep their signature. A preview is always indicative:
@@ -41,7 +44,7 @@ public record ModelPolicyPreviewResponse(
         this(organizationId, basePolicyVersion, enabled, evaluatedAt,
                 runtimeProvider, runtimeModel, automaticOutcome,
                 automaticReason, automaticModelKey, executableModelCount,
-                wouldLockOutOrganization, models, true);
+                wouldLockOutOrganization, models, true, null, null);
     }
 
     public ModelPolicyPreviewResponse {
@@ -51,5 +54,17 @@ public record ModelPolicyPreviewResponse(
             );
         }
         models = List.copyOf(models);
+    }
+
+    public ModelPolicyPreviewResponse withConfirmation(UUID id, Instant expiresAt) {
+        return new ModelPolicyPreviewResponse(organizationId, basePolicyVersion, enabled, evaluatedAt,
+                runtimeProvider, runtimeModel, automaticOutcome, automaticReason, automaticModelKey,
+                executableModelCount, wouldLockOutOrganization, models, nonBinding, id, expiresAt);
+    }
+
+    @Override
+    public @NonNull String toString() {
+        return "ModelPolicyPreviewResponse[organizationId=" + organizationId
+                + ", basePolicyVersion=" + basePolicyVersion + ", confirmation=<redacted>]";
     }
 }

@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * <p>V0 is an intentional test-only role bootstrap. It must run before V1,
  * not be hidden or excluded to make the migration count look convenient.
- * Production migrations begin at V1 and currently extend through V92.</p>
+ * Production migrations begin at V1 and currently extend through V93.</p>
  */
 @Tag("integration")
 @Testcontainers
@@ -62,10 +62,10 @@ class FlywaySequentialUpgradeIT {
                 .toList();
 
         // Validate the complete catalog, not just the migration that failed.
-        assertThat(versions).as("Expected test V0 and production versions through V92")
-                .hasSizeGreaterThanOrEqualTo(93)
+        assertThat(versions).as("Expected test V0 and production versions through V93")
+                .hasSizeGreaterThanOrEqualTo(94)
                 .startsWith("0", "1")
-                .contains("92");
+                .contains("92", "93");
 
         UUID existingOrganization = UUID.randomUUID();
         UUID existingActor = UUID.randomUUID();

@@ -15,12 +15,14 @@ import {
     getRuntimeModelStatus,
     importRuntimeModelCatalog,
     probeRuntimeModel,
+    previewOrganizationModelPolicy,
 } from '../entities/model/api/modelApi'
 import { getOrganizationDetails, searchOrganizationDirectory } from '../entities/organization/api/organizationApi'
 import {
     createModelCatalogEntry,
     createOrganizationModelPolicy,
     createRuntimeModelStatus,
+    createPolicyPreview,
 } from '../test/fixtures/modelControlPlaneTestFixtures'
 import AdminModelsPage from './AdminModelsPage'
 import { MemoryRouter } from 'react-router-dom'
@@ -79,6 +81,8 @@ function configureApi() {
     vi.mocked(getOrganizationModelPolicy).mockImplementation(async organizationId =>
         createOrganizationModelPolicy({ organizationId }),
     )
+    vi.mocked(previewOrganizationModelPolicy).mockImplementation(async (organizationId, request) =>
+        createPolicyPreview(request, organizationId, createRuntimeModelStatus()))
     vi.mocked(getOrganizationDetails).mockImplementation(async organizationId => ({
         id: organizationId,
         name: organizationId === SECOND_ORG ? 'Second Organization' : 'First Organization',
@@ -397,6 +401,8 @@ describe('AdminModelsPage — контрактные и регрессионны
         await loadPage()
         fireEvent.click(screen.getByRole('tab', { name: 'Доступ' }))
         fireEvent.click(screen.getByRole('button', { name: 'Настроить правила' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Проверить правила' }))
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Сохранить правила' })).toBeEnabled())
         fireEvent.click(screen.getByRole('button', { name: 'Сохранить правила' }))
         expect(await screen.findByText(/Ответ сервера относится к другой организации/))
             .toBeInTheDocument()

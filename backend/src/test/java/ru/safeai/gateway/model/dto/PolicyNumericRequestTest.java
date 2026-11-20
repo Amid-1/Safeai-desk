@@ -61,7 +61,33 @@ class PolicyNumericRequestTest {
     private static CreateOrganizationModelPolicyVersionRequest read(
             String input, String output, String requestCost, String monthlyBudget
     ) {
-        return MAPPER.readValue("""
+        return MAPPER.readValue(payload(input, output, requestCost, monthlyBudget),
+                CreateOrganizationModelPolicyVersionRequest.class);
+    }
+
+    @Test
+    void missingAndNullAcknowledgmentNeverImplyConsent() {
+        assertThat(read("null", "null", "null", "null").acknowledgeLockout()).isFalse();
+        assertThat(readWithAcknowledgment("null").acknowledgeLockout()).isFalse();
+        assertThat(readWithAcknowledgment("false").acknowledgeLockout()).isFalse();
+        assertThat(readWithAcknowledgment("true").acknowledgeLockout()).isTrue();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"1", "0", "1.0", "\"true\"", "\"false\"", "\"1\"", "\"\"", "[]", "{}"})
+    void rejectsCoercionOfLockoutAcknowledgment(String literal) {
+        assertThatThrownBy(() -> readWithAcknowledgment(literal)).isInstanceOf(JacksonException.class);
+    }
+
+    private static CreateOrganizationModelPolicyVersionRequest readWithAcknowledgment(String literal) {
+        String json = payload("null", "null", "null", "null").stripTrailing();
+        return MAPPER.readValue(json.substring(0, json.length() - 1)
+                        + ",\"acknowledgeLockout\":" + literal + "}",
+                CreateOrganizationModelPolicyVersionRequest.class);
+    }
+
+    private static String payload(String input, String output, String requestCost, String monthlyBudget) {
+        return """
                 {
                   "expectedPreviousVersion": 0,
                   "enabled": true,
@@ -77,7 +103,6 @@ class PolicyNumericRequestTest {
                   "requireNoTraining": false,
                   "requireZeroDataRetention": false
                 }
-                """.formatted(input, output, requestCost, monthlyBudget),
-                CreateOrganizationModelPolicyVersionRequest.class);
+                """.formatted(input, output, requestCost, monthlyBudget);
     }
 }

@@ -94,6 +94,8 @@ const POLICY = {
 } as const
 
 const POLICY_PREVIEW = {
+    previewConfirmationId: '12345678-1234-4123-8123-123456789abc',
+    confirmationExpiresAt: '2026-10-21T07:05:00Z',
     organizationId: ORG_ID,
     basePolicyVersion: 0,
     enabled: false,

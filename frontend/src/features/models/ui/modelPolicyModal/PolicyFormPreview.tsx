@@ -94,6 +94,7 @@ export function PolicyFormPreview({control, effectiveCatalog}: Props) {
                                 Подключение: {currentPreview.runtimeProvider}/{currentPreview.runtimeModel}
                                 {' · '}Доступных моделей: {currentPreview.executableModelCount}
                                 {' · '}Проверено сервером: {new Date(currentPreview.evaluatedAt).toLocaleString('ru-RU')}
+                                {' · '}Подтверждение до: {new Date(currentPreview.confirmationExpiresAt).toLocaleTimeString('ru-RU')}
                             </small>
                         </div>
                         <span>

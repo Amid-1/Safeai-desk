@@ -256,6 +256,8 @@ export type CreateModelCatalogVersionRequest = {
 }
 
 export type CreateOrganizationModelPolicyVersionRequest = {
+    previewConfirmationId?: string
+    acknowledgeLockout?: boolean
     expectedPreviousVersion: number
     enabled: boolean
     allowModelKeys: string[]
@@ -291,6 +293,8 @@ export type ModelPolicyPreviewItem = {
 }
 
 export type ModelPolicyPreview = {
+    previewConfirmationId: string
+    confirmationExpiresAt: string
     organizationId: string
     basePolicyVersion: number
     enabled: boolean

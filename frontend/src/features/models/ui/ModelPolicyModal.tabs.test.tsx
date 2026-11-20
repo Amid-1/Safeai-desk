@@ -12,6 +12,7 @@ import {
     createRuntimeModelStatus,
     createModelCatalogEntry,
     createOrganizationModelPolicy,
+    createPolicyPreview,
 } from '../../../test/fixtures/modelControlPlaneTestFixtures'
 
 const runtime = createRuntimeModelStatus()
@@ -37,7 +38,7 @@ function view(options: {
         organizationName="Тестовая организация"
         pending={options.pending ?? false}
         onClose={vi.fn()}
-        onPreview={options.onPreview ?? vi.fn(async () => {throw new Error('Неожиданный preview')})}
+        onPreview={options.onPreview ?? (async request => createPolicyPreview(request, options.organizationId ?? organizationId, runtime))}
         onSubmit={options.onSubmit ?? vi.fn(async () => {})}
     />
 }
@@ -46,8 +47,13 @@ function tab(name: string) {
     return screen.getByRole('tab', {name: new RegExp(name)})
 }
 
+async function confirmPreview() {
+    fireEvent.click(screen.getByRole('button', {name: 'Проверить правила'}))
+    await waitFor(() => expect(screen.getByRole('button', {name: 'Сохранить правила'})).toBeEnabled())
+}
+
 describe('ModelPolicyModal: раздельные вкладки и единый черновик', () => {
-    it('не создаёт новую версию без изменения правил, в том числе при submit формы', () => {
+    it('не создаёт новую версию без изменения правил, в том числе при submit формы', async () => {
         const onSubmit = vi.fn(async () => {})
         render(view({policy: createOrganizationModelPolicy({configured: true, version: 1, monthlyBudgetUsd: '15.00'}), onSubmit}))
         const save = screen.getByRole('button', {name: 'Сохранить правила'})
@@ -60,6 +66,7 @@ describe('ModelPolicyModal: раздельные вкладки и единый 
         fireEvent.change(screen.getByLabelText('Месячный бюджет, USD'), {target: {value: '15,00'}})
         expect(save).toBeDisabled()
         fireEvent.change(screen.getByLabelText('Месячный бюджет, USD'), {target: {value: '20'}})
+        await confirmPreview()
         expect(save).toBeEnabled()
         fireEvent.change(screen.getByLabelText('Месячный бюджет, USD'), {target: {value: '15.00'}})
         expect(save).toBeDisabled()
@@ -92,7 +99,7 @@ describe('ModelPolicyModal: раздельные вкладки и единый 
         expect(save).toBeDisabled()
         fireEvent.click(tab('Бюджет'))
         fireEvent.change(screen.getByLabelText('Месячный бюджет, USD'), {target: {value: '0,05'}})
-        expect(save).toBeEnabled()
+        expect(save).toBeDisabled()
         expect(preview).toBeEnabled()
     })
 
@@ -102,6 +109,7 @@ describe('ModelPolicyModal: раздельные вкладки и единый 
         fireEvent.click(tab('Бюджет'))
         fireEvent.change(screen.getByLabelText('Лимит на один запрос, USD'), {target: {value: '0,000000000001'}})
         fireEvent.change(screen.getByLabelText('Месячный бюджет, USD'), {target: {value: '999999999999999999,123456789012'}})
+        await confirmPreview()
         fireEvent.click(screen.getByRole('button', {name: 'Сохранить правила'}))
         await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
             maxRequestCostUsd: '0.000000000001',
@@ -114,6 +122,7 @@ describe('ModelPolicyModal: раздельные вкладки и единый 
         render(view({onSubmit}))
         fireEvent.click(tab('Бюджет'))
         fireEvent.change(screen.getByLabelText('Лимит на один запрос, USD'), {target: {value: '0'}})
+        await confirmPreview()
         fireEvent.click(screen.getByRole('button', {name: 'Сохранить правила'}))
         await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
             maxRequestCostUsd: '0',
@@ -199,6 +208,7 @@ describe('ModelPolicyModal: раздельные вкладки и единый 
         fireEvent.click(screen.getByRole('checkbox', {name: 'Полные сведения о стоимости'}))
         fireEvent.click(tab('Лимиты'))
         expect(screen.getByLabelText('Максимум входных токенов')).toHaveValue('2048')
+        await confirmPreview()
         fireEvent.click(screen.getByRole('button', {name: 'Сохранить правила'}))
         await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
             expectedPreviousVersion: 0,
@@ -218,13 +228,13 @@ describe('ModelPolicyModal: раздельные вкладки и единый 
             target: {value: 'незавершённый ввод'},
         })
         fireEvent.click(tab('Бюджет'))
-        fireEvent.click(screen.getByRole('button', {name: 'Сохранить правила'}))
+        fireEvent.click(screen.getByRole('button', {name: 'Проверить правила'}))
         expect(tab('Доступ')).toHaveAttribute('aria-selected', 'true')
         expect(screen.getByText(/Завершите добавление модели/)).toBeVisible()
         expect(onSubmit).not.toHaveBeenCalled()
     })
 
-    it('не допускает сохранение с чужими правилами и очищает черновик при смене tenant', () => {
+    it('не допускает сохранение с чужими правилами и очищает черновик при смене tenant', async () => {
         const onSubmit = vi.fn(async (_request: CreateOrganizationModelPolicyVersionRequest) => {})
         const {rerender} = render(view({onSubmit}))
         fireEvent.click(tab('Лимиты'))
@@ -237,6 +247,7 @@ describe('ModelPolicyModal: раздельные вкладки и единый 
         expect(tab('Доступ')).toHaveAttribute('aria-selected', 'true')
         fireEvent.click(tab('Лимиты'))
         expect(screen.getByLabelText('Максимум входных токенов')).toHaveValue('')
+        await confirmPreview()
         fireEvent.click(screen.getByRole('button', {name: 'Сохранить правила'}))
         expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
             expectedPreviousVersion: 0,

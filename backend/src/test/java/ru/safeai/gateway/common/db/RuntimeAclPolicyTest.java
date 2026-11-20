@@ -36,8 +36,8 @@ class RuntimeAclPolicyTest {
         manifestFails(s -> s + s.lines().filter(line -> line.contains("V92__")).findFirst().orElseThrow() + "\n", "invalid or duplicate");
         manifestFails(s -> s + s.lines().filter(line -> line.contains("V92__")).findFirst().orElseThrow().replace("V92__", "V92__duplicate_") + "\n", "duplicate reviewed");
         manifestFails(s -> s.replaceAll("(?m)^.*V92__.*\\R", ""), "review boundary mismatch");
-        manifestFails(s -> s.replace("V92__", "V93__"), "missing reviewed V92");
-        manifestFails(s -> s + "0".repeat(64) + "  V93__unreviewed.sql.conf\n", "orphan migration configuration");
+        manifestFails(s -> s.replace("V92__", "V94__"), "missing reviewed V92");
+        manifestFails(s -> s + "0".repeat(64) + "  V94__unreviewed.sql.conf\n", "orphan migration configuration");
     }
 
     private static void manifestFails(UnaryOperator<String> mutate, String message) {

@@ -74,7 +74,7 @@ function ModelPolicyModalSession(props: ModelPolicyModalProps) {
                     </span>
                 )}
                 {ratePending && <span className="models-policy-modal__check-indicator">Получаем курс Банка России</span>}
-                {draft.enabled && canSaveChanges && !currentPreview && !invalidNumericSection && (
+                {canSaveChanges && !currentPreview && !invalidNumericSection && (
                     <span className="models-policy-modal__check-indicator">Требуется актуальная проверка</span>
                 )}
                 {draft.enabled && currentPreview?.wouldLockOutOrganization && !control.lockoutAcknowledged && canSaveChanges && (
@@ -95,7 +95,7 @@ function ModelPolicyModalSession(props: ModelPolicyModalProps) {
                 form={formId}
                 className="btn-primary"
                 disabled={pending || previewPending || ratePending || policyChangedExternally || !canSaveChanges || invalidNumericSection !== null
-                    || (draft.enabled && (!currentPreview || (currentPreview.wouldLockOutOrganization && !control.lockoutAcknowledged)))}
+                    || !currentPreview || (currentPreview.wouldLockOutOrganization && !control.lockoutAcknowledged)}
             >
                 {pending ? 'Сохраняем...' : 'Сохранить правила'}
             </button>

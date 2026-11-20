@@ -249,6 +249,7 @@ export function useModelPolicyModalController({
         && policyPreview?.organizationId === policy.organizationId
         && policyPreview.basePolicyVersion === policy.version
         && policyPreview.enabled === draft.enabled
+        && Date.parse(policyPreview.confirmationExpiresAt) > Date.now()
             ? policyPreview
             : null
 
@@ -292,6 +293,19 @@ export function useModelPolicyModalController({
         setPreviewError('')
         setLockoutAcknowledged(false)
     }, [draftRevision, previewContextFingerprint])
+
+    useEffect(() => {
+        if (!policyPreview) return
+        const expire = () => {
+            setVerifiedDraftRevision(null)
+            setLockoutAcknowledged(false)
+            setPreviewError('Срок серверного подтверждения истёк. Повторите проверку правил.')
+        }
+        const remaining = Date.parse(policyPreview.confirmationExpiresAt) - Date.now()
+        if (!(remaining > 0)) return
+        const timer = window.setTimeout(expire, remaining)
+        return () => window.clearTimeout(timer)
+    }, [policyPreview])
 
     // A changed runtime/catalog invalidates the issued preview permanently,
     // even if those props later happen to return to their previous values.
@@ -458,6 +472,8 @@ export function useModelPolicyModalController({
                 || result.enabled !== request.enabled
                 || result.runtimeProvider !== runtime.provider
                 || result.runtimeModel !== runtime.model
+                || !result.previewConfirmationId
+                || !(Date.parse(result.confirmationExpiresAt) > Date.now())
             ) {
                 // Это ошибка контракта ответа, а не исключение HTTP-запроса.
                 // Не бросаем исключение, которое тут же поймает этот catch.
@@ -490,10 +506,10 @@ export function useModelPolicyModalController({
             return
         }
 
-        if (draft.enabled && currentPreview === null) {
+        if (currentPreview === null || !(Date.parse(currentPreview.confirmationExpiresAt) > Date.now())) {
             setActiveSection('preview')
             setFormError(
-                'Перед сохранением включённых правил выполните «Проверить правила». Проверка должна соответствовать текущему черновику.',
+                'Перед сохранением выполните «Проверить правила». Проверка должна соответствовать текущему черновику.',
             )
             return
         }
@@ -512,8 +528,14 @@ export function useModelPolicyModalController({
 
         submitInFlightRef.current = true
         try {
-            await onSubmit(request)
+            await onSubmit({...request, previewConfirmationId: currentPreview.previewConfirmationId,
+                acknowledgeLockout: currentPreview.wouldLockOutOrganization && lockoutAcknowledged})
         } catch (failure) {
+            if (typeof failure === 'object' && failure !== null && 'status' in failure && failure.status === 409) {
+                setVerifiedDraftRevision(null)
+                setLockoutAcknowledged(false)
+                setActiveSection('preview')
+            }
             setFormError(
                 failure instanceof Error
                     ? getApiErrorMessage(

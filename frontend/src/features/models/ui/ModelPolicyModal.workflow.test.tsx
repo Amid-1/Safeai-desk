@@ -23,6 +23,8 @@ const initialPolicy = createOrganizationModelPolicy({
 
 function preview(): ModelPolicyPreview {
     return {
+        previewConfirmationId: '12345678-1234-4123-8123-123456789abc',
+        confirmationExpiresAt: new Date(Date.now() + 300_000).toISOString(),
         organizationId, basePolicyVersion: initialPolicy.version, enabled: true,
         evaluatedAt: '2026-10-24T12:00:00Z',
         runtimeProvider: runtime.provider, runtimeModel: runtime.model,
@@ -37,7 +39,7 @@ function mount(options: {
     onPreview?: (request: CreateOrganizationModelPolicyVersionRequest) => Promise<ModelPolicyPreview>
 } = {}) {
     const onSubmit = options.onSubmit ?? vi.fn(async () => {})
-    const onPreview = options.onPreview ?? vi.fn(async () => preview())
+    const onPreview = options.onPreview ?? vi.fn(async (request: CreateOrganizationModelPolicyVersionRequest) => ({...preview(), enabled: request.enabled}))
     const ui = (provider = runtime.provider, version = entry.version) => (
         <ModelPolicyModal
             policy={initialPolicy}
@@ -72,6 +74,8 @@ describe('Правила моделей — перенос и проверка',
         fireEvent.click(screen.getByRole('button', {name: 'Подтвердить перенос'}))
         expect(screen.queryByRole('list', {name: 'Разрешённые модели: выбранные модели'})).not.toBeInTheDocument()
         expect(screen.getByRole('list', {name: 'Запрещённые модели: выбранные модели'})).toHaveTextContent(entry.modelKey)
+        fireEvent.click(screen.getByRole('button', {name: 'Проверить правила'}))
+        await waitFor(() => expect(screen.getByRole('button', {name: 'Сохранить правила'})).toBeEnabled())
         fireEvent.click(screen.getByRole('button', {name: 'Сохранить правила'}))
         await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
             allowModelKeys: [], denyModelKeys: [entry.modelKey], defaultModelKey: null,
