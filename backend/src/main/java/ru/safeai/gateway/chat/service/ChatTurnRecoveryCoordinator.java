@@ -10,6 +10,7 @@ import ru.safeai.gateway.chat.entity.ChatTurnState;
 import ru.safeai.gateway.chat.observability.ChatMetrics;
 import ru.safeai.gateway.chat.repository.ChatTurnRepository;
 import ru.safeai.gateway.chat.repository.RecoveredChatTurn;
+import ru.safeai.gateway.common.security.CorrelationContext;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -207,7 +208,8 @@ public class ChatTurnRecoveryCoordinator {
                 turn.getClientRequestId(),
                 terminalState,
                 failureCode,
-                ambiguous
+                ambiguous,
+                turn.getCorrelationId()
         );
     }
 
@@ -295,29 +297,34 @@ public class ChatTurnRecoveryCoordinator {
             List<RecoveredChatTurn> recovered,
             String trigger
     ) {
-        Map<UUID, List<RecoveredChatTurn>> byOrganization =
+        Map<RecoveryAuditScope, List<RecoveredChatTurn>> byOrganization =
                 recovered.stream()
                         .collect(
                                 Collectors.groupingBy(
-                                        RecoveredChatTurn::organizationId,
+                                        turn -> new RecoveryAuditScope(turn.organizationId(), turn.correlationId()),
                                         LinkedHashMap::new,
                                         Collectors.toList()
                                 )
                         );
 
         byOrganization.forEach(
-                (organizationId, turns) ->
+                (scope, turns) -> {
+                    try (var ignored = CorrelationContext.open(scope.correlationId())) {
                         auditEventService
                                 .recordSystemRequiredInCurrentTransaction(
-                                        organizationId,
+                                        scope.organizationId(),
                                         AuditEventType.AI_RESPONSE_FAILED,
                                         recoveryAuditDetails(
                                                 turns,
                                                 trigger
                                         )
-                                )
+                                );
+                    }
+                }
         );
     }
+
+    private record RecoveryAuditScope(UUID organizationId, UUID correlationId) { }
 
     private Map<String, Object> recoveryAuditDetails(
             List<RecoveredChatTurn> turns,

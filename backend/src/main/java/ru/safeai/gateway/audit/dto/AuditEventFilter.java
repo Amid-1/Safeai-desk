@@ -31,7 +31,8 @@ public record AuditEventFilter(
 
         UUID organizationId,
         Category category,
-        Metric metric
+        Metric metric,
+        UUID correlationId
 ) {
     private static final int MAX_USER_EMAIL_FILTER_LENGTH = 320;
 
@@ -40,9 +41,15 @@ public record AuditEventFilter(
         this(eventType, userEmail, userId, dateFrom, dateTo, organizationId, null, null);
     }
 
+    public AuditEventFilter(AuditEventType eventType, String userEmail, UUID userId,
+                            Instant dateFrom, Instant dateTo, UUID organizationId,
+                            Category category, Metric metric) {
+        this(eventType, userEmail, userId, dateFrom, dateTo, organizationId, category, metric, null);
+    }
+
     public AuditEventFilter withoutMetric() {
         return new AuditEventFilter(eventType, userEmail, userId, dateFrom, dateTo,
-                organizationId, category, null);
+                organizationId, category, null, correlationId);
     }
 
     public AuditEventFilter {

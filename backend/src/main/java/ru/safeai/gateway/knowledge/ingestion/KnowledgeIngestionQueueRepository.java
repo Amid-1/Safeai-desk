@@ -144,7 +144,8 @@ public class KnowledgeIngestionQueueRepository {
                             job.document_version_id,
                             job.processing_token,
                             job.attempt,
-                            job.lease_until
+                            job.lease_until,
+                            job.correlation_id
                         """,
                         (resultSet, rowNumber) ->
                                 mapClaim(
@@ -424,7 +425,8 @@ public class KnowledgeIngestionQueueRepository {
                     knowledge_base_id,
                     document_id,
                     document_version_id,
-                    attempt
+                    attempt,
+                    correlation_id
                 """,
                 (resultSet, rowNumber) ->
                         mapExpired(
@@ -572,7 +574,8 @@ public class KnowledgeIngestionQueueRepository {
                 resultSet.getInt(
                         "attempt"
                 ),
-                leaseUntil.toInstant()
+                leaseUntil.toInstant(),
+                resultSet.getObject("correlation_id", UUID.class)
         );
     }
 
@@ -602,7 +605,8 @@ public class KnowledgeIngestionQueueRepository {
                 ),
                 resultSet.getInt(
                         "attempt"
-                )
+                ),
+                resultSet.getObject("correlation_id", UUID.class)
         );
     }
 

@@ -138,7 +138,7 @@ class DatabaseMigrationMainTest {
     void newMigrationCannotRunUntilExplicitlyReviewed() throws Exception {
         Fixture fixture = new Fixture();
         MigrationInfo[] expanded = Arrays.copyOf(fixture.approved, fixture.approved.length + 1);
-        expanded[expanded.length - 1] = migration(94, "V94__unreviewed.sql");
+        expanded[expanded.length - 1] = migration(95, "V95__unreviewed.sql");
         when(fixture.info.all()).thenReturn(expanded);
         assertThrows(IllegalStateException.class, fixture::run);
         verify(fixture.flyway, never()).migrate();
@@ -167,11 +167,30 @@ class DatabaseMigrationMainTest {
 
     @Test
     void reviewedResourcesAndHistoryCoverExactlyCurrentMigrations() throws Exception {
-        assertEquals(93, RuntimeAclPolicy.verifyReviewedResources().size());
+        assertEquals(94, RuntimeAclPolicy.verifyReviewedResources().size());
         assertEquals("V92__organization_model_policy_budget_finite_values.sql",
                 RuntimeAclPolicy.verifyReviewedResources().get(92));
         assertEquals("V93__model_policy_preview_confirmations.sql", RuntimeAclPolicy.verifyReviewedResources().get(93));
-        assertEquals(true, RuntimeAclPolicy.historyQuery().contains("BETWEEN 1 AND 93"));
+        assertEquals("V94__operation_correlation.sql", RuntimeAclPolicy.verifyReviewedResources().get(94));
+        assertEquals(true, RuntimeAclPolicy.historyQuery().contains("BETWEEN 1 AND 94"));
+    }
+
+    @Test
+    void v94TransactionConfigurationCannotBeRemovedOrChanged() throws Exception {
+        String config = "/db/migration/V94__operation_correlation.sql.conf";
+        assertEquals("executeInTransaction=true", new String(readResource(config), StandardCharsets.UTF_8).strip());
+        assertThrows(IllegalStateException.class, () -> RuntimeAclPolicy.verifyReviewedResources(
+                path -> config.equals(path) ? null : readResource(path)));
+        assertThrows(IllegalStateException.class, () -> RuntimeAclPolicy.verifyReviewedResources(
+                path -> config.equals(path) ? "executeInTransaction=false\n".getBytes(StandardCharsets.UTF_8)
+                        : readResource(path)));
+        assertEquals(94, RuntimeAclPolicy.verifyReviewedResources().size());
+    }
+
+    private static byte[] readResource(String resource) throws java.io.IOException {
+        try (var input = DatabaseMigrationMain.class.getResourceAsStream(resource)) {
+            return input == null ? null : input.readAllBytes();
+        }
     }
 
     private static MigrationInfo migration(int version, String script) {
@@ -266,7 +285,7 @@ class DatabaseMigrationMainTest {
 
         private void assertInvalidHistory() throws Exception {
             IllegalStateException failure = assertThrows(IllegalStateException.class, this::run);
-            assertEquals("ACL policy requires exactly V1-V93", failure.getMessage());
+            assertEquals("ACL policy requires exactly V1-V94", failure.getMessage());
             verify(aclStatement, never()).execute(aclPolicy());
             verify(aclConnection).rollback();
             verify(aclConnection, never()).commit();

@@ -481,6 +481,8 @@ public class KnowledgeDocumentWriteService {
         KnowledgeIngestionJobEntity job =
                 new KnowledgeIngestionJobEntity();
 
+        job.setCorrelationId(ru.safeai.gateway.common.security.CorrelationContext.current());
+
         job.setOrganizationId(
                 user.getOrganizationId()
         );

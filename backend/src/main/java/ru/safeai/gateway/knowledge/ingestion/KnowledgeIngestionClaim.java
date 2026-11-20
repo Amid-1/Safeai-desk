@@ -11,6 +11,13 @@ public record KnowledgeIngestionClaim(
         UUID documentVersionId,
         UUID processingToken,
         int attempt,
-        Instant leaseUntil
+        Instant leaseUntil,
+        UUID correlationId
 ) {
+    public KnowledgeIngestionClaim(UUID jobId, UUID organizationId, UUID knowledgeBaseId,
+                                   UUID documentId, UUID documentVersionId, UUID processingToken,
+                                   int attempt, Instant leaseUntil) {
+        this(jobId, organizationId, knowledgeBaseId, documentId, documentVersionId,
+                processingToken, attempt, leaseUntil, null);
+    }
 }

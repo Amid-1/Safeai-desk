@@ -55,6 +55,48 @@ class AuditTenantIsolationIntegrationTest
     @MockitoBean
     private AuditOutboxScheduler auditOutboxScheduler;
 
+    @Autowired
+    private AuditEventService auditEventService;
+
+    @Autowired
+    private AuditOutboxProcessor outboxProcessor;
+
+    @Autowired
+    private AuditEventCursorService cursorService;
+
+    @Test
+    void correlationCannotBypassTenantIsolationAcrossListSummaryOrCursor() {
+        Fixture f = fixture();
+        UUID correlation = UUID.randomUUID();
+        try (var ignored = ru.safeai.gateway.common.security.CorrelationContext.open(correlation)) {
+            new org.springframework.transaction.support.TransactionTemplate(transactionManager)
+                    .executeWithoutResult(status -> {
+                        auditEventService.recordSystemRequiredInCurrentTransaction(
+                                f.adminOrganizationId(), AuditEventType.ORGANIZATION_NAME_CHANGED, Map.of());
+                        auditEventService.recordSystemRequiredInCurrentTransaction(
+                                f.foreignOrganizationId(), AuditEventType.ORGANIZATION_NAME_CHANGED, Map.of());
+                    });
+        }
+        assertThat(outboxProcessor.processBatch().processed()).isEqualTo(2);
+        Instant now = Instant.now();
+        AuditEventFilter filter = new AuditEventFilter(null, null, null, now.minusSeconds(86400),
+                now.plusSeconds(86400), null, null, null, correlation);
+        assertThat(queryService.findAll(f.adminPrincipal(), filter, PageRequest.of(0, 50)).getContent())
+                .singleElement().satisfies(event -> {
+                    assertThat(event.organizationId()).isEqualTo(f.adminOrganizationId());
+                    assertThat(event.correlationId()).isEqualTo(correlation);
+                });
+        assertThat(queryService.summarize(f.adminPrincipal(), filter).total()).isEqualTo(1);
+        assertThat(queryService.findAll(f.superAdminPrincipal(), filter, PageRequest.of(0, 50))
+                .getTotalElements()).isEqualTo(2);
+        assertThat(cursorService.findAll(f.adminPrincipal(), filter, null, 50).items())
+                .extracting(AuditEventResponse::organizationId).containsExactly(f.adminOrganizationId());
+        AuditEventFilter foreign = new AuditEventFilter(null, null, null, null, null,
+                f.foreignOrganizationId(), null, null, correlation);
+        assertThatThrownBy(() -> queryService.findAll(f.adminPrincipal(), foreign, PageRequest.of(0, 50)))
+                .isInstanceOf(ForbiddenOperationException.class);
+    }
+
     @Test
     void summaryAndDrillDownUseIdenticalTenantAndCategoryBoundaries() {
         Fixture f = fixture();

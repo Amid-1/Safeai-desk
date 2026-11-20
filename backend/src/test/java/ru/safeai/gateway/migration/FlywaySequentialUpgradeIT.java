@@ -3,6 +3,7 @@ package ru.safeai.gateway.migration;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationInfo;
 import org.flywaydb.core.api.MigrationVersion;
+import org.flywaydb.core.api.FlywayException;
 import org.flywaydb.database.postgresql.PostgreSQLConfigurationExtension;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -15,6 +16,8 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import java.sql.SQLException;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
@@ -22,13 +25,15 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 /**
  * Applies every Flyway migration separately against one real PostgreSQL database.
  *
  * <p>V0 is an intentional test-only role bootstrap. It must run before V1,
  * not be hidden or excluded to make the migration count look convenient.
- * Production migrations begin at V1 and currently extend through V93.</p>
+ * Production migrations begin at V1 and currently extend through V94.</p>
  */
 @Tag("integration")
 @Testcontainers
@@ -39,7 +44,7 @@ class FlywaySequentialUpgradeIT {
             new PostgreSQLContainer("pgvector/pgvector:pg16");
 
     @Test
-    void everyVersionCanBeAppliedInOrderWithoutDroppingSchema() {
+    void everyVersionCanBeAppliedInOrderWithoutDroppingSchema() throws SQLException {
         var dataSource = new DriverManagerDataSource(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
         var jdbc = new JdbcTemplate(dataSource);
@@ -62,14 +67,17 @@ class FlywaySequentialUpgradeIT {
                 .toList();
 
         // Validate the complete catalog, not just the migration that failed.
-        assertThat(versions).as("Expected test V0 and production versions through V93")
-                .hasSizeGreaterThanOrEqualTo(94)
+        assertThat(versions).as("Expected test V0 and production versions through V94")
+                .hasSizeGreaterThanOrEqualTo(95)
                 .startsWith("0", "1")
-                .contains("92", "93");
+                .contains("92", "93", "94");
 
         UUID existingOrganization = UUID.randomUUID();
         UUID existingActor = UUID.randomUUID();
         List<String> policiesBeforeHardening = List.of();
+        UUID auditId = UUID.randomUUID();
+        UUID outboxId = UUID.randomUUID();
+        List<String> evidenceBeforeV94 = List.of();
 
         for (int index = 0; index < versions.size(); index++) {
             String version = versions.get(index);
@@ -78,6 +86,11 @@ class FlywaySequentialUpgradeIT {
                     .isEqualTo(Integer.toString(index));
 
             Flyway step = flyway(dataSource, MigrationVersion.fromVersion(version));
+            if (index == 94) {
+                assertV94LockTimeoutRollsBackAllDdl(dataSource, jdbc, step);
+                assertThat(legacyEvidence(jdbc, existingOrganization, auditId, outboxId, false))
+                        .containsExactlyElementsOf(evidenceBeforeV94);
+            }
             var result = step.migrate();
 
             // V0 and V1 are TWO distinct migrations. Later targets add ONE each.
@@ -162,6 +175,19 @@ class FlywaySequentialUpgradeIT {
                         .as("Both V92 constraints must be fully validated")
                         .isEqualTo(2);
             }
+            if (index == 93) {
+                seedV93Evidence(jdbc, existingOrganization, existingActor, auditId, outboxId);
+                evidenceBeforeV94 = legacyEvidence(jdbc, existingOrganization, auditId, outboxId, false);
+                assertThat(evidenceBeforeV94).hasSize(3);
+            }
+            if (index == 94) {
+                assertThat(legacyEvidence(jdbc, existingOrganization, auditId, outboxId, true))
+                        .as("V94 must preserve audit, queued audit and preview proof byte values")
+                        .containsExactlyElementsOf(evidenceBeforeV94);
+                assertThat(policySnapshots(jdbc, existingOrganization))
+                        .containsExactlyElementsOf(policiesBeforeHardening);
+                assertV94Schema(jdbc, auditId, outboxId);
+            }
         }
 
         Flyway finalFlyway = flyway(dataSource, null);
@@ -178,6 +204,120 @@ class FlywaySequentialUpgradeIT {
         assertThat(finalHistory)
                 .as("Re-running Flyway must not change the migration ledger")
                 .containsExactlyElementsOf(versions);
+    }
+
+    private static void seedV93Evidence(JdbcTemplate jdbc, UUID org, UUID actor, UUID auditId, UUID outboxId) {
+        assertThat(jdbc.update("""
+                INSERT INTO public.audit_events (id, organization_id, event_type, details, created_at)
+                VALUES (?, ?, 'USER_CREATED', '{"legacy":true}'::jsonb, clock_timestamp())
+                """, auditId, org)).isEqualTo(1);
+        assertThat(jdbc.update("""
+                INSERT INTO public.audit_outbox (id, organization_id, event_type, details,
+                    occurred_at, created_at, attempt_count, next_attempt_at)
+                VALUES (?, ?, 'USER_CREATED', '{"legacy":true}'::jsonb,
+                    clock_timestamp(), clock_timestamp(), 0, clock_timestamp())
+                """, outboxId, org)).isEqualTo(1);
+        assertThat(jdbc.update("""
+                INSERT INTO public.model_policy_preview_confirmations
+                    (organization_id, actor_id, token_hash, draft_hash, context_hash, lockout, expires_at, result_policy_id)
+                SELECT ?, ?, repeat('a',64), repeat('b',64), repeat('c',64), false,
+                    clock_timestamp() + interval '5 minutes', id
+                FROM public.organization_model_policies WHERE organization_id=? AND version=2
+                """, org, actor, org)).isEqualTo(1);
+    }
+
+    private static List<String> legacyEvidence(JdbcTemplate jdbc, UUID org, UUID auditId, UUID outboxId,
+                                               boolean migrated) {
+        // JSONB removes only the newly added column; all pre-existing values must match.
+        String projection = migrated ? "(to_jsonb(t) - 'correlation_id')::text" : "to_jsonb(t)::text";
+        return List.of(
+                Objects.requireNonNull(jdbc.queryForObject("SELECT " + projection
+                        + " FROM public.audit_events t WHERE id=?", String.class, auditId)),
+                Objects.requireNonNull(jdbc.queryForObject("SELECT " + projection
+                        + " FROM public.audit_outbox t WHERE id=?", String.class, outboxId)),
+                Objects.requireNonNull(jdbc.queryForObject("""
+                        SELECT to_jsonb(t)::text FROM public.model_policy_preview_confirmations t
+                        WHERE organization_id=?
+                        """, String.class, org)));
+    }
+
+    private static void assertV94LockTimeoutRollsBackAllDdl(DriverManagerDataSource dataSource,
+                                                            JdbcTemplate jdbc, Flyway step) throws SQLException {
+        // Block the SECOND ALTER TABLE, so the first one must be rolled back too.
+        try (var blocker = dataSource.getConnection(); var statement = blocker.createStatement()) {
+            blocker.setAutoCommit(false);
+            statement.execute("LOCK TABLE public.audit_outbox IN ACCESS SHARE MODE");
+            try {
+                FlywayException failure = assertTimeoutPreemptively(Duration.ofSeconds(30),
+                        () -> assertThrows(FlywayException.class, step::migrate));
+                assertSqlState(failure, "55P03");
+            } finally {
+                blocker.rollback();
+            }
+        }
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*) FROM information_schema.columns
+                WHERE table_schema='public' AND column_name='correlation_id'
+                  AND table_name IN ('audit_events','audit_outbox','model_route_decisions',
+                                     'chat_turns','knowledge_ingestion_jobs')
+                """, Long.class)).isZero();
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*) FROM public.flyway_schema_history WHERE version='94'
+                """, Long.class)).isZero();
+        assertThat(jdbc.queryForObject("""
+                SELECT to_regprocedure('public.guard_correlation_update_v94()') IS NULL
+                """, Boolean.class)).isTrue();
+    }
+
+    private static void assertV94Schema(JdbcTemplate jdbc, UUID auditId, UUID outboxId) {
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*) FROM information_schema.columns
+                WHERE table_schema='public' AND column_name='correlation_id'
+                  AND udt_name='uuid' AND is_nullable='YES' AND column_default IS NULL
+                  AND table_name IN ('audit_events','audit_outbox','model_route_decisions',
+                                     'chat_turns','knowledge_ingestion_jobs')
+                """, Long.class)).isEqualTo(5L);
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*) FROM pg_catalog.pg_index i
+                JOIN pg_catalog.pg_class idx ON idx.oid=i.indexrelid
+                JOIN pg_catalog.pg_namespace ns ON ns.oid=idx.relnamespace
+                WHERE ns.nspname='public' AND i.indisvalid AND i.indisready AND i.indpred IS NOT NULL
+                  AND idx.relname IN ('idx_audit_events_correlation_v94','idx_audit_events_org_correlation_v94',
+                                      'idx_model_route_correlation_v94','idx_chat_turn_correlation_v94')
+                """, Long.class)).isEqualTo(4L);
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*) FROM pg_catalog.pg_trigger
+                WHERE NOT tgisinternal AND tgenabled='O' AND
+                    ((tgrelid='public.audit_outbox'::regclass AND tgname='trg_audit_outbox_correlation_v94') OR
+                     (tgrelid='public.chat_turns'::regclass AND tgname='trg_chat_turn_correlation_v94') OR
+                     (tgrelid='public.knowledge_ingestion_jobs'::regclass AND tgname='trg_ingestion_correlation_v94') OR
+                     (tgrelid='public.audit_events'::regclass AND tgname='trg_audit_event_no_update_v68') OR
+                     (tgrelid='public.model_route_decisions'::regclass AND tgname='trg_model_route_decisions_immutable_v45'))
+                """, Long.class)).isEqualTo(5L);
+        assertThat(jdbc.queryForObject("SELECT correlation_id FROM public.audit_events WHERE id=?",
+                UUID.class, auditId)).isNull();
+        assertThat(jdbc.queryForObject("SELECT correlation_id FROM public.audit_outbox WHERE id=?",
+                UUID.class, outboxId)).isNull();
+        assertThatThrownBy(() -> jdbc.update("UPDATE public.audit_outbox SET correlation_id=? WHERE id=?",
+                UUID.randomUUID(), outboxId)).satisfies(failure -> assertSqlState(failure, "23514"));
+        // Legacy outbox delivery bookkeeping must remain writable.
+        assertThat(jdbc.update("UPDATE public.audit_outbox SET next_attempt_at=next_attempt_at WHERE id=?",
+                outboxId)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("""
+                SELECT NOT prosecdef AND NOT EXISTS (
+                    SELECT 1 FROM aclexplode(coalesce(proacl, acldefault('f', proowner)))
+                    WHERE grantee=0 AND privilege_type='EXECUTE')
+                FROM pg_proc WHERE oid='public.guard_correlation_update_v94()'::regprocedure
+                """, Boolean.class)).isTrue();
+    }
+
+    private static void assertSqlState(Throwable failure, String expected) {
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            if (cause instanceof SQLException sql && expected.equals(sql.getSQLState())) {
+                return;
+            }
+        }
+        throw new AssertionError("Expected PostgreSQL SQLSTATE " + expected, failure);
     }
 
     private static void seedV91Policies(JdbcTemplate jdbc, UUID organizationId, UUID actor) {

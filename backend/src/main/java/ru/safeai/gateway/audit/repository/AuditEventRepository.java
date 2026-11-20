@@ -43,7 +43,8 @@ public interface AuditEventRepository
                         target_organization_name,
                         event_type,
                         details,
-                        created_at
+                        created_at,
+                        correlation_id
                     )
                     select outbox.id,
                            outbox.actor_user_id,
@@ -54,7 +55,8 @@ public interface AuditEventRepository
                            outbox.target_organization_name,
                            outbox.event_type,
                            outbox.details,
-                           outbox.occurred_at
+                           outbox.occurred_at,
+                           outbox.correlation_id
                     from public.audit_outbox as outbox
                     where outbox.id = :outboxId
                     on conflict (id) do nothing

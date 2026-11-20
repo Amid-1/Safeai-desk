@@ -4,6 +4,7 @@ import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import ru.safeai.gateway.common.budget.PlatformBudgetClassification;
+import ru.safeai.gateway.common.security.CorrelationContext;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -290,10 +291,10 @@ public class ModelRouteDecisionRepository {
                     monthly_spent_usd, monthly_projected_usd,
                     monthly_cost_known, budget_enforcement, budget_exceeded,
                     pricing_complete, outcome, reason,
-                    decision_integrity_version, decision_sha256, created_at
+                    decision_integrity_version, decision_sha256, created_at, correlation_id
                 ) values (
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """
         );
@@ -336,7 +337,8 @@ public class ModelRouteDecisionRepository {
         statement.setString(index++, decision.reason().name());
         statement.setShort(index++, decision.decisionIntegrityVersion());
         statement.setString(index++, decision.decisionSha256());
-        statement.setTimestamp(index, Timestamp.from(decision.createdAt()));
+        statement.setTimestamp(index++, Timestamp.from(decision.createdAt()));
+        statement.setObject(index, CorrelationContext.current());
         return statement;
     }
 

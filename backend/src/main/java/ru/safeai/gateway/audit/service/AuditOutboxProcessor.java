@@ -8,6 +8,7 @@ import ru.safeai.gateway.audit.config.AuditOutboxProperties;
 import ru.safeai.gateway.audit.entity.AuditOutboxEntity;
 import ru.safeai.gateway.audit.repository.AuditEventRepository;
 import ru.safeai.gateway.audit.repository.AuditOutboxRepository;
+import ru.safeai.gateway.common.security.CorrelationContext;
 
 import java.util.Objects;
 import java.util.Optional;
@@ -123,6 +124,7 @@ public final class AuditOutboxProcessor {
     private ItemResult processOne() {
         AtomicReference<UUID> selectedId =
                 new AtomicReference<>();
+        AtomicReference<UUID> selectedCorrelationId = new AtomicReference<>();
 
         try {
             Boolean found =
@@ -143,7 +145,9 @@ public final class AuditOutboxProcessor {
                                 selectedId.set(
                                         item.getId()
                                 );
+                                selectedCorrelationId.set(item.getCorrelationId());
 
+                                try (var ignored = CorrelationContext.open(item.getCorrelationId())) {
                                 int insertedRows =
                                         eventRepository
                                                 .insertFromOutbox(
@@ -171,6 +175,7 @@ public final class AuditOutboxProcessor {
                                 outboxRepository.flush();
 
                                 return true;
+                                }
                             }
                     );
 
@@ -187,6 +192,7 @@ public final class AuditOutboxProcessor {
                 throw failure;
             }
 
+            try (var ignored = CorrelationContext.open(selectedCorrelationId.get())) {
             AuditOutboxFailureService.FailureResult
                     result =
                     failureService.markFailure(
@@ -209,6 +215,7 @@ public final class AuditOutboxProcessor {
             return result.deadLettered()
                     ? ItemResult.DEAD_LETTERED
                     : ItemResult.FAILED;
+            }
         }
     }
 

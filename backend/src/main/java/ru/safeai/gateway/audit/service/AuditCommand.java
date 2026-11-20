@@ -14,8 +14,14 @@ public record AuditCommand(
         UUID targetOrganizationId,
         AuditEventType eventType,
         Map<String, Object> details,
-        Instant occurredAt
+        Instant occurredAt,
+        UUID correlationId
 ) {
+    public AuditCommand(UUID eventId, AuditActor actor, UUID targetOrganizationId,
+                        AuditEventType eventType, Map<String, Object> details, Instant occurredAt) {
+        this(eventId, actor, targetOrganizationId, eventType, details, occurredAt, null);
+    }
+
     public AuditCommand {
         Objects.requireNonNull(eventId, "eventId не должен быть null");
         Objects.requireNonNull(

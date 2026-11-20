@@ -35,7 +35,8 @@ public class KnowledgeIngestionMaintenanceService {
                 );
 
         for (ExpiredKnowledgeIngestionJob job : failed) {
-            audit.recordSystemRequiredInCurrentTransaction(
+            try (var ignored = ru.safeai.gateway.common.security.CorrelationContext.open(job.correlationId())) {
+                audit.recordSystemRequiredInCurrentTransaction(
                     job.organizationId(),
                     AuditEventType.KNOWLEDGE_INGESTION_FAILED,
                     Map.of(
@@ -52,7 +53,8 @@ public class KnowledgeIngestionMaintenanceService {
                             "errorCode",
                             "LEASE_EXPIRED"
                     )
-            );
+                );
+            }
         }
 
         return failed.size();

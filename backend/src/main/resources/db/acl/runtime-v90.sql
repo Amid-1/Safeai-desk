@@ -145,7 +145,7 @@ BEGIN
 END;
 $fn$;
 
--- All application-owned invoker routines are reviewed in the immutable V1–V93
+-- All application-owned invoker routines are reviewed in the immutable V1–V94
 -- history; extension functions are granted separately by bootstrap.
 -- SECURITY DEFINER functions retain only their migration-specific grants.
 DO $routines$

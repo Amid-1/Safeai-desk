@@ -153,7 +153,8 @@ public class AuditEventQueryService {
                 entity.getActorDisplayName(),
                 entity.getEventType(),
                 entity.getDetails(),
-                entity.getCreatedAt()
+                entity.getCreatedAt(),
+                entity.getCorrelationId()
         );
     }
 }

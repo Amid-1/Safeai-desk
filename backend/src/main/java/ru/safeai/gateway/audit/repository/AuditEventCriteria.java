@@ -88,6 +88,10 @@ public final class AuditEventCriteria {
             );
         }
 
+        if (filter.correlationId() != null) {
+            predicates.add(cb.equal(root.get("correlationId"), filter.correlationId()));
+        }
+
         if (filter.category() != null) {
             predicates.add(root.get("eventType").in(AuditEventClassification.types(filter.category())));
         }

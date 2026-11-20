@@ -70,6 +70,36 @@ class AuditOutboxIntegrationTest extends AbstractAuditPostgresIntegrationTest {
     private RateLimitKeyFactory rateLimitKeys;
 
     @Test
+    void correlationIsCapturedBeforeDeliveryAndCannotBeRewritten() {
+        UUID org = UUID.randomUUID();
+        UUID correlation = UUID.randomUUID();
+        insertOrganization(org, "Correlation " + org, true);
+        try (var ignored = ru.safeai.gateway.common.security.CorrelationContext.open(correlation)) {
+            new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                    auditEventService.recordSystemRequiredInCurrentTransaction(
+                            org, AuditEventType.ORGANIZATION_NAME_CHANGED, Map.of()));
+        }
+        UUID event = auditOutboxIdForOrganization(org);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT correlation_id FROM public.audit_outbox WHERE id=?", UUID.class, event))
+                .isEqualTo(correlation);
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                "UPDATE public.audit_outbox SET correlation_id=? WHERE id=?", UUID.randomUUID(), event))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        UUID worker = UUID.randomUUID();
+        try (var ignored = ru.safeai.gateway.common.security.CorrelationContext.open(worker)) {
+            assertThat(auditOutboxProcessor.processBatch().processed()).isEqualTo(1);
+            assertThat(ru.safeai.gateway.common.security.CorrelationContext.current()).isEqualTo(worker);
+        }
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT correlation_id FROM public.audit_events WHERE id=?", UUID.class, event))
+                .isEqualTo(correlation);
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                "UPDATE public.audit_events SET correlation_id=NULL WHERE id=?", event))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
     void loginRejectionPersistsOnlyFingerprintsThroughOutboxAndDelivery() {
         UUID organizationId = UUID.randomUUID();
         insertOrganization(organizationId, "Rate limit audit " + organizationId, true);

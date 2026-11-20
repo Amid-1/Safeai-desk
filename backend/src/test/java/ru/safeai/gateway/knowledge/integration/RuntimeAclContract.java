@@ -9,6 +9,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.MockMvcPrint;
 import org.springframework.http.MediaType;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -30,6 +31,7 @@ import ru.safeai.gateway.testsupport.SafeAiJacksonJsonPathExtension;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.sql.Timestamp;
+import java.sql.SQLException;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -137,9 +139,22 @@ class RuntimeAclContract {
         verifyPolicyPreviewConfirmationAcl(a, b);
         request = UUID.randomUUID();
         message = "{\"content\":\"Stage5 synthetic question\",\"clientRequestId\":\"" + request + "\"}";
-        mvc.perform(json(post("/api/chats/{id}/messages", chat), sa, message))
+        UUID forgedCorrelation = UUID.randomUUID();
+        MvcResult sent = mvc.perform(json(post("/api/chats/{id}/messages", chat), sa, message)
+                        .header("X-Request-Id", forgedCorrelation.toString()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.state").value("SUCCEEDED"))
-                .andExpect(jsonPath("$.assistantMessage").exists());
+                .andExpect(jsonPath("$.assistantMessage").exists()).andReturn();
+        UUID correlation = UUID.fromString(sent.getResponse().getHeader("X-Request-Id"));
+        assertNotEquals(forgedCorrelation, correlation);
+        assertEquals(1L, jdbc.queryForObject("""
+                SELECT count(*) FROM public.chat_turns t
+                JOIN public.model_route_decisions d ON d.id=t.model_route_decision_id
+                JOIN public.model_execution_plans p ON p.chat_turn_id=t.id AND p.model_route_decision_id=d.id
+                JOIN public.chat_quota_reservations q ON q.turn_id=t.id AND q.model_route_decision_id=d.id
+                WHERE t.organization_id=? AND t.client_request_id=?
+                  AND t.correlation_id=? AND d.correlation_id=?
+                  AND EXISTS (SELECT 1 FROM public.model_execution_attempts a WHERE a.execution_plan_id=p.id)
+                """, Long.class, a.org(), request, correlation, correlation));
         mvc.perform(json(post("/api/chats/{id}/messages", chat), sa, message))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.replay").value(true));
         mvc.perform(post("/api/chats/{id}/archive", chat).cookie(sa.access()).with(realCsrf()))
@@ -164,13 +179,16 @@ class RuntimeAclContract {
         MockMultipartFile file = new MockMultipartFile("file", "stage5.txt", "text/plain",
                 ("Stage five synthetic document. The SafeAI test codeword is amber lantern. "
                         + "This isolated test checks document indexing and retrieval.").getBytes(StandardCharsets.UTF_8));
-        UUID doc = id(mvc.perform(multipart("/api/knowledge-bases/{id}/documents", base).file(file)
+        MvcResult uploaded = mvc.perform(multipart("/api/knowledge-bases/{id}/documents", base).file(file)
                         .param("name", "Stage5 document").cookie(sa.access()).with(realCsrf()))
-                .andExpect(status().isCreated()).andReturn());
+                .andExpect(status().isCreated()).andReturn();
+        UUID doc = id(uploaded);
+        UUID ingestionCorrelation = UUID.fromString(uploaded.getResponse().getHeader("X-Request-Id"));
         Instant now = Instant.now();
         KnowledgeIngestionClaim claim = queue.claimNext(now, now.plusSeconds(180), 5)
                 .orElseThrow(() -> new AssertionError("No claimable synthetic ingestion job"));
         assertEquals(doc, claim.documentId(), "Never process a pre-existing snapshot job");
+        assertEquals(ingestionCorrelation, claim.correlationId());
         ingestion.process(claim);
         assertEquals("READY", jdbc.queryForObject(
                 "SELECT status FROM public.knowledge_ingestion_jobs WHERE id=?", String.class, claim.jobId()),
@@ -187,15 +205,99 @@ class RuntimeAclContract {
         System.out.println("STAGE5 KNOWLEDGE PASS: tenant denial, upload, ingestion, chunks, retrieval, RAG");
 
         mvc.perform(get("/api/admin/usage/summary").cookie(sa.access())).andExpect(status().isOk());
+        UUID outboxEventId = verifyPendingCorrelationAcl(a, correlation);
         AuditOutboxProcessor.BatchResult processed = audit.processBatch();
         assertEquals(0, processed.failed(), "Audit outbox delivery failed");
         assertTrue(jdbc.queryForObject("SELECT count(*) FROM public.audit_events WHERE actor_user_id=?",
                 Long.class, a.id()) > 0, "Expected durable fixture audit events");
+        assertEquals(3L, jdbc.queryForObject("""
+                SELECT count(DISTINCT event_type) FROM public.audit_events
+                WHERE organization_id=? AND correlation_id=?
+                    AND event_type IN ('MODEL_ROUTE_DECIDED','CHAT_MESSAGE_SENT','AI_RESPONSE_RECEIVED')
+                """, Long.class, a.org(), correlation));
+        assertEquals(2L, jdbc.queryForObject("""
+                SELECT count(DISTINCT event_type) FROM public.audit_events
+                WHERE organization_id=? AND correlation_id=?
+                    AND event_type IN ('KNOWLEDGE_DOCUMENT_VERSION_UPLOADED','KNOWLEDGE_INGESTION_READY')
+                """, Long.class, a.org(), ingestionCorrelation));
+        verifyCorrelationAcl(a, correlation, ingestionCorrelation, claim.jobId(), outboxEventId);
+        mvc.perform(get("/api/admin/audit-events").param("correlationId", correlation.toString())
+                        .cookie(sa.access())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].correlationId").value(correlation.toString()));
+        mvc.perform(get("/api/admin/audit-events").param("correlationId", correlation.toString())
+                        .cookie(sb.access())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0));
+        mvc.perform(get("/api/admin/audit-events").param("correlationId", "not-a-uuid")
+                        .cookie(sa.access())).andExpect(status().isBadRequest());
+        System.out.println("V94 CORRELATION PASS: HTTP, route, quota, provider, audit, ingestion and tenant isolation");
         mvc.perform(get("/api/admin/audit-events").cookie(sa.access())).andExpect(status().isOk());
         mvc.perform(post("/api/auth/logout").cookie(sa.refresh(), sa.access()).with(realCsrf()))
                 .andExpect(status().isNoContent());
         System.out.println("STAGE5 AUDIT/USAGE PASS: real read and delivery");
         System.out.println("STAGE5 BACKEND RUNTIME PASS");
+    }
+
+    private UUID verifyPendingCorrelationAcl(Actor actor, UUID correlation) {
+        UUID eventId = jdbc.queryForObject("""
+                SELECT id FROM public.audit_outbox WHERE organization_id=? AND correlation_id=?
+                  AND event_type='MODEL_ROUTE_DECIDED'
+                """, UUID.class, actor.org(), correlation);
+        assertNotNull(eventId);
+        assertCorrelationUpdateRejected("UPDATE public.audit_outbox SET correlation_id=NULL WHERE id=?", eventId, "23514");
+        assertEquals(correlation, jdbc.queryForObject(
+                "SELECT correlation_id FROM public.audit_outbox WHERE id=?", UUID.class, eventId));
+        return eventId;
+    }
+
+    private void verifyCorrelationAcl(Actor actor, UUID correlation, UUID ingestionCorrelation, UUID jobId,
+                                      UUID outboxEventId) {
+        // Match real, existing rows first: a zero-row UPDATE is not an immutability test.
+        UUID turnId = jdbc.queryForObject("""
+                SELECT id FROM public.chat_turns WHERE organization_id=? AND correlation_id=?
+                """, UUID.class, actor.org(), correlation);
+        UUID decisionId = jdbc.queryForObject("""
+                SELECT id FROM public.model_route_decisions WHERE organization_id=? AND correlation_id=?
+                """, UUID.class, actor.org(), correlation);
+        UUID eventId = jdbc.queryForObject("""
+                SELECT id FROM public.audit_events WHERE organization_id=? AND correlation_id=?
+                  AND event_type='MODEL_ROUTE_DECIDED'
+                """, UUID.class, actor.org(), correlation);
+        assertNotNull(turnId);
+        assertNotNull(decisionId);
+        assertNotNull(eventId);
+        assertEquals(outboxEventId, eventId, "Delivery must preserve the exact immutable outbox event ID");
+        assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM public.audit_outbox WHERE id=?",
+                Long.class, eventId), "Delivered outbox intent must be removed");
+        assertEquals(ingestionCorrelation, jdbc.queryForObject(
+                "SELECT correlation_id FROM public.knowledge_ingestion_jobs WHERE id=?", UUID.class, jobId));
+
+        assertCorrelationUpdateRejected("UPDATE public.audit_events SET correlation_id=NULL WHERE id=?", eventId, "42501");
+        assertCorrelationUpdateRejected("UPDATE public.model_route_decisions SET correlation_id=NULL WHERE id=?", decisionId, "42501");
+        assertCorrelationUpdateRejected("UPDATE public.chat_turns SET correlation_id=NULL WHERE id=?", turnId, "23514");
+        assertCorrelationUpdateRejected("UPDATE public.knowledge_ingestion_jobs SET correlation_id=NULL WHERE id=?", jobId, "23514");
+
+        assertEquals(correlation, jdbc.queryForObject(
+                "SELECT correlation_id FROM public.audit_events WHERE id=?", UUID.class, eventId));
+        assertEquals(correlation, jdbc.queryForObject(
+                "SELECT correlation_id FROM public.model_route_decisions WHERE id=?", UUID.class, decisionId));
+        assertEquals(correlation, jdbc.queryForObject(
+                "SELECT correlation_id FROM public.chat_turns WHERE id=?", UUID.class, turnId));
+        assertEquals(ingestionCorrelation, jdbc.queryForObject(
+                "SELECT correlation_id FROM public.knowledge_ingestion_jobs WHERE id=?", UUID.class, jobId));
+        System.out.println("V94 ACL IMMUTABILITY PASS: five persisted correlations, exact SQLSTATEs, values preserved");
+    }
+
+    private void assertCorrelationUpdateRejected(String sql, UUID id, String expectedState) {
+        DataAccessException failure = assertThrows(DataAccessException.class, () -> jdbc.update(sql, id));
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            if (cause instanceof SQLException postgres && expectedState.equals(postgres.getSQLState())) {
+                if ("23514".equals(expectedState)) {
+                    assertTrue(postgres.getMessage().contains("V94 correlation ID is immutable"));
+                }
+                return;
+            }
+        }
+        throw new AssertionError("Expected PostgreSQL SQLSTATE " + expectedState, failure);
     }
 
     private void verifyPolicyPreviewConfirmationAcl(Actor a, Actor b) {
