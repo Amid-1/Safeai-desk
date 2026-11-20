@@ -24,6 +24,16 @@ if [[ "${SAFEAI_REQUIRE_IMMUTABLE_IMAGES:-true}" == "true" ]]; then
     done
 fi
 
+# Do not allow production env overrides to diverge from the Docker CI bases.
+expected_java_build="$(sed -n 's/^ARG BUILD_IMAGE=//p' "$repo_dir/backend/Dockerfile")"
+expected_java_runtime="$(sed -n 's/^ARG RUNTIME_IMAGE=//p' "$repo_dir/backend/Dockerfile")"
+[[ "$expected_java_build" =~ ^eclipse-temurin:21[.]0[.]13_9-jdk-noble@sha256:[0-9a-f]{64}$ ]]
+[[ "$expected_java_runtime" =~ ^eclipse-temurin:21[.]0[.]13_9-jre-noble@sha256:[0-9a-f]{64}$ ]]
+[[ "$JAVA_BUILD_IMAGE" == "$expected_java_build" && "$JAVA_RUNTIME_IMAGE" == "$expected_java_runtime" ]] || {
+    echo 'BLOCKED: Java build/runtime images must match the pinned CI bases.' >&2
+    exit 1
+}
+
 if [[ -n "$(git -C "$repo_dir" status --porcelain --untracked-files=all)" ]]; then
     echo "Production build requires a clean Git working tree." >&2
     echo "Commit all intended changes before building release images." >&2

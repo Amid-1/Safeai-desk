@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1.7
 # SafeAI-Desk/backend/Dockerfile
 
-ARG BUILD_IMAGE=eclipse-temurin:21-jdk
-ARG RUNTIME_IMAGE=eclipse-temurin:21-jre
+ARG BUILD_IMAGE=eclipse-temurin:21.0.13_9-jdk-noble@sha256:bc12ebd88ffa6dda0092940e179365b05aef8d813b867f9df5a1f168c9a44feb
+ARG RUNTIME_IMAGE=eclipse-temurin:21.0.13_9-jre-noble@sha256:b4f9d2a0bc273417cf5219b7b832bbf0493ed500b7b57d5001d9f83374659060
 
 FROM ${BUILD_IMAGE} AS build
 
@@ -31,6 +31,13 @@ RUN --mount=type=cache,target=/root/.m2 \
     && test -s /app/app.jar
 
 FROM ${RUNTIME_IMAGE} AS runtime
+
+# Fail closed if an overridden runtime is not Noble or contains Pebble.
+RUN . /etc/os-release \
+    && test "$ID" = ubuntu \
+    && test "$VERSION_ID" = 24.04 \
+    && test ! -e /usr/bin/pebble \
+    && test ! -L /usr/bin/pebble
 
 ARG APP_VERSION=dev
 ARG VCS_REF=unknown

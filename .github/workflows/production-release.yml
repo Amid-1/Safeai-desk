@@ -127,8 +127,13 @@ jobs:
           postgres_tag="ghcr.io/${owner_lc}/safeai-postgres:${GITHUB_SHA}"
           echo "owner_lc=$owner_lc" >> "$GITHUB_OUTPUT"
 
-          java_build_image="$(pin_image eclipse-temurin:21-jdk)"
-          java_runtime_image="$(pin_image eclipse-temurin:21-jre)"
+          # Backend Docker CI and release use the same pinned Temurin Noble bases.
+          java_build_image="$(sed -n 's/^ARG BUILD_IMAGE=//p' backend/Dockerfile)"
+          java_runtime_image="$(sed -n 's/^ARG RUNTIME_IMAGE=//p' backend/Dockerfile)"
+          [[ "$java_build_image" =~ ^eclipse-temurin:21[.]0[.]13_9-jdk-noble@sha256:[0-9a-f]{64}$ ]]
+          [[ "$java_runtime_image" =~ ^eclipse-temurin:21[.]0[.]13_9-jre-noble@sha256:[0-9a-f]{64}$ ]]
+          docker pull "$java_build_image" >/dev/null
+          docker pull "$java_runtime_image" >/dev/null
           node_build_image="$(pin_image node:24-alpine)"
           # Use the same immutable patched NGINX base as Docker CI (Dockerfile default).
           nginx_base_image="$(sed -n 's/^ARG NGINX_IMAGE=//p' infra/nginx/Dockerfile)"
