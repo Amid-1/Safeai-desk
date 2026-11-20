@@ -208,7 +208,7 @@ export function AdminUsageWorkspace() {
                                     <option value="tokens">Входные / выходные токены</option>
                                     <option value="total">Всего токенов</option>
                                     <option value="cost">Известная стоимость, USD</option>
-                                    <option value="responses">Ответы AI</option>
+                                    <option value="responses">Попытки ответа AI</option>
                                     <option value="coverage">Полнота учёта</option>
                                 </select>
                             </label>}

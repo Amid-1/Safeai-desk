@@ -45,7 +45,7 @@ export function UsageKpis({ rows, tab, hasMore = true, appliedModel, dailyTotals
                         : 'Нет данных отчёта'}</small>
                 </div>
                 {assistantResponses !== undefined && <div className="usage-kpi usage-kpi--responses">
-                    <span className="usage-kpi__label">Ответы AI</span>
+                    <span className="usage-kpi__label">Попытки ответа AI</span>
                     <strong className="usage-kpi__value">{assistantResponses === null ? '—' : formatCount(assistantResponses)}</strong>
                     <small className="usage-kpi__hint">Записи ассистента, включая неуспешные ответы.</small>
                 </div>}

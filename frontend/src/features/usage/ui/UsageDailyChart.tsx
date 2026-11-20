@@ -46,7 +46,7 @@ export function UsageDailyChart({ rows, dateFrom, dateTo, metric, onMetricChange
                         <option value="tokens">Входные / выходные токены</option>
                         <option value="total">Всего подтвержденных токенов</option>
                         <option value="cost">Известная стоимость, USD</option>
-                        <option value="responses">Ответы AI</option>
+                        <option value="responses">Попытки ответа AI</option>
                         <option value="coverage">Полнота учёта, %</option>
                     </select>
                 </label>
@@ -93,7 +93,7 @@ export function UsageDailyChart({ rows, dateFrom, dateTo, metric, onMetricChange
                             </>}
                             {metric === 'total' && <Bar dataKey="total" name="Всего токенов" onClick={(_, i) => inspect(i)} cursor={onInspectRange ? 'pointer' : undefined} fill="#356de8" radius={[5, 5, 0, 0]} isAnimationActive={false} />}
                             {metric === 'cost' && <Bar dataKey="cost" name="Известная стоимость, USD" onClick={(_, i) => inspect(i)} cursor={onInspectRange ? 'pointer' : undefined} fill="#7955d7" radius={[5, 5, 0, 0]} isAnimationActive={false} />}
-                            {metric === 'responses' && <Bar dataKey="responses" name="Ответы AI" onClick={(_, i) => inspect(i)} fill="#356de8" isAnimationActive={false} />}
+                            {metric === 'responses' && <Bar dataKey="responses" name="Попытки ответа AI" onClick={(_, i) => inspect(i)} fill="#356de8" isAnimationActive={false} />}
                             {metric === 'coverage' && <Bar dataKey="coverage" name="Полнота учёта, %" onClick={(_, i) => inspect(i)} fill="#169f8d" isAnimationActive={false} />}
                         </BarChart>
                     </ResponsiveContainer>

@@ -113,6 +113,6 @@ describe('PlatformDashboard', () => {
         }
         expect(within(region).getByRole('link', {name: /Превысили лимит: 0/})).toBeEnabled()
         expect(region.compareDocumentPosition(screen.getByRole('region', {name: 'Период аналитики'})) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-        expect(await screen.findByText('Ответы AI')).toBeVisible()
+        expect(await screen.findByText('Попытки ответа AI')).toBeVisible()
     })
 })

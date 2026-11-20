@@ -28,7 +28,7 @@ const TITLES: Record<BreakdownReportTab, string> = {
 
 const METRICS: Record<RankingMetric, string> = {
     tokens: 'Входные / выходные токены', total: 'Всего токенов',
-    cost: 'Известная стоимость, USD', responses: 'Ответы AI', coverage: 'Полнота учёта, %',
+    cost: 'Известная стоимость, USD', responses: 'Попытки ответа AI', coverage: 'Полнота учёта, %',
 }
 type LinkedRow = UsageAmounts & {userId?: string; userEmail?: string; model?: string; organizationId?: string}
 

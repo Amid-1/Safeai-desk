@@ -97,10 +97,10 @@ export function useAdminUsersDirectory(
     useEffect(() => {
         const query = searchDraft.trim()
         if (query === appliedSearch) return
-        if (query.length < 2 || query.length > 120) return
+        if (query.length > 120) return
         const timeout = window.setTimeout(() => {
             change({query, page: ''}, true)
-        }, 350)
+        }, 300)
         return () => window.clearTimeout(timeout)
     }, [searchDraft, appliedSearch, change])
 

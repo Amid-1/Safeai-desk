@@ -1,7 +1,7 @@
 /* frontend/src/shared/ui/AdminConsole.css */
-/* Shared presentation layer for the five administrative workspaces.
+/* Shared presentation layer for the six administrative workspaces.
    Feature styles still own layout, state semantics and scroll boundaries. */
-:is(.users-page, .organizations-page, .audit-page, .usage-page, .models-page),
+:is(.users-page, .organizations-page, .audit-page, .usage-page, .models-page, .platform-dashboard),
 .admin-details-dialog, .audit-event-modal {
     --admin-ink: #17243b;
     --admin-muted: #52647e;
@@ -11,7 +11,7 @@
     --admin-radius: 12px;
 }
 
-:is(.users-page, .organizations-page, .audit-page, .usage-page, .models-page) header.admin-page-header.admin-page-header {
+:is(.users-page, .organizations-page, .audit-page, .usage-page, .models-page, .platform-dashboard) header.admin-page-header.admin-page-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -25,10 +25,10 @@
     border-radius: var(--admin-radius);
     box-shadow: none;
 }
-:is(.users-page, .organizations-page, .audit-page, .usage-page, .models-page) header.admin-page-header.admin-page-header::before {
+:is(.users-page, .organizations-page, .audit-page, .usage-page, .models-page, .platform-dashboard) header.admin-page-header.admin-page-header::before {
     content: none;
 }
-:is(.users-page, .organizations-page, .audit-page, .usage-page, .models-page) header.admin-page-header.admin-page-header h1 {
+:is(.users-page, .organizations-page, .audit-page, .usage-page, .models-page, .platform-dashboard) header.admin-page-header.admin-page-header h1 {
     margin: 0;
     color: var(--admin-ink);
     font-size: clamp(24px, 2vw, 30px);
@@ -36,7 +36,7 @@
     letter-spacing: -.025em;
     overflow-wrap: anywhere;
 }
-:is(.users-page, .organizations-page, .audit-page, .usage-page, .models-page) header.admin-page-header.admin-page-header p {
+:is(.users-page, .organizations-page, .audit-page, .usage-page, .models-page, .platform-dashboard) header.admin-page-header.admin-page-header p {
     margin: 4px 0 0 !important;
     color: var(--admin-muted);
     font-size: 14px;
@@ -225,7 +225,7 @@
     .audit-page .audit-filters .audit-filter-field--organization { grid-column: span 4; }
 }
 @media (max-width: 760px) {
-    :is(.users-page, .organizations-page, .audit-page, .usage-page, .models-page) header.admin-page-header.admin-page-header {
+    :is(.users-page, .organizations-page, .audit-page, .usage-page, .models-page, .platform-dashboard) header.admin-page-header.admin-page-header {
         flex-direction: column;
         align-items: stretch;
         padding: 10px 12px !important;

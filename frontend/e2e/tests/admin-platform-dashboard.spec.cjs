@@ -44,6 +44,8 @@ for (const [width, height] of [[1280, 720], [390, 844]]) {
     const requests = await mockDashboard(page, 'SUPER_ADMIN')
     await page.goto('/admin/dashboard')
     await expect(page.getByRole('heading', {name: 'Обзор платформы'})).toBeVisible()
+    await expect(page.locator('header.admin-page-header')).toHaveCount(1)
+    await expect(page.locator('.usage-kpi__label').filter({hasText: 'Попытки ответа AI'})).toBeVisible()
     await expect(page.getByRole('region', {name: 'Организации', exact: true})).toContainText('17')
     await expect(page.getByRole('region', {name: 'Пользователи'})).toContainText('42')
     const chart = page.getByRole('region', {name: 'График использования AI по дням'})
@@ -89,6 +91,20 @@ test('tenant administrator cannot open dashboard or request platform aggregates'
   await expect(page.getByRole('alert')).toContainText('Недостаточно прав')
   await expect(page.getByRole('link', {name: 'Обзор'})).toHaveCount(0)
   expect(requests.filter(r => !r.path.startsWith('/api/auth/'))).toHaveLength(0)
+})
+
+test('superadmin logo, root and authenticated login lead to overview', async ({page}) => {
+  await mockDashboard(page, 'SUPER_ADMIN')
+  for (const path of ['/', '/login']) {
+    await page.goto(path)
+    await expect(page).toHaveURL(/\/admin\/dashboard$/)
+    await expect(page.getByRole('heading', {name: 'Обзор платформы'})).toBeVisible()
+  }
+  await page.getByRole('link', {name: 'Посмотреть бюджеты организаций'}).click()
+  await expect(page).toHaveURL(/\/admin\/usage/)
+  await page.getByTitle('На главную').click()
+  await expect(page).toHaveURL(/\/admin\/dashboard$/)
+  await expect(page.getByRole('heading', {name: 'Обзор платформы'})).toBeVisible()
 })
 
 test('budget drill-down sends server filter even for a zero category, and clears it', async ({page}) => {

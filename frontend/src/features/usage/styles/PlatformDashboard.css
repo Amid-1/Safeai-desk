@@ -1,8 +1,7 @@
 /* frontend/src/features/usage/styles/PlatformDashboard.css */
 .platform-dashboard { --usage-muted: #465b78; --usage-border: #dbe3ef; display: grid; gap: 14px; min-width: 0; max-width: 1560px; }
-.platform-dashboard__header, .platform-dashboard__panel { background: white; border: 1px solid var(--usage-border); border-radius: 14px; padding: 18px 22px; min-width: 0; }
-.platform-dashboard__header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; border-left: 4px solid #5261e9; padding-block: 12px; }
-.platform-dashboard h1 { margin: 4px 0; font-size: clamp(25px, 3vw, 34px); color: #172644; }
+.platform-dashboard__panel { background: white; border: 1px solid var(--usage-border); border-radius: 14px; padding: 18px 22px; min-width: 0; }
+.platform-dashboard header.admin-page-header.platform-dashboard__header { margin-bottom: 0; flex-wrap: wrap; }
 .platform-dashboard h2 { margin: 0 0 10px; font-size: 19px; color: #213756; }
 .platform-dashboard p { color: var(--usage-muted); margin: 5px 0 10px; line-height: 1.45; overflow-wrap: anywhere; }
 .platform-dashboard__grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
@@ -57,4 +56,4 @@
 .platform-dashboard .usage-chart-links--compact-period button.usage-chart-choice[data-has-records=true] { background: #eef4ff; border-color: #a9bff0; }
 .platform-dashboard .usage-chart-links--compact-period button.usage-chart-choice:hover:not(:disabled) { background: #e5edfc; }
 .platform-dashboard .usage-chart-links--compact-period small { font-size: 12px; color: #52647e; }
-@media (max-width: 760px) { .platform-dashboard__grid { grid-template-columns: 1fr; } .platform-dashboard__header, .platform-dashboard__panel { padding: 14px; } }
+@media (max-width: 760px) { .platform-dashboard__grid { grid-template-columns: 1fr; } .platform-dashboard__panel { padding: 14px; } }

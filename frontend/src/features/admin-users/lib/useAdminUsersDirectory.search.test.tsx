@@ -84,7 +84,7 @@ describe('Users directory: server-side search and reset', () => {
             const initialCalls = vi.mocked(searchUsers).mock.calls.length
 
             act(() => result.current.setSearchDraft('user5'))
-            await act(async () => { await vi.advanceTimersByTimeAsync(349) })
+            await act(async () => { await vi.advanceTimersByTimeAsync(299) })
             expect(searchUsers).toHaveBeenCalledTimes(initialCalls)
             expect(latestQuery()).toBeUndefined()
             await act(async () => { await vi.advanceTimersByTimeAsync(1) })
@@ -93,7 +93,7 @@ describe('Users directory: server-side search and reset', () => {
             expect(result.current.users).toHaveLength(1)
             expect(result.current.users[0]?.email).toBe('user5@test.com')
 
-            // Clearing resets immediately; no second 350 ms debounce.
+            // Clearing resets immediately; no second 300 ms debounce.
             await act(async () => { result.current.setSearchDraft('') })
             expect(searchUsers).toHaveBeenCalledTimes(initialCalls + 2)
             expect(latestQuery()).toBeUndefined()
@@ -107,10 +107,59 @@ describe('Users directory: server-side search and reset', () => {
     it('finds a user by surname, given name and stored full name', async () => {
         const { result } = renderHook(() => useAdminUsersDirectory(currentUser, false))
         await waitFor(() => expect(result.current.users).toHaveLength(10))
-        for (const query of ['Петров', 'Иван', 'Иван Петров']) {
+        for (const query of ['И', 'Петров', 'Иван', '  ИВАН ПЕТРОВ  ']) {
             act(() => result.current.setSearchDraft(query))
-            await waitFor(() => expect(latestQuery()).toBe(query))
+            await waitFor(() => expect(latestQuery()).toBe(query.trim()))
             await waitFor(() => expect(result.current.users[0]?.email).toBe('user5@test.com'))
+        }
+    })
+
+    it('сбрасывает страницу, отменяет старый запрос и сохраняет фильтры при быстром вводе', async () => {
+        window.history.replaceState({}, '', '/admin/users?role=USER&status=ACTIVE&page=2')
+        vi.mocked(searchUsers).mockResolvedValueOnce({
+            content: users, page: 2, size: 50, totalElements: 110, totalPages: 3,
+        })
+        vi.useFakeTimers()
+        try {
+            const {result} = renderHook(() => useAdminUsersDirectory(currentUser, false))
+            await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+            expect(result.current.page).toBe(2)
+            const initial = vi.mocked(searchUsers).mock.calls.length
+            act(() => result.current.setSearchDraft('u'))
+            await act(async () => { await vi.advanceTimersByTimeAsync(200) })
+            act(() => result.current.setSearchDraft('USER5'))
+            await act(async () => { await vi.advanceTimersByTimeAsync(299) })
+            expect(searchUsers).toHaveBeenCalledTimes(initial)
+            await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+            expect(searchUsers).toHaveBeenCalledTimes(initial + 1)
+            expect(vi.mocked(searchUsers).mock.lastCall?.[2]).toMatchObject({
+                query: 'USER5', role: 'USER', enabled: true,
+            })
+            expect(vi.mocked(searchUsers).mock.calls[initial - 1]?.[3]?.signal?.aborted).toBe(true)
+            expect(result.current.page).toBe(0)
+            expect(result.current.users.map(user => user.email)).toEqual(['user5@test.com'])
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    it('игнорирует запоздалый ответ отменённого запроса', async () => {
+        let finishOld!: (value: Awaited<ReturnType<typeof searchUsers>>) => void
+        const response = new Promise<Awaited<ReturnType<typeof searchUsers>>>(resolve => { finishOld = resolve })
+        vi.mocked(searchUsers).mockReturnValueOnce(response)
+        vi.useFakeTimers()
+        try {
+            const {result} = renderHook(() => useAdminUsersDirectory(currentUser, false))
+            const oldSignal = vi.mocked(searchUsers).mock.lastCall?.[3]?.signal
+            act(() => result.current.setSearchDraft('USER5'))
+            await act(async () => { await vi.advanceTimersByTimeAsync(300) })
+            expect(oldSignal?.aborted).toBe(true)
+            expect(result.current.users.map(user => user.email)).toEqual(['user5@test.com'])
+            await act(async () => finishOld({content: users, page: 0, size: 50, totalElements: 10, totalPages: 1}))
+            expect(result.current.users.map(user => user.email)).toEqual(['user5@test.com'])
+            expect(result.current.totalMatched).toBe(1)
+        } finally {
+            vi.useRealTimers()
         }
     })
 

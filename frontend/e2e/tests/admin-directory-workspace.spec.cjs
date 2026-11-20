@@ -40,8 +40,11 @@ test.beforeEach(async ({ page }) => {
         json = { content: matches, page: 0, size: 50, totalPages: matches.length ? 1 : 0, totalElements: matches.length }; break
       }
       case '/api/users/search': {
+        const query = (searchParams.get('query') || '').toLowerCase()
         const matches = users.filter(row => (!searchParams.get('organizationId') || row.organizationId === searchParams.get('organizationId')) &&
-          (!searchParams.get('role') || row.roles.includes(searchParams.get('role'))))
+          (!searchParams.get('role') || row.roles.includes(searchParams.get('role'))) &&
+          (!searchParams.has('enabled') || String(row.enabled) === searchParams.get('enabled')) &&
+          (!query || row.email.toLowerCase().includes(query) || row.fullName.toLowerCase().includes(query)))
         json = { content: matches, page: 0, size: 50, totalPages: matches.length ? 1 : 0, totalElements: matches.length }; break
       }
       case '/api/users/statistics': json = { total: 21, administrators: 0, users: 21, enabled: 21, disabled: 0 }; break
@@ -86,6 +89,26 @@ test('direct user link opens details and links to the organization', async ({pag
   await page.keyboard.press('Escape')
   await expect(card).toHaveCount(0)
   await expect(page).not.toHaveURL(/userId=/)
+})
+
+test('users search applies from the first character without submit and preserves filters', async ({page}) => {
+  await page.goto('/admin/users?role=USER&status=ACTIVE')
+  const search = page.getByRole('searchbox')
+  const requestFor = query => page.waitForRequest(request => {
+    const url = new NodeURL(request.url())
+    return url.pathname === '/api/users/search' && url.searchParams.get('query') === query &&
+      url.searchParams.get('role') === 'USER' && url.searchParams.get('enabled') === 'true' &&
+      url.searchParams.get('page') === '0'
+  })
+  await Promise.all([requestFor('П'), search.fill('П')])
+  await expect(page.getByText(/Найдено по фильтрам: 21/)).toBeVisible()
+  await Promise.all([requestFor('USER21'), search.fill(' USER21 ')])
+  await expect(page.getByRole('row')).toHaveCount(2)
+  await expect(page.getByRole('row').last()).toContainText('user21@example.test')
+  await page.getByRole('button', {name: 'Очистить', exact: true}).click()
+  await expect(page.getByRole('row')).toHaveCount(22)
+  await expect(page).not.toHaveURL(/query=/)
+  await expect(page).toHaveURL(/role=USER&status=ACTIVE/)
 })
 
 for (const [width, height] of [[1440, 900], [390, 844]]) {

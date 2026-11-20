@@ -186,6 +186,7 @@ model/
 │   ├── ModelPolicyPreviewResponse
 │   ├── ModelRouteDecisionResponse
 │   ├── OrganizationModelPolicyResponse
+│   ├── PlatformBudgetSummaryResponse
 │   ├── RubBudgetInput
 │   ├── RubBudgetResponse
 │   ├── RuntimeModelProbeResponse

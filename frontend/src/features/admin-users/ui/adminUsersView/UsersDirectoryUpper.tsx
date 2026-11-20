@@ -36,7 +36,7 @@ export function UsersDirectoryUpper({
     const [suggestionsOpen, setSuggestionsOpen] = useState(false)
     const showSuggestions = suggestionsOpen
         && !loading && !loadError
-        && searchDraft.trim().length >= 2
+        && searchDraft.trim().length >= 1
         && searchDraft.trim() === appliedSearch
         && users.length > 0
     const suggestionRank = (user: User): number => {
@@ -279,9 +279,7 @@ export function UsersDirectoryUpper({
                                 Найдено по фильтрам: {loading || loadError ? '—' : totalMatched}
                                 {' · Всего пользователей: '}{loading || loadError ? '—' : statistics.total}
                                 {searchDraft.trim() !== appliedSearch && (
-                                    <> · {searchDraft.trim().length === 1
-                                        ? 'Введите ещё символ или нажмите «Найти»'
-                                        : 'Обновляем результаты поиска…'}</>
+                                    <> · Обновляем результаты поиска…</>
                                 )}
                                 {' · Сначала недавно созданные'}
                             </span>

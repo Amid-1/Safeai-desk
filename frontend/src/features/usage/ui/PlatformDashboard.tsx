@@ -6,6 +6,7 @@ import { getUserStatistics } from '../../../entities/user/api/userApi'
 import { getRuntimeModelStatus } from '../../../entities/model/api/modelApi'
 import { createRecentDateRange } from '../../../shared/lib/date'
 import { ErrorState, LoadingState } from '../../../shared/ui/StateBlock'
+import { AdminPageHeader } from '../../../shared/ui/AdminPageHeader'
 import { getUsageByOrganizations, getUsageDaily, getOrganizationUsageDaily } from '../api/usageApi'
 import { getPlatformBudgetSummary } from '../api/platformBudgetApi'
 import { useDashboardResource } from '../controller/useDashboardResource'
@@ -85,11 +86,11 @@ export function PlatformDashboard() {
     const usageLink = (report: string, extra: Record<string, string> = {}) =>
         '/admin/usage?' + new URLSearchParams({report, ...range, ...extra})
     return <div className="page platform-dashboard">
-        <header className="platform-dashboard__header">
-            <div><span className="usage-eyebrow">SAFEAI DESK · ПЛАТФОРМА</span><h1>Обзор платформы</h1>
+        <AdminPageHeader className="platform-dashboard__header">
+            <div><h1>Обзор платформы</h1>
                 <p>Сводка по всем организациям · только для суперадминистратора.</p></div>
             <button className="secondary-button" onClick={() => {setNow(new Date()); setRefresh(v => v + 1)}}>Обновить данные</button>
-        </header>
+        </AdminPageHeader>
         <div className="platform-dashboard__grid">
             <Panel title="Организации" {...organizations}>
                 <strong className="platform-dashboard__number">{(budget.data?.total ?? organizations.data?.totalElements)?.toLocaleString('ru-RU')}</strong>
@@ -147,7 +148,7 @@ export function PlatformDashboard() {
                 <input id="dashboard-org-search" type="search" maxLength={255} placeholder="Название организации" value={draft} onChange={e => setDraft(e.target.value)} />
                 <button type="button" className="secondary-button" onClick={() => {setDraft(''); setSearch(''); setPage(0)}}>Сбросить</button>
             </div>
-            <p>{search ? 'Поиск по всему каталогу, включая организации без использования.' : 'Топ-5 организаций с подтверждёнными токенами за выбранный период.'}</p>
+            <p>{search ? 'Поиск по всему каталогу, включая организации без использования.' : 'До 5 организаций с наибольшим числом подтверждённых токенов за выбранный период.'}</p>
             {searching || top.loading ? <LoadingState variant="inline" /> : top.failed ? <ErrorState variant="inline" message="Рейтинг недоступен." action={<button onClick={top.retry}>Повторить</button>} /> : <>
             {search && <p role="status">Найдено: {top.data?.matched ?? '—'}</p>}
             <div className="platform-dashboard__table-scroll"><table><thead><tr>

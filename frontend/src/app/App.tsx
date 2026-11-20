@@ -77,7 +77,7 @@ function isSuperAdmin(user: AuthUser | null): boolean {
 
 function getDefaultAuthenticatedRoute(user: AuthUser): string {
     return isSuperAdmin(user)
-        ? '/admin/users'
+        ? '/admin/dashboard'
         : '/chat'
 }
 

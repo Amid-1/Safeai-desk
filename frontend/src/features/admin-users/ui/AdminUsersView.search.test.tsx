@@ -129,7 +129,7 @@ describe('Users directory search UI', () => {
         ])
     })
 
-    it('не применяет поисковый фильтр автоматически при вводе или фокусе', () => {
+    it('передаёт ввод контроллеру живого поиска и сохраняет ручную отправку', () => {
         const { callbacks } = view([row], '')
         const search = screen.getByRole('searchbox')
         fireEvent.focus(search)
@@ -144,7 +144,6 @@ describe('Users directory search UI', () => {
     it.each([
         { reason: 'идёт загрузка', overrides: { loading: true } },
         { reason: 'есть ошибка загрузки', overrides: { loadError: 'Ошибка' } },
-        { reason: 'введён один символ', overrides: { searchDraft: 'И', appliedSearch: 'И' } },
         { reason: 'поиск ещё не применён', overrides: { appliedSearch: 'Другое' } },
     ])('не раскрывает подсказки, если $reason', ({ overrides }) => {
         const { rerenderWith } = view([row], 'Иван')
@@ -152,6 +151,12 @@ describe('Users directory search UI', () => {
         fireEvent.focus(screen.getByRole('searchbox'))
         expect(screen.queryByText('Совпадения · выберите пользователя'))
             .not.toBeInTheDocument()
+    })
+
+    it('показывает подсказку после серверного поиска по одному символу', () => {
+        view([row], 'И')
+        fireEvent.focus(screen.getByRole('searchbox'))
+        expect(screen.getByText('Совпадения · выберите пользователя')).toBeInTheDocument()
     })
 
     it('закрывает подсказки клавишей Escape без отправки запроса', () => {
