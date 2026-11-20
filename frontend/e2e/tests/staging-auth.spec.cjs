@@ -36,7 +36,7 @@ test('@staging exercises the HTTPS browser session lifecycle', async ({ page, co
   await page.getByRole('button', { name: 'Войти' }).click()
   expect((await login).status()).toBe(200)
 
-  await expect(page).toHaveURL(/\/(chat|admin\/users)$/)
+  await expect(page).toHaveURL(/\/(chat|admin\/dashboard)$/)
   await expect(page.getByRole('button', { name: 'Выйти' })).toBeVisible()
   const cookieNames = {
     access: '__Host-safeai-access',
@@ -57,6 +57,9 @@ test('@staging exercises the HTTPS browser session lifecycle', async ({ page, co
   expect(meResponse.status()).toBe(200)
   const me = await meResponse.json()
   expect(Array.isArray(me.roles)).toBe(true)
+  await expect(page).toHaveURL(me.roles.includes('SUPER_ADMIN')
+    ? /\/admin\/dashboard$/
+    : /\/chat$/)
   // Real backend through the deployed proxy; never substitute a mock or an empty report.
   const organizations = await context.request.get('/api/admin/usage/organizations?page=0&size=1&order=tokens')
   if (me.roles.includes('SUPER_ADMIN')) {

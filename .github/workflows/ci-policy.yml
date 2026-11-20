@@ -65,6 +65,11 @@ jobs:
       - name: Проверка инфраструктурного security policy
         run: python3 .github/scripts/check-infra-security-policy.py
 
+      - name: Контракт событий аудита и отрицательные тесты
+        run: |
+          python3 .github/scripts/check-audit-event-contract.py
+          python3 -m unittest discover -s .github/scripts -p 'test_audit_event_contract.py' -v
+
       - name: Отрицательные тесты инфраструктурного security policy
         run: python3 -m unittest discover -s .github/scripts -p 'test_infra_security_policy.py' -v
 

@@ -11,6 +11,15 @@ export function auditEventTitle(type: string): string {
 }
 
 export function auditEventResult(type: string): { label: string; tone: string } {
+    // Восстановление собственной записи не является новой ошибкой доставки.
+    if (type === 'AUDIT_OUTBOX_DEAD_LETTER_RECOVERED') return { label: 'Восстановлено', tone: 'success' }
+    if (type.endsWith('_RETENTION_BLOCKED')) return { label: 'Ограничено хранением', tone: 'warning' }
+    if (type.endsWith('_REVIEW_REQUIRED')) return { label: 'Требует проверки', tone: 'warning' }
+    if (type.endsWith('_ERASURE_COMPLETED') || type.endsWith('_DELETION_COMPLETED')) {
+        return { label: 'Завершено', tone: 'success' }
+    }
+    if (type.endsWith('_ERASURE_CANCELLED')) return { label: 'Отменено', tone: 'neutral' }
+    if (type.endsWith('_RESUMED')) return { label: 'Возобновлено', tone: 'neutral' }
     if (type === 'MODEL_ROUTE_DENIED') return { label: 'Отклонён', tone: 'danger' }
     if (type === 'MODEL_ROUTE_DECIDED') return { label: 'Разрешён', tone: 'success' }
     if (type === 'USER_LOGIN_FAILED') return { label: 'Вход не выполнен', tone: 'danger' }

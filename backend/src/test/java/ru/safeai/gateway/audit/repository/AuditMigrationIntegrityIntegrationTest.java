@@ -5,6 +5,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import ru.safeai.gateway.audit.service.AuditOutboxScheduler;
+import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.testsupport.AbstractAuditPostgresIntegrationTest;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -23,6 +24,19 @@ class AuditMigrationIntegrityIntegrationTest extends AbstractAuditPostgresIntegr
     // Отключаем только фоновую отправку аудита; сам журнал и таблицы не подменяем.
     @MockitoBean
     private AuditOutboxScheduler auditOutboxScheduler;
+
+    @Test
+    void everyJavaEventTypeIsRegisteredInPostgres() {
+        for (AuditEventType eventType : AuditEventType.values()) {
+            assertThat(queryInt("""
+                    select count(*)
+                      from public.audit_event_types
+                     where name = ?
+                    """, eventType.name()))
+                    .as("Тип события не зарегистрирован в PostgreSQL: %s", eventType)
+                    .isEqualTo(1);
+        }
+    }
 
     @Test
     void v26ColumnsAndConstraintsExist() {
