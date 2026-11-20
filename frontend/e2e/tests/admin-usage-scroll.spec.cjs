@@ -166,9 +166,28 @@ test(`an organization without usage stays in comparison and keeps its card and b
   // Reaching an action in the sticky card is a separate interaction. If the
   // compact scroller requires positioning it, do so before taking its baseline.
   await budgetButton.scrollIntoViewIfNeeded()
-  await expect(budgetButton).toBeInViewport({ratio: 1})
+  // Fractional CSS pixels can be rounded differently by the scrollport and
+  // IntersectionObserver (especially on Retina). Permit at most one CSS pixel
+  // at each edge, not an arbitrary visible fraction of the button.
+  await expect.poll(() => budgetButton.evaluate(el => new Promise(resolve => {
+    const observer = new el.ownerDocument.defaultView.IntersectionObserver(([entry]) => {
+      observer.disconnect()
+      const bounds = entry.boundingClientRect
+      const visible = entry.intersectionRect
+      resolve(entry.isIntersecting ? Math.max(0, visible.left - bounds.left, visible.top - bounds.top,
+        bounds.right - visible.right, bounds.bottom - visible.bottom) : Infinity)
+    })
+    observer.observe(el)
+  }))).toBeLessThanOrEqual(1)
+  await expect(budgetButton).toBeEnabled()
+  await expect.poll(() => budgetButton.evaluate(el => {
+    const box = el.getBoundingClientRect()
+    return el.contains(el.ownerDocument.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2))
+  })).toBe(true)
+  const budgetBox = await budgetButton.boundingBox()
   const budgetScrollBefore = await viewport.evaluate(el => el.scrollTop)
-  await budgetButton.click()
+  // A real pointer click cannot silently auto-scroll an obstructed action.
+  await page.mouse.click(budgetBox.x + budgetBox.width / 2, budgetBox.y + budgetBox.height / 2)
   await expect(selection).toContainText('Бюджет: Не задан')
   expect(await viewport.evaluate(el => el.scrollTop)).toBe(budgetScrollBefore)
   expect(await selection.evaluate(el => el.getBoundingClientRect().height)).toBeLessThanOrEqual(await viewport.evaluate(el => el.clientHeight + 1))
@@ -285,7 +304,7 @@ test('organization table grip is above rows and budget retries without affecting
   })
   await page.goto(`/admin/usage?report=organizations&${dates}`)
   await expect(page.getByRole('table').getByRole('row')).toHaveCount(18)
-  const grip = page.getByRole('separator', {name: 'Высота таблицы'})
+  const grip = page.getByRole('separator', {name: 'Высота области отчёта'})
   const viewport = page.locator('.usage-data-viewport')
   const footer = page.locator('.usage-results-footer')
   const before = await viewport.boundingBox()
@@ -394,11 +413,11 @@ test('wheel scrolls only the data rows while header and footer stay fixed', asyn
   await expect(page.getByRole('button', {name: 'Вперёд'})).toBeInViewport()
   await expect(page.getByRole('columnheader', {name: 'Пользователь'})).toBeInViewport()
   const headerBefore = await page.locator('.usage-page__upper').boundingBox()
-  const handle = page.getByRole('separator', {name: 'Высота таблицы'})
+  const handle = page.getByRole('separator', {name: 'Высота области отчёта'})
   await expect(handle).toBeVisible()
   const handleBox = await handle.boundingBox()
   expect(handleBox.y + handleBox.height).toBeLessThanOrEqual(box.y + 1)
-  expect(handleBox.y).toBeGreaterThan((await page.locator('.usage-results-toolbar').boundingBox()).y)
+  expect(handleBox.y + handleBox.height).toBeLessThanOrEqual((await page.locator('.usage-results-toolbar').boundingBox()).y + 1)
   await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2)
   await page.mouse.down()
   await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2 - 60)
@@ -514,5 +533,103 @@ for (const tab of ['summary', 'users', 'models', 'daily']) {
     await expect.poll(() => plot.evaluate(el => el.clientHeight)).toBe(normal)
     await expect.poll(() => surface.evaluate(el => el.getBoundingClientRect().height)).toBe(normalSvg)
     await expect.poll(viewBoxHeight).toBe(normalViewBox)
+  })
+}
+
+for (const [width, height] of [[1920, 1080], [1280, 720]]) {
+  test(`shared report grip expands all five tabs and both views at ${width}×${height}`, async ({page}) => {
+    test.setTimeout(60_000)
+    await page.setViewportSize({width, height})
+    await page.route('**/api/auth/me', route => route.fulfill({json: {id: userId, organizationId: orgId,
+      email: identity.userEmail, fullName: 'Super Admin', enabled: true, roles: ['SUPER_ADMIN']}}))
+    await page.route('**/api/admin/usage/organizations?**', route => route.fulfill({json: {
+      page: 0, size: 50, first: true, last: true, hasNext: false, hasPrevious: false, content: [{
+        organizationId: orgId, organizationName: 'Demo Company', responses: {assistantMessages: 1},
+        usage: {confirmedInputTokens: 9, confirmedOutputTokens: 16, availableUsageMessages: 1,
+          partialUsageMessages: 0, missingUsageMessages: 0, usageNotApplicableMessages: 0},
+        cost: {knownCostUsd: '0', currency: 'USD', pricedMessages: 1, freeMessages: 0,
+          unpricedMessages: 0, pricingFailedMessages: 0, pricingNotApplicableMessages: 0},
+      }],
+    }}))
+    await page.goto(`/admin/usage?report=summary&${dates}`)
+    const grip = page.getByRole('separator', {name: 'Высота области отчёта'})
+    const tabs = page.getByRole('tablist')
+    const panel = page.locator('.usage-results-panel')
+    const summary = page.locator('.usage-summary-viewport')
+    const viewport = page.locator('.usage-data-viewport')
+    const footer = page.locator('.usage-results-footer')
+    const foldToFooter = async () => {
+      const handle = await grip.boundingBox()
+      const bottom = await page.locator('.usage-page').boundingBox()
+      const x = handle.x + handle.width / 2
+      await page.mouse.move(x, handle.y + handle.height / 2)
+      await page.mouse.down()
+      await page.mouse.move(x, bottom.y + bottom.height - 3, {steps: 10})
+      await page.mouse.up()
+      await expect(grip).toHaveAttribute('aria-valuenow', '-100')
+      await expect(viewport).toBeHidden()
+      await expect(footer).toBeInViewport({ratio: 1})
+      const foldedGrip = await grip.boundingBox()
+      const foldedFooter = await footer.boundingBox()
+      expect(Math.abs(foldedFooter.y - foldedGrip.y - foldedGrip.height)).toBeLessThanOrEqual(2)
+      await expect(summary).toBeVisible()
+      // Restore by dragging the same grip back up, without touching the footer.
+      await page.mouse.move(x, foldedGrip.y + foldedGrip.height / 2)
+      await page.mouse.down()
+      await page.mouse.move(x, (await tabs.boundingBox()).y - 5, {steps: 10})
+      await page.mouse.up()
+      await expect(grip).toHaveAttribute('aria-valuenow', '100')
+      await expect(viewport).toBeInViewport()
+      await grip.press('Home')
+    }
+    for (const name of ['Детализация', 'По пользователям', 'По моделям', 'По дням', 'По организациям']) {
+      await page.getByRole('tab', {name, exact: true}).click()
+      await page.getByRole('button', {name: 'Таблица', exact: true}).click()
+      await expect(page.getByRole('table')).toBeVisible()
+      await expect(grip).toBeVisible()
+      await foldToFooter()
+      await expect(page.getByRole('table')).toBeVisible()
+      const before = await panel.boundingBox()
+      const tabsBefore = await tabs.boundingBox()
+      const handle = await grip.boundingBox()
+      await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
+      await page.mouse.down()
+      await page.mouse.move(handle.x + handle.width / 2, tabsBefore.y + tabsBefore.height - 40, {steps: 6})
+      await page.mouse.up()
+      await expect(grip).toHaveAttribute('aria-valuenow', '100')
+      await expect(summary).toBeHidden()
+      expect((await panel.boundingBox()).y).toBeLessThan(before.y)
+      expect((await panel.boundingBox()).y - tabsBefore.y - tabsBefore.height).toBeLessThanOrEqual(14)
+      expect(await tabs.boundingBox()).toEqual(tabsBefore)
+      await expect(page.locator('.usage-results-footer')).toBeInViewport()
+      await expect(viewport).toBeInViewport()
+      await page.getByRole('button', {name: 'График', exact: true}).click()
+      const plot = page.locator(name === 'По дням' ? '.usage-chart-viewport' : '.usage-breakdown-chart__frame')
+      await expect(plot).toBeVisible()
+      await expect(grip).toHaveAttribute('aria-valuenow', '100')
+      const enlarged = await plot.evaluate(el => el.clientHeight)
+      await grip.press('Home')
+      await expect(grip).toHaveAttribute('aria-valuenow', '0')
+      await expect(summary).toBeVisible()
+      await expect.poll(() => plot.evaluate(el => el.clientHeight)).toBeLessThan(enlarged)
+      const chartHandle = await grip.boundingBox()
+      await page.mouse.move(chartHandle.x + chartHandle.width / 2, chartHandle.y + chartHandle.height / 2)
+      await page.mouse.down()
+      await page.mouse.move(chartHandle.x + chartHandle.width / 2, tabsBefore.y + tabsBefore.height - 40, {steps: 6})
+      await page.mouse.up()
+      await expect(grip).toHaveAttribute('aria-valuenow', '100')
+      await expect.poll(() => plot.evaluate(el => el.clientHeight)).toBe(enlarged)
+      await grip.dblclick()
+      await expect(grip).toHaveAttribute('aria-valuenow', '0')
+      await foldToFooter()
+      await expect(plot).toBeVisible()
+    }
+    await grip.press('PageDown')
+    await expect(grip).toHaveAttribute('aria-valuenow', '-100')
+    await expect(viewport).toBeHidden()
+    await page.setViewportSize({width: 390, height: 844})
+    await expect(grip).toBeHidden()
+    await expect(summary).toBeVisible()
+    await expect(viewport).toBeVisible()
   })
 }

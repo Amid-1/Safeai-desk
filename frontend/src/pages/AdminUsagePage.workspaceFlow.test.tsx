@@ -55,7 +55,20 @@ describe('Usage dashboard', () => {
         expect(screen.getByRole('table')).toBeVisible()
         expect(screen.queryByRole('button', {name: 'Развернуть'})).not.toBeInTheDocument()
         expect(screen.queryByRole('region', { name: 'Расход токенов по пользователям и моделям' })).not.toBeInTheDocument()
-        expect(screen.queryByRole('separator')).not.toBeInTheDocument()
+        const grip = screen.getByRole('separator', { name: 'Высота области отчёта' })
+        expect(grip).toHaveAttribute('aria-valuenow', '0')
+        fireEvent.keyDown(grip, { key: 'PageDown' })
+        expect(grip).toHaveAttribute('aria-valuenow', '-100')
+        expect(container.querySelector('.usage-page')).toHaveClass('usage-page--folded')
+        expect(container.querySelector('.usage-results-body')).toHaveAttribute('inert')
+        expect(screen.getByText('Все записи показаны')).toBeVisible()
+        fireEvent.keyDown(grip, { key: 'Home' })
+        expect(container.querySelector('.usage-results-body')).not.toHaveAttribute('inert')
+        fireEvent.keyDown(grip, { key: 'End' })
+        expect(grip).toHaveAttribute('aria-valuenow', '100')
+        expect(container.querySelector('.usage-page')).toHaveClass('usage-page--summary-hidden')
+        fireEvent.doubleClick(grip)
+        expect(grip).toHaveAttribute('aria-valuenow', '0')
         expect(screen.getByText('100%')).toBeVisible()
         expect(screen.getByText('Вход: 9 · Выход: 16')).toBeVisible()
         fireEvent.click(screen.getByRole('button', {name: 'Изменить фильтры'}))
@@ -91,6 +104,68 @@ describe('Usage dashboard', () => {
         expect(screen.queryByRole('button', {name: 'mock-safeai →'})).not.toBeInTheDocument()
         fireEvent.click(screen.getByRole('button', {name: 'Сбросить фильтр по пользователю'}))
         expect(fixture.clearFilter).toHaveBeenCalledWith('user')
+    })
+    it('keeps the shared drag position across report changes and view switches', () => {
+        const height = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(200)
+        const visibleHeight = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(200)
+        try {
+            const view = render(<AdminUsagePage />)
+            const grip = screen.getByRole('separator', { name: 'Высота области отчёта' })
+            Object.defineProperty(grip, 'setPointerCapture', { value: vi.fn() })
+            fireEvent.pointerDown(grip, { button: 0, pointerId: 1, clientY: 400 })
+            fireEvent.pointerMove(grip, { pointerId: 1, clientY: 320 })
+            expect(grip).toHaveAttribute('aria-valuenow', '40')
+            fireEvent.pointerCancel(grip, { pointerId: 1 })
+            fireEvent.pointerMove(grip, { pointerId: 1, clientY: 240 })
+            expect(grip).toHaveAttribute('aria-valuenow', '40')
+            fireEvent.click(screen.getByRole('button', { name: 'График' }))
+            expect(grip).toHaveAttribute('aria-valuenow', '40')
+            vi.mocked(useAdminUsageReport).mockReturnValue({ ...fixture, tab: 'users' })
+            view.rerender(<AdminUsagePage />)
+            expect(grip).toHaveAttribute('aria-valuenow', '40')
+            fireEvent.keyDown(grip, { key: 'Home' })
+            expect(grip).toHaveAttribute('aria-valuenow', '0')
+        } finally {
+            height.mockRestore()
+            visibleHeight.mockRestore()
+        }
+    })
+    it('drags beyond the normal layout, folds to the footer and restores the report', () => {
+        const height = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
+            if (this.matches('.usage-page__upper')) return 210
+            if (this.matches('.usage-summary-content')) return 150
+            if (this.matches('.usage-report-resizer')) return 18
+            if (this.matches('.usage-results-footer')) return 44
+            return 0
+        })
+        const clientHeight = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) {
+            if (this.matches('.usage-page')) return 800
+            if (this.matches('.usage-summary-viewport')) return this.closest('.usage-page--folded') ? 526 : 150
+            return 0
+        })
+        try {
+            const {container} = render(<AdminUsagePage />)
+            const grip = screen.getByRole('separator', { name: 'Высота области отчёта' })
+            Object.defineProperty(grip, 'setPointerCapture', { value: vi.fn() })
+            fireEvent.pointerDown(grip, { button: 0, pointerId: 1, clientY: 400 })
+            fireEvent.pointerMove(grip, { pointerId: 1, clientY: 500 })
+            expect(Number(grip.getAttribute('aria-valuenow'))).toBeLessThan(0)
+            expect(container.querySelector('.usage-page')).toHaveClass('usage-page--lowered')
+            expect(container.querySelector('.usage-results-body')).not.toHaveAttribute('inert')
+            fireEvent.pointerMove(grip, { pointerId: 1, clientY: 900 })
+            fireEvent.pointerUp(grip, { pointerId: 1 })
+            expect(grip).toHaveAttribute('aria-valuenow', '-100')
+            expect(container.querySelector('.usage-results-body')).toHaveAttribute('inert')
+            expect(screen.getByText('Все записи показаны')).toBeVisible()
+            fireEvent.pointerDown(grip, { button: 0, pointerId: 2, clientY: 700 })
+            fireEvent.pointerMove(grip, { pointerId: 2, clientY: 100 })
+            fireEvent.pointerUp(grip, { pointerId: 2 })
+            expect(grip).toHaveAttribute('aria-valuenow', '100')
+            expect(container.querySelector('.usage-results-body')).not.toHaveAttribute('inert')
+        } finally {
+            height.mockRestore()
+            clientHeight.mockRestore()
+        }
     })
     it('provides distinct scoped card links for SUPER_ADMIN, but not tenant admins', () => {
         const org = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'

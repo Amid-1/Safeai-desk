@@ -1,5 +1,5 @@
 // frontend/src/features/usage/ui/AdminUsageWorkspace.tsx
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { UsageTableViewport } from './UsageTableViewport'
 import { AdminUsageControls } from './AdminUsageControls'
 import { UsageReportFooter, UsageRows } from './UsageReportView'
@@ -22,6 +22,54 @@ export function AdminUsageWorkspace() {
     const [dailyMetric, setDailyMetric] = useState<UsageDailyMetric>('tokens')
     const [exportError, setExportError] = useState('')
     const [limit, setLimit] = useState(12)
+    const summary = useRef<HTMLDivElement>(null)
+    const summaryContent = useRef<HTMLDivElement>(null)
+    const workspace = useRef<HTMLDivElement>(null)
+    const grip = useRef<HTMLDivElement>(null)
+    const footer = useRef<HTMLElement>(null)
+    const drag = useRef<{ pointerId: number; y: number; height: number } | null>(null)
+    const [summaryHeight, setSummaryHeight] = useState(0)
+    const [maximumSummaryHeight, setMaximumSummaryHeight] = useState(0)
+    const [desktop, setDesktop] = useState(true)
+    // 0 = report expanded to tabs, 1 = natural layout, 2 = report folded to footer.
+    const [summaryFraction, setSummaryFraction] = useState(1)
+    const summaryHidden = summaryFraction === 0
+    useLayoutEffect(() => {
+        const node = summaryContent.current
+        const page = workspace.current
+        const controls = page?.querySelector<HTMLElement>('.usage-page__upper')
+        const handle = grip.current
+        const bottom = footer.current
+        if (!node || !page || !controls || !handle || !bottom) return
+        const measure = () => {
+            setSummaryHeight(node.offsetHeight)
+            setDesktop(window.innerWidth > 900 && window.innerHeight > 620)
+            const gap = Number.parseFloat(getComputedStyle(page).rowGap) || 0
+            const upperGap = summaryHidden ? gap : Number.parseFloat(getComputedStyle(controls.parentElement!).rowGap) || 0
+            setMaximumSummaryHeight(Math.max(0, page.clientHeight - controls.offsetHeight - gap - upperGap
+                - handle.offsetHeight - bottom.offsetHeight - 2))
+        }
+        measure()
+        const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+        for (const target of [node, page, controls, handle, bottom]) observer?.observe(target)
+        window.addEventListener('resize', measure)
+        return () => { observer?.disconnect(); window.removeEventListener('resize', measure) }
+    }, [summaryHidden])
+    function resizeSummary(height: number) {
+        if (summaryHeight <= 0) return
+        if (filtersOpen || height <= summaryHeight || maximumSummaryHeight <= summaryHeight) {
+            setSummaryFraction(Math.min(1, Math.max(0, height / summaryHeight)))
+        } else {
+            setSummaryFraction(height >= maximumSummaryHeight - 2 ? 2
+                : 1 + (height - summaryHeight) / (maximumSummaryHeight - summaryHeight))
+        }
+    }
+    const lowered = desktop && !filtersOpen && summaryFraction > 1
+    const folded = lowered && summaryFraction === 2
+    const displayedSummaryHeight = lowered
+        ? summaryHeight + (maximumSummaryHeight - summaryHeight) * (summaryFraction - 1)
+        : summaryHeight * Math.min(1, summaryFraction)
+    const expansion = Math.round((1 - summaryFraction) * 100)
     const hasRows = !report.loading && !report.error && report.rows.length > 0
     const hasMore = report.hasPrevious || report.hasNext
     const paged = report.tab === 'summary' || report.tab === 'users' || report.tab === 'organizations'
@@ -42,7 +90,8 @@ export function AdminUsageWorkspace() {
     }
 
     return (
-        <div className={`page usage-page${chartExpanded ? ' usage-page--expanded' : ''}`}
+        <div ref={workspace} className={`page usage-page${chartExpanded ? ' usage-page--expanded' : ''}${summaryFraction < 1 ? ' usage-page--resized' : ''}${summaryFraction === 0 ? ' usage-page--summary-hidden' : ''}${lowered ? ' usage-page--lowered' : ''}${folded ? ' usage-page--folded' : ''}`}
+            style={{ '--usage-summary-height': `${displayedSummaryHeight}px`, '--usage-released-height': `${summaryHeight * Math.max(0, 1 - summaryFraction)}px` } as CSSProperties}
             onKeyDown={event => {
                 if (event.key === 'Escape' && chartExpanded && !event.defaultPrevented) setExpanded(false)
             }}>
@@ -63,7 +112,7 @@ export function AdminUsageWorkspace() {
                 appliedUserId={report.appliedUserId} appliedUserLabel={report.appliedUserLabel}
                 appliedOrganizationId={report.appliedOrganizationId} onClearFilter={report.clearFilter}
                 filtersOpen={filtersOpen}
-                onToggleFilters={() => setFiltersOpen(open => !open)}
+                onToggleFilters={() => { if (summaryFraction > 1) setSummaryFraction(1); setFiltersOpen(open => !open) }}
                 onDateFromChange={report.changeDraftDateFrom}
                 onDateToChange={report.changeDraftDateTo}
                 onModelChange={report.changeDraftModel}
@@ -73,6 +122,8 @@ export function AdminUsageWorkspace() {
                 onResetFilters={() => { setExportError(''); report.resetFilters() }}
                 onSelectTab={tab => { setExportError(''); report.selectTab(tab) }}
             />
+            <div className="usage-summary-viewport" id="usage-summary-viewport" ref={summary}>
+            <div className="usage-summary-content" ref={summaryContent}>
             <UsageKpis rows={separateTotals ? report.totals.rows : hasRows ? report.rows : []} tab={report.tab}
                 hasMore={false} appliedModel={report.appliedModel}
                 dailyTotals
@@ -98,7 +149,41 @@ export function AdminUsageWorkspace() {
                 </>}
             </section>}
             </div>
-            <section className={`usage-results-panel usage-results-panel--${view}`} aria-labelledby="usage-report-title">
+            </div>
+            </div>
+            <section id="usage-results-panel" className={`usage-results-panel usage-results-panel--${view}`} aria-labelledby="usage-report-title">
+                <div ref={grip} className="usage-report-resizer" role="separator" tabIndex={0}
+                    aria-label="Высота области отчёта" aria-orientation="horizontal" aria-controls="usage-results-panel"
+                    aria-valuemin={-100} aria-valuemax={100} aria-valuenow={expansion}
+                    aria-valuetext={folded ? 'Отчёт свёрнут до итогов' : expansion < 0 ? `Сворачивание отчёта: ${-expansion}%` : `Расширение отчёта: ${expansion}%`}
+                    title="Потяните до вкладок или итогов · двойной клик / Home — восстановить · End — расширить · PageDown — свернуть"
+                    onDoubleClick={() => setSummaryFraction(1)}
+                    onPointerDown={event => {
+                        if (event.button !== 0 || !summary.current || drag.current) return
+                        event.preventDefault()
+                        event.currentTarget.focus({ preventScroll: true })
+                        event.currentTarget.setPointerCapture(event.pointerId)
+                        drag.current = { pointerId: event.pointerId, y: event.clientY, height: summary.current.clientHeight }
+                    }}
+                    onPointerMove={event => {
+                        const start = drag.current
+                        if (start?.pointerId === event.pointerId) resizeSummary(start.height + event.clientY - start.y)
+                    }}
+                    onLostPointerCapture={() => { drag.current = null }}
+                    onPointerUp={() => { drag.current = null }}
+                    onPointerCancel={() => { drag.current = null }}
+                    onKeyDown={event => {
+                        if (event.key === 'Home' || event.key === 'End' || event.key === 'PageDown') {
+                            event.preventDefault()
+                            if (event.key !== 'PageDown' || !filtersOpen) setSummaryFraction(event.key === 'Home' ? 1 : event.key === 'End' ? 0 : 2)
+                        } else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+                            event.preventDefault()
+                            resizeSummary((summary.current?.clientHeight ?? 0) + (event.key === 'ArrowUp' ? -32 : 32))
+                        }
+                    }}>
+                    <span aria-hidden="true" />
+                </div>
+                <div className="usage-results-body" inert={folded}>
                 <div className="usage-results-toolbar">
                     <div className="usage-results-heading">
                         <h2 id="usage-report-title">{reportTitle(report.tab)}</h2>
@@ -168,7 +253,8 @@ export function AdminUsageWorkspace() {
                             relatedLinks={report.isSuperAdmin} organizationId={report.appliedOrganizationId}
                             reportIdentity={report.reportIdentity} reloadToken={report.reloadToken} />}
                 </UsageTableViewport>
-                <footer className="usage-results-footer">
+                </div>
+                <footer ref={footer} className="usage-results-footer">
                     {!report.loading && !report.error && (hasRows || hasMore)
                         ? <UsageReportFooter tab={report.tab} rowsCount={report.rows.length}
                             page={report.page} hasPrevious={report.hasPrevious} hasNext={report.hasNext}
