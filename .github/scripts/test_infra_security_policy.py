@@ -64,6 +64,22 @@ class InfraPolicyTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             policy.assert_policy(self.repo)
 
+    def test_old_go_builder_rejected_in_either_dockerfile(self):
+        old_go = 'golang:1.27.3-trixie@sha256:c65ecfe613b539ac74c62a4c3b2c27e8f8a6076384c8f27e8a3c0f3be17cc385'
+        for path in ('infra/postgres/Dockerfile', 'infra/postgres/noble-candidate/Dockerfile'):
+            with self.subTest(path=path):
+                self.alter(path, f'ARG GOSU_BUILDER_IMAGE={policy.GO}', f'ARG GOSU_BUILDER_IMAGE={old_go}')
+                with self.assertRaisesRegex(AssertionError, 'GOSU_BUILDER_IMAGE'):
+                    policy.assert_policy(self.repo)
+                self.alter(path, f'ARG GOSU_BUILDER_IMAGE={old_go}', f'ARG GOSU_BUILDER_IMAGE={policy.GO}')
+
+    def test_missing_gosu_binary_version_check_fails(self):
+        self.alter('infra/postgres/Dockerfile',
+                   'test "$(go version /out/gosu)" = \'/out/gosu: go1.27.4\';',
+                   'echo skipped;')
+        with self.assertRaisesRegex(AssertionError, 'go version /out/gosu'):
+            policy.assert_policy(self.repo)
+
     def test_changed_main_pg_base_fails(self):
         self.alter('infra/postgres/Dockerfile',
                    'FROM ${UBUNTU_IMAGE} AS postgres-core',

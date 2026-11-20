@@ -36,10 +36,12 @@ USER root
 RUN set -eux; \
     apk --no-cache upgrade; \
     apk --no-cache add 'brotli-libs>=1.2.1-r0'; \
-    nginx_pkg="$(apk info -v nginx)"; \
-    case "$nginx_pkg" in nginx-*) ;; *) exit 1 ;; esac; \
-    case "$(apk version -t "${nginx_pkg#nginx-}" 1.30.7-r0)" in \
-      '='|'>') ;; *) echo "BLOCKED: vulnerable NGINX package: $nginx_pkg" >&2; exit 1 ;; \
+    installed_packages="$(apk list --manifest)"; \
+    nginx_ver="$(printf '%s\n' "$installed_packages" | awk '$1 == "nginx" { count++; if (NF == 2 && $2 ~ /^[0-9]+[.][0-9]+[.][0-9]+-r[0-9]+$/) version=$2 } END { if (count != 1 || version == "") exit 1; print version }')" \
+      || { echo 'BLOCKED: cannot determine unique installed NGINX version' >&2; exit 1; }; \
+    nginx_cmp="$(apk version -t "$nginx_ver" 1.30.7-r0)"; \
+    case "$nginx_cmp" in \
+      '='|'>') ;; *) echo "BLOCKED: vulnerable NGINX package: nginx-$nginx_ver" >&2; exit 1 ;; \
     esac; \
     nginx -v
 

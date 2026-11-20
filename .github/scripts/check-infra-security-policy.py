@@ -9,7 +9,7 @@ import re
 import sys
 
 UBUNTU = 'ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852'
-GO = 'golang:1.27.3-trixie@sha256:c65ecfe613b539ac74c62a4c3b2c27e8f8a6076384c8f27e8a3c0f3be17cc385'
+GO = 'golang:1.27.4-trixie@sha256:f18c3d73a184fb0582828510722e723b63a93f7188d11dd223d9be6f6880e65d'
 ENTRYPOINT = (
     'pgvector/pgvector:0.8.7-pg16-trixie@sha256:'
     '9cf8b511f0e9a2c209b61430fc139f1ab9c75edbb31fb1751db6617b246a897a'
@@ -51,6 +51,9 @@ def assert_policy(repo: Path) -> None:
     candidate = read('infra/postgres/noble-candidate/Dockerfile')
     for field in (f'ARG UBUNTU_IMAGE={UBUNTU}',
                   f'ARG GOSU_BUILDER_IMAGE={GO}',
+                  'export GOTOOLCHAIN=local;',
+                  'test "$(go env GOVERSION)" = go1.27.4;',
+                  'test "$(go version /out/gosu)" = \'/out/gosu: go1.27.4\';',
                   f'ARG ENTRYPOINT_SOURCE_IMAGE={ENTRYPOINT}',
                   '29b939aa5bd4dc588af765b8248f6e39150d2565',
                   'f37c13f68b57d2c3472b2214fbcff699d6d34876',
