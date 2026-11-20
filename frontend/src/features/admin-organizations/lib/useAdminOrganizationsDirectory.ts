@@ -295,8 +295,8 @@ export function useAdminOrganizationsDirectory() {
         totalOrganizations,
         totalMatched,
         query, type, status,
-        changeFilters: (nextQuery: string, nextType: string, nextStatus: string) =>
-            change({query: nextQuery.trim(), type: nextType, status: nextStatus, page: ''}),
+        changeFilters: (nextQuery: string, nextType: string, nextStatus: string, replace = false) =>
+            change({query: nextQuery.trim(), type: nextType, status: nextStatus, page: ''}, replace),
         setPage,
         requestReloadFromFirstPage,
         reloadCurrentPage,

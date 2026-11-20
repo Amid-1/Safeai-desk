@@ -149,6 +149,8 @@ async function getUsagePage<T>(
         page: normalizePage(page),
         size: normalizePageSize(size, 50, 100),
         order: filter.order,
+        organizationQuery: normalizeOptionalString(filter.organizationQuery),
+        usedOnly: filter.usedOnly,
         dateFrom: normalizeOptionalString(filter.dateFrom),
         dateTo: normalizeOptionalString(filter.dateTo),
         model: normalizeOptionalString(filter.model),

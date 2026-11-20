@@ -11,6 +11,7 @@ import ru.safeai.gateway.model.domain.ModelCapability;
 import ru.safeai.gateway.model.domain.ModelRouteDecision;
 import ru.safeai.gateway.model.domain.ModelRouteOutcome;
 import ru.safeai.gateway.model.domain.ModelRouteReason;
+import ru.safeai.gateway.model.dto.PlatformBudgetSummaryResponse;
 
 import java.math.BigDecimal;
 import java.sql.Array;
@@ -169,6 +170,53 @@ public class ModelRouteDecisionRepository {
                 snapshot,
                 "Monthly model cost aggregate must return exactly one row"
         );
+    }
+
+    /** Uses the immutable policy version referenced by the sealed decision, never the latest policy. */
+    public PlatformBudgetSummaryResponse loadPlatformBudgetSummary(Instant start, Instant end, Instant now) {
+        return Objects.requireNonNull(jdbc.queryForObject("""
+                with ledger as (
+                    select organization_id,
+                           coalesce(sum(actual_cost_usd) filter (where not carry_forward), 0)
+                             + coalesce(sum(reserved_cost_usd), 0) as committed,
+                           coalesce(sum(unknown_cost_count), 0) as unknown_count
+                    from public.model_cost_commitment_ledger_v62
+                    where carry_forward or (ledger_at >= ? and ledger_at < ?)
+                    group by organization_id
+                ), classified as (
+                    select o.enabled as organization_enabled,
+                           case
+                             when p.id is null then 'UNCONFIGURED'
+                             when not p.enabled then 'DISABLED'
+                             when p.monthly_budget_usd is null then 'NO_LIMIT'
+                             when coalesce(l.committed, 0) > p.monthly_budget_usd then 'EXCEEDED'
+                             when coalesce(l.unknown_count, 0) > 0 then 'UNKNOWN'
+                             when coalesce(l.committed, 0) >= p.monthly_budget_usd * 0.8 then 'NEAR'
+                             else 'WITHIN'
+                           end as state
+                    from public.organizations o
+                    left join lateral (
+                        select id, enabled, monthly_budget_usd
+                        from public.organization_model_policies
+                        where organization_id = o.id order by version desc limit 1
+                    ) p on true
+                    left join ledger l on l.organization_id = o.id
+                )
+                select count(*) as total,
+                       count(*) filter (where organization_enabled) as enabled,
+                       count(*) filter (where state = 'WITHIN') as within_count,
+                       count(*) filter (where state = 'NEAR') as near_count,
+                       count(*) filter (where state = 'EXCEEDED') as exceeded_count,
+                       count(*) filter (where state = 'NO_LIMIT') as no_limit_count,
+                       count(*) filter (where state = 'UNKNOWN') as unknown_count,
+                       count(*) filter (where state = 'DISABLED') as disabled_count,
+                       count(*) filter (where state = 'UNCONFIGURED') as unconfigured_count
+                from classified
+                """, (rs, row) -> new PlatformBudgetSummaryResponse(start, end, now,
+                rs.getLong("total"), rs.getLong("enabled"), rs.getLong("within_count"),
+                rs.getLong("near_count"), rs.getLong("exceeded_count"), rs.getLong("no_limit_count"),
+                rs.getLong("unknown_count"), rs.getLong("disabled_count"), rs.getLong("unconfigured_count")),
+                Timestamp.from(start), Timestamp.from(end)));
     }
 
     /** Uses the immutable policy version referenced by the sealed decision, never the latest policy. */

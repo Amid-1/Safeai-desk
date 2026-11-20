@@ -6,7 +6,8 @@ import { getOrganizations } from '../entities/organization/api/organizationApi'
 import { getUserStatistics } from '../entities/user/api/userApi'
 import { getRuntimeModelStatus, probeRuntimeModel } from '../entities/model/api/modelApi'
 import { createRuntimeModelStatus } from '../test/fixtures/modelControlPlaneTestFixtures'
-import { getUsageByOrganizations, getUsageDaily, parseUsageDailySummary, type UsageDailySummary } from '../features/usage/api/usageApi'
+import { getUsageByOrganizations, getUsageDaily, getOrganizationUsageDaily, parseUsageDailySummary, type UsageDailySummary } from '../features/usage/api/usageApi'
+import { getPlatformBudgetSummary } from '../features/usage/api/platformBudgetApi'
 import { parseUsageOrganizationSummary } from '../features/usage/api/usage/usageParsers'
 import AdminDashboardPage from './AdminDashboardPage'
 
@@ -14,8 +15,9 @@ vi.mock('../entities/organization/api/organizationApi', () => ({getOrganizations
 vi.mock('../entities/user/api/userApi', () => ({getUserStatistics: vi.fn()}))
 vi.mock('../entities/model/api/modelApi', () => ({getRuntimeModelStatus: vi.fn(), probeRuntimeModel: vi.fn()}))
 vi.mock('../features/usage/api/usageApi', async original => ({
-    ...await original<typeof import('../features/usage/api/usageApi')>(), getUsageDaily: vi.fn(), getUsageByOrganizations: vi.fn(),
+    ...await original<typeof import('../features/usage/api/usageApi')>(), getUsageDaily: vi.fn(), getUsageByOrganizations: vi.fn(), getOrganizationUsageDaily: vi.fn(),
 }))
+vi.mock('../features/usage/api/platformBudgetApi', () => ({getPlatformBudgetSummary: vi.fn()}))
 vi.mock('../features/usage/ui/UsageDailyChart', () => ({
     UsageDailyChart: ({rows}: {rows: UsageDailySummary[]}) => <div>Дней в графике: {rows.length}</div>,
 }))
@@ -42,6 +44,11 @@ describe('PlatformDashboard', () => {
         vi.mocked(getUserStatistics).mockResolvedValue({total: 42, administrators: 2, users: 40, enabled: 35, disabled: 7})
         vi.mocked(getRuntimeModelStatus).mockResolvedValue(createRuntimeModelStatus())
         vi.mocked(getUsageDaily).mockResolvedValue([day])
+        vi.mocked(getOrganizationUsageDaily).mockResolvedValue([day])
+        vi.mocked(getPlatformBudgetSummary).mockResolvedValue({
+            periodStart: '2026-11-01T00:00:00Z', periodEnd: '2026-12-01T00:00:00Z', asOf: '2026-11-20T00:00:00Z',
+            total: 17, enabled: 15, within: 1, nearLimit: 2, exceeded: 3, noLimit: 4, unknown: 1, disabled: 1, unconfigured: 5,
+        })
         vi.mocked(getUsageByOrganizations).mockResolvedValue({content: [org], page: 0, size: 5, totalElements: 17, totalPages: 4})
     })
     it('uses global server totals and a bounded ranking, exact cost and explicit diagnostic link', async () => {
@@ -76,5 +83,20 @@ describe('PlatformDashboard', () => {
         expect(screen.getByText('Дней в графике: 1')).toBeVisible()
         await waitFor(() => expect(getUsageByOrganizations).toHaveBeenCalledTimes(2))
         expect(getUserStatistics).toHaveBeenCalledTimes(2)
+    })
+    it('searches beyond the ranking with case preserved for server normalization and scopes only analytics', async () => {
+        open()
+        await screen.findByRole('link', {name: 'Компания A'})
+        vi.mocked(getUsageByOrganizations).mockResolvedValue({content: [org], page: 0, size: 10, totalElements: 1, totalPages: 1})
+        fireEvent.change(screen.getByRole('searchbox', {name: 'Поиск организаций'}), {target: {value: ' КОМ '}})
+        await waitFor(() => expect(getUsageByOrganizations).toHaveBeenLastCalledWith(0, 10,
+            expect.objectContaining({organizationQuery: 'КОМ', usedOnly: undefined}), expect.anything()))
+        await screen.findByRole('link', {name: 'Компания A'})
+        fireEvent.click(screen.getByRole('button', {name: 'Показать'}))
+        await waitFor(() => expect(getOrganizationUsageDaily).toHaveBeenCalledWith(org.organizationId, expect.anything(), expect.anything()))
+        expect(screen.getByRole('link', {name: 'Полный отчёт'})).toHaveAttribute('href', expect.stringContaining(org.organizationId))
+        expect(screen.getByText('От 80% до лимита')).toBeVisible()
+        fireEvent.click(screen.getByRole('button', {name: 'Все организации'}))
+        await waitFor(() => expect(getUsageDaily).toHaveBeenCalledTimes(2))
     })
 })

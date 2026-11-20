@@ -360,7 +360,7 @@ function AppLayout() {
 
                         {canAccessAdmin && (
                             <>
-                                {canAccessOrganizations && <NavLink to="/admin/dashboard" className={getNavLinkClass}>Dashboard</NavLink>}
+                                {canAccessOrganizations && <NavLink to="/admin/dashboard" className={getNavLinkClass}>Обзор</NavLink>}
                                 <NavLink
                                     to="/admin/users"
                                     className={getNavLinkClass}

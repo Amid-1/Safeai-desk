@@ -9,8 +9,13 @@ public record UsageQueryCriteria(
         Instant dateTo,
         UUID organizationId,
         UUID userId,
-        String model
+        String model,
+        String organizationQuery,
+        boolean usedOnly
 ) {
+    public UsageQueryCriteria(Instant dateFrom, Instant dateTo, UUID organizationId, UUID userId, String model) {
+        this(dateFrom, dateTo, organizationId, userId, model, null, false);
+    }
 
     public UsageQueryCriteria {
         Objects.requireNonNull(

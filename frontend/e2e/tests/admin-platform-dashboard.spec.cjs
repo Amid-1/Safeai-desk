@@ -29,7 +29,8 @@ async function mockDashboard(page, role) {
         toolsSupported: false, visionSupported: false, structuredOutputSupported: false, dataRetentionStatus: 'NOT_DECLARED',
         healthStatus: 'NOT_PROBED', pricingStatus: 'FREE', inputUsdPer1mTokens: '0', outputUsdPer1mTokens: '0', pricingVersion: 'mock-2026-01'}})
       case '/api/admin/usage/daily': return route.fulfill({json: [{...usage, usageDate: url.searchParams.get('dateFrom').slice(0, 10), aggregationZone: 'UTC'}]})
-      case '/api/admin/usage/organizations': return route.fulfill({json: {page: 0, size: 5, first: true, last: true,
+      case '/api/admin/models/policies/budget-summary': return route.fulfill({json: {periodStart: '2026-11-01T00:00:00Z', periodEnd: '2026-12-01T00:00:00Z', asOf: '2026-11-20T00:00:00Z', total: 17, enabled: 15, within: 1, nearLimit: 2, exceeded: 3, noLimit: 4, unknown: 1, disabled: 1, unconfigured: 5}})
+      case '/api/admin/usage/organizations': return route.fulfill({json: {page: 0, size: Number(url.searchParams.get('size')), first: true, last: true,
         hasNext: false, hasPrevious: false, content: [{...usage, organizationId: orgId, organizationName: 'Demo Company'}]}})
       default: return route.fulfill({status: 404, json: {message: 'Not found'}})
     }
@@ -42,11 +43,16 @@ for (const [width, height] of [[1280, 720], [390, 844]]) {
     await page.setViewportSize({width, height})
     const requests = await mockDashboard(page, 'SUPER_ADMIN')
     await page.goto('/admin/dashboard')
-    await expect(page.getByRole('heading', {name: 'Dashboard платформы'})).toBeVisible()
+    await expect(page.getByRole('heading', {name: 'Обзор платформы'})).toBeVisible()
     await expect(page.getByRole('region', {name: 'Организации', exact: true})).toContainText('17')
     await expect(page.getByRole('region', {name: 'Пользователи'})).toContainText('42')
     const chart = page.getByRole('region', {name: 'График использования AI по дням'})
     await expect(chart.locator('svg.recharts-surface').first()).toBeVisible()
+    const plot = chart.locator('.usage-chart-viewport')
+    const originalHeight = (await plot.boundingBox()).height
+    await chart.getByRole('button', {name: 'Развернуть график'}).click()
+    await expect.poll(async () => (await plot.boundingBox()).height).toBeGreaterThan(originalHeight)
+    await chart.getByRole('button', {name: 'Свернуть график'}).click()
     const rank = page.getByRole('region', {name: 'Организации по подтверждённым токенам'})
     await expect(rank.getByRole('link', {name: 'Demo Company'})).toHaveAttribute('href', new RegExp('organizationId=' + orgId))
     expect(requests.find(r => r.path === '/api/admin/usage/organizations').query.get('size')).toBe('5')
@@ -81,6 +87,6 @@ test('tenant administrator cannot open dashboard or request platform aggregates'
   const requests = await mockDashboard(page, 'ADMIN')
   await page.goto('/admin/dashboard')
   await expect(page.getByRole('alert')).toContainText('Недостаточно прав')
-  await expect(page.getByRole('link', {name: 'Dashboard'})).toHaveCount(0)
+  await expect(page.getByRole('link', {name: 'Обзор'})).toHaveCount(0)
   expect(requests.filter(r => !r.path.startsWith('/api/auth/'))).toHaveLength(0)
 })

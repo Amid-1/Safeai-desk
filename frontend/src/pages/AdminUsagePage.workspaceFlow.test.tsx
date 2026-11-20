@@ -249,7 +249,7 @@ describe('Usage dashboard', () => {
         expect(screen.getByText('0%')).toBeVisible()
         expect(screen.queryByText('100%')).not.toBeInTheDocument()
         expect(screen.queryByText('0 USD')).not.toBeInTheDocument()
-        expect(screen.getByText('0 из 1 дней с полным учётом токенов и цены')).toBeVisible()
+        expect(screen.getByText('0 из 1 дней с записями · полный учёт токенов и цены')).toBeVisible()
     })
     it('does not replace unavailable global totals with the loaded page', () => {
         vi.mocked(useAdminUsageReport).mockReturnValue({...fixture, hasNext: true,

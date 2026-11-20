@@ -12,6 +12,9 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.model.service.OrganizationBudgetStatusService;
+import ru.safeai.gateway.model.service.OrganizationModelPolicyService;
+import ru.safeai.gateway.model.domain.BudgetEnforcement;
+import ru.safeai.gateway.model.dto.CreateOrganizationModelPolicyVersionRequest;
 import ru.safeai.gateway.usage.dto.UsageOrganizationSummaryResponse;
 import ru.safeai.gateway.usage.testsupport.UsagePostgresIntegrationTestSupport;
 
@@ -31,6 +34,9 @@ class UsageOrganizationComparisonIntegrationTest extends UsagePostgresIntegratio
 
     @Autowired
     private OrganizationBudgetStatusService budgetStatus;
+
+    @Autowired
+    private OrganizationModelPolicyService policyService;
 
     @Test
     @WithMockUser(roles = "SUPER_ADMIN")
@@ -55,6 +61,8 @@ class UsageOrganizationComparisonIntegrationTest extends UsagePostgresIntegratio
                 java.util.List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
         assertThatThrownBy(() -> budgetStatus.current(ORGANIZATION_B_ID, principal))
                 .isInstanceOf(ForbiddenOperationException.class);
+        assertThatThrownBy(() -> budgetStatus.platformSummary(principal))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
     }
 
     @Test
@@ -88,6 +96,41 @@ class UsageOrganizationComparisonIntegrationTest extends UsagePostgresIntegratio
         var inactiveB = row(onlyA, ORGANIZATION_B_ID);
         assertThat(inactiveB.responses().assistantMessages()).isZero();
         assertThat(inactiveB.cost().knownCostUsd()).isNull();
+        var used = new UsageQueryCriteria(RANGE_FROM, RANGE_TO, null, null, "comparison", null, true);
+        assertThat(repository.findOrganizations(used, plan, PAGEABLE).getContent())
+                .extracting(UsageOrganizationSummaryResponse::organizationId)
+                .containsExactlyInAnyOrder(ORGANIZATION_A_ID, ORGANIZATION_B_ID);
+        var name = b.organizationName();
+        var search = new UsageQueryCriteria(RANGE_FROM, RANGE_TO, null, USER_A_ID, "comparison",
+                name.toUpperCase(java.util.Locale.ROOT), false);
+        assertThat(repository.findOrganizations(search, plan, PAGEABLE).getContent())
+                .extracting(UsageOrganizationSummaryResponse::organizationId).contains(ORGANIZATION_B_ID);
+    }
+
+    @Test
+    @WithMockUser(roles = "SUPER_ADMIN")
+    void platformBudgetSummaryCountsAllOrganizationsEvenWithoutUsage() {
+        var principal = SafeAiUserPrincipal.accessTokenPrincipal(USER_A_ID, ORGANIZATION_A_ID, 0, 0,
+                java.util.List.of(new SimpleGrantedAuthority("ROLE_SUPER_ADMIN")));
+        var summary = budgetStatus.platformSummary(principal);
+        assertThat(summary.total()).isGreaterThanOrEqualTo(2);
+        assertThat(summary.unconfigured()).isGreaterThanOrEqualTo(1);
+        assertThat(summary.asOf()).isBetween(summary.periodStart(), summary.periodEnd());
+        assertThat(summary.within() + summary.nearLimit() + summary.exceeded() + summary.noLimit()
+                + summary.unknown() + summary.disabled() + summary.unconfigured()).isEqualTo(summary.total());
+        policyService.createVersion(ORGANIZATION_B_ID, new CreateOrganizationModelPolicyVersionRequest(
+                0, true, java.util.Set.of(), java.util.Set.of(), null, null, null, null,
+                BigDecimal.ZERO, BudgetEnforcement.SOFT, false, false, false), principal);
+        var after = budgetStatus.platformSummary(principal);
+        assertThat(after.total()).isEqualTo(summary.total());
+        assertThat(after.unconfigured()).isEqualTo(summary.unconfigured() - 1);
+        assertThat(after.nearLimit()).isEqualTo(summary.nearLimit() + 1);
+        policyService.createVersion(ORGANIZATION_B_ID, new CreateOrganizationModelPolicyVersionRequest(
+                1, true, java.util.Set.of(), java.util.Set.of(), null, null, null, null,
+                null, BudgetEnforcement.SOFT, false, false, false), principal);
+        var unlimited = budgetStatus.platformSummary(principal);
+        assertThat(unlimited.nearLimit()).isEqualTo(summary.nearLimit());
+        assertThat(unlimited.noLimit()).isEqualTo(summary.noLimit() + 1);
     }
 
     private UsageOrganizationSummaryResponse row(

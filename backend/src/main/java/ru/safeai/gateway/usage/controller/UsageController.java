@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.usage.dto.PagedResponse;
@@ -63,11 +64,18 @@ public class UsageController {
     public PagedResponse<UsageOrganizationSummaryResponse> organizations(
             @Valid @ModelAttribute UsageDateModelFilter filter,
             @Valid @ModelAttribute UsagePageRequest pageRequest,
+            @RequestParam(required = false) String organizationQuery,
+            @RequestParam(defaultValue = "false") boolean usedOnly,
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
+        if (organizationQuery == null && !usedOnly) {
+            return PagedResponse.from(usageQueryService.getUsageByOrganizations(
+                    filter.dateFrom(), filter.dateTo(), filter.normalizedModel(), filter.userId(),
+                    pageRequest.toPageable(), currentUser));
+        }
         return PagedResponse.from(usageQueryService.getUsageByOrganizations(
                 filter.dateFrom(), filter.dateTo(), filter.normalizedModel(), filter.userId(),
-                pageRequest.toPageable(), currentUser));
+                pageRequest.toPageable(), currentUser, organizationQuery, usedOnly));
     }
 
     @GetMapping("/users")

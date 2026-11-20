@@ -25,7 +25,7 @@ const platform: Organization = {
     name: 'SafeAI Platform', type: 'PLATFORM', protected: true,
 }
 
-function renderView(options: { rows?: Organization[], page?: number, pages?: number, total?: number, createResult?: boolean } = {}) {
+function renderView(options: { rows?: Organization[], page?: number, pages?: number, total?: number, createResult?: boolean, search?: boolean } = {}) {
     const onDisable = vi.fn(async () => {})
     const onEnable = vi.fn()
     const onDetails = vi.fn(async () => {})
@@ -33,6 +33,7 @@ function renderView(options: { rows?: Organization[], page?: number, pages?: num
     const onPageChange = vi.fn()
     const onNameChange = vi.fn()
     const onCreate = vi.fn(async () => options.createResult ?? true)
+    const onFiltersChange = vi.fn()
     function Harness() {
         const [name, setName] = useState('')
         return <AdminOrganizationsView
@@ -45,15 +46,26 @@ function renderView(options: { rows?: Organization[], page?: number, pages?: num
         onNameChange={value => { setName(value); onNameChange(value) }} onCreate={onCreate}
         onReload={vi.fn()} onDetails={onDetails} onRename={onRename}
         onDisable={onDisable} onEnable={onEnable} onPageChange={onPageChange}
+        onFiltersChange={options.search ? onFiltersChange : undefined}
     />
     }
     render(<Harness />)
-    return { onDisable, onEnable, onDetails, onRename, onPageChange, onCreate, onNameChange }
+    return { onDisable, onEnable, onDetails, onRename, onPageChange, onCreate, onNameChange, onFiltersChange }
 }
 
 beforeEach(() => { vi.restoreAllMocks() })
 
 describe('AdminOrganizationsView: readable UI and protected actions', () => {
+    it('debounces from the first character and cancels a scheduled search on submit', async () => {
+        const actions = renderView({search: true})
+        const input = screen.getByRole('searchbox', {name: 'Название'})
+        fireEvent.change(input, {target: {value: 'Р'}})
+        await waitFor(() => expect(actions.onFiltersChange).toHaveBeenCalledWith('Р', '', '', true))
+        fireEvent.change(input, {target: {value: ' РОМ '}})
+        fireEvent.click(screen.getByRole('button', {name: 'Найти'}))
+        expect(actions.onFiltersChange).toHaveBeenLastCalledWith('РОМ', '', '')
+        expect(actions.onFiltersChange).toHaveBeenCalledTimes(2)
+    })
     it('explains creation defaults without offering editable system type or initial status', () => {
         renderView({ rows: [customer] })
         expect(screen.queryByLabelText('Название организации')).toBeNull()

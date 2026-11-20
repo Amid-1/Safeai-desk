@@ -7,6 +7,8 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.model.dto.OrganizationBudgetStatusResponse;
 import ru.safeai.gateway.model.dto.OrganizationModelPolicyResponse;
+import ru.safeai.gateway.model.dto.PlatformBudgetSummaryResponse;
+import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.model.repository.ModelRouteDecisionRepository;
 
 import java.time.Clock;
@@ -41,5 +43,18 @@ public class OrganizationBudgetStatusService {
         return OrganizationBudgetStatusResponse.from(policy,
                 decisions.loadCommittedMonthlyCostSnapshot(policy.organizationId(), start, end),
                 start, end, now);
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    public PlatformBudgetSummaryResponse platformSummary(SafeAiUserPrincipal principal) {
+        if (principal == null || principal.getAuthorities().stream()
+                .noneMatch(authority -> "ROLE_SUPER_ADMIN".equals(authority.getAuthority()))) {
+            throw new ForbiddenOperationException("Сводка бюджетов платформы недоступна");
+        }
+        Instant now = clock.instant();
+        YearMonth month = YearMonth.from(now.atZone(ZoneOffset.UTC));
+        return decisions.loadPlatformBudgetSummary(month.atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant(),
+                month.plusMonths(1).atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant(), now);
     }
 }

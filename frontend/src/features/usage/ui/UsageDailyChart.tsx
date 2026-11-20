@@ -8,7 +8,7 @@ import { compactTick } from './usageBreakdownChartData'
 
 export type UsageDailyMetric = 'tokens' | 'total' | 'cost' | 'responses' | 'coverage'
 
-export function UsageDailyChart({ rows, dateFrom, dateTo, metric, onMetricChange, onInspectRange, compactPeriodPicker = false }: {
+export function UsageDailyChart({ rows, dateFrom, dateTo, metric, onMetricChange, onInspectRange, compactPeriodPicker = false, expandable = false }: {
     rows: UsageDailySummary[]
     dateFrom?: string
     dateTo?: string
@@ -16,9 +16,11 @@ export function UsageDailyChart({ rows, dateFrom, dateTo, metric, onMetricChange
     onMetricChange: (value: UsageDailyMetric) => void
     onInspectRange?: (from: string, to: string) => void
     compactPeriodPicker?: boolean
+    expandable?: boolean
 }) {
     const [grouping, setGrouping] = useState<DailyGrouping>('day')
     const [zoom, setZoom] = useState(1)
+    const [expanded, setExpanded] = useState(false)
     const data = useMemo(() => buildDailySeries(rows, dateFrom, dateTo, grouping), [rows, dateFrom, dateTo, grouping])
     const allCostsKnown = rows.every(row => row.costUsd !== null && row.coverage.pricingComplete === true)
     const unavailable = data.some(row => metric === 'cost' ? row.exactCost !== null && row.cost === null
@@ -31,7 +33,7 @@ export function UsageDailyChart({ rows, dateFrom, dateTo, metric, onMetricChange
         if (entry) onInspectRange?.(entry.start, entry.end)
     }
     return (
-        <section className="usage-chart-card" aria-label="График использования AI по дням">
+        <section className={`usage-chart-card${expanded ? ' usage-chart-card--dashboard-expanded' : ''}`} aria-label="График использования AI по дням">
             <div className="usage-chart-heading">
                 <div>
                     <h3>Динамика {grouping === 'day' ? 'по дням' : grouping === 'week' ? 'по неделям' : 'по месяцам'} UTC</h3>
@@ -58,6 +60,10 @@ export function UsageDailyChart({ rows, dateFrom, dateTo, metric, onMetricChange
                         <option value={1}>1×</option><option value={2}>2×</option><option value={4}>4×</option>
                     </select>
                 </label>
+                {expandable && <button type="button" className="secondary-button" aria-expanded={expanded}
+                    aria-controls="usage-daily-chart-content" onClick={() => setExpanded(value => !value)}>
+                    {expanded ? 'Свернуть график' : 'Развернуть график'}
+                </button>}
                 </div>
             </div>
             <div id="usage-daily-chart-content">

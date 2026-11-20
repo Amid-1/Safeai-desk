@@ -441,7 +441,7 @@ describe(
             renderAt('/admin/dashboard')
             expect(await screen.findByRole('alert')).toHaveTextContent('Недостаточно прав')
             expect(screen.queryByTestId('admin-dashboard-page')).not.toBeInTheDocument()
-            expect(screen.queryByRole('link', {name: 'Dashboard'})).not.toBeInTheDocument()
+            expect(screen.queryByRole('link', {name: 'Обзор'})).not.toBeInTheDocument()
         })
 
         it(

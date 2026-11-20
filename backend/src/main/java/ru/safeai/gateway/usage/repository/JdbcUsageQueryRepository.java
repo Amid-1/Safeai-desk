@@ -48,14 +48,28 @@ public class JdbcUsageQueryRepository implements UsageQueryRepository {
         UsageFactSql facts = factQueryBuilder.organizationFacts(criteria, plan, false, true);
         MapSqlParameterSource parameters = facts.parameters();
         addPage(parameters, pageable);
+        String where = "";
+        String relevance = "";
+        if (criteria.organizationQuery() != null) {
+            String query = criteria.organizationQuery().toLowerCase(java.util.Locale.ROOT);
+            String literal = query.replace("!", "!!").replace("%", "!%").replace("_", "!_");
+            parameters.addValue("orgExact", query).addValue("orgPrefix", literal + "%")
+                    .addValue("orgContains", "%" + literal + "%");
+            where = " where lower(o.name) like :orgContains escape '!' ";
+            relevance = "case when lower(o.name) = :orgExact then 0 when lower(o.name) like :orgPrefix escape '!' then 1 else 2 end, ";
+        }
+        String having = criteria.usedOnly()
+                ? " having coalesce(sum(input_tokens), 0) + coalesce(sum(output_tokens), 0) > 0 " : "";
         String sql = facts.cte() + """
                 select o.id as organization_id, o.name as organization_name,
                 """ + AGGREGATE_COLUMNS + """
                 from public.organizations o
                 left join facts on facts.organization_id = o.id
+                """ + where + """
                 group by o.id, o.name
+                """ + having + """
                 order by
-                """ + reportOrder(pageable, "known_cost_usd desc", "o.id asc") + """
+                """ + relevance + reportOrder(pageable, "known_cost_usd desc", "o.id asc") + """
 
                 limit :limit offset :offset
                 """;

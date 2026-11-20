@@ -40,7 +40,7 @@ export function UsageKpis({ rows, tab, hasMore = true, appliedModel, dailyTotals
                     <span className="usage-kpi__label">Полнота учёта</span>
                     <strong className="usage-kpi__value">{sum.rowCount ? `${Math.floor(sum.completeRows * 100 / sum.rowCount)}%` : '—'}</strong>
                     <small className="usage-kpi__hint">{sum.rowCount
-                        ? `${sum.completeRows} из ${sum.rowCount} ${dailyTotals ? 'дней' : 'строк'} с полным учётом токенов и цены`
+                        ? `${sum.completeRows} из ${sum.rowCount} ${dailyTotals ? 'дней с записями' : 'строк'} · полный учёт токенов и цены`
                         : 'Нет данных отчёта'}</small>
                 </div>
             </div>

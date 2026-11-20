@@ -1,7 +1,7 @@
 // frontend/src/features/usage/controller/useDashboardResource.ts
 import { useEffect, useState } from 'react'
 
-type Resource<T> = { key: string; data?: T; failed?: boolean }
+type Resource<T> = { key: string; data?: T; failed?: boolean; loadedAt?: Date }
 
 /** Never show data from a previous filter, or commit a superseded response. */
 export function useDashboardResource<T>(key: string, load: (signal: AbortSignal) => Promise<T>) {
@@ -11,12 +11,12 @@ export function useDashboardResource<T>(key: string, load: (signal: AbortSignal)
     useEffect(() => {
         const controller = new AbortController()
         void load(controller.signal).then(
-            data => { if (!controller.signal.aborted) setResult({key: requestKey, data}) },
+            data => { if (!controller.signal.aborted) setResult({key: requestKey, data, loadedAt: new Date()}) },
             () => { if (!controller.signal.aborted) setResult({key: requestKey, failed: true}) },
         )
         return () => controller.abort()
     }, [load, requestKey])
     const current = result?.key === requestKey ? result : undefined
-    return {data: current?.data, failed: current?.failed === true, loading: !current,
+    return {data: current?.data, loadedAt: current?.loadedAt, failed: current?.failed === true, loading: !current,
         retry: () => setAttempt(value => value + 1)}
 }

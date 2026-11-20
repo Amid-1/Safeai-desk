@@ -80,14 +80,27 @@ public class UsageQueryService {
             Instant dateFrom, Instant dateTo, String model, UUID userId,
             Pageable pageable, SafeAiUserPrincipal currentUser
     ) {
+        return getUsageByOrganizations(dateFrom, dateTo, model, userId, pageable, currentUser, null, false);
+    }
+
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    public Slice<UsageOrganizationSummaryResponse> getUsageByOrganizations(
+            Instant dateFrom, Instant dateTo, String model, UUID userId,
+            Pageable pageable, SafeAiUserPrincipal currentUser, String organizationQuery, boolean usedOnly
+    ) {
         requireCurrentUser(currentUser);
         if (!isSuperAdmin(currentUser)) {
             throw new ForbiddenOperationException("Сравнение организаций недоступно");
         }
         requirePageable(pageable);
         UsageDateRange range = normalizeRange(dateFrom, dateTo);
+        if (organizationQuery != null && (organizationQuery.length() > 255
+                || organizationQuery.chars().anyMatch(Character::isISOControl))) {
+            throw new BadRequestException("Некорректная строка поиска организаций");
+        }
+        String query = organizationQuery == null || organizationQuery.isBlank() ? null : organizationQuery.strip();
         UsageQueryCriteria criteria = new UsageQueryCriteria(
-                range.from(), range.to(), null, userId, normalizeModel(model));
+                range.from(), range.to(), null, userId, normalizeModel(model), query, usedOnly);
         return reportExecutor.execute("organizations", () ->
                 usageQueryRepository.findOrganizations(criteria, buildPlan(range), pageable));
     }

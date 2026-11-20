@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.model.dto.OrganizationBudgetStatusResponse;
+import ru.safeai.gateway.model.dto.PlatformBudgetSummaryResponse;
 import ru.safeai.gateway.model.service.OrganizationBudgetStatusService;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ObjectNode;
@@ -24,6 +25,14 @@ public class OrganizationBudgetStatusController {
     public OrganizationBudgetStatusController(OrganizationBudgetStatusService service, JsonMapper mapper) {
         this.service = service;
         this.mapper = mapper;
+    }
+
+    @GetMapping("/budget-summary")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    public PlatformBudgetSummaryResponse platformSummary(
+            @AuthenticationPrincipal(errorOnInvalidType = true) SafeAiUserPrincipal currentUser
+    ) {
+        return service.platformSummary(currentUser);
     }
 
     @GetMapping("/{organizationId}/budget-status")

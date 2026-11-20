@@ -14,6 +14,8 @@ export type UsageSummaryFilter =
     UsageDateRangeFilter & {
         model?: string
         userId?: string
+        organizationQuery?: string
+        usedOnly?: boolean
         order?: 'tokens' | 'total' | 'cost' | 'responses' | 'coverage'
     }
 

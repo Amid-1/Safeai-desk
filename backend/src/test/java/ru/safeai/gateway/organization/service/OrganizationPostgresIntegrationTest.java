@@ -88,6 +88,17 @@ class OrganizationPostgresIntegrationTest
     }
 
     @Test
+    void ranksExactThenPrefixThenSubstringRegardlessOfCase() {
+        UUID exact = UUID.randomUUID(), prefix = UUID.randomUUID(), contains = UUID.randomUUID();
+        insertOrganization(contains, "ООО Сокол", true);
+        insertOrganization(prefix, "Сокол Сервис", true);
+        insertOrganization(exact, "Сокол", true);
+        var page = organizationService.search(superAdminPrincipal(), " СОКОЛ ", null, null,
+                org.springframework.data.domain.PageRequest.of(0, 10));
+        assertThat(page.getContent()).extracting(OrganizationResponse::id).containsExactly(exact, prefix, contains);
+    }
+
+    @Test
     void createReturnsCompleteDatabaseBackedContract() {
         OrganizationResponse response =
                 organizationService.create(

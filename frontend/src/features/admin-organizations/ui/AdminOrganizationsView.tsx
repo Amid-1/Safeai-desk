@@ -1,5 +1,5 @@
 // frontend/src/features/admin-organizations/ui/AdminOrganizationsView.tsx
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Organization } from '../../../entities/organization/api/organizationApi'
 import Modal from '../../../shared/ui/Modal'
 import { formatDateTime } from '../../../shared/lib/format'
@@ -52,7 +52,7 @@ type AdminOrganizationsViewProps = {
     query?: string
     type?: string
     status?: string
-    onFiltersChange?: (query: string, type: string, status: string) => void
+    onFiltersChange?: (query: string, type: string, status: string, replace?: boolean) => void
     name: string
     detailsLoadingId: string | null
     impactLoadingId: string | null
@@ -81,6 +81,19 @@ export function AdminOrganizationsView({
     const visibleTotal = loading || loadError ? null : totalOrganizations
     const [searchDraft, setSearchDraft] = useState(query)
     useEffect(() => {setSearchDraft(query)}, [query])
+    const filterCallback = useRef(onFiltersChange)
+    const searchTimer = useRef<number | undefined>(undefined)
+    useEffect(() => {filterCallback.current = onFiltersChange}, [onFiltersChange])
+    useEffect(() => {
+        if (searchDraft.trim() === query) return
+        const timer = window.setTimeout(() => filterCallback.current?.(searchDraft.trim(), type, status, true), 300)
+        searchTimer.current = timer
+        return () => window.clearTimeout(timer)
+    }, [searchDraft, query, type, status])
+    function applyFilters(nextQuery: string, nextType: string, nextStatus: string) {
+        window.clearTimeout(searchTimer.current)
+        onFiltersChange?.(nextQuery.trim(), nextType, nextStatus)
+    }
 
     function closeCreate() {
         if (creating) return
@@ -110,25 +123,25 @@ export function AdminOrganizationsView({
             {success && <div className="success" role="status" aria-live="polite">{success}</div>}
 
             {onFiltersChange && <form className="organization-directory-filter" role="search"
-                onSubmit={event => {event.preventDefault(); onFiltersChange(searchDraft, type, status)}}>
+                onSubmit={event => {event.preventDefault(); applyFilters(searchDraft, type, status)}}>
                 <label htmlFor="organizations-query">Название</label>
                 <input id="organizations-query" type="search" maxLength={255} value={searchDraft}
                     onChange={event => setSearchDraft(event.target.value)} placeholder="Поиск по названию" />
                 <label htmlFor="organizations-type">Тип</label>
                 <select id="organizations-type" value={type}
-                    onChange={event => onFiltersChange(searchDraft, event.target.value, status)}>
+                    onChange={event => applyFilters(searchDraft, event.target.value, status)}>
                     <option value="">Все типы</option><option value="PLATFORM">Системная</option>
                     <option value="TENANT">Клиентская</option>
                 </select>
                 <label htmlFor="organizations-status">Статус</label>
                 <select id="organizations-status" value={status}
-                    onChange={event => onFiltersChange(searchDraft, type, event.target.value)}>
+                    onChange={event => applyFilters(searchDraft, type, event.target.value)}>
                     <option value="">Все статусы</option><option value="ACTIVE">Включённые</option>
                     <option value="DISABLED">Отключённые</option>
                 </select>
                 <button type="submit">Найти</button>
                 <button type="button" className="secondary-button" onClick={() => {
-                    setSearchDraft(''); onFiltersChange('', '', '')
+                    setSearchDraft(''); applyFilters('', '', '')
                 }}>Сбросить</button>
                 <span>Найдено: {loading || loadError ? '—' : totalMatched ?? '—'}</span>
             </form>}
