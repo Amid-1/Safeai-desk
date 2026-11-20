@@ -14,6 +14,10 @@ import { useAdminAuditController } from './useAdminAuditController'
 vi.mock('../../auth/state/useAuth', () => ({ useAuth: vi.fn() }))
 vi.mock('../hooks/useAuditDirectories', () => ({ default: vi.fn() }))
 vi.mock('../hooks/useAuditEvents', () => ({ default: vi.fn() }))
+vi.mock('../hooks/useAuditSummary', () => ({ useAuditSummary: () => ({
+    summary: { total: 159, successful: 50, denied: 2, critical: 0 },
+    summaryLoading: false, summaryError: '',
+}) }))
 
 const authMock = vi.mocked(useAuth)
 const directoriesMock = vi.mocked(useAuditDirectories)
@@ -56,6 +60,26 @@ beforeEach(() => {
 })
 
 describe('useAdminAuditController — контракты фильтров', () => {
+    it('применяет серверный фильтр карточки и сбрасывает страницу', async () => {
+        window.history.replaceState({}, '', '/admin/audit?page=2')
+        const { result, rerender } = renderHook(useAdminAuditController)
+        act(() => result.current.selectAuditMetric('DENIED'))
+        expect(eventsMock).toHaveBeenLastCalledWith(expect.objectContaining({
+            page: 0, filter: expect.objectContaining({ metric: 'DENIED' }),
+        }))
+        expect(window.location.search).toContain('metric=DENIED')
+        const data = eventsMock.mock.results.at(-1)!.value
+        eventsMock.mockReturnValue({ ...data, loading: true })
+        rerender()
+        eventsMock.mockReturnValue({ ...data, loading: false })
+        rerender()
+        await waitFor(() => expect(result.current.effectiveLoading).toBe(false))
+        act(() => result.current.selectAuditCategory('SECURITY'))
+        expect(eventsMock).toHaveBeenLastCalledWith(expect.objectContaining({
+            page: 0, filter: expect.objectContaining({ category: 'SECURITY' }),
+        }))
+        expect(window.location.search).not.toContain('metric=')
+    })
     it('игнорирует целевую организацию из URL для обычного ADMIN', () => {
         window.history.replaceState({}, '', `/admin/audit?targetOrganizationId=${OTHER_ID}&page=2`)
         const { result } = renderHook(useAdminAuditController)

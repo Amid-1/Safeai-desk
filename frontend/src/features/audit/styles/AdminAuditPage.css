@@ -43,6 +43,32 @@
 
 .audit-page > .audit-page__upper { height: 100%; }
 
+.audit-investigation {
+    flex: 0 0 auto;
+    background: #fff;
+    border: 1px solid #d5dfef;
+    border-radius: 16px;
+    padding: 14px 18px;
+}
+.audit-investigation__heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
+.audit-investigation__heading h2 { margin: 0; font-size: 1.15rem; }
+.audit-investigation__cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.audit-summary-card { position: relative; display: grid; gap: 4px; text-align: left; padding: 10px 13px; min-width: 0; border: 1px solid #d5dfef; border-radius: 11px; font: inherit; cursor: pointer; background: #f1f6ff; color: #184bba; }
+.audit-summary-card strong { font-size: 1.55rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.audit-summary-card--success { background: #edf9f2; color: #166534; }
+.audit-summary-card--warning { background: #fff8e6; color: #854d0e; }
+.audit-summary-card--danger { background: #fff0f0; color: #a61b2b; }
+.audit-summary-card__arrow { position: absolute; right: 10px; bottom: 10px; }
+.audit-summary-card[aria-pressed="true"] { outline: 2px solid currentColor; outline-offset: -2px; }
+.audit-investigation__categories { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+.audit-investigation__categories button { font: inherit; font-weight: 600; color: #304564; background: #f3f6fa; border: 1px solid #d5dfef; border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+.audit-investigation__categories button[aria-pressed="true"] { background: #2357dc; color: white; border-color: #2357dc; }
+.audit-investigation button:disabled { cursor: not-allowed; opacity: .7; }
+.audit-investigation button:focus-visible { outline: 3px solid #275ded; outline-offset: 2px; }
+.audit-investigation__hint { margin: 9px 0 0; font-size: .82rem; }
+.audit-investigation__error { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+@media (max-width: 760px) { .audit-investigation__cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
 /* ============================================================
    HERO
    ============================================================ */

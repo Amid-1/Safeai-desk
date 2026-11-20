@@ -2,6 +2,7 @@
 import {
     createRecentDateRange,
 } from '../../../shared/lib/date'
+import type { AuditCategory, AuditMetric } from '../api/adminAuditApi'
 
 export type DatePreset =
     | 'today'
@@ -13,6 +14,8 @@ export type DatePreset =
 
 export type AuditDraftFilter = {
     eventType: string
+    category?: AuditCategory
+    metric?: AuditMetric
 
     actorUserId: string
     actorEmail: string
@@ -52,6 +55,8 @@ export function auditDraftFiltersEqual(
 ): boolean {
     return first.eventType
         === second.eventType
+        && first.category === second.category
+        && first.metric === second.metric
         && first.actorUserId
             === second.actorUserId
         && first.actorEmail

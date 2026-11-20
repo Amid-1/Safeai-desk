@@ -5,24 +5,15 @@
 
 import { API_TIMEOUTS, apiRequest } from '../../../../shared/api/http'
 import { buildQueryString, normalizePage, normalizePageSize, uuidPathSegment } from '../../../../shared/api/query'
-import { contractError, parsePageResponse } from '../../../../shared/api/runtime'
+import { contractError, expectRecord, parsePageResponse } from '../../../../shared/api/runtime'
 import type { PageResponse } from '../../../../shared/lib/page'
-import type { RequestOptions, AuditEventFilter, AuditEvent, AuditActorDirectoryItem, AuditTargetOrganizationDirectoryItem } from './auditTypes'
+import type { RequestOptions, AuditEventFilter, AuditEvent, AuditActorDirectoryItem, AuditTargetOrganizationDirectoryItem, AuditSummary } from './auditTypes'
 import { parseAuditEvent, parseAuditEventType, parseAuditActorDirectoryItem, parseAuditTargetOrganizationDirectoryItem } from './auditParsers'
 
-export async function getAuditEvents(
-    page = 0,
-    size = 50,
-    filter: AuditEventFilter = {},
-    options: RequestOptions = {},
-): Promise<PageResponse<AuditEvent>> {
-    const query = buildQueryString({
-        page: normalizePage(page),
-        size: normalizePageSize(
-            size,
-            50,
-            100,
-        ),
+function auditFilterParams(filter: AuditEventFilter) {
+    return {
+        category: filter.category,
+        metric: filter.metric,
         eventType:
             normalizeOptionalString(
                 filter.eventType,
@@ -55,6 +46,15 @@ export async function getAuditEvents(
             normalizeOptionalString(
                 filter.dateTo,
             ),
+    }
+}
+
+export async function getAuditEvents(
+    page = 0, size = 50, filter: AuditEventFilter = {}, options: RequestOptions = {},
+): Promise<PageResponse<AuditEvent>> {
+    const query = buildQueryString({
+        page: normalizePage(page), size: normalizePageSize(size, 50, 100),
+        ...auditFilterParams(filter),
     })
 
     const response = await apiRequest<unknown>(
@@ -70,6 +70,26 @@ export async function getAuditEvents(
         response,
         parseAuditEvent,
     )
+}
+
+export async function getAuditSummary(filter: AuditEventFilter, options: RequestOptions = {}): Promise<AuditSummary> {
+    const query = buildQueryString(auditFilterParams({ ...filter, metric: undefined }))
+    const response = expectRecord(await apiRequest<unknown>(`/api/admin/audit-events/summary${query}`, {
+        method: 'GET', signal: options.signal, timeoutMs: API_TIMEOUTS.report,
+    }), 'auditSummary')
+    function count(key: keyof AuditSummary): number {
+        const value = response[key]
+        if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+            throw contractError('Недопустимый счётчик: ' + key)
+        }
+        return value
+    }
+    const result = { total: count('total'), successful: count('successful'), denied: count('denied'), critical: count('critical') }
+    if (result.successful > result.total || result.denied > result.total || result.critical > result.total
+        || result.successful > result.total - result.denied) {
+        throw contractError('Несогласованные счётчики аудита')
+    }
+    return result
 }
 
 export async function getAuditEventTypes(

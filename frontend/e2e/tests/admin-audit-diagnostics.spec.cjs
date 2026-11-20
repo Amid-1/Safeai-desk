@@ -41,8 +41,10 @@ test.beforeEach(async ({ page }) => {
       case '/api/auth/csrf': return route.fulfill({ status: 204, headers: { 'set-cookie': 'XSRF-TOKEN=test; Path=/; SameSite=Lax' } })
       case '/api/admin/audit-event-types': json = ['MODEL_ROUTE_DENIED', 'USER_LOGOUT', 'USER_LOGIN_SUCCESS']; break
       case '/api/admin/audit-actors': json = [actor]; break
+      case '/api/admin/audit-events/summary': json = { total: 159, successful: 145, denied: 9, critical: 0 }; break
       case '/api/admin/audit-events': {
-        const content = searchParams.get('eventType') === 'USER_LOGOUT' ? [] : [event]
+        const content = searchParams.get('eventType') === 'USER_LOGOUT'
+          || searchParams.get('metric') === 'CRITICAL' || searchParams.get('category') === 'SECURITY' ? [] : [event]
         json = { content, page: 0, size: 50, totalPages: content.length, totalElements: content.length }; break
       }
       case '/api/admin/models/runtime': json = runtime; break
@@ -54,6 +56,27 @@ test.beforeEach(async ({ page }) => {
     }
     return route.fulfill({ json })
   })
+})
+
+test('audit summary uses server totals and zero cards drill down via server filters', async ({ page }) => {
+  await page.goto('/admin/audit')
+  const summary = page.getByRole('region', { name: 'Сводка аудита' })
+  await expect(summary.getByRole('button', { name: /Всего событий 159/ })).toBeEnabled()
+  const filtered = page.waitForRequest(r => {
+    const url = new NodeURL(r.url())
+    return url.pathname === '/api/admin/audit-events' && url.searchParams.get('metric') === 'CRITICAL'
+  })
+  await summary.getByRole('button', { name: /Критические 0/ }).click()
+  await filtered
+  await expect(page).toHaveURL(/metric=CRITICAL/)
+  const category = page.waitForRequest(r => {
+    const url = new NodeURL(r.url())
+    return url.pathname === '/api/admin/audit-events' && url.searchParams.get('category') === 'SECURITY'
+      && !url.searchParams.has('metric')
+  })
+  await summary.getByRole('button', { name: 'Безопасность' }).click()
+  await category
+  await expect(page).toHaveURL(/category=SECURITY/)
 })
 
 test('models organization selector is single, server scoped, and retained across tabs and history', async ({ page }) => {

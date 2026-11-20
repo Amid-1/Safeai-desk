@@ -10,6 +10,7 @@ import AuditDetailsModal from './AuditDetailsModal'
 import AuditFilters from './AuditFilters'
 import AuditPagination from './AuditPagination'
 import AuditTable from './AuditTable'
+import AuditSummaryPanel from './AuditSummaryPanel'
 import { downloadAuditCsv } from './auditCsv'
 import type { AdminAuditController } from '../controller/useAdminAuditController'
 
@@ -76,6 +77,12 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
                                 Время показано в вашем часовом поясе
                             </div>
                         </AdminPageHeader>
+
+                        <AuditSummaryPanel summary={controller.summary} loading={controller.summaryLoading}
+                            error={controller.summaryError} disabled={effectiveLoading || filtersDirty}
+                            category={draftFilter.category} metric={draftFilter.metric}
+                            onMetric={controller.selectAuditMetric} onCategory={controller.selectAuditCategory}
+                            onRetry={retryLoad} />
 
                         <AuditFilters
                             draftFilter={

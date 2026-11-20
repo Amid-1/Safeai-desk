@@ -11,8 +11,11 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.AuditEventClassification.Category;
+import ru.safeai.gateway.audit.AuditEventClassification.Metric;
 import ru.safeai.gateway.audit.dto.AuditEventFilter;
 import ru.safeai.gateway.audit.dto.AuditEventResponse;
+import ru.safeai.gateway.audit.dto.AuditEventSummary;
 import ru.safeai.gateway.audit.testsupport.AbstractAuditPostgresIntegrationTest;
 import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
@@ -51,6 +54,37 @@ class AuditTenantIsolationIntegrationTest
 
     @MockitoBean
     private AuditOutboxScheduler auditOutboxScheduler;
+
+    @Test
+    void summaryAndDrillDownUseIdenticalTenantAndCategoryBoundaries() {
+        Fixture f = fixture();
+        Instant from = Instant.parse("2026-07-30T00:00:00Z");
+        Instant to = from.plusSeconds(86400);
+        insertAuditEventDirect(UUID.randomUUID(), f.adminActorId(), f.adminOrganizationId(),
+                "admin@test.com", "Admin", f.adminOrganizationId(), Map.of(),
+                from.plusSeconds(5), AuditEventType.USER_LOGIN_SUCCESS);
+        insertAuditEventDirect(UUID.randomUUID(), f.adminActorId(), f.adminOrganizationId(),
+                "admin@test.com", "Admin", f.adminOrganizationId(), Map.of(),
+                from.plusSeconds(6), AuditEventType.USER_LOGIN_FAILED);
+        insertAuditEventDirect(UUID.randomUUID(), f.foreignActorId(), f.foreignOrganizationId(),
+                "foreign@test.com", "Foreign", f.foreignOrganizationId(), Map.of(),
+                from.plusSeconds(7), AuditEventType.SECURITY_REFRESH_REUSE_DETECTED);
+
+        AuditEventFilter filter = new AuditEventFilter(null, null, null, from, to,
+                null, Category.SECURITY, Metric.DENIED);
+        assertThat(queryService.summarize(f.adminPrincipal(), filter))
+                .isEqualTo(new AuditEventSummary(2, 1, 1, 0));
+        assertThat(queryService.findAll(f.adminPrincipal(), filter, PageRequest.of(0, 1))
+                .getTotalElements()).isEqualTo(1);
+        AuditEventFilter foreign = new AuditEventFilter(null, null, null, from, to,
+                f.foreignOrganizationId(), Category.SECURITY, null);
+        assertThatThrownBy(() -> queryService.summarize(f.adminPrincipal(), foreign))
+                .isInstanceOf(ForbiddenOperationException.class);
+        assertThat(queryService.summarize(f.superAdminPrincipal(), foreign))
+                .isEqualTo(new AuditEventSummary(1, 0, 0, 1));
+        assertThatThrownBy(() -> queryService.summarize(f.adminPrincipal(), emptyFilter()))
+                .isInstanceOf(BadRequestException.class);
+    }
 
     @Test
     void adminReadsOnlyEventsOfOwnOrganization() {
@@ -559,6 +593,15 @@ class AuditTenantIsolationIntegrationTest
             Map<String, Object> details,
             Instant createdAt
     ) {
+        insertAuditEventDirect(eventId, actorUserId, actorOrganizationId, actorEmail,
+                actorDisplayName, targetOrganizationId, details, createdAt, AuditEventType.USER_UPDATED);
+    }
+
+    private void insertAuditEventDirect(
+            UUID eventId, UUID actorUserId, UUID actorOrganizationId, String actorEmail,
+            String actorDisplayName, UUID targetOrganizationId, Map<String, Object> details,
+            Instant createdAt, AuditEventType eventType
+    ) {
         // actor_* хранит исторический снимок автора и не требует живой строки users.
         // organization_id всегда обозначает организацию самого события.
         Objects.requireNonNull(
@@ -632,9 +675,7 @@ class AuditTenantIsolationIntegrationTest
                 actorEmail,
                 actorDisplayName,
                 targetOrganizationId,
-                AuditEventType
-                        .USER_UPDATED
-                        .name(),
+                eventType.name(),
                 toJson(details),
                 new SqlParameterValue(
                         Types.TIMESTAMP_WITH_TIMEZONE,

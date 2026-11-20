@@ -31,6 +31,7 @@ audit/
 │   ├── AuditEventFilter.java
 │   ├── AuditEventPageResponse.java
 │   ├── AuditEventResponse.java
+│   ├── AuditEventSummary.java
 │   └── AuditTargetOrganizationDirectoryResponse.java
 ├── entity/
 │   ├── AuditEventEntity.java
@@ -70,6 +71,7 @@ audit/
 ├── spi/
 │   ├── AuditActorSnapshotProvider.java
 │   └── AuditTargetOrganizationSnapshotProvider.java
+├── AuditEventClassification.java
 ├── AuditEventType.java
 └── README.md
 ```

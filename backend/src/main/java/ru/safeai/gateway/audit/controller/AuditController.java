@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 import ru.safeai.gateway.audit.dto.AuditEventCursorResponse;
 import ru.safeai.gateway.audit.dto.AuditEventFilter;
 import ru.safeai.gateway.audit.dto.AuditEventPageResponse;
+import ru.safeai.gateway.audit.dto.AuditEventSummary;
 import ru.safeai.gateway.audit.service.AuditEventCursorService;
 import ru.safeai.gateway.audit.service.AuditEventQueryService;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
@@ -37,6 +38,14 @@ public class AuditController {
 
     private final AuditEventQueryService queryService;
     private final AuditEventCursorService cursorService;
+
+    @GetMapping("/summary")
+    public AuditEventSummary summarize(
+            @AuthenticationPrincipal(errorOnInvalidType = true) SafeAiUserPrincipal currentUser,
+            @Valid @ModelAttribute AuditEventFilter filter
+    ) {
+        return queryService.summarize(currentUser, filter);
+    }
 
     @GetMapping
     public AuditEventPageResponse findAll(

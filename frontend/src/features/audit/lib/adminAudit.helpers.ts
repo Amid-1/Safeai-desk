@@ -5,6 +5,7 @@
 import type {
     AuditEventFilter,
 } from '../api/adminAuditApi'
+import { AUDIT_CATEGORIES, AUDIT_METRICS } from '../api/adminAuditApi'
 import {
     uuidPathSegment,
 } from '../../../shared/api/query'
@@ -120,6 +121,8 @@ export function readAuditUrlState(
     return {
         draftFilter: {
             eventType,
+            ...optionalFacet(AUDIT_CATEGORIES, 'category', params.get('category')),
+            ...optionalFacet(AUDIT_METRICS, 'metric', params.get('metric')),
             actorUserId,
             actorEmail,
             dateFrom: safeDateFrom,
@@ -142,6 +145,8 @@ export function toAuditEventFilter(
 } {
     const normalizedDraft:
         AuditDraftFilter = {
+        ...optionalFacet(AUDIT_CATEGORIES, 'category', draft.category),
+        ...optionalFacet(AUDIT_METRICS, 'metric', draft.metric),
         eventType:
             normalizeEventType(
                 draft.eventType,
@@ -184,6 +189,8 @@ export function toAuditEventFilter(
     return {
         draft: normalizedDraft,
         filter: {
+            ...optionalFacet(AUDIT_CATEGORIES, 'category', normalizedDraft.category),
+            ...optionalFacet(AUDIT_METRICS, 'metric', normalizedDraft.metric),
             eventType:
                 normalizedDraft.eventType
                 || undefined,
@@ -225,6 +232,8 @@ export function buildAuditSearch(
 ): string {
     const params =
         new URLSearchParams()
+    setIfPresent(params, 'category', draft.category ?? '')
+    setIfPresent(params, 'metric', draft.metric ?? '')
 
     setIfPresent(
         params,
@@ -463,4 +472,10 @@ function safelyNormalize<T>(
     } catch {
         return fallback
     }
+}
+
+function optionalFacet<T extends string, K extends string>(
+    allowed: readonly T[], key: K, value: string | null | undefined,
+): Partial<Record<K, T>> {
+    return value && allowed.includes(value as T) ? { [key]: value } as Record<K, T> : {}
 }

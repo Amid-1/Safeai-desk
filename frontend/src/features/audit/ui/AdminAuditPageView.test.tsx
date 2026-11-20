@@ -49,6 +49,8 @@ const EVENT = {
 
 function mount(overrides: Partial<AdminAuditController> = {}) {
     const controller: AdminAuditController = {
+        summary: { total: 130, successful: 100, denied: 8, critical: 2 },
+        summaryLoading: false, summaryError: '', selectAuditMetric: vi.fn(), selectAuditCategory: vi.fn(),
         superAdmin: false,
         selectedEvent: null,
         draftFilter: {

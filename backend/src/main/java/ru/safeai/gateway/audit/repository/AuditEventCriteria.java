@@ -6,6 +6,7 @@ import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 import org.springframework.data.jpa.domain.Specification;
 import ru.safeai.gateway.audit.dto.AuditEventFilter;
+import ru.safeai.gateway.audit.AuditEventClassification;
 import ru.safeai.gateway.audit.entity.AuditEventEntity;
 
 import java.time.Instant;
@@ -85,6 +86,13 @@ public final class AuditEventCriteria {
                             filter.eventType().name()
                     )
             );
+        }
+
+        if (filter.category() != null) {
+            predicates.add(root.get("eventType").in(AuditEventClassification.types(filter.category())));
+        }
+        if (filter.metric() != null) {
+            predicates.add(root.get("eventType").in(AuditEventClassification.types(filter.metric())));
         }
 
         if (filter.userId() != null) {

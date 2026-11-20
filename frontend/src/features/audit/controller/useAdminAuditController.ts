@@ -4,7 +4,7 @@
 // Контроллер журнала аудита: фильтры, адресная строка, пагинация и права.
 // ============================================================
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { AuditEvent } from '../api/adminAuditApi'
+import type { AuditEvent, AuditCategory, AuditMetric } from '../api/adminAuditApi'
 import { getAuditEvents } from '../api/adminAuditApi'
 import { REPORT_EXPORT_LIMIT, useBoundedReportExport } from '../../../shared/lib/useBoundedReportExport'
 import { downloadAuditCsv } from '../ui/auditCsv'
@@ -13,6 +13,7 @@ import { auditDraftFiltersEqual } from '../ui/types'
 import type { AuditDraftFilter, DatePreset } from '../ui/types'
 import useAuditDirectories from '../hooks/useAuditDirectories'
 import useAuditEvents from '../hooks/useAuditEvents'
+import { useAuditSummary } from '../hooks/useAuditSummary'
 import {
     applyAuditDatePreset,
     buildAuditSearch,
@@ -137,6 +138,7 @@ export function useAdminAuditController() {
             : { ...appliedFilter, targetOrganizationId: undefined },
         [appliedFilter, superAdmin],
     )
+    const summary = useAuditSummary(authScope, effectiveAppliedFilter, reloadToken)
 
     const {
         events,
@@ -285,6 +287,16 @@ export function useAdminAuditController() {
 
     function applyFilters() {
         applyDraftFilter(draftFilter)
+    }
+
+    function selectAuditMetric(metric?: AuditMetric) {
+        if (filtersDirty || effectiveLoading) return
+        applyDraftFilter({ ...appliedDraftFilter, metric })
+    }
+
+    function selectAuditCategory(category?: AuditCategory) {
+        if (filtersDirty || effectiveLoading) return
+        applyDraftFilter({ ...appliedDraftFilter, category, metric: undefined, eventType: '' })
     }
 
     function filterByActor(actorUserId: string) {
@@ -444,6 +456,9 @@ export function useAdminAuditController() {
     }] : actors
 
     return {
+        ...summary,
+        selectAuditMetric,
+        selectAuditCategory,
         exportFiltered, exportPending: exportTask.pending, filteredExportError: exportTask.error,
         superAdmin,
         selectedEvent,

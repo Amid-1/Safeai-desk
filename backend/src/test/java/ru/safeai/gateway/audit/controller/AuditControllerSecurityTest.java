@@ -33,8 +33,11 @@ import org.springframework.test.context.bean.override.mockito
         .MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.AuditEventClassification.Category;
+import ru.safeai.gateway.audit.AuditEventClassification.Metric;
 import ru.safeai.gateway.audit.dto.AuditEventCursorResponse;
 import ru.safeai.gateway.audit.dto.AuditEventFilter;
+import ru.safeai.gateway.audit.dto.AuditEventSummary;
 import ru.safeai.gateway.audit.service.AuditEventCursorService;
 import ru.safeai.gateway.audit.service.AuditEventQueryService;
 import ru.safeai.gateway.auth.security.UserStatusFilter;
@@ -120,6 +123,34 @@ class AuditControllerSecurityTest {
 
     @MockitoBean
     private AuditEventCursorService cursorService;
+
+    @Test
+    void summaryRejectsUnauthenticatedAndOrdinaryUsers() throws Exception {
+        mockMvc.perform(get("/api/admin/audit-events/summary"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/admin/audit-events/summary")
+                .with(authentication(authToken(userPrincipal()))))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(queryService, cursorService);
+    }
+
+    @Test
+    void summaryBindsDateCategoryAndMetricThroughExistingFilter() throws Exception {
+        SafeAiUserPrincipal principal = adminPrincipal();
+        Instant from = Instant.parse("2026-06-01T00:00:00Z");
+        Instant to = Instant.parse("2026-06-02T00:00:00Z");
+        AuditEventFilter filter = new AuditEventFilter(null, null, null, from, to,
+                null, Category.SECURITY, Metric.DENIED);
+        when(queryService.summarize(principal, filter)).thenReturn(new AuditEventSummary(10, 5, 2, 0));
+        mockMvc.perform(get("/api/admin/audit-events/summary")
+                .param("dateFrom", from.toString()).param("dateTo", to.toString())
+                .param("category", "SECURITY").param("metric", "DENIED")
+                .with(authentication(authToken(principal))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(10))
+                .andExpect(jsonPath("$.denied").value(2));
+        verify(queryService).summarize(principal, filter);
+    }
 
     @TestConfiguration(proxyBeanMethods = false)
     @EnableWebSecurity

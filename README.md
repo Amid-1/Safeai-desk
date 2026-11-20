@@ -2560,6 +2560,7 @@ audit/
 │   ├── AuditEventFilter
 │   ├── AuditEventPageResponse
 │   ├── AuditEventResponse
+│   ├── AuditEventSummary
 │   └── AuditTargetOrganizationDirectoryResponse
 ├── entity/
 │   ├── AuditEventEntity
@@ -2597,7 +2598,9 @@ audit/
 │   ├── AuditRetentionService
 │   └── BestEffortStandaloneAuditService
 ├── spi/
+│   ├── AuditActorSnapshotProvider
 │   └── AuditTargetOrganizationSnapshotProvider
+└── AuditEventClassification
 └── AuditEventType
 ```
 
