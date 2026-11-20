@@ -133,9 +133,11 @@ test('dashboard search preserves scroll position and layout while results change
   })
   await page.route('**/api/admin/usage/organizations?*', async route => {
     const query = new NodeURL(route.request().url()).searchParams.get('organizationQuery')
-    if (!query) return route.fallback()
-    const count = matches(query)
     await new Promise(resolve => globalThis.setTimeout(resolve, 350))
+    if (!query) return route.fulfill({json: {page: 0, size: 5, first: true, last: true, hasNext: false, hasPrevious: false,
+      content: [{...usage, organizationId: orgId, organizationName: 'Demo Company'},
+        {...usage, organizationId: userId, organizationName: 'Organization A'}]}})
+    const count = matches(query)
     return route.fulfill({json: {page: 0, size: 10, first: true, last: true, hasNext: false, hasPrevious: false,
       content: Array.from({length: count}, (_, i) => ({...usage,
         organizationId: 'aaaaaaaa-aaaa-4aaa-8aaa-' + String(i + 1).padStart(12, '0'), organizationName: 'Компания ' + (i + 1)}))}})
@@ -145,11 +147,26 @@ test('dashboard search preserves scroll position and layout while results change
   const results = region.getByRole('region', {name: 'Результаты поиска организаций'})
   const input = region.getByRole('searchbox')
   const footer = page.getByRole('region', {name: 'Безопасность и управление'})
+  const pager = region.locator('.platform-dashboard__search-pager')
+  const table = results.getByRole('table')
   await expect(region.getByRole('link', {name: 'Demo Company'})).toBeVisible()
   await expect(page.locator('.usage-kpis--four')).toBeVisible()
+  await expect(results.getByRole('button', {name: 'Показать на графике'})).toHaveCount(2)
+  await expect(pager).toBeHidden()
+  const compactHeight = (await results.boundingBox()).height
+  // The initial viewport has only its natural table height.
+  expect(Math.abs(compactHeight - (await table.boundingBox()).height)).toBeLessThan(2)
   await footer.scrollIntoViewIfNeeded()
   await input.scrollIntoViewIfNeeded()
   const locators = [input, results, footer]
+  const compact = await Promise.all(locators.map(locator => locator.boundingBox()))
+  await input.fill('many')
+  await expect(results).toHaveAttribute('aria-busy', 'true')
+  await expect(region).toHaveClass(/platform-dashboard__panel--search-active/)
+  await expect(pager).not.toHaveAttribute('hidden', '')
+  expect(Math.abs((await input.boundingBox()).y - compact[0].y)).toBeLessThan(2)
+  expect((await results.boundingBox()).height).toBeGreaterThan(compactHeight)
+  // One expansion is intentional; the layout must not move again during search.
   const baseline = await Promise.all(locators.map(locator => locator.boundingBox()))
   const sameLayout = async () => {
     const current = await Promise.all(locators.map(locator => locator.boundingBox()))
@@ -159,16 +176,31 @@ test('dashboard search preserves scroll position and layout while results change
     }
   }
   for (const [query, count] of [['many', 10], ['one', 1], ['none', 0]]) {
-    await input.fill(query)
+    if (query !== 'many') await input.fill(query)
     await expect(results).toHaveAttribute('aria-busy', 'true')
     await sameLayout()
     await expect(region.getByText('Найдено: ' + count, {exact: true})).toBeVisible()
     await expect(results).toHaveAttribute('aria-busy', 'false')
     await expect(results.getByRole('button', {name: 'Показать на графике'})).toHaveCount(count)
     await sameLayout()
+    if (query === 'many') {
+      expect(await results.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true)
+    }
   }
   await expect(results.getByText('Организации не найдены.')).toBeVisible()
   await region.getByRole('button', {name: 'Сбросить'}).click()
+  await expect(results).toHaveAttribute('aria-busy', 'true')
+  expect(Math.abs((await results.boundingBox()).height - baseline[1].height)).toBeLessThan(2)
   await expect(results.getByRole('link', {name: 'Demo Company'})).toBeVisible()
-  await sameLayout()
+  await expect(pager).toBeHidden()
+  expect(Math.abs((await results.boundingBox()).height - compactHeight)).toBeLessThan(2)
+  // Clearing by keyboard also returns to the natural ranking height.
+  await input.fill('one')
+  await expect(region.getByText('Найдено: 1', {exact: true})).toBeVisible()
+  await input.fill('')
+  await expect(results).toHaveAttribute('aria-busy', 'true')
+  expect(Math.abs((await results.boundingBox()).height - baseline[1].height)).toBeLessThan(2)
+  await expect(results.getByRole('link', {name: 'Demo Company'})).toBeVisible()
+  await expect(pager).toBeHidden()
+  expect(Math.abs((await results.boundingBox()).height - compactHeight)).toBeLessThan(2)
 })

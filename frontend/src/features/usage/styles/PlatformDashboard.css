@@ -12,14 +12,17 @@
 .platform-dashboard__period label { font-size: 14px; font-weight: 650; color: #43536a; }
 .platform-dashboard__period select { min-height: 36px; max-width: 100%; }
 .platform-dashboard__table-scroll {
-    block-size: clamp(220px, 32vh, 320px);
     overflow: auto;
     scrollbar-gutter: stable;
     margin-bottom: 12px;
 }
+.platform-dashboard__panel--search-active .platform-dashboard__table-scroll {
+    block-size: clamp(220px, 32vh, 320px);
+}
 .platform-dashboard__table-scroll thead { position: sticky; top: 0; z-index: 1; }
 .platform-dashboard__table-scroll td[colspan] { text-align: left; }
-.platform-dashboard__search-pager { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; block-size: 40px; margin-bottom: 8px; }
+.platform-dashboard__search-pager:not([hidden]) { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; block-size: 40px; margin-bottom: 8px; }
+.platform-dashboard__search-pager[hidden] { display: none; }
 .platform-dashboard__search-pager span { text-align: center; font-variant-numeric: tabular-nums; }
 .platform-dashboard__result-status { min-block-size: 1.45em; }
 .platform-dashboard table { width: 100%; min-width: 440px; border-collapse: collapse; }

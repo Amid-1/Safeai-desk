@@ -41,6 +41,7 @@ export function PlatformDashboard() {
     const [metric, setMetric] = useState<UsageDailyMetric>('tokens')
     const [draft, setDraft] = useState('')
     const [search, setSearch] = useState('')
+    const [searchSession, setSearchSession] = useState(false)
     const [page, setPage] = useState(0)
     const [scope, setScope] = useState<{id: string; name: string} | null>(null)
     const analyticsHeading = useRef<HTMLHeadingElement>(null)
@@ -82,6 +83,11 @@ export function PlatformDashboard() {
     const top = useDashboardResource(periodKey + ':' + search + ':' + page, loadTop)
     const searching = draft.trim() !== search
     const resultsLoading = searching || top.loading
+    // Expand immediately on input and collapse only once the default ranking settles.
+    const searchExpanded = Boolean(draft.trim() || search || (searchSession && top.loading))
+    useEffect(() => {
+        if (searchSession && !searchExpanded) setSearchSession(false)
+    }, [searchSession, searchExpanded])
     useEffect(() => {
         if (resultsViewport.current) resultsViewport.current.scrollTop = 0
     }, [search, page, periodKey])
@@ -146,11 +152,15 @@ export function PlatformDashboard() {
                         onInspectRange={(dateFrom, dateTo) => navigate(usageLink('summary', {dateFrom, dateTo, ...(scope ? {organizationId: scope.id} : {})}))} />
                 </>}
         </section>
-        <section className="platform-dashboard__panel" aria-label="Организации по подтверждённым токенам">
+        <section className={'platform-dashboard__panel' + (searchExpanded ? ' platform-dashboard__panel--search-active' : '')} aria-label="Организации по подтверждённым токенам">
             <h2>Организации по использованию AI</h2>
             <div className="platform-dashboard__search" role="search">
                 <label htmlFor="dashboard-org-search">Поиск организаций</label>
-                <input id="dashboard-org-search" type="search" maxLength={255} placeholder="Название организации" value={draft} onChange={e => setDraft(e.target.value)} />
+                <input id="dashboard-org-search" type="search" maxLength={255} placeholder="Название организации" value={draft} onChange={e => {
+                    const next = e.target.value
+                    setDraft(next)
+                    if (next.trim()) setSearchSession(true)
+                }} />
                 <button type="button" className="secondary-button" onClick={() => {setDraft(''); setSearch(''); setPage(0)}}>Сбросить</button>
             </div>
             <p>Поиск по всему каталогу, включая организации без использования. Без запроса — до 5 организаций с подтверждёнными токенами за выбранный период.</p>
@@ -174,7 +184,7 @@ export function PlatformDashboard() {
                         onClick={() => showOrganization(row.organizationId, row.organizationName)}>Показать на графике</button></td>
                 </tr>
             })}</tbody></table></div>
-            <div className="platform-dashboard__search-pager">
+            <div className="platform-dashboard__search-pager" hidden={!searchExpanded}>
             {search && <>
                 <button className="secondary-button" disabled={resultsLoading || top.failed || page === 0} onClick={() => setPage(v => v - 1)}>Назад</button>
                 <span>Страница {page + 1}</span>
