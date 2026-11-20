@@ -183,19 +183,19 @@ describe('ModelControlPlaneViews semantics', () => {
         ).not.toBeInTheDocument()
 
         expect(
-            screen.getByText('Действует сейчас'),
-        ).toBeInTheDocument()
+            screen.queryByText('Действует сейчас'),
+        ).not.toBeInTheDocument()
 
         expect(
             screen.getByText('Активна'),
         ).toBeInTheDocument()
 
         expect(
-            screen.getByText('Хранение: Не заявлено'),
+            screen.getByText('Хранение: Не указано'),
         ).toBeInTheDocument()
 
         expect(
-            screen.getByText('Обучение: Не заявлено'),
+            screen.getByText('Обучение: Не указано'),
         ).toBeInTheDocument()
     })
 

@@ -3,11 +3,15 @@
 
 import type { ModelCatalogEntry, RuntimeModelStatus } from '../../../../entities/model/api/modelApi'
 import {formatDateTime} from '../../../../shared/lib/format'
-import { StatusPill } from './viewPresentation'
+import { InfoHint, StatusPill } from './viewPresentation'
 import { lifecycleTone, lifecycleLabel, catalogSourceLabel, pricingStatusLabel, retentionLabel, trainingUseLabel } from './viewPresentationLabels'
 import type { StatusTone } from './viewPresentationLabels'
 import { ModelIcon } from '../ModelIcon'
 import type { ModelIconName } from '../ModelIcon'
+import { runtimeDataGuarantees } from '../modelConfigurationReadiness'
+
+const capabilityHint = 'Заявленные форматы входа и выхода и функции модели. Наличие в каталоге не подтверждает поддержку текущим подключением.'
+const privacyHint = 'Условия обработки данных AI-провайдером. Декларации каталога не подтверждают гарантии подключения и не описывают хранение истории в SafeAI Desk.'
 
 function CatalogCapabilities({ entry }: { entry: ModelCatalogEntry }) {
     const modalities = [...new Set([...entry.inputModalities, ...entry.outputModalities])]
@@ -19,8 +23,39 @@ function CatalogCapabilities({ entry }: { entry: ModelCatalogEntry }) {
         {modalities.map(value => <span key={value} title={`${modalityLabels[value]}: ${entry.inputModalities.includes(value) ? 'вход' : ''}${entry.inputModalities.includes(value) && entry.outputModalities.includes(value) ? ' / ' : ''}${entry.outputModalities.includes(value) ? 'выход' : ''}`}>
             <ModelIcon name={modalityIcons[value]} />{modalityLabels[value]}
         </span>)}
-        {entry.capabilities.map(value => <span key={value}><ModelIcon name={capabilityIcons[value]} />{capabilityLabels[value]}</span>)}
+        {entry.capabilities.map(value => <span key={value} title={capabilityLabels[value]}><ModelIcon name={capabilityIcons[value]} />{capabilityLabels[value]}</span>)}
         {!modalities.length && !entry.capabilities.length && <small>Не заявлены</small>}
+    </div>
+}
+
+function CatalogPrivacy({ entry, runtime, matches }: { entry: ModelCatalogEntry; runtime: RuntimeModelStatus; matches: boolean }) {
+    const retentionTone: StatusTone = entry.retentionStatus === 'ZERO_DATA_RETENTION' ? 'success'
+        : entry.retentionStatus === 'NOT_DECLARED' ? 'warning' : 'neutral'
+    const trainingTone: StatusTone = entry.trainingUseStatus === 'NOT_USED' || entry.trainingUseStatus === 'CONTRACTUAL_NO_TRAINING'
+        ? 'success' : entry.trainingUseStatus === 'MAY_BE_USED' ? 'danger' : 'warning'
+    const guarantees = runtimeDataGuarantees(runtime)
+    const evidence = runtime.dataAssurance
+    return <div className="models-catalog-privacy">
+        <div className="models-catalog-privacy__group">
+            <small>Заявлено в каталоге</small>
+            <StatusPill tone={retentionTone} label={`Хранение: ${entry.retentionStatus === 'NOT_DECLARED' ? 'Не указано' : retentionLabel(entry.retentionStatus)}`} />
+            <StatusPill tone={trainingTone} label={`Обучение: ${entry.trainingUseStatus === 'NOT_DECLARED' ? 'Не указано' : trainingUseLabel(entry.trainingUseStatus)}`} />
+        </div>
+        <div className="models-catalog-privacy__group models-catalog-privacy__evidence">
+            <small>Гарантии подключения</small>
+            {!matches ? <StatusPill tone="neutral" label="Нет совпадающего подключения" />
+                : !runtime.enabled ? <StatusPill tone="neutral" label="Подключение отключено" />
+                : <>
+                    <StatusPill tone={guarantees.noTraining ? 'success' : 'warning'}
+                        label={guarantees.noTraining ? 'Запрет обучения подтверждён' : 'Запрет обучения не подтверждён'} />
+                    <StatusPill tone={guarantees.zeroDataRetention ? 'success' : 'warning'}
+                        label={guarantees.zeroDataRetention ? 'Нулевое хранение подтверждено' : 'Нулевое хранение не подтверждено'} />
+                    {(guarantees.noTraining || guarantees.zeroDataRetention) && <small>
+                        {runtime.provider === 'mock' && evidence?.source === 'LOCAL_MOCK' ? 'Локальная тестовая модель'
+                            : evidence?.expiresAt ? `Срок до: ${formatDateTime(evidence.expiresAt)}` : ''}
+                    </small>}
+                </>}
+        </div>
     </div>
 }
 
@@ -49,9 +84,9 @@ export function CatalogTable({
                     <th scope="col">Подключение</th>
                     <th scope="col">Статус каталога</th>
                     <th scope="col">Лимиты</th>
-                    <th scope="col">Возможности каталога</th>
+                    <th scope="col">Возможности модели <InfoHint text={capabilityHint} /></th>
                     <th scope="col">Стоимость</th>
-                    <th scope="col">Политика данных</th>
+                    <th scope="col">Конфиденциальность данных <InfoHint text={privacyHint} /></th>
                     <th scope="col">Действует с</th>
                     <th scope="col">Действия</th>
                 </tr>
@@ -84,16 +119,6 @@ export function CatalogTable({
                     const effectiveRuntimeMatches = effectiveEntry !== null
                         && effectiveEntry.provider === runtime.provider
                         && effectiveEntry.providerModelId === runtime.model
-
-                    const effectiveStateLabel =
-                        isEffectiveVersion
-                            ? 'Действует сейчас'
-                            : 'Последняя версия пока не действует'
-
-                    const effectiveStateTone: StatusTone =
-                        isEffectiveVersion
-                            ? 'success'
-                            : 'warning'
 
                     return (
                         <tr key={entry.id}>
@@ -155,14 +180,9 @@ export function CatalogTable({
                                     <span><small>Выход</small><strong>{entry.maxOutputTokens.toLocaleString('ru-RU')}</strong></span></div>
                             </td>
 
-                            <td data-label="Возможности каталога">
+                            <td data-label="Возможности модели">
                                 <CatalogCapabilities entry={entry} />
-                                {entry.capabilities.length > 0 && (
-                                    <small>
-                                        Сведения каталога; фактическое исполнение
-                                        проверяется у провайдера отдельно
-                                    </small>
-                                )}
+                                <small>Заявлено в каталоге</small>
                             </td>
 
                             <td data-label="Стоимость">
@@ -179,26 +199,19 @@ export function CatalogTable({
                                 </small>
                             </td>
 
-                            <td data-label="Политика данных">
-                                <span>
-                                    Хранение: {' '}
-                                    {retentionLabel(entry.retentionStatus)}
-                                </span>
-                                <small>
-                                    Обучение: {' '}
-                                    {trainingUseLabel(entry.trainingUseStatus)}
-                                </small>
+                            <td data-label="Конфиденциальность данных">
+                                <CatalogPrivacy entry={entry} runtime={runtime} matches={runtimeMatches} />
                             </td>
 
                             <td data-label="Действует с">
                                 {formatDateTime(entry.effectiveFrom)}
 
-                                <div className="models-catalog-effective-state">
+                                {scheduled && <div className="models-catalog-effective-state">
                                     <StatusPill
-                                        tone={effectiveStateTone}
-                                        label={effectiveStateLabel}
+                                        tone="warning"
+                                        label="Последняя версия пока не действует"
                                     />
-                                </div>
+                                </div>}
 
                                 {scheduled && effectiveEntry && (
                                     <small>
@@ -218,18 +231,18 @@ export function CatalogTable({
                             <td data-label="Действия">
                                 <div className="models-catalog-row-actions">
                                     <button
-                                        type="button"
+                                        type="button" className="secondary-button"
                                         onClick={() => {
                                             onOpenHistory(entry)
                                         }}
                                     >
                                         <ModelIcon name="history" />История версий
                                     </button>
-                                    <a className="admin-related-link" href={`/admin/usage?model=${encodeURIComponent(entry.providerModelId)}${organizationId ? '&organizationId=' + encodeURIComponent(organizationId) : ''}`}>Использование и расходы</a>
+                                    <a className="secondary-button models-catalog-action-link" href={`/admin/usage?model=${encodeURIComponent(entry.providerModelId)}${organizationId ? '&organizationId=' + encodeURIComponent(organizationId) : ''}`}>Использование и расходы</a>
 
                                     {canEdit && (
                                         <button
-                                            type="button"
+                                            type="button" className="secondary-button"
                                             onClick={() => {
                                                 onCreateVersion(entry)
                                             }}

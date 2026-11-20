@@ -107,6 +107,52 @@ test('tenant admin cannot select foreign model policy by URL', async ({ page }) 
   expect(foreignRequests).toBe(0)
 })
 
+for (const width of [1440, 390]) {
+  test(`catalog separates declared privacy from connected guarantees and keeps actions reachable at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    const entry = { id: '11111111-1111-4111-8111-111111111111', modelKey: 'mock:mock-safeai',
+      version: 2, provider: 'mock', providerModelId: 'mock-safeai', displayName: 'mock-safeai',
+      lifecycle: 'ACTIVE', maxInputTokens: 64000, maxOutputTokens: 2048, capabilities: [],
+      inputModalities: ['TEXT'], outputModalities: ['TEXT'], retentionStatus: 'NOT_DECLARED',
+      retentionDays: null, trainingUseStatus: 'NOT_DECLARED', pricingStatus: 'FREE', pricingComplete: true,
+      inputUsdPer1mTokens: '0', outputUsdPer1mTokens: '0', cachedInputUsdPer1mTokens: '0',
+      cacheWriteInputUsdPer1mTokens: '0', extraPricingJson: '{}', pricingVersion: 'mock-2026-01',
+      effectiveFrom: '2026-08-28T10:00:00Z', source: 'MANUAL', createdByUserId: userId,
+      createdAt: '2026-08-28T10:00:00Z' }
+    const entries = [entry, ...Array.from({ length: 5 }, (_, i) => ({
+      ...entry, id: `22222222-2222-4222-8222-22222222222${i}`, modelKey: `mock:other-${i}`,
+      providerModelId: `other-${i}`, displayName: `Other ${i}`,
+    }))]
+    await page.route('**/api/admin/models/runtime', route => route.fulfill({ json: {
+      ...runtime, dataAssurance: { noTraining: true, zeroDataRetention: true, source: 'LOCAL_MOCK',
+        verifiedAt: null, expiresAt: null },
+    } }))
+    await page.route(/\/api\/admin\/models\/catalog(?:\/effective)?$/, route => route.fulfill({ json: entries }))
+    await page.goto('/admin/models?section=catalog')
+    const region = page.getByRole('region', { name: 'Таблица каталога моделей' })
+    const row = region.locator('tbody tr').first()
+    await expect(row.getByText('Хранение: Не указано')).toBeVisible()
+    await expect(row.getByText('Запрет обучения подтверждён')).toBeVisible()
+    await expect(row.getByText('Нулевое хранение подтверждено')).toBeVisible()
+    await expect(region.getByText('Нет совпадающего подключения')).toHaveCount(5)
+    await expect(row.getByRole('link', { name: 'Использование и расходы' })).toHaveAttribute('href', /model=mock-safeai/)
+    await expect(row.getByRole('button', { name: 'Новая версия' })).toHaveCount(0)
+    const grip = page.getByRole('separator', { name: 'Изменить высоту таблицы каталога' })
+    if (width === 1440) {
+      await grip.scrollIntoViewIfNeeded()
+      await grip.focus()
+      await grip.press('Home')
+      await expect(grip).toHaveAttribute('aria-valuenow', '180')
+      await grip.press('End')
+      await expect.poll(async () => Number(await grip.getAttribute('aria-valuenow'))).toBeGreaterThan(180)
+      await expect(grip).toBeVisible()
+    } else {
+      await expect(grip).toBeHidden()
+      expect(await page.locator('html').evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBeTruthy()
+    }
+  })
+}
+
 for (const width of [1440, 1280]) {
   test(`models overview and diagnostics keep primary actions visible at ${width}×900`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 })

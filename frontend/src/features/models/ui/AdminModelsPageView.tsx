@@ -159,7 +159,7 @@ export function AdminModelsPageView({ controller }: { controller: AdminModelsCon
     const historyEntry = linkedEntry ?? (section === 'catalog' ? historyModalEntry : null)
 
     return (
-        <div ref={pageRef} className="page models-page models-page--sections">
+        <div ref={pageRef} className={`page models-page models-page--sections${section === 'catalog' ? ' models-page--catalog' : ''}`}>
             <AdminModelsUpper runtime={runtime} />
             {scope}
             <AdminModelsNavigation section={section} onSelect={navigate} />

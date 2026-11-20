@@ -731,3 +731,58 @@
     .models-readiness-actions > span { flex-basis: 100%; }
     .models-readiness-actions > button { width: 100%; }
 }
+
+/* Catalog is platform-wide; the tenant selector remains available for usage links. */
+@media (min-width: 768px) {
+    .models-page--catalog .models-organization-scope:has(.models-org-picker) {
+        grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+        gap: 4px 16px;
+        padding: 8px 12px;
+    }
+    .models-page--catalog .models-organization-scope > .models-org-picker { grid-column: 2; grid-row: 1 / 3; }
+    .models-page--catalog .models-organization-scope:has(.models-org-picker) > .models-scope-note { grid-column: 1; grid-row: 2; }
+    .models-page--catalog .models-organization-scope .models-org-picker .admin-related-link { font-size: 13px; }
+}
+.models-page--catalog .models-section-heading p { max-width: 800px; }
+.models-page--catalog .models-catalog-import-status {
+    display: inline-flex; gap: 6px; align-items: center; white-space: normal;
+    font-size: 13px; padding: 6px 10px; font-weight: 650;
+}
+.models-catalog-import-status .models-icon { width: 15px; height: 15px; flex-shrink: 0; }
+.models-page--catalog .models-catalog-table th .models-help {
+    vertical-align: middle; min-width: 18px; min-height: 18px; font-size: 12px; margin-left: 2px;
+}
+/* Header hints open into the scroll region, not above its clipped top. */
+.models-page--catalog .models-catalog-table th .models-help::after {
+    top: calc(100% + 6px); bottom: auto; left: auto; right: 0; transform: none;
+    width: min(250px, 70vw); white-space: normal; text-align: left; font-weight: 500;
+}
+.models-page--catalog .models-catalog-table .models-status {
+    white-space: normal; max-width: 100%; font-size: 12px; padding: 4px 7px;
+    margin-top: 3px; font-weight: 650;
+}
+.models-catalog-privacy { display: grid; gap: 7px; min-width: 0; }
+.models-catalog-privacy__group { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.models-catalog-privacy__group > small { color: #526580; }
+.models-catalog-privacy__evidence { padding-top: 6px; border-top: 1px solid #dce5f1; }
+.models-page--catalog .models-catalog-privacy .models-status { margin: 0; }
+.models-page--catalog .models-catalog-row-actions :is(button, a.models-catalog-action-link) {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    min-height: 38px; padding: 7px 10px; width: 100%; box-sizing: border-box;
+    border: 1px solid #cbd8ed; border-radius: 8px; background: #fff;
+    color: #314b6c; font-size: 13px; font-weight: 700; white-space: normal;
+    text-align: center; text-decoration: none; line-height: 1.35;
+}
+.models-page--catalog .models-catalog-row-actions :is(button, a.models-catalog-action-link):hover {
+    background: #edf3ff; border-color: #91a7df; color: #2448c8;
+}
+.models-page--catalog .models-catalog-row-actions :is(button, a.models-catalog-action-link):focus-visible {
+    outline: 2px solid #3459dc; outline-offset: 2px;
+}
+@media (min-width: 768px) {
+    .models-page--catalog .models-catalog-table th:nth-child(7) { min-width: 190px; }
+}
+@media (max-width: 767px) {
+    .models-page--catalog .models-catalog-row-actions { width: 100%; }
+    .models-page--catalog .models-catalog-table thead .models-help { display: none; }
+}

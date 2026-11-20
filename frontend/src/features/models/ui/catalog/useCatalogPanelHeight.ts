@@ -53,6 +53,7 @@ export function useCatalogPanelHeight(contentRevision = 0): {
     height: number
     maxHeight: number
     hasOverflow: boolean
+    canResize: boolean
     onPointerDown: (event: PointerEvent<HTMLDivElement>) => void
     onPointerMove: (event: PointerEvent<HTMLDivElement>) => void
     onPointerUp: (event: PointerEvent<HTMLDivElement>) => void
@@ -71,20 +72,25 @@ export function useCatalogPanelHeight(contentRevision = 0): {
     })
     const [maxHeight, setMaxHeight] = useState(CATALOG_PANEL_MAX_HEIGHT)
     const [hasOverflow, setHasOverflow] = useState(false)
+    const [contentCanResize, setContentCanResize] = useState(false)
     const [dragging, setDragging] = useState(false)
     const height = clampCatalogPanelHeight(preferredHeight ?? maxHeight, maxHeight)
 
     const measure = useCallback(() => {
         const region = regionRef.current
         if (!region || typeof window === 'undefined') return
-        const next = catalogPanelMaxHeight(region.getBoundingClientRect().top, window.innerHeight)
+        const available = catalogPanelMaxHeight(region.getBoundingClientRect().top, window.innerHeight)
+        const contentHeight = region.scrollHeight
+        const next = contentHeight > 0 ? Math.max(CATALOG_PANEL_MIN_HEIGHT, Math.min(available, contentHeight)) : available
         setMaxHeight((old) => old === next ? old : next)
         setHasOverflow(region.scrollHeight > region.clientHeight + 1)
+        setContentCanResize(contentHeight > CATALOG_PANEL_MIN_HEIGHT)
     }, [])
 
     useLayoutEffect(() => {
         measure()
         window.addEventListener('resize', measure)
+        window.addEventListener('scroll', measure, { passive: true })
         const observer = typeof ResizeObserver === 'undefined'
             ? null : new ResizeObserver(measure)
         // Observe content as well as the workspace: a replacement catalog,
@@ -95,6 +101,7 @@ export function useCatalogPanelHeight(contentRevision = 0): {
         if (region?.firstElementChild) observer?.observe(region.firstElementChild)
         return () => {
             window.removeEventListener('resize', measure)
+            window.removeEventListener('scroll', measure)
             observer?.disconnect()
         }
     }, [measure, contentRevision])
@@ -154,7 +161,7 @@ export function useCatalogPanelHeight(contentRevision = 0): {
     return {
         // Keep the handle mounted throughout a manual resize, including when
         // the last row becomes visible, so pointer capture is not interrupted.
-        regionRef, height, maxHeight, hasOverflow: hasOverflow || dragging,
+        regionRef, height, maxHeight, hasOverflow: hasOverflow || dragging, canResize: contentCanResize || dragging,
         onPointerDown, onPointerMove,
         onPointerUp: (event) => finishDrag(event, true),
         onPointerCancel: (event) => finishDrag(event, false),

@@ -17,6 +17,7 @@ function Harness() {
         regionRef,
         height,
         hasOverflow,
+        canResize,
         onPointerDown,
         onPointerMove,
         onPointerUp,
@@ -30,7 +31,7 @@ function Harness() {
                 tabIndex={0} onPointerDown={onPointerDown} onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp} onPointerCancel={onPointerCancel}
                 onKeyDown={onKeyDown} onDoubleClick={onDoubleClick} />
-            <div ref={regionRef} data-testid="viewport" data-overflow={hasOverflow} style={{maxHeight: height}} />
+            <div ref={regionRef} data-testid="viewport" data-overflow={hasOverflow} data-can-resize={canResize} style={{maxHeight: height}} />
         </div>
     )
 }
@@ -48,6 +49,7 @@ describe('Resizable catalog viewport', () => {
         render(<Harness />)
         const viewport = screen.getByTestId('viewport')
         expect(viewport).toHaveAttribute('data-overflow', 'false')
+        expect(viewport).toHaveAttribute('data-can-resize', 'true')
         scrollHeight.mockReturnValue(800)
         fireEvent(window, new Event('resize'))
         expect(viewport).toHaveAttribute('data-overflow', 'true')

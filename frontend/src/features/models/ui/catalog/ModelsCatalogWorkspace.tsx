@@ -28,7 +28,7 @@ export function ModelsCatalogWorkspace({ controller }: { controller: AdminModels
         regionRef,
         height,
         maxHeight,
-        hasOverflow,
+        canResize,
         onPointerDown,
         onPointerMove,
         onPointerUp,
@@ -39,9 +39,6 @@ export function ModelsCatalogWorkspace({ controller }: { controller: AdminModels
     if (!runtime) return null
     const runtimeIdentityMatches = runtimeCatalogEntry?.provider === runtime.provider.trim().toLowerCase()
         && runtimeCatalogEntry.providerModelId === runtime.model.trim()
-    const importLabel = runtimeCatalogEntry
-        ? runtimeIdentityMatches ? 'Подключённая модель уже в каталоге' : 'Ключ модели уже занят'
-        : 'Добавить подключённую модель в каталог'
 
     return (
         <section className="models-section-stack models-catalog-workspace" aria-labelledby="models-catalog-title">
@@ -49,24 +46,25 @@ export function ModelsCatalogWorkspace({ controller }: { controller: AdminModels
                 <div>
                     <span className="models-eyebrow">ВЕРСИИ И ХАРАКТЕРИСТИКИ</span>
                     <h2 id="models-catalog-title">Каталог моделей</h2>
-                    <p>Последняя сохранённая и действующая версии могут различаться. История доступна для каждой модели.</p>
+                    <p>Общий каталог платформы. Характеристики заявлены в каталоге; гарантии подключения проверяются отдельно.</p>
                 </div>
                 {isSuperAdmin && catalog.length > 0 && <div className="models-section-actions">
-                    <button type="button" className="secondary-button" disabled={mutationPending || runtimeImportBlocked}
-                        aria-describedby={runtimeImportBlocked ? 'models-runtime-import-hint' : undefined}
-                        onClick={() => { void handleImportRuntime() }}>{importLabel}</button>
+                    {runtimeImportBlocked
+                        ? <span className={`models-status models-status--${runtimeIdentityMatches ? 'neutral' : 'warning'} models-catalog-import-status`}
+                            title={runtimeIdentityMatches ? 'Для изменения параметров создайте новую версию.' : 'Добавление подключения недоступно.'}>
+                            <ModelIcon name={runtimeIdentityMatches ? 'check' : 'alert'} />
+                            {runtimeIdentityMatches ? 'Подключённая модель уже в каталоге' : runtimeCatalogEntry ? 'Ключ модели уже занят' : 'Подключение отключено'}
+                        </span>
+                        : <button type="button" className="secondary-button" disabled={mutationPending}
+                            onClick={() => { void handleImportRuntime() }}>Добавить подключённую модель в каталог</button>}
                     <button type="button" className="btn-primary" disabled={mutationPending}
                         onClick={() => setCatalogModal({ base: null })}>Создать модель</button>
                 </div>}
             </header>
-            {isSuperAdmin && runtimeImportBlocked && <p id="models-runtime-import-hint" className="models-catalog-permission-hint">
+            {isSuperAdmin && runtimeImportBlocked && !runtimeIdentityMatches && <p className="models-catalog-permission-hint">
                 {runtimeCatalogEntry ? <>
-                    <strong>{runtimeIdentityMatches
-                        ? `${runtimeCatalogEntry.displayName} уже добавлена в каталог (версия ${runtimeCatalogEntry.version}).`
-                        : 'Ключ подключённой модели уже используется другой записью каталога.'}</strong>
-                    {' '}{runtimeIdentityMatches
-                        ? 'Чтобы изменить параметры, нажмите «Новая версия». Предыдущие версии сохранятся.'
-                        : 'Проверьте идентификаторы модели в настройках сервера и каталоге.'}
+                    <strong>Ключ подключённой модели уже используется другой записью каталога.</strong>
+                    {' '}Проверьте идентификаторы модели в настройках сервера и каталоге.
                 </> : 'Подключённая модель отключена в настройках сервера. Включите её перед добавлением в каталог.'}
             </p>}
             {importError && !runtimeCatalogEntry && <div className="models-mutation-error" role="alert">
@@ -102,8 +100,8 @@ export function ModelsCatalogWorkspace({ controller }: { controller: AdminModels
                         onCreateVersion={(entry) => setCatalogModal({ base: entry })}
                         onOpenHistory={setHistoryModalEntry} />}
             </div>
-            {/* На десктопе ручка появляется только при вертикальном переполнении. */}
-            {visibleEntries.length > 0 && hasOverflow && (
+            {/* Оставляем регулятор доступным даже после раскрытия всех строк. */}
+            {visibleEntries.length > 0 && canResize && (
                 <div className="models-catalog-resize-handle" role="separator"
                     aria-label="Изменить высоту таблицы каталога"
                     aria-orientation="horizontal"
