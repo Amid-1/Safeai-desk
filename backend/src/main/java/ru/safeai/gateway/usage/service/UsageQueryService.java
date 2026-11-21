@@ -4,7 +4,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Slice;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import ru.safeai.gateway.common.exception.BadRequestException;
@@ -30,7 +29,6 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.YearMonth;
 import ru.safeai.gateway.common.budget.PlatformBudgetClassification.Status;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -454,24 +452,10 @@ public class UsageQueryService {
         if (!rollupStartInstant.isBefore(rollupEndInstant)) {
             return liveOnlyPlan(range);
         }
-        return validateLiveFallback(new UsageQueryPlan(
-                LocalDate.ofInstant(rollupStartInstant, ZoneOffset.UTC),
-                LocalDate.ofInstant(rollupEndInstant, ZoneOffset.UTC),
-                buildLiveRanges(range, rollupStartInstant, rollupEndInstant)
-        ));
-    }
-
-    private List<UsageInstantRange> buildLiveRanges(
-            UsageDateRange range, Instant rollupStartInstant, Instant rollupEndInstant
-    ) {
-        List<UsageInstantRange> live = new ArrayList<>(2);
-        if (range.from().isBefore(rollupStartInstant)) {
-            live.add(new UsageInstantRange(range.from(), rollupStartInstant));
-        }
-        if (rollupEndInstant.isBefore(range.to())) {
-            live.add(new UsageInstantRange(rollupEndInstant, range.to()));
-        }
-        return live;
+        LocalDate start = LocalDate.ofInstant(rollupStartInstant, ZoneOffset.UTC);
+        LocalDate end = LocalDate.ofInstant(rollupEndInstant, ZoneOffset.UTC);
+        return validateLiveFallback(UsageQueryPlan.hybrid(range.from(), range.to(), start, end,
+                rollupStateRepository.findDirtyDates(start, end)));
     }
 
     private UsageQueryPlan liveOnlyPlan(UsageDateRange range) {
@@ -487,7 +471,7 @@ public class UsageQueryService {
         if (liveDuration.compareTo(properties.maxLiveRange()) > 0) {
             throw new ResponseStatusException(
                     HttpStatus.SERVICE_UNAVAILABLE,
-                    "Usage rollup backfill ещё не покрывает запрошенный диапазон. Максимальный live fallback: "
+                    "Usage rollup не готов или требует пересчёта. Максимальный live fallback: "
                             + properties.maxLiveRange().toDays() + " дней");
         }
         return plan;
@@ -519,7 +503,7 @@ public class UsageQueryService {
     }
 
     private void requireCurrentUser(SafeAiUserPrincipal currentUser) {
-        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+        UsageAccessPolicy.requireReader(currentUser);
     }
 
     private void requirePageable(Pageable pageable) {
@@ -544,8 +528,7 @@ public class UsageQueryService {
     }
 
     private boolean isSuperAdmin(SafeAiUserPrincipal user) {
-        return user.getAuthorities().stream().map(GrantedAuthority::getAuthority)
-                .anyMatch("ROLE_SUPER_ADMIN"::equals);
+        return UsageAccessPolicy.isSuperAdmin(user);
     }
 
     private record UsageDateRange(Instant from, Instant to) {

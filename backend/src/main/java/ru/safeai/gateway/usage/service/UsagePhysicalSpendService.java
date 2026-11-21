@@ -1,7 +1,6 @@
 package ru.safeai.gateway.usage.service;
 
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Service;
 import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
@@ -57,7 +56,7 @@ public class UsagePhysicalSpendService {
     private QueryScope scope(
             Instant dateFrom, Instant dateTo, SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(currentUser, "currentUser");
+        UsageAccessPolicy.requireReader(currentUser);
         Instant to = dateTo == null ? clock.instant() : dateTo;
         Instant from = dateFrom == null ? to.minus(properties.defaultRange()) : dateFrom;
         if (!from.isBefore(to)) {
@@ -66,9 +65,7 @@ public class UsagePhysicalSpendService {
         if (Duration.between(from, to).compareTo(properties.maxRange()) > 0) {
             throw new BadRequestException("Период physical usage превышает safeai.usage.max-range");
         }
-        UUID organizationId = currentUser.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .anyMatch("ROLE_SUPER_ADMIN"::equals)
+        UUID organizationId = UsageAccessPolicy.isSuperAdmin(currentUser)
                 ? null : Objects.requireNonNull(currentUser.getOrganizationId(), "organizationId");
         return new QueryScope(from, to, organizationId);
     }

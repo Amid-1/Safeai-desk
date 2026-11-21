@@ -417,6 +417,46 @@ class UsageQueryServiceTest {
     }
 
     @Test
+    void dirtyDaysReplaceRollupAndMergeWithLiveEdges() {
+        var first = LocalDate.of(2026, 6, 2);
+        var second = first.plusDays(1);
+        when(stateRepository.findLastCompletedDate()).thenReturn(second);
+        when(stateRepository.findDirtyDates(first, second.plusDays(1))).thenReturn(List.of(first, second));
+        when(repository.findSummary(any(), any(), eq(PAGEABLE))).thenReturn(emptySlice());
+        Instant from = Instant.parse("2026-06-01T12:00:00Z");
+        Instant to = Instant.parse("2026-06-04T12:00:00Z");
+        service.getUsageSummary(from, to, null, PAGEABLE, adminPrincipal());
+        var plan = ArgumentCaptor.forClass(UsageQueryPlan.class);
+        verify(repository).findSummary(any(), plan.capture(), eq(PAGEABLE));
+        assertThat(plan.getValue().excludedRollupDates()).containsExactly(first, second);
+        assertThat(plan.getValue().liveRanges()).containsExactly(new UsageInstantRange(from, to));
+    }
+
+    @Test
+    void dirtyDaysCountAgainstLiveBudgetEvenWithCompleteWatermark() {
+        LocalDate start = LocalDate.of(2026, 6, 1);
+        LocalDate end = start.plusDays(32);
+        when(stateRepository.findLastCompletedDate()).thenReturn(end.minusDays(1));
+        when(stateRepository.findDirtyDates(start, end)).thenReturn(start.datesUntil(end).toList());
+        assertThatThrownBy(() -> service.getUsageSummary(DATE_FROM, DATE_FROM.plus(Duration.ofDays(32)),
+                null, PAGEABLE, adminPrincipal()))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        error -> assertThat(error.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE));
+        verifyNoInteractions(repository);
+    }
+
+    @Test
+    void directServiceCallsDoNotAuthorizeOrdinaryUsers() {
+        var user = SafeAiUserPrincipal.accessTokenPrincipal(TARGET_USER_ID, ORGANIZATION_ID, 0, 0,
+                List.of(new SimpleGrantedAuthority("ROLE_USER")));
+        assertThatThrownBy(() -> service.getUsageSummary(DATE_FROM, DATE_TO, null, PAGEABLE, user))
+                .isInstanceOf(ForbiddenOperationException.class);
+        assertThatThrownBy(() -> service.getDataQuality(DATE_FROM, DATE_TO, user))
+                .isInstanceOf(ForbiddenOperationException.class);
+        verifyNoInteractions(repository, stateRepository);
+    }
+
+    @Test
     void uncoveredLiveFallbackLongerThanLimitReturns503() {
         when(stateRepository.findLastCompletedDate())
                 .thenReturn(null);

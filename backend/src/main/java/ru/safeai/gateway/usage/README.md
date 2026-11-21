@@ -44,6 +44,7 @@ usage/
 │   ├── UsageRowMapperSupport.java
 │   └── UsageSqlFragments.java
 ├── service/
+│   ├── UsageAccessPolicy.java
 │   ├── UsageDirtyDateProcessor.java
 │   ├── UsageForcedRebuildService.java
 │   ├── UsagePhysicalSpendService.java
@@ -90,6 +91,22 @@ usage/
   В каталоге моделей для маршрутов, сохраняющих сообщения Chat, используйте другие ID.
 - Запрос data quality вычисляет общие показатели и проблемные модели в одном снимке
   PostgreSQL. Состояние rollup и данные фактов читаются в той же транзакции.
+
+### Stage 7.5D.1 — точность исторических отчётов
+
+Watermark сам по себе не подтверждает актуальность агрегата. В том же снимке
+`REPEATABLE READ` отчёт читает очередь `usage_dirty_dates` для закрытых UTC-дней.
+Каждый отмеченный день исключается из всех трёх семейств rollup и полностью
+заменяется исходными фактами. Смежные live-интервалы объединяются. Двойной учёт
+при пересечении диапазонов запрещён инвариантами `UsageQueryPlan`.
+
+Если суммарная длительность live-интервалов (границы периода и dirty-дни)
+превышает `safeai.usage.max-live-range`, сервер возвращает HTTP 503,
+а не устаревший отчёт. Пересчёт и удаление dirty-маркера остаются атомарными.
+Существующие Flyway-миграции и Runtime ACL не меняются.
+
+Роли ADMIN и SUPER_ADMIN проверяются дополнительно внутри сервисов чтения,
+включая физические расходы и сверку, независимо от Spring method security.
 
 ## API
 

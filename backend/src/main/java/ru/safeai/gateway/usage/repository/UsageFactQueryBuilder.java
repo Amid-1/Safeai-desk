@@ -11,6 +11,14 @@ import static ru.safeai.gateway.usage.repository.UsageSqlFragments.*;
 
 final class UsageFactQueryBuilder {
 
+    private static void excludeDirtyDates(StringBuilder where, MapSqlParameterSource parameters,
+                                          UsageQueryPlan plan) {
+        if (!plan.excludedRollupDates().isEmpty()) {
+            where.append(" and r.usage_date not in (:excludedRollupDates)");
+            parameters.addValue("excludedRollupDates", plan.excludedRollupDates());
+        }
+    }
+
     UsageFactSql userFacts(
             UsageQueryCriteria criteria,
             UsageQueryPlan plan
@@ -35,6 +43,7 @@ final class UsageFactQueryBuilder {
                       and r.usage_date < :rollupToExclusive
                     """);
 
+            excludeDirtyDates(where, parameters, plan);
             appendRollupScope(
                     where,
                     criteria,
@@ -121,6 +130,7 @@ final class UsageFactQueryBuilder {
                       and r.usage_date < :rollupToExclusive
                     """);
 
+            excludeDirtyDates(where, parameters, plan);
             appendRollupScope(
                     where,
                     criteria,
@@ -201,6 +211,7 @@ final class UsageFactQueryBuilder {
                       and r.usage_date < :rollupToExclusive
                     """);
 
+            excludeDirtyDates(where, parameters, plan);
             if (criteria.organizationId() != null) {
                 where.append(
                         " and r.organization_id = :organizationId"
