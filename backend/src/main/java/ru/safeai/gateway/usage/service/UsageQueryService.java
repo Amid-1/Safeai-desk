@@ -1,6 +1,8 @@
 package ru.safeai.gateway.usage.service;
 
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.domain.Slice;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -16,6 +18,7 @@ import ru.safeai.gateway.usage.dto.UsageModelSummaryResponse;
 import ru.safeai.gateway.usage.dto.UsageOrganizationSummaryResponse;
 import ru.safeai.gateway.usage.dto.UsageSummaryResponse;
 import ru.safeai.gateway.usage.dto.UsageUserSummaryResponse;
+import ru.safeai.gateway.usage.dto.UsageExportRequest;
 import ru.safeai.gateway.usage.repository.UsageInstantRange;
 import ru.safeai.gateway.usage.repository.UsageQueryCriteria;
 import ru.safeai.gateway.usage.repository.UsageQueryPlan;
@@ -418,6 +421,54 @@ public class UsageQueryService {
                     + properties.maxRange().toDays() + " дней");
         }
         return new UsageDateRange(from, to);
+    }
+
+    /** Один снимок БД на весь экспорт; без повторных запросов по изменяющимся страницам. */
+    public List<?> exportRows(UsageExportRequest request, SafeAiUserPrincipal user, Instant generatedAt) {
+        requireCurrentUser(user);
+        if (request.kind() == null || request.dateFrom() == null || request.dateTo() == null) {
+            throw new BadRequestException("Не указаны параметры экспорта");
+        }
+        var range = normalizeRange(request.dateFrom(), request.dateTo());
+        boolean organizations = request.kind() == UsageExportRequest.Kind.ORGANIZATIONS;
+        if (organizations && (!isSuperAdmin(user) || request.organizationId() != null)) {
+            throw new ForbiddenOperationException("Сравнение организаций недоступно");
+        }
+        if (request.organizationId() != null) {
+            requireOrganizationAccess(request.organizationId(), user);
+        }
+        if (request.budgetStatus() != null && !organizations) {
+            throw new BadRequestException("Фильтр бюджета доступен только для сравнения организаций");
+        }
+        if (request.kind() == UsageExportRequest.Kind.DAILY) requireBoundedDailyRange(range);
+        String order = request.order() == null ? "tokens" : request.order();
+        if (!java.util.Set.of("tokens", "total", "cost", "responses", "coverage").contains(order)) {
+            throw new BadRequestException("Некорректная сортировка экспорта");
+        }
+        UUID tenant = request.organizationId() == null ? scope(user) : request.organizationId();
+        var month = YearMonth.from(generatedAt.atOffset(ZoneOffset.UTC));
+        var budget = request.budgetStatus() == null ? null : new UsageQueryCriteria.BudgetFilter(
+                request.budgetStatus(), month.atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant(),
+                month.plusMonths(1).atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant());
+        var criteria = new UsageQueryCriteria(range.from(), range.to(), tenant, request.userId(),
+                normalizeModel(request.model()), null, false, budget);
+        var page = PageRequest.of(0, UsageExportCsv.MAX_ROWS, Sort.by(Sort.Direction.DESC, order));
+        return reportExecutor.execute("export", () -> {
+            var plan = buildPlan(range);
+            return switch (request.kind()) {
+                case SUMMARY -> complete(usageQueryRepository.findSummary(criteria, plan, page));
+                case USERS -> complete(usageQueryRepository.findUsers(criteria, plan, page));
+                case ORGANIZATIONS -> complete(usageQueryRepository.findOrganizations(criteria, plan, page));
+                case MODELS -> usageQueryRepository.findModels(criteria, plan);
+                case DAILY -> usageQueryRepository.findDaily(criteria, plan);
+                case PROVIDERS -> throw new BadRequestException("Отдельный физический отчёт");
+            };
+        });
+    }
+
+    private static List<?> complete(Slice<?> slice) {
+        if (slice.hasNext()) throw new UsageExportCsv.LimitExceeded();
+        return slice.getContent();
     }
 
     private UsageQueryCriteria organizationCriteria(UsageDateRange range, UUID organizationId) {

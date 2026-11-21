@@ -32,8 +32,13 @@ import ru.safeai.gateway.common.exception.GlobalExceptionHandler;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.usage.dto.UsageSummaryResponse;
 import ru.safeai.gateway.usage.dto.UsageUserSummaryResponse;
+import ru.safeai.gateway.usage.dto.UsagePhysicalReportResponse;
+import ru.safeai.gateway.usage.dto.UsagePhysicalSpendResponse;
+import ru.safeai.gateway.usage.dto.UsagePhysicalReconciliationResponse;
 import ru.safeai.gateway.usage.service.UsageQueryService;
+import ru.safeai.gateway.usage.service.UsagePhysicalSpendService;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -53,57 +58,58 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(
-        controllers = UsageController.class,
-        excludeFilters = @ComponentScan.Filter(
-                type = FilterType.ASSIGNABLE_TYPE,
-                classes = UserStatusFilter.class
-        )
+    controllers = {UsageController.class, UsagePhysicalSpendController.class},
+    excludeFilters = @ComponentScan.Filter(
+        type = FilterType.ASSIGNABLE_TYPE,
+        classes = UserStatusFilter.class
+    )
 )
 @Import({
-        UsageControllerSecurityTest.TestSecurityConfig.class,
-        UsageControllerSecurityTest.TestClockConfig.class,
-        GlobalExceptionHandler.class,
-        ApiErrorResponseFactory.class
+    UsageControllerSecurityTest.TestSecurityConfig.class,
+    UsageControllerSecurityTest.TestClockConfig.class,
+    GlobalExceptionHandler.class,
+    ApiErrorResponseFactory.class
 })
 @ActiveProfiles("test")
 class UsageControllerSecurityTest {
 
     private static final UUID ADMIN_ID =
-            UUID.fromString(
-                    "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
-            );
+        UUID.fromString(
+            "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+        );
 
     private static final UUID USER_ID =
-            UUID.fromString(
-                    "cccccccc-cccc-cccc-cccc-cccccccccccc"
-            );
+        UUID.fromString(
+            "cccccccc-cccc-cccc-cccc-cccccccccccc"
+        );
 
     private static final UUID ORGANIZATION_ID =
-            UUID.fromString(
-                    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-            );
+        UUID.fromString(
+            "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        );
 
     private static final UUID SUPER_ADMIN_ID =
-            UUID.fromString(
-                    "00000000-0000-0000-0000-000000000101"
-            );
+        UUID.fromString(
+            "00000000-0000-0000-0000-000000000101"
+        );
 
     private static final UUID PLATFORM_ORGANIZATION_ID =
-            UUID.fromString(
-                    "00000000-0000-0000-0000-000000000001"
-            );
+        UUID.fromString(
+            "00000000-0000-0000-0000-000000000001"
+        );
 
     private static final Instant NOW =
-            Instant.parse("2026-07-13T00:00:00Z");
+        Instant.parse("2026-07-13T00:00:00Z");
 
     private static final Instant DATE_FROM =
-            Instant.parse("2026-06-01T00:00:00Z");
+        Instant.parse("2026-06-01T00:00:00Z");
 
     private static final Instant DATE_TO =
-            Instant.parse("2026-07-01T00:00:00Z");
+        Instant.parse("2026-07-01T00:00:00Z");
 
     @Autowired
     private MockMvc mockMvc;
@@ -112,7 +118,84 @@ class UsageControllerSecurityTest {
     private UsageQueryService usageQueryService;
 
     @MockitoBean
+    private UsagePhysicalSpendService physicalSpendService;
+
+    @MockitoBean
     private UserDetailsService userDetailsService;
+
+    @Test
+    void physicalReportRequiresAdminAndReturnsExactNonCacheableReport()
+        throws Exception {
+
+        String url = "/api/admin/usage/physical-attempts/report";
+
+        mockMvc.perform(get(url))
+            .andExpect(status().is4xxClientError());
+
+        var userPrincipal = SafeAiUserPrincipal.accessTokenPrincipal(
+            USER_ID,
+            ORGANIZATION_ID,
+            0L,
+            0L,
+            Set.of(new SimpleGrantedAuthority("ROLE_USER"))
+        );
+
+        mockMvc.perform(
+                get(url)
+                    .with(authentication(authToken(userPrincipal)))
+            )
+            .andExpect(status().isForbidden());
+
+        verifyNoInteractions(physicalSpendService);
+
+        var principal = superAdminPrincipal();
+
+        var report = UsagePhysicalReportResponse.from(
+            new UsagePhysicalSpendResponse(
+                DATE_FROM,
+                DATE_TO,
+                null,
+                "PHYSICAL_ATTEMPT_STARTED_AT",
+                "USD",
+                1, 0, 0, 1, 0, 0, 0, 0,
+                9007199254740993L,
+                0,
+                new BigDecimal("0.000000000001")
+            ),
+            new UsagePhysicalReconciliationResponse(
+                DATE_FROM,
+                DATE_TO,
+                null,
+                "PLANS_WITH_PHYSICAL_START_IN_RANGE",
+                1, 1, 0, 0
+            )
+        );
+
+        when(physicalSpendService.report(
+            eq(DATE_FROM),
+            eq(DATE_TO),
+            isNull(),
+            any()
+        )).thenReturn(report);
+
+        mockMvc.perform(
+                get(url)
+                    .param("dateFrom", DATE_FROM.toString())
+                    .param("dateTo", DATE_TO.toString())
+                    .with(authentication(authToken(principal)))
+            )
+            .andExpect(status().isOk())
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(jsonPath("$.organizationId").hasJsonPath())
+            .andExpect(jsonPath("$.knownInputTokens").isString())
+            .andExpect(jsonPath("$.knownInputTokens")
+                .value("9007199254740993"))
+            .andExpect(jsonPath("$.knownCostUsd")
+                .value("0.000000000001"));
+
+        verify(physicalSpendService)
+            .report(DATE_FROM, DATE_TO, null, principal);
+    }
 
     @TestConfiguration
     @EnableWebSecurity
@@ -121,14 +204,14 @@ class UsageControllerSecurityTest {
 
         @Bean
         SecurityFilterChain testSecurityFilterChain(
-                HttpSecurity http
+            HttpSecurity http
         ) {
             return http
-                    .csrf(AbstractHttpConfigurer::disable)
-                    .authorizeHttpRequests(authorize ->
-                            authorize.anyRequest().authenticated()
-                    )
-                    .build();
+                .csrf(AbstractHttpConfigurer::disable)
+                .authorizeHttpRequests(authorize ->
+                    authorize.anyRequest().authenticated()
+                )
+                .build();
         }
     }
 
@@ -138,563 +221,563 @@ class UsageControllerSecurityTest {
         @Bean
         Clock clock() {
             return Clock.fixed(
-                    NOW,
-                    ZoneOffset.UTC
+                NOW,
+                ZoneOffset.UTC
             );
         }
     }
 
     @ParameterizedTest
     @ValueSource(strings = {
-            "/api/admin/usage/summary",
-            "/api/admin/usage/users",
-            "/api/admin/usage/models",
-            "/api/admin/usage/daily",
-            "/api/admin/usage/data-quality",
-            "/api/admin/usage/by-user/cccccccc-cccc-cccc-cccc-cccccccccccc",
-            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/users",
-            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/models",
-            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/daily"
+        "/api/admin/usage/summary",
+        "/api/admin/usage/users",
+        "/api/admin/usage/models",
+        "/api/admin/usage/daily",
+        "/api/admin/usage/data-quality",
+        "/api/admin/usage/by-user/cccccccc-cccc-cccc-cccc-cccccccccccc",
+        "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/users",
+        "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/models",
+        "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/daily"
     })
     void protectedEndpointsReturn4xxForAnonymous(
-            String url
+        String url
     ) throws Exception {
         mockMvc.perform(get(url))
-                .andExpect(status().is4xxClientError());
+            .andExpect(status().is4xxClientError());
     }
 
     @ParameterizedTest
     @ValueSource(strings = {
-            "/api/admin/usage/summary",
-            "/api/admin/usage/users",
-            "/api/admin/usage/models",
-            "/api/admin/usage/daily",
-            "/api/admin/usage/data-quality",
-            "/api/admin/usage/by-user/cccccccc-cccc-cccc-cccc-cccccccccccc",
-            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/users",
-            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/models",
-            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/daily"
+        "/api/admin/usage/summary",
+        "/api/admin/usage/users",
+        "/api/admin/usage/models",
+        "/api/admin/usage/daily",
+        "/api/admin/usage/data-quality",
+        "/api/admin/usage/by-user/cccccccc-cccc-cccc-cccc-cccccccccccc",
+        "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/users",
+        "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/models",
+        "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/daily"
     })
     void protectedEndpointsReturn403ForUserRole(
-            String url
+        String url
     ) throws Exception {
         mockMvc.perform(
-                        get(url)
-                                .with(
-                                        user("user@test.com")
-                                                .roles("USER")
-                                )
-                )
-                .andExpect(status().isForbidden());
+                get(url)
+                    .with(
+                        user("user@test.com")
+                            .roles("USER")
+                    )
+            )
+            .andExpect(status().isForbidden());
 
         verifyNoInteractions(usageQueryService);
     }
 
     @ParameterizedTest
     @ValueSource(strings = {
-            "/api/admin/usage/summary",
-            "/api/admin/usage/users",
-            "/api/admin/usage/models",
-            "/api/admin/usage/daily",
-            "/api/admin/usage/data-quality",
-            "/api/admin/usage/by-user/cccccccc-cccc-cccc-cccc-cccccccccccc",
-            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/users",
-            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/models",
-            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/daily"
+        "/api/admin/usage/summary",
+        "/api/admin/usage/users",
+        "/api/admin/usage/models",
+        "/api/admin/usage/daily",
+        "/api/admin/usage/data-quality",
+        "/api/admin/usage/by-user/cccccccc-cccc-cccc-cccc-cccccccccccc",
+        "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/users",
+        "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/models",
+        "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/daily"
     })
     void protectedEndpointsReturn200ForAdmin(
-            String url
+        String url
     ) throws Exception {
         stubServiceResponses();
 
         mockMvc.perform(
-                        get(url)
-                                .with(
-                                        authentication(
-                                                authToken(
-                                                        adminPrincipal()
-                                                )
-                                        )
-                                )
-                )
-                .andExpect(status().isOk());
+                get(url)
+                    .with(
+                        authentication(
+                            authToken(
+                                adminPrincipal()
+                            )
+                        )
+                    )
+            )
+            .andExpect(status().isOk());
     }
 
     @ParameterizedTest
     @ValueSource(strings = {
-            "/api/admin/usage/summary",
-            "/api/admin/usage/users",
-            "/api/admin/usage/models",
-            "/api/admin/usage/daily",
-            "/api/admin/usage/data-quality",
-            "/api/admin/usage/by-user/cccccccc-cccc-cccc-cccc-cccccccccccc",
-            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/users",
-            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/models",
-            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/daily"
+        "/api/admin/usage/summary",
+        "/api/admin/usage/users",
+        "/api/admin/usage/models",
+        "/api/admin/usage/daily",
+        "/api/admin/usage/data-quality",
+        "/api/admin/usage/by-user/cccccccc-cccc-cccc-cccc-cccccccccccc",
+        "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/users",
+        "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/models",
+        "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/daily"
     })
     void protectedEndpointsReturn200ForSuperAdmin(
-            String url
+        String url
     ) throws Exception {
         stubServiceResponses();
 
         mockMvc.perform(
-                        get(url)
-                                .with(
-                                        authentication(
-                                                authToken(
-                                                        superAdminPrincipal()
-                                                )
-                                        )
-                                )
-                )
-                .andExpect(status().isOk());
+                get(url)
+                    .with(
+                        authentication(
+                            authToken(
+                                superAdminPrincipal()
+                            )
+                        )
+                    )
+            )
+            .andExpect(status().isOk());
     }
 
     @Test
     void summaryUsesDefaultPagination()
-            throws Exception {
+        throws Exception {
         SafeAiUserPrincipal principal =
-                adminPrincipal();
+            adminPrincipal();
 
         when(usageQueryService.getUsageSummary(
-                nullable(Instant.class),
-                nullable(Instant.class),
-                nullable(String.class),
-                any(Pageable.class),
-                eq(principal)
+            nullable(Instant.class),
+            nullable(Instant.class),
+            nullable(String.class),
+            any(Pageable.class),
+            eq(principal)
         )).thenReturn(emptySummarySlice());
 
         mockMvc.perform(
-                        get("/api/admin/usage/summary")
-                                .with(
-                                        authentication(
-                                                authToken(principal)
-                                        )
-                                )
-                )
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content").isArray())
-                .andExpect(jsonPath("$.page").value(0))
-                .andExpect(jsonPath("$.size").value(50))
-                .andExpect(jsonPath("$.first").value(true))
-                .andExpect(jsonPath("$.last").value(true))
-                .andExpect(jsonPath("$.hasNext").value(false))
-                .andExpect(jsonPath("$.hasPrevious").value(false));
+                get("/api/admin/usage/summary")
+                    .with(
+                        authentication(
+                            authToken(principal)
+                        )
+                    )
+            )
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.content").isArray())
+            .andExpect(jsonPath("$.page").value(0))
+            .andExpect(jsonPath("$.size").value(50))
+            .andExpect(jsonPath("$.first").value(true))
+            .andExpect(jsonPath("$.last").value(true))
+            .andExpect(jsonPath("$.hasNext").value(false))
+            .andExpect(jsonPath("$.hasPrevious").value(false));
 
         ArgumentCaptor<Pageable> pageableCaptor =
-                ArgumentCaptor.forClass(Pageable.class);
+            ArgumentCaptor.forClass(Pageable.class);
 
         verify(usageQueryService).getUsageSummary(
-                nullable(Instant.class),
-                nullable(Instant.class),
-                nullable(String.class),
-                pageableCaptor.capture(),
-                eq(principal)
+            nullable(Instant.class),
+            nullable(Instant.class),
+            nullable(String.class),
+            pageableCaptor.capture(),
+            eq(principal)
         );
 
         Pageable pageable =
-                pageableCaptor.getValue();
+            pageableCaptor.getValue();
 
         assertThat(pageable.getPageNumber())
-                .isZero();
+            .isZero();
 
         assertThat(pageable.getPageSize())
-                .isEqualTo(50);
+            .isEqualTo(50);
 
         assertThat(pageable.getSort().isUnsorted())
-                .isTrue();
+            .isTrue();
     }
 
     @Test
     void summaryPassesDateModelAndPaginationToService()
-            throws Exception {
+        throws Exception {
         SafeAiUserPrincipal principal =
-                adminPrincipal();
+            adminPrincipal();
 
         when(usageQueryService.getUsageSummary(
-                eq(DATE_FROM),
-                eq(DATE_TO),
-                eq("gpt-4.1"),
-                any(Pageable.class),
-                eq(principal)
+            eq(DATE_FROM),
+            eq(DATE_TO),
+            eq("gpt-4.1"),
+            any(Pageable.class),
+            eq(principal)
         )).thenReturn(emptySummarySlice());
 
         mockMvc.perform(
-                        get("/api/admin/usage/summary")
-                                .param(
-                                        "dateFrom",
-                                        DATE_FROM.toString()
-                                )
-                                .param(
-                                        "dateTo",
-                                        DATE_TO.toString()
-                                )
-                                .param(
-                                        "model",
-                                        "  gpt-4.1  "
-                                )
-                                .param("page", "2")
-                                .param("size", "25")
-                                .with(
-                                        authentication(
-                                                authToken(principal)
-                                        )
-                                )
-                )
-                .andExpect(status().isOk());
+                get("/api/admin/usage/summary")
+                    .param(
+                        "dateFrom",
+                        DATE_FROM.toString()
+                    )
+                    .param(
+                        "dateTo",
+                        DATE_TO.toString()
+                    )
+                    .param(
+                        "model",
+                        "  gpt-4.1  "
+                    )
+                    .param("page", "2")
+                    .param("size", "25")
+                    .with(
+                        authentication(
+                            authToken(principal)
+                        )
+                    )
+            )
+            .andExpect(status().isOk());
 
         ArgumentCaptor<Pageable> pageableCaptor =
-                ArgumentCaptor.forClass(Pageable.class);
+            ArgumentCaptor.forClass(Pageable.class);
 
         verify(usageQueryService).getUsageSummary(
-                eq(DATE_FROM),
-                eq(DATE_TO),
-                eq("gpt-4.1"),
-                pageableCaptor.capture(),
-                eq(principal)
+            eq(DATE_FROM),
+            eq(DATE_TO),
+            eq("gpt-4.1"),
+            pageableCaptor.capture(),
+            eq(principal)
         );
 
         Pageable pageable =
-                pageableCaptor.getValue();
+            pageableCaptor.getValue();
 
         assertThat(pageable.getPageNumber())
-                .isEqualTo(2);
+            .isEqualTo(2);
 
         assertThat(pageable.getPageSize())
-                .isEqualTo(25);
+            .isEqualTo(25);
 
         assertThat(pageable.getSort().isUnsorted())
-                .isTrue();
+            .isTrue();
     }
 
     @Test
     void usersEndpointPassesPageableToService()
-            throws Exception {
+        throws Exception {
         SafeAiUserPrincipal principal =
-                adminPrincipal();
+            adminPrincipal();
 
         when(usageQueryService.getUsageByUsers(
-                eq(DATE_FROM),
-                eq(DATE_TO),
-                isNull(),
-                any(Pageable.class),
-                eq(principal)
+            eq(DATE_FROM),
+            eq(DATE_TO),
+            isNull(),
+            any(Pageable.class),
+            eq(principal)
         )).thenReturn(emptyUserSlice());
 
         mockMvc.perform(
-                        get("/api/admin/usage/users")
-                                .param(
-                                        "dateFrom",
-                                        DATE_FROM.toString()
-                                )
-                                .param(
-                                        "dateTo",
-                                        DATE_TO.toString()
-                                )
-                                .param("page", "1")
-                                .param("size", "20")
-                                .with(
-                                        authentication(
-                                                authToken(principal)
-                                        )
-                                )
-                )
-                .andExpect(status().isOk());
+                get("/api/admin/usage/users")
+                    .param(
+                        "dateFrom",
+                        DATE_FROM.toString()
+                    )
+                    .param(
+                        "dateTo",
+                        DATE_TO.toString()
+                    )
+                    .param("page", "1")
+                    .param("size", "20")
+                    .with(
+                        authentication(
+                            authToken(principal)
+                        )
+                    )
+            )
+            .andExpect(status().isOk());
 
         ArgumentCaptor<Pageable> pageableCaptor =
-                ArgumentCaptor.forClass(Pageable.class);
+            ArgumentCaptor.forClass(Pageable.class);
 
         verify(usageQueryService).getUsageByUsers(
-                eq(DATE_FROM),
-                eq(DATE_TO),
-                isNull(),
-                pageableCaptor.capture(),
-                eq(principal)
+            eq(DATE_FROM),
+            eq(DATE_TO),
+            isNull(),
+            pageableCaptor.capture(),
+            eq(principal)
         );
 
         assertThat(
-                pageableCaptor.getValue().getPageNumber()
+            pageableCaptor.getValue().getPageNumber()
         ).isEqualTo(1);
 
         assertThat(
-                pageableCaptor.getValue().getPageSize()
+            pageableCaptor.getValue().getPageSize()
         ).isEqualTo(20);
 
         assertThat(pageableCaptor.getValue().getSort().isUnsorted())
-                .isTrue();
+            .isTrue();
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"ROLE_ADMIN", "ROLE_SUPER_ADMIN"})
     void modelFilterIsForwardedToEveryReportWithoutChangingTenantScope(
-            String role
+        String role
     ) throws Exception {
         SafeAiUserPrincipal principal = "ROLE_SUPER_ADMIN".equals(role)
-                ? superAdminPrincipal() : adminPrincipal();
+            ? superAdminPrincipal() : adminPrincipal();
         stubServiceResponses();
 
         String base = "/api/admin/usage";
         String organizationPath = base + "/by-organization/" + ORGANIZATION_ID;
         for (String route : List.of(
-                base + "/summary", base + "/users", base + "/models", base + "/daily",
-                base + "/by-user/" + USER_ID,
-                organizationPath, organizationPath + "/users",
-                organizationPath + "/models", organizationPath + "/daily"
+            base + "/summary", base + "/users", base + "/models", base + "/daily",
+            base + "/by-user/" + USER_ID,
+            organizationPath, organizationPath + "/users",
+            organizationPath + "/models", organizationPath + "/daily"
         )) {
             mockMvc.perform(
-                            get(route)
-                                    .param("dateFrom", DATE_FROM.toString())
-                                    .param("dateTo", DATE_TO.toString())
-                                    .param("model", "  mock-safeai  ")
-                                    .with(authentication(authToken(principal)))
-                    )
-                    .andExpect(status().isOk());
+                    get(route)
+                        .param("dateFrom", DATE_FROM.toString())
+                        .param("dateTo", DATE_TO.toString())
+                        .param("model", "  mock-safeai  ")
+                        .with(authentication(authToken(principal)))
+                )
+                .andExpect(status().isOk());
         }
 
         verify(usageQueryService).getUsageSummary(
-                eq(DATE_FROM), eq(DATE_TO), eq("mock-safeai"),
-                any(Pageable.class), eq(principal));
+            eq(DATE_FROM), eq(DATE_TO), eq("mock-safeai"),
+            any(Pageable.class), eq(principal));
         verify(usageQueryService).getUsageByUsers(
-                eq(DATE_FROM), eq(DATE_TO), eq("mock-safeai"),
-                any(Pageable.class), eq(principal));
+            eq(DATE_FROM), eq(DATE_TO), eq("mock-safeai"),
+            any(Pageable.class), eq(principal));
         verify(usageQueryService).getUsageByModels(
-                eq(DATE_FROM), eq(DATE_TO), eq("mock-safeai"), eq(principal));
+            eq(DATE_FROM), eq(DATE_TO), eq("mock-safeai"), eq(principal));
         verify(usageQueryService).getUsageDaily(
-                eq(DATE_FROM), eq(DATE_TO), eq("mock-safeai"), eq(principal));
+            eq(DATE_FROM), eq(DATE_TO), eq("mock-safeai"), eq(principal));
         verify(usageQueryService).getUsageByUserId(
-                eq(USER_ID), eq(DATE_FROM), eq(DATE_TO), eq("mock-safeai"),
-                any(Pageable.class), eq(principal));
+            eq(USER_ID), eq(DATE_FROM), eq(DATE_TO), eq("mock-safeai"),
+            any(Pageable.class), eq(principal));
         verify(usageQueryService).getUsageByOrganizationId(
-                eq(ORGANIZATION_ID), eq(DATE_FROM), eq(DATE_TO), eq("mock-safeai"),
-                any(Pageable.class), eq(principal));
+            eq(ORGANIZATION_ID), eq(DATE_FROM), eq(DATE_TO), eq("mock-safeai"),
+            any(Pageable.class), eq(principal));
         verify(usageQueryService).getUsageByUsersForOrganization(
-                eq(ORGANIZATION_ID), eq(DATE_FROM), eq(DATE_TO), eq("mock-safeai"),
-                any(Pageable.class), eq(principal));
+            eq(ORGANIZATION_ID), eq(DATE_FROM), eq(DATE_TO), eq("mock-safeai"),
+            any(Pageable.class), eq(principal));
         verify(usageQueryService).getUsageByModelsForOrganization(
-                eq(ORGANIZATION_ID), eq(DATE_FROM), eq(DATE_TO), eq("mock-safeai"),
-                eq(principal));
+            eq(ORGANIZATION_ID), eq(DATE_FROM), eq(DATE_TO), eq("mock-safeai"),
+            eq(principal));
         verify(usageQueryService).getUsageDailyForOrganization(
-                eq(ORGANIZATION_ID), eq(DATE_FROM), eq(DATE_TO), eq("mock-safeai"),
-                eq(principal));
+            eq(ORGANIZATION_ID), eq(DATE_FROM), eq(DATE_TO), eq("mock-safeai"),
+            eq(principal));
     }
 
     @Test
     void userFilterBindsUuidAndPreservesExplicitOrganization() throws Exception {
         var principal = superAdminPrincipal();
         when(usageQueryService.getUsageSummaryForUser(
-                eq(ORGANIZATION_ID), eq(USER_ID), eq(DATE_FROM), eq(DATE_TO),
-                eq("mock-safeai"), any(Pageable.class), eq(principal)))
-                .thenReturn(new SliceImpl<>(List.of(),
-                        org.springframework.data.domain.PageRequest.of(0, 50), false));
+            eq(ORGANIZATION_ID), eq(USER_ID), eq(DATE_FROM), eq(DATE_TO),
+            eq("mock-safeai"), any(Pageable.class), eq(principal)))
+            .thenReturn(new SliceImpl<>(List.of(),
+                org.springframework.data.domain.PageRequest.of(0, 50), false));
         mockMvc.perform(get("/api/admin/usage/by-organization/{organizationId}", ORGANIZATION_ID)
-                        .param("userId", USER_ID.toString())
-                        .param("dateFrom", DATE_FROM.toString())
-                        .param("dateTo", DATE_TO.toString())
-                        .param("model", "mock-safeai")
-                        .with(authentication(authToken(principal))))
-                .andExpect(status().isOk());
+                .param("userId", USER_ID.toString())
+                .param("dateFrom", DATE_FROM.toString())
+                .param("dateTo", DATE_TO.toString())
+                .param("model", "mock-safeai")
+                .with(authentication(authToken(principal))))
+            .andExpect(status().isOk());
         verify(usageQueryService).getUsageSummaryForUser(
-                eq(ORGANIZATION_ID), eq(USER_ID), eq(DATE_FROM), eq(DATE_TO),
-                eq("mock-safeai"), any(Pageable.class), eq(principal));
+            eq(ORGANIZATION_ID), eq(USER_ID), eq(DATE_FROM), eq(DATE_TO),
+            eq("mock-safeai"), any(Pageable.class), eq(principal));
 
         mockMvc.perform(get("/api/admin/usage/daily")
-                        .param("userId", "invalid-uuid")
-                        .with(authentication(authToken(principal))))
-                .andExpect(status().isBadRequest());
+                .param("userId", "invalid-uuid")
+                .with(authentication(authToken(principal))))
+            .andExpect(status().isBadRequest());
     }
 
     @Test
     void userEndpointUsesCanonicalPath()
-            throws Exception {
+        throws Exception {
         SafeAiUserPrincipal principal =
-                adminPrincipal();
+            adminPrincipal();
 
         when(usageQueryService.getUsageByUserId(
-                eq(USER_ID),
-                nullable(Instant.class),
-                nullable(Instant.class),
-                nullable(String.class),
-                any(Pageable.class),
-                eq(principal)
+            eq(USER_ID),
+            nullable(Instant.class),
+            nullable(Instant.class),
+            nullable(String.class),
+            any(Pageable.class),
+            eq(principal)
         )).thenReturn(emptySummarySlice());
 
         mockMvc.perform(
-                        get(
-                                "/api/admin/usage/by-user/{userId}",
-                                USER_ID
-                        )
-                                .with(
-                                        authentication(
-                                                authToken(principal)
-                                        )
-                                )
+                get(
+                    "/api/admin/usage/by-user/{userId}",
+                    USER_ID
                 )
-                .andExpect(status().isOk());
+                    .with(
+                        authentication(
+                            authToken(principal)
+                        )
+                    )
+            )
+            .andExpect(status().isOk());
 
         verify(usageQueryService).getUsageByUserId(
-                eq(USER_ID),
-                nullable(Instant.class),
-                nullable(Instant.class),
-                nullable(String.class),
-                any(Pageable.class),
-                eq(principal)
+            eq(USER_ID),
+            nullable(Instant.class),
+            nullable(Instant.class),
+            nullable(String.class),
+            any(Pageable.class),
+            eq(principal)
         );
     }
 
     @Test
     void organizationEndpointUsesCanonicalPath()
-            throws Exception {
+        throws Exception {
         SafeAiUserPrincipal principal =
-                adminPrincipal();
+            adminPrincipal();
 
         when(usageQueryService.getUsageByOrganizationId(
+            eq(ORGANIZATION_ID),
+            nullable(Instant.class),
+            nullable(Instant.class),
+            nullable(String.class),
+            any(Pageable.class),
+            eq(principal)
+        )).thenReturn(emptySummarySlice());
+
+        mockMvc.perform(
+                get(
+                    "/api/admin/usage/by-organization/{organizationId}",
+                    ORGANIZATION_ID
+                )
+                    .with(
+                        authentication(
+                            authToken(principal)
+                        )
+                    )
+            )
+            .andExpect(status().isOk());
+
+        verify(usageQueryService)
+            .getUsageByOrganizationId(
                 eq(ORGANIZATION_ID),
                 nullable(Instant.class),
                 nullable(Instant.class),
                 nullable(String.class),
                 any(Pageable.class),
                 eq(principal)
-        )).thenReturn(emptySummarySlice());
-
-        mockMvc.perform(
-                        get(
-                                "/api/admin/usage/by-organization/{organizationId}",
-                                ORGANIZATION_ID
-                        )
-                                .with(
-                                        authentication(
-                                                authToken(principal)
-                                        )
-                                )
-                )
-                .andExpect(status().isOk());
-
-        verify(usageQueryService)
-                .getUsageByOrganizationId(
-                        eq(ORGANIZATION_ID),
-                        nullable(Instant.class),
-                        nullable(Instant.class),
-                        nullable(String.class),
-                        any(Pageable.class),
-                        eq(principal)
-                );
+            );
     }
 
     @Test
     void dataQualityPassesDateRangeToService()
-            throws Exception {
+        throws Exception {
         SafeAiUserPrincipal principal =
-                adminPrincipal();
+            adminPrincipal();
 
         mockMvc.perform(
-                        get("/api/admin/usage/data-quality")
-                                .param(
-                                        "dateFrom",
-                                        DATE_FROM.toString()
-                                )
-                                .param(
-                                        "dateTo",
-                                        DATE_TO.toString()
-                                )
-                                .with(
-                                        authentication(
-                                                authToken(principal)
-                                        )
-                                )
-                )
-                .andExpect(status().isOk());
+                get("/api/admin/usage/data-quality")
+                    .param(
+                        "dateFrom",
+                        DATE_FROM.toString()
+                    )
+                    .param(
+                        "dateTo",
+                        DATE_TO.toString()
+                    )
+                    .with(
+                        authentication(
+                            authToken(principal)
+                        )
+                    )
+            )
+            .andExpect(status().isOk());
 
         verify(usageQueryService).getDataQuality(
-                eq(DATE_FROM),
-                eq(DATE_TO),
-                eq(principal)
+            eq(DATE_FROM),
+            eq(DATE_TO),
+            eq(principal)
         );
     }
 
     @Test
     void modelsAndDailyRemainNonPagedLists()
-            throws Exception {
+        throws Exception {
         SafeAiUserPrincipal principal =
-                adminPrincipal();
+            adminPrincipal();
 
         when(usageQueryService.getUsageByModels(
-                nullable(Instant.class),
-                nullable(Instant.class),
-                isNull(),
-                eq(principal)
+            nullable(Instant.class),
+            nullable(Instant.class),
+            isNull(),
+            eq(principal)
         )).thenReturn(List.of());
 
         when(usageQueryService.getUsageDaily(
-                nullable(Instant.class),
-                nullable(Instant.class),
-                isNull(),
-                eq(principal)
+            nullable(Instant.class),
+            nullable(Instant.class),
+            isNull(),
+            eq(principal)
         )).thenReturn(List.of());
 
         mockMvc.perform(
-                        get("/api/admin/usage/models")
-                                .with(
-                                        authentication(
-                                                authToken(principal)
-                                        )
-                                )
-                )
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$").isArray());
+                get("/api/admin/usage/models")
+                    .with(
+                        authentication(
+                            authToken(principal)
+                        )
+                    )
+            )
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$").isArray());
 
         mockMvc.perform(
-                        get("/api/admin/usage/daily")
-                                .with(
-                                        authentication(
-                                                authToken(principal)
-                                        )
-                                )
-                )
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$").isArray());
+                get("/api/admin/usage/daily")
+                    .with(
+                        authentication(
+                            authToken(principal)
+                        )
+                    )
+            )
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$").isArray());
 
         verify(usageQueryService).getUsageByModels(
-                nullable(Instant.class),
-                nullable(Instant.class),
-                isNull(),
-                eq(principal)
+            nullable(Instant.class),
+            nullable(Instant.class),
+            isNull(),
+            eq(principal)
         );
         verify(usageQueryService).getUsageDaily(
-                nullable(Instant.class),
-                nullable(Instant.class),
-                isNull(),
-                eq(principal)
+            nullable(Instant.class),
+            nullable(Instant.class),
+            isNull(),
+            eq(principal)
         );
     }
 
     @ParameterizedTest
     @ValueSource(strings = {
-            "size=201",
-            "size=0",
-            "page=-1"
+        "size=201",
+        "size=0",
+        "page=-1"
     })
     void invalidPaginationReturns400(
-            String query
+        String query
     ) throws Exception {
         String[] pair =
-                query.split("=", 2);
+            query.split("=", 2);
 
         for (String route : List.of(
-                "/api/admin/usage/summary",
-                "/api/admin/usage/users",
-                "/api/admin/usage/by-organization/" + ORGANIZATION_ID,
-                "/api/admin/usage/by-organization/" + ORGANIZATION_ID + "/users"
+            "/api/admin/usage/summary",
+            "/api/admin/usage/users",
+            "/api/admin/usage/by-organization/" + ORGANIZATION_ID,
+            "/api/admin/usage/by-organization/" + ORGANIZATION_ID + "/users"
         )) {
             mockMvc.perform(
-                            get(route)
-                                    .param(pair[0], pair[1])
-                                    .with(authentication(authToken(adminPrincipal())))
-                    )
-                    .andExpect(status().isBadRequest());
+                    get(route)
+                        .param(pair[0], pair[1])
+                        .with(authentication(authToken(adminPrincipal())))
+                )
+                .andExpect(status().isBadRequest());
         }
 
         verifyNoInteractions(usageQueryService);
@@ -702,221 +785,221 @@ class UsageControllerSecurityTest {
 
     @Test
     void modelLongerThan100CharactersReturns400()
-            throws Exception {
+        throws Exception {
         mockMvc.perform(
-                        get("/api/admin/usage/summary")
-                                .param(
-                                        "model",
-                                        "a".repeat(101)
-                                )
-                                .with(
-                                        authentication(
-                                                authToken(
-                                                        adminPrincipal()
-                                                )
-                                        )
-                                )
-                )
-                .andExpect(status().isBadRequest());
+                get("/api/admin/usage/summary")
+                    .param(
+                        "model",
+                        "a".repeat(101)
+                    )
+                    .with(
+                        authentication(
+                            authToken(
+                                adminPrincipal()
+                            )
+                        )
+                    )
+            )
+            .andExpect(status().isBadRequest());
 
         verifyNoInteractions(usageQueryService);
     }
 
     @ParameterizedTest
     @ValueSource(strings = {
-            "/api/admin/usage/summary",
-            "/api/admin/usage/users",
-            "/api/admin/usage/models",
-            "/api/admin/usage/daily",
-            "/api/admin/usage/by-user/cccccccc-cccc-cccc-cccc-cccccccccccc",
-            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/users",
-            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/models",
-            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/daily"
+        "/api/admin/usage/summary",
+        "/api/admin/usage/users",
+        "/api/admin/usage/models",
+        "/api/admin/usage/daily",
+        "/api/admin/usage/by-user/cccccccc-cccc-cccc-cccc-cccccccccccc",
+        "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/users",
+        "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/models",
+        "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/daily"
     })
     void oversizedModelFilterIsRejectedBeforeServiceInvocation(
-            String route
+        String route
     ) throws Exception {
         mockMvc.perform(
-                        get(route)
-                                .param("model", "x".repeat(101))
-                                .with(authentication(authToken(adminPrincipal())))
-                )
-                .andExpect(status().isBadRequest());
+                get(route)
+                    .param("model", "x".repeat(101))
+                    .with(authentication(authToken(adminPrincipal())))
+            )
+            .andExpect(status().isBadRequest());
 
         verifyNoInteractions(usageQueryService);
     }
 
     @Test
     void malformedDateReturns400()
-            throws Exception {
+        throws Exception {
         mockMvc.perform(
-                        get("/api/admin/usage/summary")
-                                .param(
-                                        "dateFrom",
-                                        "2026-07-12"
-                                )
-                                .with(
-                                        authentication(
-                                                authToken(
-                                                        adminPrincipal()
-                                                )
-                                        )
-                                )
-                )
-                .andExpect(status().isBadRequest());
+                get("/api/admin/usage/summary")
+                    .param(
+                        "dateFrom",
+                        "2026-07-12"
+                    )
+                    .with(
+                        authentication(
+                            authToken(
+                                adminPrincipal()
+                            )
+                        )
+                    )
+            )
+            .andExpect(status().isBadRequest());
 
         verifyNoInteractions(usageQueryService);
     }
 
     @ParameterizedTest
     @ValueSource(strings = {
-            "/api/admin/usage-summary",
-            "/api/admin/usage/users/cccccccc-cccc-cccc-cccc-cccccccccccc",
-            "/api/admin/usage/organizations/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        "/api/admin/usage-summary",
+        "/api/admin/usage/users/cccccccc-cccc-cccc-cccc-cccccccccccc",
+        "/api/admin/usage/organizations/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
     })
     void legacyRoutesReturn404(
-            String url
+        String url
     ) throws Exception {
         mockMvc.perform(
-                        get(url)
-                                .with(
-                                        authentication(
-                                                authToken(
-                                                        adminPrincipal()
-                                                )
-                                        )
-                                )
-                )
-                .andExpect(status().isNotFound());
+                get(url)
+                    .with(
+                        authentication(
+                            authToken(
+                                adminPrincipal()
+                            )
+                        )
+                    )
+            )
+            .andExpect(status().isNotFound());
     }
 
     private void stubServiceResponses() {
         when(usageQueryService.getUsageSummary(
-                nullable(Instant.class),
-                nullable(Instant.class),
-                nullable(String.class),
-                any(Pageable.class),
-                any(SafeAiUserPrincipal.class)
+            nullable(Instant.class),
+            nullable(Instant.class),
+            nullable(String.class),
+            any(Pageable.class),
+            any(SafeAiUserPrincipal.class)
         )).thenReturn(emptySummarySlice());
 
         when(usageQueryService.getUsageByUsers(
-                nullable(Instant.class),
-                nullable(Instant.class),
-                nullable(String.class),
-                any(Pageable.class),
-                any(SafeAiUserPrincipal.class)
+            nullable(Instant.class),
+            nullable(Instant.class),
+            nullable(String.class),
+            any(Pageable.class),
+            any(SafeAiUserPrincipal.class)
         )).thenReturn(emptyUserSlice());
 
         when(usageQueryService.getUsageByModels(
-                nullable(Instant.class),
-                nullable(Instant.class),
-                nullable(String.class),
-                any(SafeAiUserPrincipal.class)
+            nullable(Instant.class),
+            nullable(Instant.class),
+            nullable(String.class),
+            any(SafeAiUserPrincipal.class)
         )).thenReturn(List.of());
 
         when(usageQueryService.getUsageDaily(
-                nullable(Instant.class),
-                nullable(Instant.class),
-                nullable(String.class),
-                any(SafeAiUserPrincipal.class)
+            nullable(Instant.class),
+            nullable(Instant.class),
+            nullable(String.class),
+            any(SafeAiUserPrincipal.class)
         )).thenReturn(List.of());
 
         when(usageQueryService.getUsageByUsersForOrganization(
-                any(UUID.class),
-                nullable(Instant.class),
-                nullable(Instant.class),
-                nullable(String.class),
-                any(Pageable.class),
-                any(SafeAiUserPrincipal.class)
+            any(UUID.class),
+            nullable(Instant.class),
+            nullable(Instant.class),
+            nullable(String.class),
+            any(Pageable.class),
+            any(SafeAiUserPrincipal.class)
         )).thenReturn(emptyUserSlice());
 
         when(usageQueryService.getUsageByModelsForOrganization(
-                any(UUID.class),
-                nullable(Instant.class),
-                nullable(Instant.class),
-                nullable(String.class),
-                any(SafeAiUserPrincipal.class)
+            any(UUID.class),
+            nullable(Instant.class),
+            nullable(Instant.class),
+            nullable(String.class),
+            any(SafeAiUserPrincipal.class)
         )).thenReturn(List.of());
 
         when(usageQueryService.getUsageDailyForOrganization(
-                any(UUID.class),
-                nullable(Instant.class),
-                nullable(Instant.class),
-                nullable(String.class),
-                any(SafeAiUserPrincipal.class)
+            any(UUID.class),
+            nullable(Instant.class),
+            nullable(Instant.class),
+            nullable(String.class),
+            any(SafeAiUserPrincipal.class)
         )).thenReturn(List.of());
 
         when(usageQueryService.getUsageByUserId(
-                any(UUID.class),
-                nullable(Instant.class),
-                nullable(Instant.class),
-                nullable(String.class),
-                any(Pageable.class),
-                any(SafeAiUserPrincipal.class)
+            any(UUID.class),
+            nullable(Instant.class),
+            nullable(Instant.class),
+            nullable(String.class),
+            any(Pageable.class),
+            any(SafeAiUserPrincipal.class)
         )).thenReturn(emptySummarySlice());
 
         when(usageQueryService.getUsageByOrganizationId(
-                any(UUID.class),
-                nullable(Instant.class),
-                nullable(Instant.class),
-                nullable(String.class),
-                any(Pageable.class),
-                any(SafeAiUserPrincipal.class)
+            any(UUID.class),
+            nullable(Instant.class),
+            nullable(Instant.class),
+            nullable(String.class),
+            any(Pageable.class),
+            any(SafeAiUserPrincipal.class)
         )).thenReturn(emptySummarySlice());
     }
 
     private Slice<UsageSummaryResponse> emptySummarySlice() {
         return new SliceImpl<>(
-                List.of(),
-                Pageable.ofSize(50),
-                false
+            List.of(),
+            Pageable.ofSize(50),
+            false
         );
     }
 
     private Slice<UsageUserSummaryResponse> emptyUserSlice() {
         return new SliceImpl<>(
-                List.of(),
-                Pageable.ofSize(50),
-                false
+            List.of(),
+            Pageable.ofSize(50),
+            false
         );
     }
 
     private Authentication authToken(
-            SafeAiUserPrincipal principal
+        SafeAiUserPrincipal principal
     ) {
         return new UsernamePasswordAuthenticationToken(
-                principal,
-                null,
-                principal.getAuthorities()
+            principal,
+            null,
+            principal.getAuthorities()
         );
     }
 
     private SafeAiUserPrincipal adminPrincipal() {
         return SafeAiUserPrincipal.accessTokenPrincipal(
-                ADMIN_ID,
-                ORGANIZATION_ID,
-                0L,
-                0L,
-                Set.of(
-                        new SimpleGrantedAuthority(
-                                "ROLE_ADMIN"
-                        )
+            ADMIN_ID,
+            ORGANIZATION_ID,
+            0L,
+            0L,
+            Set.of(
+                new SimpleGrantedAuthority(
+                    "ROLE_ADMIN"
                 )
+            )
         );
     }
 
     private SafeAiUserPrincipal superAdminPrincipal() {
         return SafeAiUserPrincipal.accessTokenPrincipal(
-                SUPER_ADMIN_ID,
-                PLATFORM_ORGANIZATION_ID,
-                0L,
-                0L,
-                Set.of(
-                        new SimpleGrantedAuthority(
-                                "ROLE_SUPER_ADMIN"
-                        )
+            SUPER_ADMIN_ID,
+            PLATFORM_ORGANIZATION_ID,
+            0L,
+            0L,
+            Set.of(
+                new SimpleGrantedAuthority(
+                    "ROLE_SUPER_ADMIN"
                 )
+            )
         );
     }
 }
