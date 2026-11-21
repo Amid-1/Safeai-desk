@@ -9,6 +9,7 @@ import { beginBodyResizeStyle, restoreBodyResizeStyle, clamp, readSavedHeight } 
 
 const KEYBOARD_STEP = 32
 const RESERVED_DRAG_RANGE = 96
+const MIN_PROTECTED_DRAG_RANGE = 2 * KEYBOARD_STEP
 
 export function useResizableScrollRegion({
     storageKey,
@@ -358,10 +359,16 @@ export function useResizableScrollRegion({
     } =
         layoutMetrics
 
-    // On cramped screens, preserve the scrollable upper controls but reserve
-    // space for a usable lower viewport instead of leaving only its chrome.
-    const protectedUpperLimit = reserveLowerHeight
-        ? Math.max(Math.min(minUpperHeight, containerHeight), containerHeight - normalizedMinHeight - RESERVED_DRAG_RANGE)
+    // Protect the entire primary boundary if the lower panel still has room
+    // for its minimum height and two keyboard steps. Only fall back to the
+    // scrollable upper region's 96 px drag reserve on genuinely cramped screens.
+    const canProtectEntireBoundary = containerHeight - protectedUpperHeight
+        >= normalizedMinHeight + MIN_PROTECTED_DRAG_RANGE
+    const protectedUpperLimit = reserveLowerHeight && !canProtectEntireBoundary
+        ? Math.max(
+            Math.min(minUpperHeight, containerHeight),
+            containerHeight - normalizedMinHeight - RESERVED_DRAG_RANGE,
+        )
         : containerHeight
     const effectiveProtectedUpperHeight =
         containerHeight > 0

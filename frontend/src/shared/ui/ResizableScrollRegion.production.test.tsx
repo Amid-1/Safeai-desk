@@ -153,6 +153,34 @@ describe('ResizableScrollRegion: полная регрессия поведен�
         expect(screen.getByText('Верхний блок')).toBeInTheDocument()
     })
 
+    it.each([64, 72, 95])('защищает всю верхнюю границу при запасе перетаскивания %i px', (dragRange) => {
+        const protectedHeight = 900 - 280 - dragRange
+        vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+            .mockImplementation(function (this: HTMLElement) {
+                if (this.classList.contains('resizable-scroll-region')) return boundingRect(900)
+                if (this.hasAttribute('data-resizable-upper-boundary')) return boundingRect(protectedHeight - 8)
+                if (this.hasAttribute('data-resizable-upper-preferred-boundary')) return boundingRect(750)
+                return boundingRect(500)
+            })
+        const view = render(region({
+            preserveUpperContent: true, reserveLowerHeight: true, minHeight: 280, autoFitHeight: 760,
+            upper: <div><span data-resizable-upper-boundary /><span data-resizable-upper-preferred-boundary /></div>,
+        }))
+        const separator = screen.getByRole('separator')
+        expect(height()).toBe(280)
+        expect(separator).toHaveAttribute('aria-valuemax', String(280 + dragRange))
+        expect(view.container.querySelector('.resizable-scroll-region'))
+            .toHaveStyle('--resizable-upper-min-height: ' + protectedHeight + 'px')
+        fireEvent.keyDown(separator, { key: 'ArrowUp' })
+        expect(height()).toBe(312)
+        fireEvent.keyDown(separator, { key: 'ArrowUp' })
+        expect(height()).toBe(344)
+        fireEvent.keyDown(separator, { key: 'End' })
+        expect(height()).toBe(280 + dragRange)
+        fireEvent.doubleClick(separator)
+        expect(height()).toBe(280)
+    })
+
     it('сворачивает только таблицу до панели навигации и учитывает изменение высоты footer', () => {
         let footerHeight = 56
         vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
