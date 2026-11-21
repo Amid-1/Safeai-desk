@@ -117,6 +117,9 @@ public class ChatQuotaRepository {
                and state = 'RESERVED'
             """;
 
+    // The V67 view counts evidence for executed responses only. A provider
+    // rejection is not proof of zero usage or cost. Keep such liabilities
+    // visible even after the logical reservation has been RELEASED.
     private static final String ORGANIZATION_CONSUMPTION_SQL = """
             select
                 count(*) filter (where r.state <> 'RELEASED')::bigint as requests,
@@ -147,7 +150,8 @@ public class ChatQuotaRepository {
                         select 1 from model_execution_plans ep
                         join model_execution_attempts ea on ea.execution_plan_id = ep.id
                         where ep.chat_turn_id = r.turn_id
-                          and ea.outcome in ('STARTED', 'AMBIGUOUS')
+                          and (ea.outcome in ('STARTED', 'AMBIGUOUS')
+                               or ea.outcome_certainty = 'KNOWN_REJECTED')
                     )
                     or (r.state <> 'RELEASED' and (
                         r.state = 'AMBIGUOUS'
@@ -164,6 +168,7 @@ public class ChatQuotaRepository {
                           on ea.execution_plan_id = ep.id
                         where ep.chat_turn_id = r.turn_id
                           and (ea.outcome in ('STARTED', 'AMBIGUOUS')
+                               or ea.outcome_certainty = 'KNOWN_REJECTED'
                                or (ea.outcome_certainty is distinct from 'KNOWN_NOT_EXECUTED'
                                    and ea.outcome is distinct from 'SUCCEEDED'
                                    and ea.pricing_status is distinct from 'PRICED'
@@ -218,7 +223,8 @@ public class ChatQuotaRepository {
                         select 1 from model_execution_plans ep
                         join model_execution_attempts ea on ea.execution_plan_id = ep.id
                         where ep.chat_turn_id = r.turn_id
-                          and ea.outcome in ('STARTED', 'AMBIGUOUS')
+                          and (ea.outcome in ('STARTED', 'AMBIGUOUS')
+                               or ea.outcome_certainty = 'KNOWN_REJECTED')
                     )
                     or (r.state <> 'RELEASED' and (
                         r.state = 'AMBIGUOUS'
@@ -235,6 +241,7 @@ public class ChatQuotaRepository {
                           on ea.execution_plan_id = ep.id
                         where ep.chat_turn_id = r.turn_id
                           and (ea.outcome in ('STARTED', 'AMBIGUOUS')
+                               or ea.outcome_certainty = 'KNOWN_REJECTED'
                                or (ea.outcome_certainty is distinct from 'KNOWN_NOT_EXECUTED'
                                    and ea.outcome is distinct from 'SUCCEEDED'
                                    and ea.pricing_status is distinct from 'PRICED'

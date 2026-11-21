@@ -10,6 +10,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import ru.safeai.gateway.ai.pricing.ModelPricingScheme;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.chat.integration.AbstractChatPostgresIntegrationTest;
+import ru.safeai.gateway.chat.repository.ChatQuotaRepository;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.model.domain.ModelCatalogEntry;
 import ru.safeai.gateway.model.domain.ModelRouteRequest;
@@ -19,10 +20,15 @@ import ru.safeai.gateway.model.repository.OrganizationModelPolicyRepository;
 import ru.safeai.gateway.model.service.ModelRoutingService;
 import ru.safeai.gateway.model.service.RuntimeModelStatusService;
 import ru.safeai.gateway.model.testsupport.ModelTestFixtures;
+import ru.safeai.gateway.usage.config.UsageJdbcClients;
+import ru.safeai.gateway.usage.config.UsageProperties;
+import ru.safeai.gateway.usage.repository.UsagePhysicalSpendRepository;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -437,6 +443,70 @@ class ModelGovernanceV59V60V61PostgresIntegrationTest
 
     private GovernedExecution createConfiguredProcessingExecution() {
         return createConfiguredProcessingExecution(false);
+    }
+
+    @Test
+    void releasedProviderRejectionRetainsUnknownTokenAndMoneyLiability() {
+        GovernedExecution execution = createConfiguredProcessingExecution();
+        insertQuotaReservation(execution.turnId(), ORGANIZATION_ID, USER_ID);
+        Instant started = SEPTEMBER_START.plusSeconds(1);
+        insertStartedAttempt(execution, started);
+        finishRejectedAttempt(execution, started, "KNOWN_REJECTED");
+
+        var quota = new ChatQuotaRepository(jdbcTemplate);
+        quota.releaseFailure(execution.turnId(), started.plusSeconds(2));
+        LocalDate reservationMonth = LocalDate.of(2026, 6, 1);
+        var organization = quota.organizationConsumption(ORGANIZATION_ID, reservationMonth);
+        var user = quota.userConsumption(USER_ID, reservationMonth);
+        assertThat(organization).isEqualTo(user);
+        assertThat(organization.requests()).isZero();
+        assertThat(organization.usageUnverifiable()).isTrue();
+        assertThat(organization.costUnverifiable()).isTrue();
+        var reportRepository = new UsagePhysicalSpendRepository(new UsageJdbcClients(
+                Objects.requireNonNull(jdbcTemplate.getDataSource()),
+                new UsageProperties(null, null, null, null, null, null, null, null, null)));
+        var report = reportRepository.findCoverage(SEPTEMBER_START, OCTOBER_START, ORGANIZATION_ID);
+        assertThat(report.knownRejectedAttempts()).isEqualTo(1);
+        assertThat(report.usageComplete()).isFalse();
+        assertThat(report.costComplete()).isFalse();
+        assertThat(report.knownCostUsd()).isZero();
+        assertThat(quota.organizationConsumption(OTHER_ORGANIZATION_ID, reservationMonth)
+                .usageUnverifiable()).isFalse();
+        assertThat(quota.userConsumption(OTHER_USER_ID, reservationMonth)
+                .costUnverifiable()).isFalse();
+        assertThat(quota.organizationConsumption(ORGANIZATION_ID, reservationMonth.plusMonths(1))
+                .usageUnverifiable()).isFalse();
+    }
+
+    @Test
+    void provedNonExecutionDoesNotInventUnknownLiabilityAfterRelease() {
+        GovernedExecution execution = createConfiguredProcessingExecution();
+        insertQuotaReservation(execution.turnId(), ORGANIZATION_ID, USER_ID);
+        Instant started = SEPTEMBER_START.plusSeconds(1);
+        insertStartedAttempt(execution, started);
+        finishRejectedAttempt(execution, started, "KNOWN_NOT_EXECUTED");
+
+        var quota = new ChatQuotaRepository(jdbcTemplate);
+        quota.releaseFailure(execution.turnId(), started.plusSeconds(2));
+        LocalDate reservationMonth = LocalDate.of(2026, 6, 1);
+        var organization = quota.organizationConsumption(ORGANIZATION_ID, reservationMonth);
+        assertThat(organization).isEqualTo(quota.userConsumption(USER_ID, reservationMonth));
+        assertThat(organization.requests()).isZero();
+        assertThat(organization.inputTokens()).isZero();
+        assertThat(organization.outputTokens()).isZero();
+        assertThat(organization.costUsd()).isZero();
+        assertThat(organization.usageUnverifiable()).isFalse();
+        assertThat(organization.costUnverifiable()).isFalse();
+    }
+
+    private void finishRejectedAttempt(GovernedExecution execution, Instant started, String certainty) {
+        assertThat(jdbcTemplate.update("""
+                update public.model_execution_attempts
+                set outcome='FAILED', outcome_certainty=?,
+                    retry_safety='SAME_TARGET_RETRY_FORBIDDEN',
+                    failure_type='RATE_LIMITED', finished_at=?
+                where execution_plan_id=? and attempt_number=1
+                """, certainty, timestamp(started.plusSeconds(1)), execution.planId())).isEqualTo(1);
     }
 
     private GovernedExecution createConfiguredProcessingExecution(

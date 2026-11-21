@@ -8,12 +8,15 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.chat.dto.SendMessageRequest;
 import ru.safeai.gateway.chat.exception.ChatQuotaExceededException;
 import ru.safeai.gateway.chat.exception.ChatTurnInProgressException;
+import ru.safeai.gateway.chat.quota.ChatQuotaReservation;
 import ru.safeai.gateway.chat.service.ChatProcessingContext;
+import ru.safeai.gateway.chat.service.ChatQuotaService;
 import ru.safeai.gateway.chat.service.ChatTurnReservationService;
 import ru.safeai.gateway.chat.exception.ChatBusyException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
@@ -36,6 +39,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest(properties = {
         "safeai.chat.recovery.enabled=false",
@@ -61,10 +65,21 @@ class ChatConcurrencyIntegrationTest
     private ChatTurnReservationService reservationService;
 
     @Autowired
+    private ChatQuotaService quotaService;
+
+    @Autowired
     private OrganizationModelPolicyRepository policyRepository;
 
     @Autowired
     private Clock clock;
+
+    @Test
+    void quotaReservationRequiresCallerTransaction() {
+        assertThatThrownBy(() -> quotaService.reserve(
+                CHAT_ID, UUID.randomUUID(), UUID.randomUUID(), ORGANIZATION_ID, USER_ID,
+                new ChatQuotaReservation(UUID.randomUUID(), 1, 1, null, false)))
+                .isInstanceOf(IllegalTransactionStateException.class);
+    }
 
     @BeforeEach
     void prepareGovernedMockRuntime() {

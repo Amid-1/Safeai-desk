@@ -2,6 +2,8 @@ package ru.safeai.gateway.chat.service;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
 import ru.safeai.gateway.chat.config.ChatQuotaProperties;
 import ru.safeai.gateway.chat.exception.ChatQuotaExceededException;
@@ -18,6 +20,9 @@ import java.util.Objects;
 import java.util.UUID;
 
 @Service
+// Policy locks, consumption reads and ledger writes must share the caller's
+// ChatTurn transaction. Never silently execute this contract in autocommit.
+@Transactional(propagation = Propagation.MANDATORY)
 public class ChatQuotaService {
     private final ChatQuotaRepository repository;
     private final ChatQuotaProperties properties;
@@ -116,6 +121,15 @@ public class ChatQuotaService {
     private void validateLegacy(String scope, UUID chatId, UUID turnId, UUID clientRequestId,
                                 ChatQuotaPolicy policy, ChatQuotaConsumption consumed) {
         if (!policy.enabled()) return;
+        if (consumed.usageUnverifiable()
+                && (policy.monthlyInputTokenLimit() != null
+                || policy.monthlyOutputTokenLimit() != null)) {
+            deny(scope + ".monthlyTokensUnverifiable", chatId, turnId, clientRequestId);
+        }
+        // A deployment-wide legacy estimate is not a verified route price.
+        if (policy.monthlyCostLimitUsd() != null) {
+            deny(scope + ".monthlyCostUnverifiable", chatId, turnId, clientRequestId);
+        }
         exceeds(policy.monthlyRequestLimit(), consumed.requests(), 1,
                 scope + ".monthlyRequests", chatId, turnId, clientRequestId);
         exceeds(policy.monthlyInputTokenLimit(), consumed.inputTokens(),
@@ -124,10 +138,6 @@ public class ChatQuotaService {
         exceeds(policy.monthlyOutputTokenLimit(), consumed.outputTokens(),
                 properties.reservationOutputTokens(), scope + ".monthlyOutputTokens",
                 chatId, turnId, clientRequestId);
-        if (policy.monthlyCostLimitUsd() != null && consumed.costUsd()
-                .add(properties.reservationCostUsd()).compareTo(policy.monthlyCostLimitUsd()) > 0) {
-            deny(scope + ".monthlyCostUsd", chatId, turnId, clientRequestId);
-        }
     }
 
     private static void exceeds(Long limit, long used, long add, String dimension,

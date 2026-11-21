@@ -588,6 +588,27 @@ class ChatTurnStateMachineIntegrationTest
     }
 
     @Test
+    void rejectedProviderAttemptBlocksNextStrictTokenQuotaDespiteReleasedReservation() {
+        jdbcTemplate.update("""
+                insert into organization_ai_quotas (
+                    organization_id, enabled, monthly_input_token_limit, created_at, updated_at
+                ) values (?, true, 1000000, current_timestamp, current_timestamp)
+                """, ORGANIZATION_ID);
+        ChatProcessingContext context = reserve("Provider rejection", UUID.randomUUID());
+        UUID attemptId = startPhysicalAttempt(context);
+        AiProviderException failure = unambiguousProviderFailure();
+        physicalAttemptRecorder.failed(attemptId, failure);
+        finalizationService.failUnambiguous(context, failure, principal());
+
+        assertThat(turnState(context.turnId())).isEqualTo("FAILED");
+        assertThat(quotaState(context.turnId())).isEqualTo("RELEASED");
+        assertThatThrownBy(() -> reserve("Next request", UUID.randomUUID()))
+                .isInstanceOf(ChatQuotaExceededException.class)
+                .hasMessageContaining("organization.monthlyTokensUnverifiable");
+        assertThat(countChatQuotaReservations()).isEqualTo(1);
+    }
+
+    @Test
     void staleProcessingBeforeProviderCallBecomesRecoverableFailed() {
         UUID clientRequestId = UUID.randomUUID();
 
