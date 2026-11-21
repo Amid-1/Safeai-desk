@@ -11,6 +11,8 @@ from xml.etree.ElementTree import Element, SubElement, ElementTree
 
 CHECKER = Path(__file__).with_name("check-maven-reports.py")
 BASE = [
+    ("ru.safeai.gateway.usage.repository.UsagePhysicalExplainPerformanceIntegrationTest",
+     "explainActualRepositoryQueriesWithSelectiveTenantAndGlobalRange"),
     ("ru.safeai.gateway.usage.repository.UsageExplainAnalyzePerformanceIntegrationTest",
      "explainAnalyzeCoversGlobalModelOrganizationAndUserShapes"),
     ("ru.safeai.gateway.usage.repository.UsagePerformanceIntegrationTest",

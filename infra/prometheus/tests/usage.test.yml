@@ -1,0 +1,47 @@
+# SafeAI-Desk/infra/prometheus/tests/usage.test.yml
+rule_files:
+  - ../rules/safeai-usage.yml
+evaluation_interval: 1m
+tests:
+  - name: full-export-queue
+    interval: 1m
+    input_series:
+      - series: 'safeai_usage_export_queued{instance="a"}'
+        values: '4+0x6'
+      - series: 'safeai_usage_export_queued{instance="b"}'
+        values: '4+0x6'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: SafeAiUsageExportQueueSaturated
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: SafeAiUsageExportQueueSaturated
+        exp_alerts:
+          - exp_labels: {severity: warning, service: safeai-backend}
+            exp_annotations:
+              summary: "Очередь экспорта Usage заполнена"
+              description: "Проверьте время выполнения отчётов и состояние PostgreSQL."
+  - name: missing-export-observations
+    interval: 1m
+    input_series: []
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: SafeAiUsageExportMonitoringUnavailable
+        exp_alerts:
+          - exp_labels: {severity: critical, service: safeai-backend}
+            exp_annotations:
+              summary: "Мониторинг очереди Usage недоступен"
+              description: "Проверьте PostgreSQL, worker экспорта и сбор метрик."
+  - name: rollup-observation-errors
+    interval: 1m
+    input_series:
+      - series: 'safeai_usage_rollup_observation_errors_total{instance="a"}'
+        values: '0+2x8'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: SafeAiUsageRollupObservationErrors
+        exp_alerts:
+          - exp_labels: {severity: warning, service: safeai-backend}
+            exp_annotations:
+              summary: "Ошибки мониторинга агрегатов Usage"
+              description: "Проверьте доступ к PostgreSQL, таймауты и состояние rollup."

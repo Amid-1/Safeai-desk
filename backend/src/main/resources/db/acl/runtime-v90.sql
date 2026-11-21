@@ -66,6 +66,7 @@ INSERT INTO acl_matrix VALUES
 ('usage_daily_quality_rollups','SIUD','',''),
 ('usage_daily_user_model_rollups','SID','',''),
 ('usage_dirty_dates','SIUD','',''),
+('usage_export_jobs','SD','id,owner_id,owner_org,token_version,org_version,owner_role,kind,date_from,date_to,organization_id,user_id,model,report_order,budget_status,created_at,expires_at','state,attempts,lease_token,lease_until,csv,failure'),
 ('usage_rollup_state','SIU','',''),
 ('user_ai_quotas','S','','updated_at'),
 ('user_roles','SID','','user_id'),
@@ -82,7 +83,7 @@ BEGIN
                    WHERE n.nspname='public' AND c.relkind='S') THEN
         RAISE EXCEPTION 'Unsafe default ACL, runtime capability or inventory';
     END IF;
-    IF (SELECT count(*) FROM acl_matrix) <> 64 OR EXISTS (
+    IF (SELECT count(*) FROM acl_matrix) <> 65 OR EXISTS (
         SELECT name FROM acl_matrix EXCEPT
         SELECT c.relname::text FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
         WHERE n.nspname='public' AND c.relkind IN ('r','p','v','m','f')
@@ -146,7 +147,7 @@ BEGIN
 END;
 $fn$;
 
--- All application-owned invoker routines are reviewed in the immutable V1–V96
+-- All application-owned invoker routines are reviewed in the immutable V1–V99
 -- history; extension functions are granted separately by bootstrap.
 -- SECURITY DEFINER functions retain only their migration-specific grants.
 DO $routines$

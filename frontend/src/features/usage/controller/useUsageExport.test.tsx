@@ -3,6 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { downloadUsageExport, readUsageExport, startUsageExport, type ExportJob } from '../api/usageExportApi'
 import { useUsageExport } from './useUsageExport'
+import { ApiError } from '../../../shared/api/http'
 
 vi.mock('../api/usageExportApi', () => ({
     startUsageExport: vi.fn(), readUsageExport: vi.fn(), downloadUsageExport: vi.fn(),
@@ -50,5 +51,24 @@ describe('Асинхронный экспорт', () => {
         await waitFor(() => expect(result.current.ready).toBe(true), {timeout: 4000})
         expect(startUsageExport).toHaveBeenCalledTimes(1)
         expect(readUsageExport).toHaveBeenCalledWith(job.id, expect.any(AbortSignal))
+    })
+    it('восстанавливает опрос того же задания после временного отказа', async () => {
+        vi.useFakeTimers()
+        try {
+            vi.mocked(startUsageExport).mockResolvedValue({...job, state: 'QUEUED'})
+            vi.mocked(readUsageExport).mockRejectedValueOnce(new ApiError('offline', {}, 503))
+                .mockResolvedValueOnce(job)
+            const {result} = renderHook(() => useUsageExport('scope'))
+            act(() => { void result.current.run(filter) })
+            await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+            expect(result.current.pending).toBe(true)
+            expect(result.current.error).toContain('повторно')
+            await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+            expect(result.current.ready).toBe(true)
+            expect(startUsageExport).toHaveBeenCalledTimes(1)
+            expect(readUsageExport).toHaveBeenCalledTimes(2)
+        } finally {
+            vi.useRealTimers()
+        }
     })
 })

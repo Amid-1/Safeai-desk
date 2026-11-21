@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SafeAI-Desk: apply the reviewed V1-V96 runtime ACL to the local Docker DB.
+# SafeAI-Desk: apply the reviewed V1-V99 runtime ACL to the local Docker DB.
 # Stop the local backend before invocation. Never use this for production.
 set -Eeuo pipefail
 
@@ -34,12 +34,12 @@ cd "$repo_dir/infra"
         printf '%s\n' "DO \$guard\$ BEGIN"
         printf '%s\n' "IF current_database() <> 'safeai' OR session_user <> 'safeai_migrator' OR current_user <> session_user THEN"
         printf '%s\n' "RAISE EXCEPTION 'Unexpected local database or migration identity'; END IF;"
-        printf '%s\n' "IF NOT (SELECT count(*)=96 AND count(DISTINCT version)=96 AND bool_and(success AND version ~ '^[1-9][0-9]*$' AND version::int BETWEEN 1 AND 96) FROM public.flyway_schema_history WHERE version IS NOT NULL) THEN"
-        printf '%s\n' "RAISE EXCEPTION 'Expected reviewed schema V1-V96; run migrations first'; END IF;"
+        printf '%s\n' "IF NOT (SELECT count(*)=99 AND count(DISTINCT version)=99 AND bool_and(success AND version ~ '^[1-9][0-9]*$' AND version::int BETWEEN 1 AND 99) FROM public.flyway_schema_history WHERE version IS NOT NULL) THEN"
+        printf '%s\n' "RAISE EXCEPTION 'Expected reviewed schema V1-V99; run migrations first'; END IF;"
         printf '%s\n' "END; \$guard\$;"
         cat "$sql_file"
     } | docker compose -f docker-compose.local.yml exec -T -e PGPASSWORD postgres \
         psql -X -v ON_ERROR_STOP=1 -1 -h 127.0.0.1 -U safeai_migrator -d safeai -f -
 )
 
-echo "PASS: reviewed V1-V96 runtime ACL applied to local safeai database"
+echo "PASS: reviewed V1-V99 runtime ACL applied to local safeai database"

@@ -36,7 +36,7 @@ class PerformanceReportsTests(unittest.TestCase):
         tree.write(path, encoding='utf-8')
 
     def test_success(self):
-        self.assertEqual(10, reports.verify(self.directory))
+        self.assertEqual(11, reports.verify(self.directory))
 
     def test_missing_report(self):
         self.path(self.suite).unlink()

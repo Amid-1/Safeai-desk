@@ -1009,9 +1009,14 @@ backend/
 │   │       │       ├── V94__operation_correlation.sql
 │   │       │       ├── V94__operation_correlation.sql.conf
 │   │       │       ├── V95__chat_quota_physical_attempt_gate.sql
-│   │       │       ├── V95__chat_quota_physical_attempt_gate.sql.conf
 │   │       │       ├── V96__chat_quota_admission_fence.sql
-│   │       │       └── V96__chat_quota_admission_fence.sql.conf
+│   │       │       ├── V96__chat_quota_admission_fence.sql.conf
+│   │       │       ├── V97__usage_physical_tenant_index.sql
+│   │       │       ├── V97__usage_physical_tenant_index.sql.conf
+│   │       │       ├── V98__usage_export_jobs.sql
+│   │       │       ├── V98__usage_export_jobs.sql.conf
+│   │       │       ├── V99__usage_export_job_guard.sql
+│   │       │       └── V99__usage_export_job_guard.sql.conf
 │   │       │
 │   │       │   └── README_DB.md              # документация DB; структура db/
 │   │       │
@@ -2864,6 +2869,7 @@ usage/
 ├── repository/
 │   ├── JdbcUsageQueryRepository
 │   ├── UsageDirtyDateRepository
+│   ├── UsageExportJobRepository
 │   ├── UsageFactQueryBuilder
 │   ├── UsageFactSql
 │   ├── UsageInstantRange
@@ -2884,6 +2890,7 @@ usage/
     ├── UsageQueryService
     ├── UsageReportExecutor
     ├── UsageRollupDayProcessor
+    ├── UsageRollupMonitor
     └── UsageRollupScheduler
 ```
 
@@ -5225,6 +5232,9 @@ executor
 - **V94**. SQL: `V94__operation_correlation.sql`; Назначение:
 - **V95**. SQL: `V95__chat_quota_physical_attempt_gate.sql`; Назначение:
 - **V96**. SQL: `V96__chat_quota_admission_fence.sql`; Назначение:
+- **V97**. SQL: `V97__usage_physical_tenant_index.sql`; Назначение:
+- **V98**. SQL: `V98__usage_export_jobs.sql`; Назначение:
+- **V99**. SQL: `V99__usage_export_job_guard.sql`; Назначение:
   
 
 
@@ -5986,6 +5996,12 @@ paths и
   - **Назначение:**
 - **`V96`**
   - **Назначение:**
+- **`V97`**
+  - **Назначение:**
+- **`V98`**
+  - **Назначение:**
+- **`V99`**
+  - **Назначение:**
 
 
 ### V85–V92: порядок применения и эксплуатационные зависимости
@@ -6020,6 +6036,11 @@ SQL ради совпадения checksums.
 10. **V94**
 11. **V95**
 12. **V96**
+13. **V97**
+14. **V98**
+15. **V99**
+
+
 
 Для V86–V90 проверять не только `GRANT/REVOKE` в SQL, но и фактические `has_table_privilege`, `has_function_privilege`,
 `session_user`, роль владельца таблиц, наследование, публичные grants и pre-existing defaults.
@@ -6067,6 +6088,9 @@ SQL ради совпадения checksums.
 - **V94**.
 - **V95**.
 - **V96**.
+- **V97**.
+- **V98**.
+- **V99**.
 
 
 V78–V81 образуют document-erasure фундамент, V82 добавляет удаление всей базы, V83 — контролируемое
@@ -6196,6 +6220,9 @@ V1–V72 → V73 Organization → V74 Usage → V75 Audit → V76 Retrieval priv
        → V94
        → V95
        → V96
+       → V97
+       → V98
+       → V99
 ```
 
 Это последовательность **номеров Flyway**, а не инструкция вручную запускать каждый SQL на действующей базе. Миграции

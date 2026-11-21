@@ -7,6 +7,8 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 BASELINE = {
+    ("ru.safeai.gateway.usage.repository.UsagePhysicalExplainPerformanceIntegrationTest",
+     "explainActualRepositoryQueriesWithSelectiveTenantAndGlobalRange"),
     ("ru.safeai.gateway.usage.repository.UsageExplainAnalyzePerformanceIntegrationTest",
      "explainAnalyzeCoversGlobalModelOrganizationAndUserShapes"),
     ("ru.safeai.gateway.usage.repository.UsagePerformanceIntegrationTest",

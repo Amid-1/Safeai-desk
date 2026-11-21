@@ -39,11 +39,18 @@ jobs:
           ./mvnw --batch-mode --no-transfer-progress \
             -Dsafeai.erasure.load-tests=true \
             -Dsafeai.usage.performance=true \
-            -Dtest=ChatErasureBatchBoundaryV86IntegrationTest,UsageExplainAnalyzePerformanceIntegrationTest,UsagePerformanceIntegrationTest \
+            -Dtest=ChatErasureBatchBoundaryV86IntegrationTest,UsageExplainAnalyzePerformanceIntegrationTest,UsagePerformanceIntegrationTest,UsagePhysicalExplainPerformanceIntegrationTest \
             clean test
 
       - name: Проверка полноты результатов Performance CI
         run: python3 .github/scripts/check-performance-reports.py backend/target/surefire-reports
+
+      - name: Проверка правил оповещения Usage
+        run: |
+          docker run --rm --entrypoint /bin/promtool -v "$PWD/infra/prometheus:/config:ro" \
+            -w /config prom/prometheus:v3.5.0 check rules rules/safeai-usage.yml
+          docker run --rm --entrypoint /bin/promtool -v "$PWD/infra/prometheus:/config:ro" \
+            -w /config prom/prometheus:v3.5.0 test rules tests/usage.test.yml
 
       - name: Отчёты Surefire и планы EXPLAIN ANALYZE
         if: always()

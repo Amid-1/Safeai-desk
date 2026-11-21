@@ -19,6 +19,9 @@ REQUIRED = {
         'rollupBackedReportsFor366DaysStayWithinConfiguredSla': 1,
         'concurrentAdmissionControlProtectsDatabasePool': 1,
     },
+    'ru.safeai.gateway.usage.repository.UsagePhysicalExplainPerformanceIntegrationTest': {
+        'explainActualRepositoryQueriesWithSelectiveTenantAndGlobalRange': 1,
+    },
 }
 
 

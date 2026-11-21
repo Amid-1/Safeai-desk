@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
  *
  * <p>V0 is an intentional test-only role bootstrap. It must run before V1,
  * not be hidden or excluded to make the migration count look convenient.
- * Production migrations begin at V1 and currently extend through V96.</p>
+ * Production migrations begin at V1 and currently extend through V99.</p>
  */
 @Tag("integration")
 @Testcontainers
@@ -67,10 +67,10 @@ class FlywaySequentialUpgradeIT {
                 .toList();
 
         // Validate the complete catalog, not just the migration that failed.
-        assertThat(versions).as("Expected test V0 and production versions through V96")
-                .hasSizeGreaterThanOrEqualTo(97)
+        assertThat(versions).as("Expected test V0 and production versions through V99")
+                .hasSizeGreaterThanOrEqualTo(100)
                 .startsWith("0", "1")
-                .contains("92", "93", "94", "95", "96");
+                .contains("92", "93", "94", "95", "96", "97", "98", "99");
 
         UUID existingOrganization = UUID.randomUUID();
         UUID existingActor = UUID.randomUUID();
@@ -208,6 +208,25 @@ class FlywaySequentialUpgradeIT {
                                          'trg_quota_org_write_v96', 'trg_quota_user_write_v96',
                                          'trg_quota_admission_snapshot_v96', 'trg_zz_physical_quota_v96')
                         """, Integer.class)).isEqualTo(6);
+                assertThat(legacyEvidence(jdbc, existingOrganization, auditId, outboxId, true))
+                        .containsExactlyElementsOf(evidenceBeforeV94);
+            }
+            if (index == 97) {
+                assertThat(jdbc.queryForObject("""
+                        SELECT indisvalid AND indisready FROM pg_index
+                        WHERE indexrelid = 'public.idx_model_execution_attempts_plan_started_v97'::regclass
+                        """, Boolean.class)).isTrue();
+            }
+            if (index == 98) {
+                assertThat(jdbc.queryForObject("SELECT count(*) FROM public.usage_export_jobs", Long.class)).isZero();
+                assertThat(legacyEvidence(jdbc, existingOrganization, auditId, outboxId, true))
+                        .containsExactlyElementsOf(evidenceBeforeV94);
+            }
+            if (index == 99) {
+                assertThat(jdbc.queryForObject("""
+                        SELECT NOT prosecdef AND provolatile = 'v' AND proconfig IS NOT NULL
+                        FROM pg_proc WHERE oid = 'public.guard_usage_export_job_v98()'::regprocedure
+                        """, Boolean.class)).isTrue();
                 assertThat(legacyEvidence(jdbc, existingOrganization, auditId, outboxId, true))
                         .containsExactlyElementsOf(evidenceBeforeV94);
             }

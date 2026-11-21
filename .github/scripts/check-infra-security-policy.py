@@ -85,8 +85,9 @@ def assert_policy(repo: Path) -> None:
              'Performance CI: отсутствует ' + trigger)
     for field in ('-Dsafeai.erasure.load-tests=true',
                   '-Dsafeai.usage.performance=true',
-                  'ChatErasureBatchBoundaryV86IntegrationTest,UsageExplainAnalyzePerformanceIntegrationTest,UsagePerformanceIntegrationTest',
-                  'run: python3 .github/scripts/check-performance-reports.py backend/target/surefire-reports'):
+                  'ChatErasureBatchBoundaryV86IntegrationTest,UsageExplainAnalyzePerformanceIntegrationTest,UsagePerformanceIntegrationTest,UsagePhysicalExplainPerformanceIntegrationTest',
+                  'run: python3 .github/scripts/check-performance-reports.py backend/target/surefire-reports',
+                  'check rules rules/safeai-usage.yml', 'test rules tests/usage.test.yml'):
         must(field in performance, 'Performance CI: отсутствует ' + field)
     must('continue-on-error:' not in performance, 'Performance CI: ошибки не блокируют релиз')
     release_gate = re.search(r'(?ms)^  performance:\n(.*?)(?=^  \w[\w-]*:|\Z)', prod)
