@@ -85,6 +85,12 @@ jobs:
       - name: Отрицательные тесты подписанного release manifest
         run: python3 -m unittest discover -s .github/scripts -p 'test_production_manifest.py' -v
 
+      - name: Криптографическая проверка контрольных снимков аудита
+        run: python3 -m unittest discover -s .github/scripts -p 'test_audit_checkpoint.py' -v
+
+      - name: Проверка внешнего архива и ротации ключей аудита
+        run: python3 -m unittest discover -s .github/scripts -p 'test_audit_checkpoint_archive.py' -v
+
       - name: Негативные тесты frontend coverage gate
         run: |
           python3 -m unittest discover -s .github/scripts \

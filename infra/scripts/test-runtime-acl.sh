@@ -50,6 +50,71 @@ migrate() {
 sql() {
     docker exec -i "$pg" psql -X -v ON_ERROR_STOP=1 -U safeai_contract_dba -d "$db" "$@"
 }
+checkpoint_export() {
+    docker run --rm -i --network "$network" --entrypoint psql \
+        --env PGPASSWORD="$reader_password" "$pg_image" -X -q -w -v ON_ERROR_STOP=1 \
+        -h "$pg" -U safeai_audit_verifier -d "$db" -f - \
+        < "$repo_dir/infra/scripts/audit-checkpoint-export.sql"
+}
+test_checkpoint_reader() {
+    local reader_password
+    reader_password="$(openssl rand -hex 32)"
+    sql -v reader_password="$reader_password" <<'SQL'
+CREATE ROLE safeai_audit_verifier LOGIN NOSUPERUSER NOCREATEROLE NOCREATEDB NOREPLICATION NOBYPASSRLS NOINHERIT;
+SELECT format('ALTER ROLE safeai_audit_verifier PASSWORD %L', :'reader_password') \gexec
+GRANT USAGE ON SCHEMA public TO safeai_audit_verifier;
+GRANT SELECT ON public.audit_events TO safeai_audit_verifier;
+SQL
+    # Bootstrap revoked implicit CONNECT/TEMPORARY from PUBLIC. Prove that
+    # the test reader has no implicit access before granting only CONNECT.
+    [[ "$(sql -Atc "SELECT NOT has_database_privilege('safeai_audit_verifier',current_database(),'CONNECT')")" == t ]]
+    sql <<'SQL'
+SELECT format('GRANT CONNECT ON DATABASE %I TO safeai_audit_verifier', current_database()) \gexec
+INSERT INTO public.audit_events(id,organization_id,event_type,details,created_at,correlation_id)
+VALUES ('ac000000-0000-4000-8000-000000000010','ac000000-0000-4000-8000-000000000020',
+        'USER_CREATED','{"checkpoint":"sentinel"}',clock_timestamp(),'ac000000-0000-4000-8000-000000000030');
+SQL
+    [[ "$(sql -Atc "SELECT
+        has_database_privilege('safeai_audit_verifier',current_database(),'CONNECT')
+        AND NOT has_database_privilege('safeai_audit_verifier',current_database(),'TEMPORARY')
+        AND NOT has_database_privilege('safeai_audit_verifier',current_database(),'CREATE')
+        AND NOT has_table_privilege('safeai_audit_verifier','public.users','SELECT')
+        AND NOT has_table_privilege('safeai_audit_verifier','public.flyway_schema_history','SELECT')")" == t ]]
+    checkpoint_export > "$workdir/checkpoint-before.csv"
+    # Neither a DBA nor an overprivileged reader may produce a checkpoint.
+    if sql -q -f - < "$repo_dir/infra/scripts/audit-checkpoint-export.sql" >/dev/null 2>&1; then
+        echo 'FAIL: privileged DBA accepted as checkpoint reader' >&2; return 1
+    fi
+    sql -c 'GRANT DELETE ON public.audit_events TO safeai_audit_verifier'
+    if checkpoint_export >/dev/null 2>&1; then
+        echo 'FAIL: writable checkpoint reader accepted' >&2; return 1
+    fi
+    sql -c 'REVOKE DELETE ON public.audit_events FROM safeai_audit_verifier'
+    sql -c "DELETE FROM public.audit_events WHERE id='ac000000-0000-4000-8000-000000000010'"
+    checkpoint_export > "$workdir/checkpoint-after.csv"
+    python3 - "$repo_dir/infra/scripts/audit-checkpoint.py" "$workdir" <<'PY'
+import importlib.util
+import io
+import pathlib
+import sys
+spec = importlib.util.spec_from_file_location('checkpoint', sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+root = pathlib.Path(sys.argv[2])
+dataset = 'ac000000-0000-4000-8000-000000000001'
+def load(name, previous):
+    out = io.BytesIO()
+    with (root / name).open(encoding='utf-8', newline='') as stream:
+        module.export_rows(stream, out, module.make_header(dataset, previous))
+    return module.Manifest(out.getvalue())
+before = load('checkpoint-before.csv', None)
+after = load('checkpoint-after.csv', before.sha256)
+assert 'ac000000-0000-4000-8000-000000000010' in dict(before.events())
+assert module.compare(before, after) == {'matched': after.count, 'missing': 1, 'changed': 0, 'new_unanchored': 0}
+assert b'sentinel' not in before.data
+PY
+    echo 'PASS: actual PostgreSQL checkpoint projection, ACL and deletion detection'
+}
 for scenario in clean upgrade; do
     pg="$prefix-$scenario"
     db="safeai_contract_$scenario"
@@ -124,5 +189,6 @@ PY
     mkdir -p "$repo_dir/backend/target/runtime-acl-reports/$scenario"
     cp "$report" "$repo_dir/backend/target/runtime-acl-reports/$scenario/"
     unset SAFEAI_CONTRACT_DB_PASSWORD SAFEAI_CONTRACT_JDBC_URL SAFEAI_CONTRACT_REDIS_PORT SAFEAI_CONTRACT_STORAGE
+    test_checkpoint_reader
     echo "PASS: $scenario / postgres=$pg_image / backend=$backend_image"
 done
