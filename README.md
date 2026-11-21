@@ -1007,7 +1007,11 @@ backend/
 │   │       │       ├── V92__organization_model_policy_budget_finite_values.sql
 │   │       │       ├── V93__model_policy_preview_confirmations.sql
 │   │       │       ├── V94__operation_correlation.sql
-│   │       │       └── V94__operation_correlation.sql.conf
+│   │       │       ├── V94__operation_correlation.sql.conf
+│   │       │       ├── V95__chat_quota_physical_attempt_gate.sql
+│   │       │       ├── V95__chat_quota_physical_attempt_gate.sql.conf
+│   │       │       ├── V96__chat_quota_admission_fence.sql
+│   │       │       └── V96__chat_quota_admission_fence.sql.conf
 │   │       │
 │   │       │   └── README_DB.md              # документация DB; структура db/
 │   │       │
@@ -2832,6 +2836,7 @@ usage/
 │   └── UsageProperties
 ├── controller/
 │   ├── UsageController
+│   ├── UsageExportController
 │   ├── UsagePhysicalSpendController
 │   └── UsageRebuildController
 ├── dto/
@@ -2841,12 +2846,16 @@ usage/
 │   ├── UsageDataQualityResponse
 │   ├── UsageDateFilter
 │   ├── UsageDateModelFilter
+│   ├── UsageExportRequest
 │   ├── UsageModelSummaryResponse
 │   ├── UsageOrganizationSummaryResponse
 │   ├── UsagePageRequest
 │   ├── UsagePhysicalReconciliationResponse
+│   ├── UsagePhysicalReportResponse
 │   ├── UsagePhysicalSpendResponse
 │   ├── UsageProblemModelResponse
+│   ├── UsageProviderReportResponse
+│   ├── UsageProviderRow
 │   ├── UsageResponseSummary
 │   ├── UsageSummaryInvariants
 │   ├── UsageSummaryResponse
@@ -2866,7 +2875,10 @@ usage/
 │   ├── UsageRowMapperSupport
 │   └── UsageSqlFragments
 └── service/
+    ├── UsageAccessPolicy
     ├── UsageDirtyDateProcessor
+    ├── UsageExportCsv
+    ├── UsageExportService
     ├── UsageForcedRebuildService
     ├── UsagePhysicalSpendService
     ├── UsageQueryService
@@ -5211,6 +5223,8 @@ executor
 - **V93**. SQL: `V93__model_policy_preview_confirmations.sql`; Назначение:
 
 - **V94**. SQL: `V94__operation_correlation.sql`; Назначение:
+- **V95**. SQL: `V95__chat_quota_physical_attempt_gate.sql`; Назначение:
+- **V96**. SQL: `V96__chat_quota_admission_fence.sql`; Назначение:
   
 
 
@@ -5964,10 +5978,15 @@ paths и
     legacy USD-only; `chk_model_policy_rub_dates_finite_v92` запрещает
     infinity/-infinity для четырёх дат/времени RUB-backed policy.
     Existing V45/V91 guards, checksums и исторические snapshots сохранены.
-  - **`V93`**
+- **`V93`**
   - **Назначение:**
-   - **`V94`**
+- **`V94`**
   - **Назначение:**
+- **`V95`**
+  - **Назначение:**
+- **`V96`**
+  - **Назначение:**
+
 
 ### V85–V92: порядок применения и эксплуатационные зависимости
 
@@ -5999,6 +6018,8 @@ SQL ради совпадения checksums.
    Успешный upgrade обязан сохранить исторические USD/RUB snapshots.
 9. **V93**
 10. **V94**
+11. **V95**
+12. **V96**
 
 Для V86–V90 проверять не только `GRANT/REVOKE` в SQL, но и фактические `has_table_privilege`, `has_function_privilege`,
 `session_user`, роль владельца таблиц, наследование, публичные grants и pre-existing defaults.
@@ -6044,6 +6065,8 @@ SQL ради совпадения checksums.
   immutability и sequential-upgrade regression tests, без смены erasure flow.
 - **V93**.
 - **V94**.
+- **V95**.
+- **V96**.
 
 
 V78–V81 образуют document-erasure фундамент, V82 добавляет удаление всей базы, V83 — контролируемое
@@ -6171,6 +6194,8 @@ V1–V72 → V73 Organization → V74 Usage → V75 Audit → V76 Retrieval priv
        → V92
        → V93
        → V94
+       → V95
+       → V96
 ```
 
 Это последовательность **номеров Flyway**, а не инструкция вручную запускать каждый SQL на действующей базе. Миграции

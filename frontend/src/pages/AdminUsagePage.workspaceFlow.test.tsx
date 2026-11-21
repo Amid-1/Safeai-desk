@@ -26,6 +26,11 @@ const row = parseUsageSummary({
 
 const fixture = {
     reportIdentity: 'admin', reloadToken: 0,
+    csvContext: {
+        dateFrom: '2026-09-21', dateTo: '2026-10-20',
+        organizationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        model: '', userId: '', budgetStatus: '', order: 'tokens', page: 0, scope: 'displayed',
+    },
     budgetStatus: undefined, clearBudgetStatus: vi.fn(),
     tab: 'summary', rows: [row], loading: false, error: '', page: 0,
     hasNext: false, hasPrevious: false, filterError: '', filtersDirty: false,
@@ -44,6 +49,7 @@ const fixture = {
     totals: { rows: [row], loading: false, error: '', hasNext: false, hasPrevious: false },
     budget: { scoped: false, loading: false, error: false, policy: null, errorMessage: '' },
     exportFiltered: vi.fn(), exportPending: false, filteredExportError: '',
+    exportReady: false, downloadExport: vi.fn(),
 } satisfies ReturnType<typeof useAdminUsageReport>
 
 describe('Usage dashboard', () => {
@@ -189,7 +195,7 @@ describe('Usage dashboard', () => {
         fireEvent.click(screen.getByRole('button', {name: 'Вперёд'}))
         expect(fixture.goToPage).toHaveBeenCalledWith(1)
         fireEvent.click(screen.getByRole('button', {name: 'Скачать CSV страницы'}))
-        expect(downloadUsageCsv).toHaveBeenCalledWith('summary', [row])
+        expect(downloadUsageCsv).toHaveBeenCalledWith('summary', [row], 'displayed', fixture.csvContext)
         fireEvent.click(screen.getByRole('tab', {name: 'По моделям'}))
         expect(fixture.selectTab).toHaveBeenCalledWith('models')
     })
@@ -259,7 +265,7 @@ describe('Usage dashboard', () => {
         expect(screen.getByText('Общие итоги недоступны')).toBeVisible()
         expect(screen.queryByText('100%')).not.toBeInTheDocument()
         expect(screen.getByRole('table')).toBeVisible()
-        fireEvent.click(screen.getByRole('button', {name: 'CSV по фильтрам (до 100)'}))
+        fireEvent.click(screen.getByRole('button', {name: 'Подготовить CSV по фильтрам'}))
         expect(fixture.exportFiltered).toHaveBeenCalledOnce()
     })
     it('shows loading, error with retry and empty state inside the data region', () => {

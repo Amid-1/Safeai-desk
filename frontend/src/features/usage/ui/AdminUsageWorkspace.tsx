@@ -14,9 +14,12 @@ import { downloadUsageCsv } from './usageCsv'
 import { EmptyState, ErrorState, LoadingState } from '../../../shared/ui/StateBlock'
 import { trimDecimal } from '../lib/adminUsagePresentation'
 import { UsageOrganizationRows } from './UsageOrganizationRows'
+import { UsagePhysicalReportPanel } from './UsagePhysicalReportPanel'
+import { UsageProviderPanel } from './UsageProviderPanel'
 
 export function AdminUsageWorkspace() {
     const report = useAdminUsageReport()
+    const [providerSelected, setProviderSelected] = useState(false)
     const [view, setView] = useState<'table' | 'chart'>('table')
     const [filtersOpen, setFiltersOpen] = useState(false)
     const [expanded, setExpanded] = useState(false)
@@ -83,7 +86,7 @@ export function AdminUsageWorkspace() {
 
     function exportCsv() {
         try {
-            downloadUsageCsv(report.tab, report.rows)
+            downloadUsageCsv(report.tab, report.rows, 'displayed', report.csvContext)
             setExportError('')
         } catch {
             setExportError('Не удалось создать CSV. Попробуйте повторно.')
@@ -121,7 +124,12 @@ export function AdminUsageWorkspace() {
                 onOrganizationChange={report.changeDraftOrganization}
                 onApplyFilters={() => { setExportError(''); report.applyFilters() }}
                 onResetFilters={() => { setExportError(''); report.resetFilters() }}
-                onSelectTab={tab => { setExportError(''); report.selectTab(tab) }}
+                providerSelected={providerSelected}
+                onSelectProviders={() => { setProviderSelected(true); setExpanded(false); setSummaryFraction(0) }}
+                onSelectTab={tab => {
+                    if (providerSelected) setSummaryFraction(1)
+                    setProviderSelected(false); setExportError(''); report.selectTab(tab)
+                }}
             />
             {report.budgetStatus && <section className="usage-budget-drilldown" aria-label="Фильтр бюджета">
                 <div><strong>Бюджет: {BUDGET_CATEGORIES.find(item => item.status === report.budgetStatus)?.label}</strong>
@@ -135,6 +143,16 @@ export function AdminUsageWorkspace() {
                 dailyTotals
                 status={separateTotals && report.totals.loading ? 'Загрузка общих итогов…'
                     : separateTotals && report.totals.error ? 'Общие итоги недоступны' : undefined} />}
+            <UsagePhysicalReportPanel
+                key={JSON.stringify([report.reportIdentity, report.isSuperAdmin, report.csvContext.organizationId,
+                    report.appliedDateFrom, report.appliedDateTo, report.appliedUserId, report.appliedModel,
+                    report.budgetStatus, report.reloadToken, report.filtersDirty])}
+                dateFrom={report.appliedDateFrom} dateTo={report.appliedDateTo}
+                organizationId={report.csvContext.organizationId}
+                userId={report.reportIdentity} superAdmin={report.isSuperAdmin}
+                scopedFilters={Boolean(report.appliedModel || report.appliedUserId || report.budgetStatus)}
+                filtersDirty={report.filtersDirty}
+            />
             {report.budget.scoped && <section className="usage-filter-summary" aria-label="Бюджет организации">
                 <strong>Месячный бюджет организации: </strong>
                 {report.budget.loading ? 'Загрузка…' : report.budget.error || !report.budget.policy ? <>Недоступен{' '}
@@ -190,6 +208,14 @@ export function AdminUsageWorkspace() {
                     <span aria-hidden="true" />
                 </div>
                 <div className="usage-results-body" inert={folded}>
+                {providerSelected ? <UsageProviderPanel
+                    key={JSON.stringify([report.reportIdentity, report.csvContext, report.reloadToken])}
+                    scopeKey={JSON.stringify([report.reportIdentity, report.csvContext, report.reloadToken])}
+                    filter={{kind: 'providers', dateFrom: report.appliedDateFrom, dateTo: report.appliedDateTo,
+                        organizationId: report.csvContext.organizationId, model: report.appliedModel,
+                        userId: report.appliedUserId}}
+                    blocked={Boolean(report.budgetStatus) || !report.reportIdentity}
+                    dirty={report.filtersDirty} /> : <>
                 <div className="usage-results-toolbar">
                     <div className="usage-results-heading">
                         <h2 id="usage-report-title">{reportTitle(report.tab)}</h2>
@@ -221,9 +247,12 @@ export function AdminUsageWorkspace() {
                         <button type="button" className="secondary-button" disabled={!hasRows}
                             title={paged ? 'До 50 строк текущей страницы' : 'Все строки текущего ограниченного отчёта'}
                             onClick={exportCsv}>{paged ? 'Скачать CSV страницы' : 'Скачать CSV отчёта'}</button>
-                        {paged && <button type="button" className="secondary-button"
+                        <button type="button" className="secondary-button"
                             disabled={!hasRows || report.filtersDirty || report.exportPending}
-                            onClick={report.exportFiltered}>CSV по фильтрам (до 100)</button>}
+                            onClick={report.exportFiltered}>Подготовить CSV по фильтрам</button>
+                        {report.exportReady && <button type="button" className="secondary-button"
+                            disabled={report.filtersDirty || report.exportPending}
+                            onClick={report.downloadExport}>Скачать готовый CSV</button>}
                         {view === 'chart' && <button type="button" className="secondary-button"
                             disabled={!hasRows} title={chartExpanded ? 'Обычный размер графика' : 'Увеличить область графика'}
                             aria-pressed={chartExpanded} onClick={() => setExpanded(value => !value)}>
@@ -233,6 +262,7 @@ export function AdminUsageWorkspace() {
                 </div>
                 {exportError && <p role="alert" className="usage-export-error">{exportError}</p>}
                 {report.filteredExportError && <p role="alert" className="usage-export-error">{report.filteredExportError}</p>}
+                {report.exportPending && <p role="status">Подготовка CSV на сервере…</p>}
                 <UsageTableViewport key={dataKey} table={view === 'table'} hasRows={hasRows} loading={report.loading}>
                     {report.loading ? <LoadingState message="Загрузка отчёта…" />
                         : report.error ? <ErrorState title="Ошибка загрузки" message={report.error}
@@ -259,9 +289,11 @@ export function AdminUsageWorkspace() {
                             relatedLinks={report.isSuperAdmin} organizationId={report.appliedOrganizationId}
                             reportIdentity={report.reportIdentity} reloadToken={report.reloadToken} />}
                 </UsageTableViewport>
+                </>}
                 </div>
                 <footer ref={footer} className="usage-results-footer">
-                    {!report.loading && !report.error && (hasRows || hasMore)
+                    {providerSelected ? <span className="usage-footer-status">Физические вызовы провайдеров</span>
+                        : !report.loading && !report.error && (hasRows || hasMore)
                         ? <UsageReportFooter tab={report.tab} rowsCount={report.rows.length}
                             page={report.page} hasPrevious={report.hasPrevious} hasNext={report.hasNext}
                             loading={report.loading} onPageChange={page => { setExportError(''); report.goToPage(page) }} />

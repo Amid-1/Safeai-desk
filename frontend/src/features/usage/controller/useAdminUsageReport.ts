@@ -35,10 +35,9 @@ import {
 import {
     useAdminUsageReportQuery,
 } from './useAdminUsageReportQuery'
-import { REPORT_EXPORT_LIMIT, useBoundedReportExport } from '../../../shared/lib/useBoundedReportExport'
-import { loadUsageReport } from '../lib/adminUsageReportLoader'
+import { useUsageExport } from './useUsageExport'
 import type { UsageAmounts, UsageSummaryFilter } from '../api/usageApi'
-import { downloadUsageCsv } from '../ui/usageCsv'
+import type { UsageCsvContext } from '../ui/usageCsv'
 import { useUsageBudget } from './useUsageBudget'
 
 export function useAdminUsageReport() {
@@ -147,24 +146,24 @@ export function useAdminUsageReport() {
     })
     const budget = useUsageBudget(currentUser?.id ?? '',
         isSuperAdmin ? appliedOrganizationId : currentUser?.organizationId ?? '', reloadToken)
-    const exportTask = useBoundedReportExport(JSON.stringify([
+    const exportTask = useUsageExport(JSON.stringify([
         currentUser?.id, currentUser?.organizationId, isSuperAdmin, tab,
         appliedDateFrom, appliedDateTo, appliedModel, appliedUserId, appliedOrganizationId, reloadToken, order, budgetStatus,
     ]))
+    const csvContext: UsageCsvContext = {
+        dateFrom: appliedDateFrom, dateTo: appliedDateTo,
+        organizationId: isSuperAdmin ? appliedOrganizationId || null : currentUser?.organizationId ?? '',
+        model: appliedModel, userId: appliedUserId, budgetStatus: budgetStatus ?? '',
+        order: tab === 'daily' ? 'date-desc' : tab === 'models' ? 'model-asc' : order,
+        page: tab === 'summary' || tab === 'users' || tab === 'organizations' ? page : null,
+        scope: 'displayed',
+    }
 
     function exportFiltered() {
-        if (!currentUser || query.loading || query.error || filtersDirty || (tab !== 'summary' && tab !== 'users' && tab !== 'organizations')) return
-        return exportTask.run<UsageAmounts>(async signal => {
-            const normalized = toUsageFilter({
-                dateFrom: appliedDateFrom, dateTo: appliedDateTo, model: appliedModel,
-                userId: appliedUserId, organizationId: appliedOrganizationId,
-            }, isSuperAdmin)
-            const result = await loadUsageReport({
-                tab, page: 0, pageSize: REPORT_EXPORT_LIMIT, filter: {...normalized.filter, order, ...(budgetStatus ? {budgetStatus} : {})},
-                organizationId: normalized.organizationId || null, superAdmin: isSuperAdmin, signal,
-            })
-            return !result.complete || result.hasNext || result.rows.length > REPORT_EXPORT_LIMIT ? null : result.rows
-        }, rows => downloadUsageCsv(tab, rows, 'filtered'))
+        if (!currentUser || query.loading || query.error || filtersDirty) return
+        return exportTask.run({kind: tab, dateFrom: appliedDateFrom, dateTo: appliedDateTo,
+            organizationId: csvContext.organizationId || null, userId: appliedUserId,
+            model: appliedModel, order, budgetStatus})
     }
 
     function changeDraftDateFrom(
@@ -415,8 +414,9 @@ export function useAdminUsageReport() {
         : userLabel?.id === appliedUserId ? userLabel.email : appliedUserId
 
     return {
-        reportIdentity: currentUser?.id ?? '', reloadToken,
+        reportIdentity: currentUser?.id ?? '', reloadToken, csvContext,
         totals, budget, exportFiltered, exportPending: exportTask.pending, filteredExportError: exportTask.error,
+        exportReady: exportTask.ready, downloadExport: exportTask.download,
         tab,
         budgetStatus,
         clearBudgetStatus: () => updateUrl({tab, page: 0, ...applied, budgetStatus: undefined}),

@@ -19,6 +19,13 @@ function coverageCells(row: UsageAmounts): string[] {
         row.coverage.usageComplete === null ? 'НЕИЗВЕСТНО' : row.coverage.usageComplete ? 'ПОЛНО' : 'ЧАСТИЧНО',
         row.coverage.pricingComplete === null ? 'НЕИЗВЕСТНО' : row.coverage.pricingComplete ? 'ПОЛНО' : 'ЧАСТИЧНО',
         row.coverage.unpricedMessages ?? '', row.coverage.pricingFailedMessages ?? '',
+        row.coverage.assistantMessages ?? '', row.coverage.completedResponses ?? '',
+        row.coverage.refusedResponses ?? '', row.coverage.incompleteResponses ?? '',
+        row.coverage.failedMessages ?? '', row.coverage.unclassifiedResponses ?? '',
+        row.coverage.availableUsageMessages ?? '', row.coverage.partialUsageMessages ?? '',
+        row.coverage.missingUsageMessages ?? '', row.coverage.usageNotApplicableMessages ?? '',
+        row.coverage.pricedMessages ?? '', row.coverage.freeMessages ?? '',
+        row.coverage.pricingNotApplicableMessages ?? '',
     ]
 }
 
@@ -28,10 +35,38 @@ const HEADER = [
     'Выходные токены partial', 'Всего токенов partial',
     'Известная стоимость', 'Валюта', 'Полнота токенов',
     'Полнота стоимости', 'Сообщений без цены', 'Ошибок цены',
+    'Ответов AI', 'Завершено', 'Отказано', 'Неполных ответов', 'Ошибок ответа',
+    'Неклассифицированных ответов', 'Полный учёт токенов', 'Частичный учёт токенов',
+    'Токены неизвестны', 'Учёт токенов неприменим', 'С известной ценой',
+    'Бесплатных ответов', 'Цена неприменима',
 ]
 
+export type UsageCsvContext = {
+    dateFrom: string
+    dateTo: string
+    organizationId: string | null
+    model: string
+    userId: string
+    budgetStatus: string
+    order: string
+    page: number | null
+    scope: 'displayed' | 'filtered'
+}
+
+const CONTEXT_HEADER = [
+    'База учёта', 'Начало периода UTC', 'Конец периода UTC включительно',
+    'Область организации', 'Фильтр модели', 'Фильтр пользователя', 'Фильтр бюджета',
+    'Сортировка', 'Область выгрузки', 'Страница', 'Строк в файле',
+]
+
+export function serializeCsvRows(rows: string[][]): string {
+    return rows.map(row => row.map(safeCell).join(';')).join('\r\n')
+}
+
 /** Pure serializer: current loaded rows only; never fetches other pages or tenants. */
-export function serializeUsageCsv(tab: UsageReportTab | 'organizations', rows: UsageAmounts[]): string {
+export function serializeUsageCsv(
+    tab: UsageReportTab | 'organizations', rows: UsageAmounts[], context?: UsageCsvContext,
+): string {
     let leading: string[]
     let values: string[][]
     if (tab === 'organizations') {
@@ -54,17 +89,32 @@ export function serializeUsageCsv(tab: UsageReportTab | 'organizations', rows: U
         leading = ['Дата UTC']
         values = (rows as UsageDailySummary[]).map(row => [row.usageDate, ...coverageCells(row)])
     }
-    return [ [...leading, ...HEADER], ...values]
-        .map(row => row.map(safeCell).join(';')).join('\r\n')
+    if (context) {
+        const cells = [
+            'Сохранённые записи ответов AI', context.dateFrom, context.dateTo,
+            context.organizationId ?? 'Все организации', context.model, context.userId, context.budgetStatus,
+            context.order, context.scope === 'filtered' ? 'По фильтрам' : 'Текущий отчёт',
+            context.page === null ? '' : String(context.page + 1), String(rows.length),
+        ]
+        return serializeCsvRows([[...leading, ...HEADER, ...CONTEXT_HEADER], ...values.map(row => [...row, ...cells])])
+    }
+    return serializeCsvRows([[...leading, ...HEADER], ...values])
 }
 
-export function downloadUsageCsv(tab: UsageReportTab | 'organizations', rows: UsageAmounts[], scope: 'displayed' | 'filtered' = 'displayed'): void {
+export function downloadUsageCsv(
+    tab: UsageReportTab | 'organizations', rows: UsageAmounts[],
+    scope: 'displayed' | 'filtered' = 'displayed', context?: UsageCsvContext,
+): void {
     if (rows.length === 0) return
-    const csv = serializeUsageCsv(tab, rows)
+    const csv = serializeUsageCsv(tab, rows, context)
+    downloadCsvText(csv, `safeai-usage-${tab}-${scope}.csv`)
+}
+
+export function downloadCsvText(csv: string, filename: string): void {
     const objectUrl = URL.createObjectURL(new Blob([`\uFEFF${csv}`], {type: 'text/csv;charset=utf-8'}))
     const link = document.createElement('a')
     link.href = objectUrl
-    link.download = `safeai-usage-${tab}-${scope}.csv`
+    link.download = filename
     document.body.appendChild(link)
     try { link.click() } finally {
         link.remove()

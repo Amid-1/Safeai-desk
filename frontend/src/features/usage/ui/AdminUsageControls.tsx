@@ -39,6 +39,8 @@ type AdminUsageControlsProps = {
     onApplyFilters: () => void
     onResetFilters: () => void
     onSelectTab: (tab: UsageReportTab) => void
+    providerSelected?: boolean
+    onSelectProviders?: () => void
 }
 
 export function AdminUsageControls(p: AdminUsageControlsProps) {
@@ -118,10 +120,12 @@ export function AdminUsageControls(p: AdminUsageControlsProps) {
                 {([
                     ['summary', 'Детализация'], ['users', 'По пользователям'],
                     ['models', 'По моделям'], ['daily', 'По дням'],
-                ] as const).map(([name, label]) => <TabButton key={name} active={p.tab === name}
+                ] as const).map(([name, label]) => <TabButton key={name} active={!p.providerSelected && p.tab === name}
                     onClick={() => p.onSelectTab(name)}>{label}</TabButton>)}
                 {p.isSuperAdmin &&
-                    <TabButton active={p.tab === 'organizations'} onClick={() => p.onSelectTab('organizations')}>По организациям</TabButton>}
+                    <TabButton active={!p.providerSelected && p.tab === 'organizations'} onClick={() => p.onSelectTab('organizations')}>По организациям</TabButton>}
+                {p.onSelectProviders && <TabButton active={Boolean(p.providerSelected)}
+                    onClick={p.onSelectProviders}>По провайдерам</TabButton>}
             </nav>
         </div>
     )
