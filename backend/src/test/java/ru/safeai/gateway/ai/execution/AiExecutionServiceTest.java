@@ -290,6 +290,25 @@ class AiExecutionServiceTest {
     }
 
     @Test
+    void financialAdmissionRevokedBeforeDispatchNeverCallsProvider() {
+        when(provider.recordsPhysicalAttempts()).thenReturn(true);
+        when(plans.createOrRead(request)).thenReturn(plan);
+        var revoked = new IllegalStateException("Financial admission revoked");
+        doThrow(revoked).when(recorder).beforeNetworkDispatch(eq(plan.getId()), any());
+        AiProviderRetryExecutor retry = retry(3);
+        AtomicInteger networkCalls = new AtomicInteger();
+        when(provider.sendMessage(request.aiRequest())).thenAnswer(inv -> retry.execute(
+                "openai", "gpt-5", OPERATION, Duration.ZERO, attempt -> {
+                    networkCalls.incrementAndGet();
+                    return response("gpt-5");
+                }));
+        assertThatThrownBy(() -> service.execute(request)).isSameAs(revoked);
+        assertThat(networkCalls).hasValue(0);
+        verify(recorder, never()).succeeded(any(), any());
+        verify(recorder).ambiguous(any(), same(revoked));
+    }
+
+    @Test
     void hardPolicyLimitsEntireLogicalExecutionToOnePhysicalAttempt() {
         when(provider.recordsPhysicalAttempts()).thenReturn(true);
         when(binding.requiresSinglePhysicalAttempt(DECISION)).thenReturn(true);

@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
  *
  * <p>V0 is an intentional test-only role bootstrap. It must run before V1,
  * not be hidden or excluded to make the migration count look convenient.
- * Production migrations begin at V1 and currently extend through V94.</p>
+ * Production migrations begin at V1 and currently extend through V96.</p>
  */
 @Tag("integration")
 @Testcontainers
@@ -67,10 +67,10 @@ class FlywaySequentialUpgradeIT {
                 .toList();
 
         // Validate the complete catalog, not just the migration that failed.
-        assertThat(versions).as("Expected test V0 and production versions through V94")
-                .hasSizeGreaterThanOrEqualTo(95)
+        assertThat(versions).as("Expected test V0 and production versions through V96")
+                .hasSizeGreaterThanOrEqualTo(97)
                 .startsWith("0", "1")
-                .contains("92", "93", "94");
+                .contains("92", "93", "94", "95", "96");
 
         UUID existingOrganization = UUID.randomUUID();
         UUID existingActor = UUID.randomUUID();
@@ -187,6 +187,29 @@ class FlywaySequentialUpgradeIT {
                 assertThat(policySnapshots(jdbc, existingOrganization))
                         .containsExactlyElementsOf(policiesBeforeHardening);
                 assertV94Schema(jdbc, auditId, outboxId);
+            }
+            if (index == 95) {
+                assertThat(jdbc.queryForObject("""
+                        SELECT count(*) FROM pg_catalog.pg_trigger
+                        WHERE NOT tgisinternal AND tgenabled = 'O'
+                          AND tgname IN ('trg_quota_reservation_v95', 'trg_z_physical_quota_attempt_v95')
+                        """, Integer.class)).isEqualTo(2);
+                assertThat(legacyEvidence(jdbc, existingOrganization, auditId, outboxId, true))
+                        .containsExactlyElementsOf(evidenceBeforeV94);
+            }
+            if (index == 96) {
+                assertThat(jdbc.queryForObject("""
+                        SELECT period_zone FROM public.chat_quota_calendar_v96 WHERE singleton
+                        """, String.class)).isEqualTo("UTC");
+                assertThat(jdbc.queryForObject("""
+                        SELECT count(*) FROM pg_catalog.pg_trigger
+                        WHERE NOT tgisinternal AND tgenabled = 'O'
+                          AND tgname IN ('trg_quota_reservation_v95', 'trg_z_physical_quota_attempt_v95',
+                                         'trg_quota_org_write_v96', 'trg_quota_user_write_v96',
+                                         'trg_quota_admission_snapshot_v96', 'trg_zz_physical_quota_v96')
+                        """, Integer.class)).isEqualTo(6);
+                assertThat(legacyEvidence(jdbc, existingOrganization, auditId, outboxId, true))
+                        .containsExactlyElementsOf(evidenceBeforeV94);
             }
         }
 

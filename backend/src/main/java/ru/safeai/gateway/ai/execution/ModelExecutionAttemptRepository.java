@@ -31,6 +31,9 @@ public interface ModelExecutionAttemptRepository
             """, nativeQuery = true)
     boolean organizationEpochCurrent(@Param("planId") UUID planId);
 
+    @Query(value = "SELECT public.check_quota_dispatch_v96(:planId, :attemptId)", nativeQuery = true)
+    boolean quotaDispatchAllowed(@Param("planId") UUID planId, @Param("attemptId") UUID attemptId);
+
     /** Advisory preflight only. V53 DB trigger serializes and enforces INSERT. */
     Optional<ModelExecutionAttemptEntity> findTopByExecutionPlanIdOrderByAttemptNumberDesc(
             UUID executionPlanId);

@@ -265,6 +265,26 @@ class RuntimeAclContract {
         assertNotNull(turnId);
         assertNotNull(decisionId);
         assertNotNull(eventId);
+        Boolean quotaSnapshot = jdbc.queryForObject("""
+                SELECT single_physical_attempt FROM public.chat_quota_reservations WHERE turn_id=?
+                """, Boolean.class, turnId);
+        assertNotNull(quotaSnapshot);
+        assertRejectedUpdate("""
+                UPDATE public.chat_quota_reservations
+                   SET single_physical_attempt=NOT single_physical_attempt WHERE turn_id=?
+                """, turnId, "23514", "V95 quota reservation evidence is immutable");
+        assertEquals(quotaSnapshot, jdbc.queryForObject("""
+                SELECT single_physical_attempt FROM public.chat_quota_reservations WHERE turn_id=?
+                """, Boolean.class, turnId));
+        assertNotNull(jdbc.queryForObject("""
+                SELECT period_zone_v96 FROM public.chat_quota_reservations WHERE turn_id=?
+                """, String.class, turnId));
+        assertRejectedUpdate("""
+                UPDATE public.chat_quota_reservations SET period_zone_v96=NULL WHERE turn_id=?
+                """, turnId, "23514", "V96 quota snapshot is immutable");
+        assertEquals(Boolean.FALSE, jdbc.queryForObject("""
+                SELECT has_table_privilege(current_user, 'public.chat_quota_calendar_v96', 'UPDATE')
+                """, Boolean.class));
         assertEquals(outboxEventId, eventId, "Delivery must preserve the exact immutable outbox event ID");
         assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM public.audit_outbox WHERE id=?",
                 Long.class, eventId), "Delivered outbox intent must be removed");
@@ -288,11 +308,16 @@ class RuntimeAclContract {
     }
 
     private void assertCorrelationUpdateRejected(String sql, UUID id, String expectedState) {
+        assertRejectedUpdate(sql, id, expectedState, "23514".equals(expectedState)
+                ? "V94 correlation ID is immutable" : null);
+    }
+
+    private void assertRejectedUpdate(String sql, UUID id, String expectedState, String expectedMessage) {
         DataAccessException failure = assertThrows(DataAccessException.class, () -> jdbc.update(sql, id));
         for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
             if (cause instanceof SQLException postgres && expectedState.equals(postgres.getSQLState())) {
-                if ("23514".equals(expectedState)) {
-                    assertTrue(postgres.getMessage().contains("V94 correlation ID is immutable"));
+                if (expectedMessage != null) {
+                    assertTrue(postgres.getMessage().contains(expectedMessage));
                 }
                 return;
             }

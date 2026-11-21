@@ -172,6 +172,7 @@ public class AiExecutionService {
             }
             attemptAuthorization.beforeNetworkDispatch(request, attempt, leaseId);
             dataAssurance.require(request, true);
+            recorder.beforeNetworkDispatch(plan.getId(), attempt.attemptId());
         }
 
         @Override

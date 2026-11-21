@@ -48,10 +48,10 @@ public class ChatQuotaService {
     public void reserve(UUID chatId, UUID turnId, UUID clientRequestId,
                         UUID organizationId, UUID userId) {
         if (!properties.isEnabled()) return;
-        Instant now = now();
-        LocalDate period = period(now);
         ChatQuotaPolicy organizationPolicy = repository.lockOrganizationPolicy(organizationId);
         ChatQuotaPolicy userPolicy = repository.lockUserPolicy(userId);
+        Instant now = now();
+        LocalDate period = period(now);
         validateLegacy("organization", chatId, turnId, clientRequestId,
                 organizationPolicy, repository.organizationConsumption(organizationId, period));
         validateLegacy("user", chatId, turnId, clientRequestId,
@@ -69,11 +69,11 @@ public class ChatQuotaService {
         ChatQuotaReservation bound = schemeVerified ? reservation : new ChatQuotaReservation(
                 reservation.modelRouteDecisionId(), reservation.inputUnits(),
                 reservation.outputUnits(), null, false);
-        Instant now = now();
-        LocalDate period = period(now);
         // Identical lock order across all callers prevents policy-row deadlocks.
         ChatQuotaPolicy organizationPolicy = repository.lockOrganizationPolicy(organizationId);
         ChatQuotaPolicy userPolicy = repository.lockUserPolicy(userId);
+        Instant now = now();
+        LocalDate period = period(now);
         validateRoute("organization", chatId, turnId, clientRequestId,
                 organizationPolicy, repository.organizationConsumption(organizationId, period), bound);
         validateRoute("user", chatId, turnId, clientRequestId,

@@ -15,52 +15,40 @@ class RuntimeAclPolicyTest {
 
     private static final String MANIFEST =
             "/db/acl/reviewed-migrations.sha256";
-
     private static final String V92 =
             "/db/migration/V92__organization_model_policy_budget_finite_values.sql";
-
     private static final String V94 =
             "/db/migration/V94__operation_correlation.sql";
-
+    private static final String V95 =
+            "/db/migration/V95__chat_quota_physical_attempt_gate.sql";
+    private static final String V96 =
+            "/db/migration/V96__chat_quota_admission_fence.sql";
     private static final String V87_CONF =
             "/db/migration/V87__chat_archive_owner_online_index.sql.conf";
-
-    private static final String V94_CONF =
-            V94 + ".conf";
-
+    private static final String V94_CONF = V94 + ".conf";
+    private static final String V95_CONF = V95 + ".conf";
+    private static final String V96_CONF = V96 + ".conf";
     private static final int NEXT_UNREVIEWED_VERSION =
             RuntimeAclPolicy.REVIEWED_THROUGH + 1;
 
     @Test
-    void acceptsCompleteReviewedMigrationInventory()
-            throws IOException {
-
+    void acceptsCompleteReviewedMigrationInventory() throws IOException {
         var reviewed = RuntimeAclPolicy.verifyReviewedResources();
 
-        assertEquals(
-                RuntimeAclPolicy.REVIEWED_THROUGH,
-                reviewed.size()
-        );
-
-        assertEquals(
-                "V94__operation_correlation.sql",
-                reviewed.get(94)
-        );
+        assertEquals(96, reviewed.size());
+        assertEquals(RuntimeAclPolicy.REVIEWED_THROUGH, reviewed.size());
+        assertEquals("V94__operation_correlation.sql", reviewed.get(94));
+        assertEquals("V95__chat_quota_physical_attempt_gate.sql", reviewed.get(95));
+        assertEquals("V96__chat_quota_admission_fence.sql", reviewed.get(96));
     }
 
     @Test
     void blocksMissingAclOrManifestBeforeMigration() {
-
         for (String absent : new String[]{
-                RuntimeAclPolicy.ACL_RESOURCE,
-                MANIFEST,
-                V92,
-                V94
+                RuntimeAclPolicy.ACL_RESOURCE, MANIFEST, V92, V94, V95, V96
         }) {
             fails(
-                    path -> path.equals(absent)
-                            ? null
-                            : read(path),
+                    path -> path.equals(absent) ? null : read(path),
                     "missing resource"
             );
         }
@@ -68,12 +56,8 @@ class RuntimeAclPolicyTest {
 
     @Test
     void blocksModifiedMigrationOrConfigAndNewOrMissingConfig() {
-
         for (String changed : new String[]{
-                V92,
-                V94,
-                V87_CONF,
-                V94_CONF
+                V92, V94, V95, V96, V87_CONF, V94_CONF, V95_CONF, V96_CONF
         }) {
             fails(
                     path -> path.equals(changed)
@@ -83,80 +67,50 @@ class RuntimeAclPolicyTest {
             );
         }
 
-        for (String config : new String[]{
-                V87_CONF,
-                V94_CONF
-        }) {
+        for (String config : new String[]{V87_CONF, V94_CONF, V95_CONF, V96_CONF}) {
             fails(
-                    path -> path.equals(config)
-                            ? null
-                            : read(path),
+                    path -> path.equals(config) ? null : read(path),
                     "unreviewed migration configuration"
             );
         }
 
         fails(
-                path -> path.equals(V92 + ".conf")
-                        ? new byte[0]
-                        : read(path),
+                path -> path.equals(V92 + ".conf") ? new byte[0] : read(path),
                 "unreviewed migration configuration"
         );
     }
 
     @Test
     void blocksCorruptDuplicateIncompleteOrNonContiguousManifest() {
-
         manifestFails(
                 manifest -> manifest + "\ninvalid\n",
                 "invalid or duplicate"
         );
-
         manifestFails(
-                manifest -> manifest
-                        + "\n"
-                        + findV92Entry(manifest)
-                        + "\n",
+                manifest -> manifest + "\n" + findV92Entry(manifest) + "\n",
                 "invalid or duplicate"
         );
-
         manifestFails(
-                manifest -> manifest
-                        + "\n"
-                        + findV92Entry(manifest)
-                                .replace("V92__", "V92__duplicate_")
-                        + "\n",
+                manifest -> manifest + "\n"
+                        + findV92Entry(manifest).replace("V92__", "V92__duplicate_") + "\n",
                 "duplicate reviewed"
         );
-
         manifestFails(
-                manifest -> manifest.replaceAll(
-                        "(?m)^.*V92__.*\\R",
-                        ""
-                ),
+                manifest -> manifest.replaceAll("(?m)^.*V92__.*\\R", ""),
                 "review boundary mismatch"
         );
-
         manifestFails(
-                manifest -> manifest.replace(
-                        "V92__",
-                        "V" + NEXT_UNREVIEWED_VERSION + "__"
-                ),
+                manifest -> manifest.replace("V92__", "V" + NEXT_UNREVIEWED_VERSION + "__"),
                 "missing reviewed V92"
         );
-
         manifestFails(
-                manifest -> manifest
-                        + "\n"
-                        + "0".repeat(64)
-                        + "  V"
-                        + NEXT_UNREVIEWED_VERSION
-                        + "__unreviewed.sql.conf\n",
+                manifest -> manifest + "\n" + "0".repeat(64)
+                        + "  V" + NEXT_UNREVIEWED_VERSION + "__unreviewed.sql.conf\n",
                 "orphan migration configuration"
         );
     }
 
     private static String findV92Entry(String manifest) {
-
         return manifest.lines()
                 .filter(line -> line.contains("V92__"))
                 .findFirst()
@@ -167,15 +121,11 @@ class RuntimeAclPolicyTest {
             UnaryOperator<String> mutate,
             String message
     ) {
-
         fails(
                 path -> path.equals(MANIFEST)
-                        ? mutate.apply(
-                                new String(
-                                    Objects.requireNonNull(read(path)),
-                                        StandardCharsets.UTF_8
-                                )
-                        ).getBytes(StandardCharsets.UTF_8)
+                        ? mutate.apply(new String(
+                                Objects.requireNonNull(read(path)), StandardCharsets.UTF_8
+                        )).getBytes(StandardCharsets.UTF_8)
                         : read(path),
                 message
         );
@@ -185,26 +135,17 @@ class RuntimeAclPolicyTest {
             RuntimeAclPolicy.ResourceReader reader,
             String message
     ) {
-
         var error = assertThrows(
                 IllegalStateException.class,
                 () -> RuntimeAclPolicy.verifyReviewedResources(reader)
         );
 
-        assertTrue(
-                error.getMessage().contains(message),
-                error.getMessage()
-        );
+        assertTrue(error.getMessage().contains(message), error.getMessage());
     }
 
     private static byte[] read(String path) throws IOException {
-
-        try (var input =
-                     RuntimeAclPolicyTest.class.getResourceAsStream(path)) {
-
-            return input == null
-                    ? null
-                    : input.readAllBytes();
+        try (var input = RuntimeAclPolicyTest.class.getResourceAsStream(path)) {
+            return input == null ? null : input.readAllBytes();
         }
     }
 }

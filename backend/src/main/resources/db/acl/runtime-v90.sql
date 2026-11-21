@@ -14,6 +14,7 @@ INSERT INTO acl_matrix VALUES
 ('chat_erasure_operator_approvals_v86','-','',''),
 ('chat_messages','SI','',''),
 ('chat_physical_spend_v67','S','',''),
+('chat_quota_calendar_v96','S','',''),
 ('chat_quota_reservations','SIU','',''),
 ('chat_retention_holds_v86','S','',''),
 ('chat_sessions','SIU','',''),
@@ -81,7 +82,7 @@ BEGIN
                    WHERE n.nspname='public' AND c.relkind='S') THEN
         RAISE EXCEPTION 'Unsafe default ACL, runtime capability or inventory';
     END IF;
-    IF (SELECT count(*) FROM acl_matrix) <> 63 OR EXISTS (
+    IF (SELECT count(*) FROM acl_matrix) <> 64 OR EXISTS (
         SELECT name FROM acl_matrix EXCEPT
         SELECT c.relname::text FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
         WHERE n.nspname='public' AND c.relkind IN ('r','p','v','m','f')
@@ -145,7 +146,7 @@ BEGIN
 END;
 $fn$;
 
--- All application-owned invoker routines are reviewed in the immutable V1–V94
+-- All application-owned invoker routines are reviewed in the immutable V1–V96
 -- history; extension functions are granted separately by bootstrap.
 -- SECURITY DEFINER functions retain only their migration-specific grants.
 DO $routines$
