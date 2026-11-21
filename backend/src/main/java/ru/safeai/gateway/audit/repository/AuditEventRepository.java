@@ -43,7 +43,8 @@ public interface AuditEventRepository
                         target_organization_name,
                         event_type,
                         details,
-                        created_at
+                        created_at,
+                        correlation_id
                     )
                     select outbox.id,
                            outbox.actor_user_id,
@@ -54,7 +55,8 @@ public interface AuditEventRepository
                            outbox.target_organization_name,
                            outbox.event_type,
                            outbox.details,
-                           outbox.occurred_at
+                           outbox.occurred_at,
+                           outbox.correlation_id
                     from public.audit_outbox as outbox
                     where outbox.id = :outboxId
                     on conflict (id) do nothing
@@ -65,10 +67,31 @@ public interface AuditEventRepository
             @Param("outboxId") UUID outboxId
     );
 
+    @Query(value = """
+            select exists (
+                select 1
+                from public.audit_outbox o
+                join public.audit_events e on e.id = o.id
+                where o.id = :outboxId
+                  and e.actor_user_id is not distinct from o.actor_user_id
+                  and e.actor_organization_id is not distinct from o.actor_organization_id
+                  and e.actor_email is not distinct from o.actor_email
+                  and e.actor_display_name is not distinct from o.actor_display_name
+                  and e.organization_id is not distinct from o.organization_id
+                  and e.target_organization_name is not distinct from o.target_organization_name
+                  and e.event_type is not distinct from o.event_type
+                  and e.details is not distinct from o.details
+                  and e.created_at is not distinct from o.occurred_at
+                  and e.correlation_id is not distinct from o.correlation_id
+            )
+            """, nativeQuery = true)
+    boolean hasMatchingEvidence(@Param("outboxId") UUID outboxId);
+
     /**
      * Retention cutoff is evaluated by PostgreSQL so a fast/slow JVM clock
      * cannot delete immutable evidence early.
      * Associated live-user links are removed by ON DELETE CASCADE.
+     * Pending or terminal outbox rows preserve matching IDs for investigation.
      */
     @SuppressWarnings({
             "SqlResolve",
@@ -89,6 +112,10 @@ public interface AuditEventRepository
                                 - make_interval(
                                     secs => cast(:retentionSeconds as double precision)
                                   )
+                          and not exists (
+                              select 1 from public.audit_outbox o
+                              where o.id = candidate.id
+                          )
                         order by candidate.created_at,
                                  candidate.id
                         limit :batchSize

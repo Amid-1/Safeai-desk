@@ -35,6 +35,9 @@ class RedisClusterSlotContractTest {
 
         assertThat(slot(email))
                 .isEqualTo(slot(ip))
+                .isEqualTo(slot(RedisFixedWindowRateLimiter.generationKey(email)))
+                .isEqualTo(slot(RedisFixedWindowRateLimiter.generationKey(ip)))
+                .isEqualTo(slot(RedisFixedWindowRateLimiter.receiptKey(email, UUID.randomUUID())))
                 .isEqualTo(
                         slot(
                                 factory.exceededMarker(

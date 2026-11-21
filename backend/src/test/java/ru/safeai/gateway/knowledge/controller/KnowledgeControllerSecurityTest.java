@@ -401,7 +401,7 @@ class KnowledgeControllerSecurityTest {
     }
 
     @Test
-    void createWithAdminRole_reachesService()
+    void createWithAdminRole_returnsCreatedLocation()
             throws Exception {
         SafeAiUserPrincipal currentUser =
                 principal(
@@ -442,7 +442,11 @@ class KnowledgeControllerSecurityTest {
                                 )
                 )
                 .andExpect(
-                        status().isOk()
+                        status().isCreated()
+                )
+                .andExpect(
+                        org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                                .string("Location", "/api/knowledge-bases/" + KB_ID)
                 )
                 .andExpect(
                         jsonPath(

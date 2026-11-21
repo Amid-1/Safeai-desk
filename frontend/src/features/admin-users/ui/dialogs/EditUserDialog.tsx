@@ -27,6 +27,7 @@ export function EditUserDialog(props: EditUserDialogProps) {
         <>
             {editUser && (
                 <Modal
+                    className="admin-details-dialog"
                     title={
                         'Изменить email и имя'
                     }

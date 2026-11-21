@@ -78,6 +78,13 @@ public class AiExecutionAttemptRecorder {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void beforeNetworkDispatch(UUID planId, UUID attemptId) {
+        if (!attempts.quotaDispatchAllowed(planId, attemptId)) {
+            throw new IllegalStateException("Financial admission is no longer valid");
+        }
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void succeeded(UUID attemptId, AiChatResponse response) {
         ModelExecutionAttemptEntity attempt = find(attemptId);
         attempt.succeeded(response, clock.instant());

@@ -144,21 +144,32 @@ public class KnowledgeGenerationGc {
         );
 
         for (var generation : candidates) {
-            jdbc.update("""
+            int claimed = jdbc.update("""
                     update knowledge_index_generations
                     set state = 'COLLECTING'
                     where document_version_id = ?
                       and index_generation = ?
                       and state = 'RETIRED'
                     """, generation.version(), generation.generation());
+            if (claimed != 1) {
+                throw new IllegalStateException(
+                        "Generation GC failed to acquire the RETIRED -> COLLECTING fence"
+                );
+            }
 
-            jdbc.update("""
-                    delete from knowledge_document_chunks
-                    where document_version_id = ?
-                      and index_generation = ?
-                    """, generation.version(), generation.generation());
+            // V90: safeai_app does not possess DELETE on knowledge_document_chunks.
+            // The SECURITY DEFINER function verifies COLLECTING under a row lock.
+            // V57 DELETE/evidence guards still execute in the same transaction.
+            Integer deleted = jdbc.queryForObject("""
+                    select public.gc_knowledge_generation_chunks_v90(?::uuid,?::uuid)
+                    """, Integer.class, generation.version(), generation.generation());
+            if (deleted == null || deleted < 0) {
+                throw new IllegalStateException(
+                        "Generation GC returned an invalid deletion count"
+                );
+            }
 
-            jdbc.update("""
+            int completed = jdbc.update("""
                     update knowledge_index_generations
                     set state = 'COLLECTED',
                         collected_at = clock_timestamp()
@@ -166,6 +177,11 @@ public class KnowledgeGenerationGc {
                       and index_generation = ?
                       and state = 'COLLECTING'
                     """, generation.version(), generation.generation());
+            if (completed != 1) {
+                throw new IllegalStateException(
+                        "Generation GC failed to finalize its COLLECTING -> COLLECTED fence"
+                );
+            }
         }
 
         return candidates.size();

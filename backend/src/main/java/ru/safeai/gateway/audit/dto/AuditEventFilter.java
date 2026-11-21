@@ -3,6 +3,8 @@ package ru.safeai.gateway.audit.dto;
 import jakarta.validation.constraints.Size;
 import org.springframework.format.annotation.DateTimeFormat;
 import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.AuditEventClassification.Category;
+import ru.safeai.gateway.audit.AuditEventClassification.Metric;
 import ru.safeai.gateway.common.exception.BadRequestException;
 
 import java.time.Instant;
@@ -27,9 +29,28 @@ public record AuditEventFilter(
         )
         Instant dateTo,
 
-        UUID organizationId
+        UUID organizationId,
+        Category category,
+        Metric metric,
+        UUID correlationId
 ) {
     private static final int MAX_USER_EMAIL_FILTER_LENGTH = 320;
+
+    public AuditEventFilter(AuditEventType eventType, String userEmail, UUID userId,
+                            Instant dateFrom, Instant dateTo, UUID organizationId) {
+        this(eventType, userEmail, userId, dateFrom, dateTo, organizationId, null, null);
+    }
+
+    public AuditEventFilter(AuditEventType eventType, String userEmail, UUID userId,
+                            Instant dateFrom, Instant dateTo, UUID organizationId,
+                            Category category, Metric metric) {
+        this(eventType, userEmail, userId, dateFrom, dateTo, organizationId, category, metric, null);
+    }
+
+    public AuditEventFilter withoutMetric() {
+        return new AuditEventFilter(eventType, userEmail, userId, dateFrom, dateTo,
+                organizationId, category, null, correlationId);
+    }
 
     public AuditEventFilter {
         userEmail = normalizeEmail(userEmail);

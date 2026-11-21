@@ -1,6 +1,7 @@
 package ru.safeai.gateway.model.service;
 
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
@@ -42,6 +43,7 @@ public class ModelPolicyPreviewService {
     private final ModelRoutingCostPolicy costPolicy;
     private final ModelRoutingEnvelopeService envelopeService;
     private final Clock clock;
+    private final RubBudgetRateService rates;
 
     public ModelPolicyPreviewService(
             ModelCatalogRepository catalogRepository,
@@ -50,6 +52,20 @@ public class ModelPolicyPreviewService {
             RuntimeModelStatusService runtimeStatusService,
             ModelRoutingEnvelopeService envelopeService,
             Clock clock
+    ) {
+        this(catalogRepository, policyRepository, decisionRepository, runtimeStatusService,
+                envelopeService, clock, new RubBudgetRateService(clock));
+    }
+
+    @Autowired
+    public ModelPolicyPreviewService(
+            ModelCatalogRepository catalogRepository,
+            OrganizationModelPolicyRepository policyRepository,
+            ModelRouteDecisionRepository decisionRepository,
+            RuntimeModelStatusService runtimeStatusService,
+            ModelRoutingEnvelopeService envelopeService,
+            Clock clock,
+            RubBudgetRateService rates
     ) {
         this.catalogRepository = Objects.requireNonNull(
                 catalogRepository,
@@ -64,6 +80,7 @@ public class ModelPolicyPreviewService {
                 "runtimeStatusService не должен быть null"
         );
         this.clock = Objects.requireNonNull(clock, "clock не должен быть null");
+        this.rates = Objects.requireNonNull(rates);
         this.envelopeService = Objects.requireNonNull(
                 envelopeService, "envelopeService не должен быть null"
         );
@@ -91,9 +108,8 @@ public class ModelPolicyPreviewService {
             );
         }
 
-        int currentVersion = policyRepository.findLatest(target)
-                .map(OrganizationModelPolicy::version)
-                .orElse(0);
+        OrganizationModelPolicy previous = policyRepository.findLatest(target).orElse(null);
+        int currentVersion = previous == null ? 0 : previous.version();
 
         if (currentVersion != request.expectedPreviousVersion()) {
             throw new ConflictException(
@@ -104,14 +120,17 @@ public class ModelPolicyPreviewService {
             );
         }
 
+        var rubBudget = rates.resolve(request, previous);
         Instant now = DatabaseTimestampNormalizer.normalize(clock.instant());
+        rates.requireCurrentIfChanged(rubBudget, previous, now);
         OrganizationModelPolicy draft = OrganizationModelPolicyRules.buildPolicy(
                 PREVIEW_UUID,
                 target,
                 ModelControlPlaneNumericValidation.nextVersion(currentVersion),
                 request,
                 currentUser.getId(),
-                now
+                now,
+                rubBudget
         );
         RuntimeModelStatusResponse runtime = Objects.requireNonNull(
                 runtimeStatusService.current(),
@@ -236,14 +255,12 @@ public class ModelPolicyPreviewService {
         ModelRoutingCostPolicy.PricingEstimate maxEnvelopePricing =
                 costPolicy.estimateCost(
                         entry,
-                        runtime,
                         inputLimit,
                         outputLimit
                 );
         ModelRoutingCostPolicy.PricingEstimate minimumRequestPricing =
                 costPolicy.estimateCost(
                         entry,
-                        runtime,
                         Math.min(minimumInputUnits, inputLimit),
                         outputLimit
                 );

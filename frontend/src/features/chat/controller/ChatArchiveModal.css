@@ -1,0 +1,83 @@
+/* frontend/src/features/chat/controller/ChatArchiveModal.css */
+.chat-archive {
+    display: grid;
+    gap: 1rem;
+    min-width: 0
+}
+
+.chat-archive__layout {
+    display: grid;
+    grid-template-columns:minmax(180px, 0.75fr) minmax(0, 1.8fr);
+    gap: 1rem;
+    min-height: 250px;
+    max-height: 60vh
+}
+
+.chat-archive__list {
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+    overflow: auto;
+    min-width: 0
+}
+
+.chat-archive__list button {
+    text-align: left;
+    overflow-wrap: anywhere
+}
+
+.chat-archive__details {
+    overflow: auto;
+    min-width: 0;
+    padding: .5rem
+}
+
+.chat-archive__messages {
+    max-height: 280px;
+    overflow: auto;
+    border: 1px solid var(--border-color, #dce3ef);
+    border-radius: 8px;
+    padding: .75rem
+}
+
+.chat-archive__message {
+    padding: .5rem 0;
+    border-bottom: 1px solid #e5e7eb;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap
+}
+
+.chat-archive__message:last-child {
+    border-bottom: 0
+}
+
+.chat-archive__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .75rem;
+    margin-top: 1rem
+}
+
+.chat-archive__erase {
+    display: grid;
+    gap: .5rem;
+    margin-top: 1rem;
+    border-top: 1px solid #e5e7eb;
+    padding-top: 1rem
+}
+
+.chat-archive__erase input {
+    min-width: 0;
+    width: 100%
+}
+
+@media (max-width: 650px) {
+    .chat-archive__layout {
+        grid-template-columns:1fr;
+        max-height: 70vh
+    }
+
+    .chat-archive__list {
+        max-height: 150px
+    }
+}

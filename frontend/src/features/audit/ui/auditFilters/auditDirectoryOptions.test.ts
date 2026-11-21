@@ -51,6 +51,6 @@ describe('Audit directory options', () => {
         expect(formatActorOption({
             actorUserId: ACTOR_ID, actorOrganizationId: null,
             actorEmail: null, actorDisplayName: null,
-        })).toBe(`Инициатор без имени (${ACTOR_ID})`)
+        })).toBe(`Пользователь без имени (${ACTOR_ID})`)
     })
 })

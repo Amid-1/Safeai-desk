@@ -8,8 +8,10 @@ import type {
     OrganizationModelPolicy,
     RuntimeModelStatus,
 } from '../../../../entities/model/api/modelApi'
+import type {PolicyEditorTarget} from './policyFormTabsConfig'
 
 export type ModelPolicyModalProps = {
+    initialTarget?: PolicyEditorTarget
     policy:
         OrganizationModelPolicy
 

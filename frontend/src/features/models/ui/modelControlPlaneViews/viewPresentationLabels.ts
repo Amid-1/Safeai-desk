@@ -183,7 +183,8 @@ export function runtimeHealthLabel(
     runtime: RuntimeModelStatus,
     probe: RuntimeModelProbe | null,
 ): string {
-    if (probe) {
+    if (!runtime.enabled) return 'Отключена'
+    if (probe && probe.provider === runtime.provider && probe.model === runtime.model) {
         return probeLabel(probe.status)
     }
 
@@ -197,6 +198,12 @@ export function runtimeHealthLabel(
         default:
             return enumLabel(runtime.healthStatus)
     }
+}
+
+export function runtimeHealthTone(runtime: RuntimeModelStatus, probe: RuntimeModelProbe | null): StatusTone {
+    if (!runtime.enabled) return 'neutral'
+    if (probe && probe.provider === runtime.provider && probe.model === runtime.model) return probeTone(probe.status)
+    return runtime.healthStatus === 'AVAILABLE' ? 'success' : runtime.healthStatus === 'UNAVAILABLE' ? 'danger' : 'warning'
 }
 
 /**
@@ -243,13 +250,13 @@ export function policyDataRequirements(
 ): string {
     const requirements = [
         policy.requireCompletePricing
-            ? 'Полные данные о стоимости'
+            ? 'Полные сведения о стоимости'
             : null,
         policy.requireNoTraining
-            ? 'Без использования для обучения'
+            ? 'Запрет использования данных для обучения'
             : null,
         policy.requireZeroDataRetention
-            ? 'Без хранения после запроса'
+            ? 'Нулевое хранение данных у провайдера'
             : null,
     ].filter(
         (value): value is string =>
@@ -281,30 +288,8 @@ export function policyTokenLimits(
             ? 'без доп. лимита'
             : policy.maxOutputTokens.toLocaleString('ru-RU')
 
-    return `${input} / ${output}`
+    return `Вход: ${input} · выход: ${output}`
 }
-
-export function catalogCapabilities(
-    entry: ModelCatalogEntry,
-): string {
-    const extra = entry.capabilities.map(
-        (capability) => {
-            switch (capability) {
-                case 'TOOLS':
-                    return 'Инструменты'
-                case 'VISION':
-                    return 'Изображения'
-                case 'STRUCTURED_OUTPUT':
-                    return 'Структурированный ответ'
-            }
-        },
-    )
-
-    return extra.length === 0
-        ? 'Текст'
-        : `Текст · ${extra.join(' · ')}`
-}
-
 
 export function routeReasonLabel(
     reason: ModelRouteDecision['reason'],

@@ -26,6 +26,7 @@ import type {
 const PAGE_SIZE = 50
 
 type UseAuditEventsParams = {
+    authScope: string
     page: number
     filter: AuditEventFilter
     reloadToken: number
@@ -51,11 +52,13 @@ const EMPTY_PAGE:
 }
 
 function useAuditEvents({
+    authScope,
     page,
     filter,
     reloadToken,
     onPageOutOfRange,
 }: UseAuditEventsParams): UseAuditEventsResult {
+    const [loadedScope, setLoadedScope] = useState('')
     const [pageResponse, setPageResponse] =
         useState<PageResponse<AuditEvent>>(
             EMPTY_PAGE,
@@ -128,6 +131,7 @@ function useAuditEvents({
                 }
 
                 setPageResponse(response)
+                setLoadedScope(authScope)
             } catch (loadError) {
                 if (
                     sequence
@@ -139,6 +143,7 @@ function useAuditEvents({
                     setPageResponse(
                         EMPTY_PAGE,
                     )
+                    setLoadedScope(authScope)
                     setError(
                         getApiErrorMessage(
                             loadError,
@@ -163,16 +168,17 @@ function useAuditEvents({
             requestSequenceRef.current += 1
         }
     }, [
+        authScope,
         page,
         filter,
         reloadToken,
     ])
 
     return {
-        events: pageResponse.content,
-        pageResponse,
-        loading,
-        error,
+        events: loadedScope === authScope ? pageResponse.content : [],
+        pageResponse: loadedScope === authScope ? pageResponse : EMPTY_PAGE,
+        loading: loadedScope !== authScope || loading,
+        error: loadedScope === authScope ? error : '',
     }
 }
 

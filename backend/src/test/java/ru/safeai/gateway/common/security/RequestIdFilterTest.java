@@ -70,6 +70,80 @@ class RequestIdFilterTest {
     }
 
     @Test
+    void correlationUsesServerIdAndRestoresNestedWorkerScope() throws Exception {
+        UUID forged = UUID.randomUUID();
+        UUID prior = UUID.randomUUID();
+        UUID worker = UUID.randomUUID();
+        MDC.put(RequestIdFilter.REQUEST_ID_MDC_KEY, prior.toString());
+        MockHttpServletRequest request = requestWithId(forged.toString());
+        request.addHeader("X-Correlation-Id", forged.toString());
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        filter.doFilter(request, response, (req, res) -> {
+            UUID server = CorrelationContext.current();
+            assertThat(server).isNotNull().isNotEqualTo(forged).isNotEqualTo(prior);
+            assertThat(server.toString()).isEqualTo(response.getHeader("X-Request-Id"));
+            assertThatThrownBy(() -> {
+                try (var ignored = CorrelationContext.open(worker)) {
+                    assertThat(CorrelationContext.current()).isEqualTo(worker);
+                    assertThat(MDC.get(RequestIdFilter.CLIENT_REQUEST_ID_MDC_KEY)).isNull();
+                    throw new IllegalStateException("worker failed");
+                }
+            }).isInstanceOf(IllegalStateException.class);
+            assertThat(CorrelationContext.current()).isEqualTo(server);
+            assertThat(MDC.get(RequestIdFilter.CLIENT_REQUEST_ID_MDC_KEY)).isEqualTo(forged.toString());
+        });
+        assertThat(CorrelationContext.current()).isEqualTo(prior);
+    }
+
+    @Test
+    void independentWorkersDoNotInheritOrLeakCorrelation() throws Exception {
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            CountDownLatch ready = new CountDownLatch(2);
+            java.util.concurrent.Callable<UUID> firstJob = () -> workerCorrelation(first, ready);
+            java.util.concurrent.Callable<UUID> secondJob = () -> workerCorrelation(second, ready);
+            var a = executor.submit(firstJob);
+            var b = executor.submit(secondJob);
+            assertThat(a.get(5, TimeUnit.SECONDS)).isEqualTo(first);
+            assertThat(b.get(5, TimeUnit.SECONDS)).isEqualTo(second);
+        }
+        assertThat(CorrelationContext.current()).isNull();
+    }
+
+    private UUID workerCorrelation(UUID id, CountDownLatch ready) throws InterruptedException {
+        UUID observed;
+        assertThat(CorrelationContext.current()).isNull();
+        try (var ignored = CorrelationContext.open(id)) {
+            ready.countDown();
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            observed = CorrelationContext.current();
+        }
+        assertThat(CorrelationContext.current()).isNull();
+        return observed;
+    }
+
+    @Test
+    void invalidAndMissingMdcCannotBecomeTrustedCorrelation() {
+        assertThat(CorrelationContext.current()).isNull();
+        assertThat(CorrelationContext.currentOrNew()).isNotNull();
+        MDC.put(RequestIdFilter.REQUEST_ID_MDC_KEY, "1-1-1-1-1");
+        assertThat(CorrelationContext.current()).isNull();
+        MDC.put(RequestIdFilter.REQUEST_ID_MDC_KEY, "x".repeat(36));
+        assertThat(CorrelationContext.current()).isNull();
+        UUID original = UUID.fromString("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+        MDC.put(RequestIdFilter.REQUEST_ID_MDC_KEY, original.toString().toUpperCase(java.util.Locale.ROOT));
+        assertThat(CorrelationContext.current()).isNull();
+        MDC.put(RequestIdFilter.REQUEST_ID_MDC_KEY, original.toString());
+        assertThat(CorrelationContext.currentOrNew()).isEqualTo(original);
+        try (var ignored = CorrelationContext.open(null)) {
+            assertThat(CorrelationContext.current()).isNull();
+            assertThat(CorrelationContext.currentOrNew()).isNotEqualTo(original);
+        }
+        assertThat(CorrelationContext.current()).isEqualTo(original);
+    }
+
+    @Test
     void validClientRequestIdIsTrimmedAndPreservedOnlyAsMetadata()
             throws Exception {
         MockHttpServletRequest request =

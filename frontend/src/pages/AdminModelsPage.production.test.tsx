@@ -15,15 +15,18 @@ import {
     getRuntimeModelStatus,
     importRuntimeModelCatalog,
     probeRuntimeModel,
+    previewOrganizationModelPolicy,
 } from '../entities/model/api/modelApi'
 import { getOrganizationDetails, searchOrganizationDirectory } from '../entities/organization/api/organizationApi'
 import {
     createModelCatalogEntry,
     createOrganizationModelPolicy,
     createRuntimeModelStatus,
+    createPolicyPreview,
 } from '../test/fixtures/modelControlPlaneTestFixtures'
 import AdminModelsPage from './AdminModelsPage'
 import { MemoryRouter } from 'react-router-dom'
+import { ApiError } from '../shared/api/http'
 
 const auth = vi.hoisted(() => ({ currentUser: null as AuthUser | null }))
 vi.mock('../features/auth/state/useAuth', () => ({ useAuth: () => auth }))
@@ -78,6 +81,8 @@ function configureApi() {
     vi.mocked(getOrganizationModelPolicy).mockImplementation(async organizationId =>
         createOrganizationModelPolicy({ organizationId }),
     )
+    vi.mocked(previewOrganizationModelPolicy).mockImplementation(async (organizationId, request) =>
+        createPolicyPreview(request, organizationId, createRuntimeModelStatus()))
     vi.mocked(getOrganizationDetails).mockImplementation(async organizationId => ({
         id: organizationId,
         name: organizationId === SECOND_ORG ? 'Second Organization' : 'First Organization',
@@ -91,9 +96,15 @@ function configureApi() {
     vi.mocked(searchOrganizationDirectory).mockResolvedValue([])
 }
 
+function configureCatalogWithoutRuntime() {
+    const entry = createModelCatalogEntry({modelKey: 'mock:other', providerModelId: 'other', displayName: 'Other model'})
+    vi.mocked(getModelCatalog).mockResolvedValue([entry])
+    vi.mocked(getEffectiveModelCatalog).mockResolvedValue([entry])
+}
+
 async function loadPage() {
     render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
-    await screen.findByRole('heading', { name: 'Модели и доступ' })
+    await screen.findByRole('heading', { name: 'Управление AI-моделями' })
 }
 
 describe('AdminModelsPage — контрактные и регрессионные сценарии', () => {
@@ -107,7 +118,7 @@ describe('AdminModelsPage — контрактные и регрессионны
         vi.mocked(getRuntimeModelStatus).mockRejectedValueOnce(new Error('runtime unavailable'))
         render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
         expect(await screen.findByText('Не удалось загрузить настройки моделей.')).toBeInTheDocument()
-        expect(screen.queryByRole('heading', { name: 'Модели и доступ' }))
+        expect(screen.queryByRole('heading', { name: 'Управление AI-моделями' }))
             .not.toBeInTheDocument()
     })
 
@@ -118,8 +129,19 @@ describe('AdminModelsPage — контрактные и регрессионны
         render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
         expect(await screen.findByText(/Сервер вернул правила другой организации/))
             .toBeInTheDocument()
-        expect(screen.queryByRole('heading', { name: 'Модели и доступ' }))
+        expect(screen.queryByRole('heading', { name: 'Управление AI-моделями' }))
             .not.toBeInTheDocument()
+    })
+
+    it('не угадывает модель при совпадении идентификатора разных провайдеров', async () => {
+        auth.currentUser = user('SUPER_ADMIN')
+        const entries = [createModelCatalogEntry({modelKey:'one:shared', providerModelId:'shared'}),
+            createModelCatalogEntry({modelKey:'two:shared', providerModelId:'shared', id: SECOND_ORG})]
+        vi.mocked(getModelCatalog).mockResolvedValue(entries)
+        vi.mocked(getEffectiveModelCatalog).mockResolvedValue(entries)
+        render(<MemoryRouter initialEntries={['/admin/models?section=catalog&usageModel=shared']}><AdminModelsPage /></MemoryRouter>)
+        expect(await screen.findByText(/Найдено несколько моделей/)).toBeInTheDocument()
+        expect(screen.queryByRole('dialog')).toBeNull()
     })
 
     it('не показывает старую политику во время смены организации', async () => {
@@ -141,18 +163,17 @@ describe('AdminModelsPage — контрактные и регрессионны
 
         await loadPage()
         fireEvent.click(screen.getByRole('tab', { name: 'Доступ' }))
-        fireEvent.change(screen.getByPlaceholderText('Начните вводить название или UUID'), {
+        fireEvent.change(screen.getByRole('combobox', {name: 'Управляемая организация'}), {
             target: { value: 'Second' },
         })
-        fireEvent.click(screen.getByRole('button', { name: 'Найти' }))
-        fireEvent.click(await screen.findByRole('button', { name: /Second Organization/ }))
+        fireEvent.click(await screen.findByRole('option', { name: /Second Organization/ }))
 
-        expect(screen.queryByRole('heading', { name: 'Модели и доступ' }))
+        expect(screen.queryByRole('heading', { name: 'Управление AI-моделями' }))
             .not.toBeInTheDocument()
         expect(screen.getByText('Загрузка настроек моделей...')).toBeInTheDocument()
 
         secondPolicy.resolve(createOrganizationModelPolicy({ organizationId: SECOND_ORG }))
-        await screen.findByRole('heading', { name: 'Модели и доступ' })
+        await screen.findByRole('heading', { name: 'Управление AI-моделями' })
         await waitFor(() => {
             expect(screen.getAllByText(SECOND_ORG).length).toBeGreaterThan(0)
         })
@@ -173,18 +194,16 @@ describe('AdminModelsPage — контрактные и регрессионны
             }])
         await loadPage()
         fireEvent.click(screen.getByRole('tab', { name: 'Доступ' }))
-        const query = screen.getByPlaceholderText('Начните вводить название или UUID')
+        const query = screen.getByRole('combobox', {name: 'Управляемая организация'})
         fireEvent.change(query, { target: { value: 'first' } })
-        fireEvent.click(screen.getByRole('button', { name: 'Найти' }))
         await waitFor(() => {
             expect(searchOrganizationDirectory).toHaveBeenCalledTimes(1)
         })
         fireEvent.change(query, { target: { value: 'second' } })
         // Смена запроса отменяет прежний поиск, даже если тот ещё в полёте.
-        fireEvent.submit(query.closest('form')!)
         const previousSignal = vi.mocked(searchOrganizationDirectory).mock.calls[0]?.[2]?.signal
         expect(previousSignal?.aborted).toBe(true)
-        expect(await screen.findByRole('button', { name: /Second Organization/ }))
+        expect(await screen.findByRole('option', { name: /Second Organization/ }))
             .toBeInTheDocument()
         first.resolve([{
             id: ORG,
@@ -239,10 +258,10 @@ describe('AdminModelsPage — контрактные и регрессионны
         vi.mocked(getModelRouteDecision).mockResolvedValueOnce(decision)
         await loadPage()
         fireEvent.click(screen.getByRole('tab', { name: 'Диагностика' }))
-        fireEvent.change(screen.getByLabelText('ID решения'), {
+        fireEvent.change(screen.getByLabelText('Идентификатор решения безопасности (UUID)'), {
             target: { value: ROUTE_ID },
         })
-        fireEvent.click(screen.getByRole('button', { name: 'Проверить' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Найти решение' }))
         expect(await screen.findByText(`SHA-256: ${'b'.repeat(64)}`))
             .toBeInTheDocument()
         expect(getModelRouteDecision).toHaveBeenCalledWith(ROUTE_ID, {
@@ -255,9 +274,9 @@ describe('AdminModelsPage — контрактные и регрессионны
         vi.mocked(getModelRouteDecision).mockReturnValue(request.promise)
         await loadPage()
         fireEvent.click(screen.getByRole('tab', { name: 'Диагностика' }))
-        const input = screen.getByLabelText('ID решения')
+        const input = screen.getByLabelText('Идентификатор решения безопасности (UUID)')
         fireEvent.change(input, { target: { value: ROUTE_ID } })
-        fireEvent.click(screen.getByRole('button', { name: 'Проверить' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Найти решение' }))
         await waitFor(() => expect(getModelRouteDecision).toHaveBeenCalledTimes(1))
         const signal = vi.mocked(getModelRouteDecision).mock.calls[0]?.[1]?.signal
         fireEvent.change(input, { target: { value: 'другой запрос' } })
@@ -266,11 +285,21 @@ describe('AdminModelsPage — контрактные и регрессионны
         await waitFor(() => {
             expect(screen.queryByText('Ответ старого запроса')).not.toBeInTheDocument()
         })
-        expect(screen.getByRole('button', { name: 'Проверить' })).not.toBeDisabled()
+        expect(screen.getByRole('button', { name: 'Найти решение' })).not.toBeDisabled()
+    })
+
+    it('открывает диагностику из журнала и проверяет именно номер решения', async () => {
+        vi.mocked(getModelRouteDecision).mockRejectedValue(new Error('not found'))
+        render(<MemoryRouter initialEntries={['/admin/models?section=diagnostics&decisionId=' + ROUTE_ID]}>
+            <AdminModelsPage />
+        </MemoryRouter>)
+        await waitFor(() => expect(getModelRouteDecision).toHaveBeenCalledWith(ROUTE_ID, { signal: expect.any(AbortSignal) }))
+        expect(screen.getByLabelText('Идентификатор решения безопасности (UUID)')).toHaveValue(ROUTE_ID)
     })
 
     it('не публикует частично обновлённые latest/effective после неудачного refresh', async () => {
         auth.currentUser = user('SUPER_ADMIN')
+        configureCatalogWithoutRuntime()
         await loadPage()
         vi.mocked(importRuntimeModelCatalog).mockResolvedValueOnce(
             createModelCatalogEntry({ version: 2 }),
@@ -287,12 +316,13 @@ describe('AdminModelsPage — контрактные и регрессионны
         expect(await screen.findByText(/повторно добавлять модель не нужно/i))
             .toBeInTheDocument()
         // Обе таблицы остаются на предыдущем согласованном срезе.
-        expect(screen.getByText('Последняя сохраненная · v1')).toBeInTheDocument()
-        expect(screen.queryByText('Последняя сохраненная · v2')).not.toBeInTheDocument()
+        expect(screen.getByText('Последняя и действующая · v1')).toBeInTheDocument()
+        expect(screen.queryByText('Последняя и действующая · v2')).not.toBeInTheDocument()
     })
 
     it('показывает результат ошибки POST и позволяет безопасно повторить после завершения', async () => {
         auth.currentUser = user('SUPER_ADMIN')
+        configureCatalogWithoutRuntime()
         vi.mocked(importRuntimeModelCatalog).mockRejectedValueOnce(new Error('POST rejected'))
         await loadPage()
         fireEvent.click(screen.getByRole('tab', { name: 'Каталог' }))
@@ -304,6 +334,57 @@ describe('AdminModelsPage — контрактные и регрессионны
         expect(screen.getByRole('tab', { name: 'Каталог' })).toHaveAttribute('aria-selected', 'true')
         await waitFor(() => expect(button).not.toBeDisabled())
         expect(importRuntimeModelCatalog).toHaveBeenCalledTimes(1)
+    })
+
+    it.each(['MANUAL', 'MIGRATED', 'RUNTIME_IMPORT'] as const)(
+        'не предлагает повторный импорт существующей версии %s',
+        async source => {
+            auth.currentUser = user('SUPER_ADMIN')
+            const entry = createModelCatalogEntry({ source, version: 2 })
+            vi.mocked(getModelCatalog).mockResolvedValue([entry])
+            // Даже если версия ещё не вступила в силу, ключ уже занят.
+            vi.mocked(getEffectiveModelCatalog).mockResolvedValue([])
+            await loadPage()
+            fireEvent.click(screen.getByRole('tab', { name: 'Каталог' }))
+            expect(screen.getByText('Подключённая модель уже в каталоге')).toBeInTheDocument()
+            expect(screen.queryByRole('button', {name: 'Подключённая модель уже в каталоге'})).not.toBeInTheDocument()
+            expect(screen.queryByRole('button', {name: 'Добавить подключённую модель в каталог'})).not.toBeInTheDocument()
+            expect(importRuntimeModelCatalog).not.toHaveBeenCalled()
+            expect(screen.getByRole('button', {name: 'Новая версия'})).toBeEnabled()
+        },
+    )
+
+    it('перезагружает каталог при конкурентном добавлении, не показывает технический конфликт', async () => {
+        auth.currentUser = user('SUPER_ADMIN')
+        configureCatalogWithoutRuntime()
+        await loadPage()
+        const registered = createModelCatalogEntry({source: 'MANUAL', version: 2})
+        vi.mocked(importRuntimeModelCatalog).mockRejectedValueOnce(
+            new ApiError('source=MANUAL, version=2; import-runtime governance', {code: 'CONFLICT'}, 409),
+        )
+        vi.mocked(getModelCatalog).mockResolvedValueOnce([registered])
+        vi.mocked(getEffectiveModelCatalog).mockResolvedValueOnce([registered])
+        fireEvent.click(screen.getByRole('tab', { name: 'Каталог' }))
+        fireEvent.click(screen.getByRole('button', {name: 'Добавить подключённую модель в каталог'}))
+        expect(await screen.findByText('Подключённая модель уже в каталоге')).toBeInTheDocument()
+        expect(screen.queryByRole('button', {name: 'Добавить подключённую модель в каталог'})).not.toBeInTheDocument()
+        expect(screen.queryByText(/source=MANUAL|governance/)).not.toBeInTheDocument()
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+        expect(importRuntimeModelCatalog).toHaveBeenCalledTimes(1)
+    })
+
+    it('блокирует добавление отключённой модели даже при пустом каталоге', async () => {
+        auth.currentUser = user('SUPER_ADMIN')
+        vi.mocked(getRuntimeModelStatus).mockResolvedValue(createRuntimeModelStatus({enabled: false}))
+        vi.mocked(getModelCatalog).mockResolvedValue([])
+        vi.mocked(getEffectiveModelCatalog).mockResolvedValue([])
+        await loadPage()
+        fireEvent.click(screen.getByRole('tab', {name: 'Каталог'}))
+        const button = screen.getByRole('button', {name: 'Добавить подключённую модель в каталог'})
+        expect(button).toBeDisabled()
+        expect(screen.getByText(/Подключённая модель отключена в настройках сервера/)).toBeInTheDocument()
+        fireEvent.click(button)
+        expect(importRuntimeModelCatalog).not.toHaveBeenCalled()
     })
 
     it('запрещает показывать политику чужого tenant из ответа после сохранения', async () => {
@@ -319,12 +400,14 @@ describe('AdminModelsPage — контрактные и регрессионны
         )
         await loadPage()
         fireEvent.click(screen.getByRole('tab', { name: 'Доступ' }))
-        fireEvent.click(screen.getByRole('button', { name: 'Изменить правила' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Настроить правила' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Проверить правила' }))
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Сохранить правила' })).toBeEnabled())
         fireEvent.click(screen.getByRole('button', { name: 'Сохранить правила' }))
         expect(await screen.findByText(/Ответ сервера относится к другой организации/))
             .toBeInTheDocument()
         expect(screen.getByText('Не настроены')).toBeInTheDocument()
-        expect(screen.queryByRole('dialog', { name: 'Правила использования моделей' }))
+        expect(screen.queryByRole('dialog', { name: 'Настройка правил использования моделей' }))
             .not.toBeInTheDocument()
     })
 
@@ -334,7 +417,8 @@ describe('AdminModelsPage — контрактные и регрессионны
         await loadPage()
         fireEvent.click(screen.getByRole('tab', { name: 'Диагностика' }))
         fireEvent.click(screen.getByRole('button', { name: 'Проверить доступность' }))
-        expect(await screen.findByText('Не удалось проверить доступность runtime-модели.')).toBeInTheDocument()
+        expect(await screen.findByText('Не удалось проверить доступность подключённой модели.')).toBeInTheDocument()
+        expect(screen.queryByText('Probe failed')).not.toBeInTheDocument()
         expect(screen.queryByText('Доступна')).not.toBeInTheDocument()
     })
 
@@ -343,7 +427,7 @@ describe('AdminModelsPage — контрактные и регрессионны
         render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
         expect(getRuntimeModelStatus).not.toHaveBeenCalled()
         expect(getOrganizationModelPolicy).not.toHaveBeenCalled()
-        expect(screen.queryByRole('heading', { name: 'Модели и доступ' }))
+        expect(screen.queryByRole('heading', { name: 'Управление AI-моделями' }))
             .not.toBeInTheDocument()
     })
 
@@ -364,6 +448,7 @@ describe('AdminModelsPage — контрактные и регрессионны
 
     it('не отправляет второй импорт Runtime, пока первый POST не завершён', async () => {
         auth.currentUser = user('SUPER_ADMIN')
+        configureCatalogWithoutRuntime()
         const pending = deferred<ReturnType<typeof createModelCatalogEntry>>()
         vi.mocked(importRuntimeModelCatalog).mockReturnValueOnce(pending.promise)
         await loadPage()

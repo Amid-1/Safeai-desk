@@ -525,6 +525,49 @@
 .models-page .models-policy-action { min-height: 46px; font-size: 15px; }
 
 /* Поиск: результат/ошибка не должны появляться без объяснения. */
+.models-page .models-organization-scope {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px 16px;
+    align-items: center;
+    padding: 8px 12px;
+    background: #fff;
+    border: 1px solid #d6e1f1;
+    border-radius: 12px;
+    margin: 0;
+}
+.models-page .models-organization-scope:not(:has(.models-org-picker)) {
+    grid-template-columns: minmax(0, 1fr);
+}
+.models-page .models-organization-scope > .models-policy-organization-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+}
+.models-page .models-organization-scope .models-policy-organization-summary > strong {
+    overflow-wrap: anywhere;
+}
+.models-page .models-organization-scope > .models-policy-organization-summary,
+.models-page .models-organization-scope > .models-org-picker {
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    min-width: 0;
+}
+.models-page .models-organization-scope > .models-scope-note {
+    grid-column: 1 / -1;
+    color: #526580;
+    font-size: 13px;
+    font-weight: 400;
+}
+.models-page .models-organization-scope > .models-org-picker {
+    gap: 4px;
+}
+@media (max-width: 760px) {
+    .models-page .models-organization-scope { grid-template-columns: minmax(0, 1fr); }
+}
 .models-page .models-org-picker {
     padding: 17px;
     gap: 12px;

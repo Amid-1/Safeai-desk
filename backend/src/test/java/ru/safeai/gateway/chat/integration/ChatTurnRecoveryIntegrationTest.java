@@ -30,6 +30,32 @@ class ChatTurnRecoveryIntegrationTest
     private ChatTurnRecoveryService recoveryService;
 
     @Test
+    void recoveryPreservesOriginalCorrelationInsteadOfWorkerId() {
+        UUID correlation = UUID.randomUUID();
+        UUID worker = UUID.randomUUID();
+        UUID turn;
+        try (var ignored = ru.safeai.gateway.common.security.CorrelationContext.open(correlation)) {
+            turn = expiredTurn(CHAT_ID, "Correlation recovery", null);
+        }
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT correlation_id FROM public.chat_turns WHERE id=?", UUID.class, turn))
+                .isEqualTo(correlation);
+        try (var ignored = ru.safeai.gateway.common.security.CorrelationContext.open(worker)) {
+            assertThat(recoveryService.recoverExpiredBatch()).isEqualTo(1);
+            assertThat(ru.safeai.gateway.common.security.CorrelationContext.current()).isEqualTo(worker);
+        }
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM (
+                    SELECT correlation_id, event_type FROM public.audit_outbox
+                    UNION ALL
+                    SELECT correlation_id, event_type FROM public.audit_events
+                ) evidence WHERE correlation_id=? AND event_type='AI_RESPONSE_FAILED'
+                """, Long.class, correlation)).isEqualTo(1L);
+        assertThat(state(turn)).isEqualTo("FAILED");
+        assertThat(quotaState(turn)).isEqualTo("RELEASED");
+    }
+
+    @Test
     void crashBeforeProviderCallBecomesFailedAndReleasesQuota() {
         UUID client = UUID.randomUUID();
         UUID userMessage = insertUserMessage(

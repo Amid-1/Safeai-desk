@@ -46,6 +46,14 @@ describe('http — контракт ошибок и конфиденциальн
 })
 
 describe('http — CSRF и небезопасные запросы',()=>{
+    it('успешно читает JSON новой базы знаний при HTTP 201 Created',async()=>{
+        csrf('secure')
+        const created={id:'11111111-1111-4111-8111-111111111111',name:'Runbooks'}
+        vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify(created),{
+            status:201,headers:{'Content-Type':'application/json','Location':`/api/knowledge-bases/${created.id}`},
+        })))
+        await expect(apiRequest('/api/knowledge-bases',{method:'POST',json:{name:'Runbooks'}})).resolves.toEqual(created)
+    })
     it('не выполняет мутацию, если сервер не устанавливает CSRF cookie',async()=>{
         const fetchMock=vi.fn(async()=>new Response(null,{status:204}))
         vi.stubGlobal('fetch',fetchMock)

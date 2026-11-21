@@ -20,6 +20,8 @@ export function useAuditDirectoryQueries(
     onOrganizationSearch: AuditFiltersProps['onOrganizationSearch'],
 ) {
     const [organizationQuery, setOrganizationQuery] = useState('')
+    const [organizationSearchScheduled, setOrganizationSearchScheduled] = useState(false)
+    const organizationSequence = useRef(0)
     const [actorQuery, setActorQuery] = useState('')
     const organizationSearchTimerRef = useRef<number | null>(null)
     const actorSearchTimerRef = useRef<number | null>(null)
@@ -33,16 +35,21 @@ export function useAuditDirectoryQueries(
     }, [onActorSearch, onOrganizationSearch])
 
     useEffect(() => () => {
+        organizationSequence.current += 1
         clearSearchTimer(organizationSearchTimerRef)
         clearSearchTimer(actorSearchTimerRef)
     }, [])
 
     const scheduleOrganizationSearch = useCallback((query: string) => {
         setOrganizationQuery(query)
+        setOrganizationSearchScheduled(true)
+        const sequence = ++organizationSequence.current
         clearSearchTimer(organizationSearchTimerRef)
         organizationSearchTimerRef.current = window.setTimeout(() => {
             organizationSearchTimerRef.current = null
-            void onOrganizationSearchRef.current(query)
+            void onOrganizationSearchRef.current(query).finally(() => {
+                if (organizationSequence.current === sequence) setOrganizationSearchScheduled(false)
+            })
         }, DIRECTORY_SEARCH_DELAY_MS)
     }, [])
 
@@ -59,6 +66,7 @@ export function useAuditDirectoryQueries(
 
     return {
         organizationQuery,
+        organizationSearchScheduled,
         actorQuery,
         scheduleOrganizationSearch,
         scheduleActorSearch,

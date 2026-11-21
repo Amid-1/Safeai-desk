@@ -16,11 +16,6 @@ public class ChatSecurityStateService {
         this.repository = repository;
     }
 
-    /**
-     * Response is persisted first for accounting. This method controls only
-     * whether it may still be returned to a caller whose access was revoked
-     * during the provider call.
-     */
     public void assertStillActive(
             UUID chatId,
             UUID turnId,
@@ -29,7 +24,9 @@ public class ChatSecurityStateService {
     ) {
         if (!repository.isActive(
                 currentUser.getId(),
-                currentUser.getOrganizationId()
+                currentUser.getOrganizationId(),
+                currentUser.getTokenVersion(),
+                currentUser.getOrganizationAuthVersion()
         )) {
             throw new ChatAccessRevokedException(
                     chatId,

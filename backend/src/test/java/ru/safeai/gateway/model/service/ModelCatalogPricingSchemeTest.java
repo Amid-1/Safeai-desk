@@ -23,7 +23,7 @@ class ModelCatalogPricingSchemeTest {
         ModelRoutingCostPolicy cost = new ModelRoutingCostPolicy(
                 mock(ModelRouteDecisionRepository.class));
         ModelRoutingCostPolicy.PricingEstimate estimated =
-                cost.estimateCost(legacy, null, 100, 20);
+                cost.estimateCost(legacy, 100, 20);
         assertThat(estimated.complete()).isFalse();
         assertThat(estimated.cost()).isNull();
     }
@@ -34,7 +34,7 @@ class ModelCatalogPricingSchemeTest {
         ModelRoutingCostPolicy cost = new ModelRoutingCostPolicy(
                 mock(ModelRouteDecisionRepository.class));
         ModelRoutingCostPolicy.PricingEstimate estimate =
-                cost.estimateCost(verified, null, 100, 20);
+                cost.estimateCost(verified, 100, 20);
         assertThat(estimate.complete()).isTrue();
         assertThat(estimate.cost()).isPositive();
         assertThat(ModelCatalogEntryResponse.from(verified).pricingScheme())

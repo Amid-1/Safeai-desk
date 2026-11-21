@@ -1,6 +1,7 @@
 package ru.safeai.gateway.model.service;
 
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
@@ -9,6 +10,7 @@ import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.model.domain.OrganizationModelPolicy;
+import ru.safeai.gateway.model.domain.RubBudgetSnapshot;
 import ru.safeai.gateway.model.dto.CreateOrganizationModelPolicyVersionRequest;
 import ru.safeai.gateway.model.dto.OrganizationModelPolicyResponse;
 import ru.safeai.gateway.model.repository.OrganizationModelPolicyRepository;
@@ -24,11 +26,23 @@ public class OrganizationModelPolicyService {
     private final OrganizationModelPolicyRepository repository;
     private final AuditEventService audit;
     private final Clock clock;
+    private final RubBudgetRateService rates;
+    private final ModelPolicyPreviewConfirmationService confirmations;
 
     public OrganizationModelPolicyService(
             OrganizationModelPolicyRepository repository,
             AuditEventService audit,
-            Clock clock
+            Clock clock, ModelPolicyPreviewConfirmationService confirmations
+    ) {
+        this(repository, audit, clock, new RubBudgetRateService(clock), confirmations);
+    }
+
+    @Autowired
+    public OrganizationModelPolicyService(
+            OrganizationModelPolicyRepository repository,
+            AuditEventService audit,
+            Clock clock,
+            RubBudgetRateService rates, ModelPolicyPreviewConfirmationService confirmations
     ) {
         this.repository = Objects.requireNonNull(
                 repository,
@@ -42,6 +56,8 @@ public class OrganizationModelPolicyService {
                 clock,
                 "clock не должен быть null"
         );
+        this.rates = Objects.requireNonNull(rates);
+        this.confirmations = Objects.requireNonNull(confirmations);
     }
 
     @Transactional(readOnly = true)
@@ -85,15 +101,30 @@ public class OrganizationModelPolicyService {
                 currentUser
         );
 
+        // Validate external quote before taking the organization row lock.
+        // The subsequent version check under lock fences the preliminary read.
+        RubBudgetSnapshot rubBudget = null;
+        if (request.rubBudget() != null) {
+            if (!repository.organizationExists(target)) {
+                throw new ResourceNotFoundException("Организация не найдена: " + target);
+            }
+            OrganizationModelPolicy previous = repository.findLatest(target).orElse(null);
+            int observed = previous == null ? 0 : previous.version();
+            if (observed == request.expectedPreviousVersion()) {
+                rubBudget = rates.resolve(request, previous);
+            }
+        }
+
         if (!repository.lockOrganization(target)) {
             throw new ResourceNotFoundException(
                     "Организация не найдена: " + target
             );
         }
 
-        int previousVersion = repository.findLatest(target)
-                .map(OrganizationModelPolicy::version)
-                .orElse(0);
+        OrganizationModelPolicy lockedPrevious = repository.findLatest(target).orElse(null);
+        OrganizationModelPolicy retry = confirmations.retry(target, request, currentUser);
+        if (retry != null) return OrganizationModelPolicyResponse.from(retry);
+        int previousVersion = lockedPrevious == null ? 0 : lockedPrevious.version();
 
         if (previousVersion != request.expectedPreviousVersion()) {
             throw new ConflictException(
@@ -105,21 +136,25 @@ public class OrganizationModelPolicyService {
         }
 
         Instant now = DatabaseTimestampNormalizer.normalize(clock.instant());
+        rates.requireCurrentIfChanged(rubBudget, lockedPrevious, now);
         OrganizationModelPolicy policy = OrganizationModelPolicyRules.buildPolicy(
                 UUID.randomUUID(),
                 target,
                 ModelControlPlaneNumericValidation.nextVersion(previousVersion),
                 request,
                 currentUser.getId(),
-                now
+                now,
+                rubBudget
         );
 
+        confirmations.requireCurrent(target, request, currentUser);
         repository.insert(policy);
+        confirmations.complete(target, request, currentUser, policy.id());
         audit.recordPrincipalSnapshot(
                 currentUser,
                 policy.organizationId(),
                 AuditEventType.MODEL_POLICY_VERSION_CREATED,
-                OrganizationModelPolicyAuditDetailsFactory.createAuditDetails(policy)
+                OrganizationModelPolicyAuditDetailsFactory.createConfirmedAuditDetails(policy, request.acknowledgeLockout())
         );
 
         return OrganizationModelPolicyResponse.from(policy);

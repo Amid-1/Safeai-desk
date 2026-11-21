@@ -27,7 +27,7 @@ class OpenAiKnowledgeEmbeddingProviderTest {
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder)
                 .build();
         OpenAiKnowledgeEmbeddingProvider provider =
-                new OpenAiKnowledgeEmbeddingProvider(
+                EmbeddingAssuranceTestSupport.provider(
                         properties(),
                         builder.build()
                 );

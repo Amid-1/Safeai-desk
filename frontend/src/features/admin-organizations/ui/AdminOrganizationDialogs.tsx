@@ -1,13 +1,14 @@
 // frontend/src/features/admin-organizations/ui/AdminOrganizationDialogs.tsx
 import type { Organization } from '../../../entities/organization/api/organizationApi'
 import { normalizeOrganizationConfirmation } from '../../../entities/organization/api/organizationApi'
+import { DETAIL_ORGANIZATION_WINDOW } from '../../../shared/ui/adminDetailWindow'
 import { formatDateTime } from '../../../shared/lib/format'
 import Modal from '../../../shared/ui/Modal'
 import type { DisableOrganizationDialogState } from '../lib/adminOrganizationsSupport'
 import { canMutateOrganization } from '../lib/adminOrganizationsSupport'
 import {
     OrganizationDetail, OrganizationImpact, OrganizationStatusBadge,
-    OrganizationTypeInfo, OrganizationVersionInfo, OrganizationId,
+    OrganizationVersionInfo, OrganizationId,
 } from './AdminOrganizationsUi'
 
 type AdminOrganizationDialogsProps = {
@@ -56,45 +57,57 @@ export function AdminOrganizationDialogs({
     }
 
     return <>
-        {detailsOrganization && <Modal title="Сведения об организации" onClose={onCloseDetails} size="md">
+        {detailsOrganization && <Modal title="Карточка организации" onClose={onCloseDetails} size="lg"
+            className="admin-details-dialog admin-profile-window" resize={DETAIL_ORGANIZATION_WINDOW}>
             <div className="org-detail-layout">
                 {detailsError && <div className="error" role="alert">{detailsError}</div>}
-                <header className="organization-details-heading org-detail-top">
-                    <div>
+                <header className="organization-details-heading org-detail-top admin-profile-hero">
+                    <div className="admin-profile-icon admin-profile-icon--organization" aria-hidden="true">{detailsOrganization.name.trim().slice(0, 1).toUpperCase()}</div>
+                    <div className="admin-profile-hero__identity">
                         <strong>{detailsOrganization.name}</strong>
                         <span className="org-detail-subtitle">{detailsOrganization.type === 'PLATFORM'
-                            ? 'Системная организация платформы' : 'Организация клиента'}</span>
+                            ? 'Системная организация' : 'Клиентская организация'}</span>
                     </div>
                     <OrganizationStatusBadge enabled={detailsOrganization.enabled} />
                 </header>
                 <section aria-label="Основные сведения об организации">
                     <dl className="organization-details">
-                        <OrganizationDetail term="Тип" value={<OrganizationTypeInfo type={detailsOrganization.type} />} />
-                        <OrganizationDetail term="Статус" value={<span>
-                            <OrganizationStatusBadge enabled={detailsOrganization.enabled} />
-                            <span className="org-detail-hint">{detailsOrganization.enabled
-                                ? 'Включённые сотрудники этой организации могут входить в SafeAI Desk, если их личные учётные записи активны. Доступ к моделям и функциям зависит от ролей и правил.' : 'Вход пользователей этой организации в SafeAI Desk заблокирован, даже если их личные учётные записи включены.'}</span>
-                        </span>} />
-                        <OrganizationDetail term="Защита" value={detailsOrganization.protected
-                            ? 'Защищена системой — изменение недоступно'
-                            : 'Обычная организация клиента'} />
-                        <OrganizationDetail term="Версия записи" value={<OrganizationVersionInfo version={detailsOrganization.version} />} />
-                        <OrganizationDetail term="Создана" value={formatDateTime(detailsOrganization.createdAt)} />
-                        <OrganizationDetail term="Изменена" value={detailsOrganization.updatedAt
+                        <OrganizationDetail term="Дата создания" value={formatDateTime(detailsOrganization.createdAt)} />
+                        <OrganizationDetail term="Последнее изменение" value={detailsOrganization.updatedAt
                             ? formatDateTime(detailsOrganization.updatedAt) : '—'} />
                     </dl>
                 </section>
+                {!detailsError && <section className="org-management-links" aria-label="Управление организацией">
+                    <h3>Управление организацией</h3>
+                    <a href={`/admin/users?organizationId=${encodeURIComponent(detailsOrganization.id)}`}>
+                        <span className="admin-profile-link-icon" aria-hidden="true">01</span><span>Пользователи организации<small>Учётные записи и роли</small></span><span aria-hidden="true">↗</span>
+                    </a>
+                    <a href={`/admin/models?section=access&organizationId=${encodeURIComponent(detailsOrganization.id)}`}>
+                        <span className="admin-profile-link-icon" aria-hidden="true">02</span><span>Правила моделей<small>Доступ и ограничения</small></span><span aria-hidden="true">↗</span>
+                    </a>
+                    <a href={`/admin/usage?organizationId=${encodeURIComponent(detailsOrganization.id)}`}>
+                        <span className="admin-profile-link-icon" aria-hidden="true">03</span><span>Использование и расходы<small>Аналитика потребления</small></span><span aria-hidden="true">↗</span>
+                    </a>
+                    <a href={`/admin/audit?targetOrganizationId=${encodeURIComponent(detailsOrganization.id)}`}>
+                        <span className="admin-profile-link-icon" aria-hidden="true">04</span><span>Журнал событий<small>Изменения и безопасность</small></span><span aria-hidden="true">↗</span>
+                    </a>
+                </section>}
+                <p className="org-detail-hint">{detailsOrganization.enabled
+                    ? 'Пользователи с активными учётными записями могут войти в SafeAI Desk. Доступ к функциям и моделям зависит от их ролей и правил организации.'
+                    : 'Вход пользователей этой организации в SafeAI Desk заблокирован.'}</p>
                 <section className="org-detail-technical" aria-label="Технические сведения">
                     <details>
                         <summary>Технические сведения и полный ID</summary>
                         <p>Идентификатор используется для интеграций, аудита и обращения в поддержку.</p>
                         <code className="org-detail-full-id">{detailsOrganization.id}</code>
                         <OrganizationId id={detailsOrganization.id} />
+                        <dl className="organization-details">
+                            <OrganizationDetail term="Версия записи" value={<OrganizationVersionInfo version={detailsOrganization.version} />} />
+                        </dl>
                     </details>
                 </section>
                 {detailsOrganization.type === 'PLATFORM' && <p className="organization-platform-note">
-                    Эта организация необходима для работы SafeAI Desk. Ее нельзя переименовать,
-                    отключить или включить обычными действиями администрирования.
+                    Служебная организация, необходимая для работы SafeAI Desk. Её переименование и отключение недоступны.
                 </p>}
                 <div className="modal-actions org-detail-actions">
                     {mutable && <>
@@ -114,6 +127,7 @@ export function AdminOrganizationDialogs({
         </Modal>}
 
         {renameOrganization && <Modal
+            className="admin-details-dialog"
             title={'Переименовать организацию: ' + renameOrganization.name}
             onClose={onCloseRename} closeDisabled={hasPendingAction}>
             <form className="form" onSubmit={event => { event.preventDefault(); void onSubmitRename() }}>
@@ -131,7 +145,7 @@ export function AdminOrganizationDialogs({
             </form>
         </Modal>}
 
-        {disableDialog && <Modal title="Отключить организацию"
+        {disableDialog && <Modal title="Отключить организацию" className="admin-details-dialog"
             onClose={onCloseDisable} closeDisabled={hasPendingAction} size="sm">
             <p className="organization-dialog-lead">Организация: <strong>{disableDialog.organization.name}</strong></p>
             <dl className="organization-impact">
@@ -186,7 +200,7 @@ export function AdminOrganizationDialogs({
             </form>
         </Modal>}
 
-        {enableOrganizationTarget && <Modal title="Включить организацию"
+        {enableOrganizationTarget && <Modal title="Включить организацию" className="admin-details-dialog"
             onClose={onCloseEnable} closeDisabled={hasPendingAction} size="sm">
             <p className="organization-dialog-lead">Включить организацию{' '}
                 <strong>{enableOrganizationTarget.name}</strong>?</p>

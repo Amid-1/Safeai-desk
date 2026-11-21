@@ -8,6 +8,11 @@ public record ExpiredKnowledgeIngestionJob(
         UUID knowledgeBaseId,
         UUID documentId,
         UUID documentVersionId,
-        int attempt
+        int attempt,
+        UUID correlationId
 ) {
+    public ExpiredKnowledgeIngestionJob(UUID jobId, UUID organizationId, UUID knowledgeBaseId,
+                                        UUID documentId, UUID documentVersionId, int attempt) {
+        this(jobId, organizationId, knowledgeBaseId, documentId, documentVersionId, attempt, null);
+    }
 }

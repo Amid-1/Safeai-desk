@@ -2,6 +2,7 @@
 // Модальное окно правил: вкладки сохраняют общий черновик и защиту серверной проверки.
 
 import Modal from '../../../shared/ui/Modal'
+import {useEffect, useState} from 'react'
 import type {ModalResizeOptions} from '../../../shared/ui/Modal'
 import {ErrorState} from '../../../shared/ui/StateBlock'
 import type {ModelPolicyModalProps} from './modelPolicyModal/policyModalTypes'
@@ -13,6 +14,7 @@ import {PolicyFormSettings} from './modelPolicyModal/PolicyFormSettings'
 import {PolicyFormRequirements} from './modelPolicyModal/PolicyFormRequirements'
 import {PolicyFormTabs} from './modelPolicyModal/PolicyFormTabs'
 import {policyPreviewState} from './modelPolicyModal/policyPreviewStatus'
+import {POLICY_EDITOR_TARGETS} from './modelPolicyModal/policyFormTabsConfig'
 import './ModelControlPlaneModalShell.css'
 import './ModelPolicyModal.css'
 import './ModelPolicyProductionEnhancements.css'
@@ -44,10 +46,21 @@ function ModelPolicyModalSession(props: ModelPolicyModalProps) {
         formId, isDirty, previewPending, handlePreview, handleSubmit,
         requestClose, activeSection, setActiveSection,
         formError, versionMessage, draft, currentPreview, policyPreview, previewError,
-        policyChangedExternally,
+        policyChangedExternally, canSaveChanges, invalidNumericSection, ratePending,
     } = control
 
     const previewStatus = policyPreviewState({currentPreview, policyPreview, previewPending, previewError})
+    const [highlightTarget, setHighlightTarget] = useState(props.initialTarget)
+
+    // Focus the requested group once, without changing the draft or running a preview.
+    useEffect(() => {
+        if (!props.initialTarget) return
+        const target = document.getElementById(`${formId}-${POLICY_EDITOR_TARGETS[props.initialTarget].idSuffix}`)
+        target?.focus({preventScroll: true})
+        target?.scrollIntoView?.({block: 'nearest', inline: 'nearest'})
+        const timer = window.setTimeout(() => setHighlightTarget(undefined), 2500)
+        return () => window.clearTimeout(timer)
+    }, [formId, props.initialTarget])
 
     const footer = (
         <div className="models-policy-modal__footer">
@@ -55,13 +68,22 @@ function ModelPolicyModalSession(props: ModelPolicyModalProps) {
                 <span className="models-policy-modal__draft-indicator">
                     {isDirty ? 'Есть несохранённые изменения' : 'Изменений нет'}
                 </span>
-                {draft.enabled && !currentPreview && (
+                {invalidNumericSection && (
+                    <span className="models-policy-modal__check-indicator">
+                        Исправьте значения во вкладке «{invalidNumericSection === 'limits' ? 'Лимиты' : 'Бюджет'}»
+                    </span>
+                )}
+                {ratePending && <span className="models-policy-modal__check-indicator">Получаем курс Банка России</span>}
+                {canSaveChanges && !currentPreview && !invalidNumericSection && (
                     <span className="models-policy-modal__check-indicator">Требуется актуальная проверка</span>
+                )}
+                {draft.enabled && currentPreview?.wouldLockOutOrganization && !control.lockoutAcknowledged && canSaveChanges && (
+                    <span className="models-policy-modal__check-indicator">Требуется подтверждение блокировки</span>
                 )}
             </div>
             <button
                 type="button"
-                disabled={pending || previewPending || policyChangedExternally}
+                disabled={pending || previewPending || ratePending || policyChangedExternally || invalidNumericSection !== null}
                 onClick={() => {
                     void handlePreview()
                 }}
@@ -72,7 +94,8 @@ function ModelPolicyModalSession(props: ModelPolicyModalProps) {
                 type="submit"
                 form={formId}
                 className="btn-primary"
-                disabled={pending || previewPending || policyChangedExternally}
+                disabled={pending || previewPending || ratePending || policyChangedExternally || !canSaveChanges || invalidNumericSection !== null
+                    || !currentPreview || (currentPreview.wouldLockOutOrganization && !control.lockoutAcknowledged)}
             >
                 {pending ? 'Сохраняем...' : 'Сохранить правила'}
             </button>
@@ -83,19 +106,19 @@ function ModelPolicyModalSession(props: ModelPolicyModalProps) {
     const panels = {
         access: (
             <>
-                <PolicyFormSelectors {...selectorProps} />
                 <PolicyFormSettings {...selectorProps} section="access"/>
+                <PolicyFormSelectors {...selectorProps} />
             </>
         ),
         limits: <PolicyFormSettings {...selectorProps} section="limits"/>,
         budget: <PolicyFormSettings {...selectorProps} section="budget"/>,
-        data: <PolicyFormRequirements control={control} pending={pending}/>,
-        preview: <PolicyFormPreview control={control}/>,
+        data: <PolicyFormRequirements control={control} pending={pending} effectiveCatalog={effectiveCatalog} runtime={runtime}/>,
+        preview: <PolicyFormPreview control={control} effectiveCatalog={effectiveCatalog}/>,
     }
 
     return (
         <Modal
-            title="Правила использования моделей"
+            title="Настройка правил использования моделей"
             footer={footer}
             onClose={requestClose}
             closeDisabled={pending || previewPending}
@@ -104,12 +127,14 @@ function ModelPolicyModalSession(props: ModelPolicyModalProps) {
             size="lg"
             className="models-policy-modal"
             resize={POLICY_MODAL_RESIZE}
-            dragEnabled={false}
+            dragEnabled
         >
             <form
                 id={formId}
                 className="models-form models-policy-form models-policy-form--tabs"
                 data-active-section={activeSection}
+                data-highlight-target={highlightTarget && POLICY_EDITOR_TARGETS[highlightTarget].tab === activeSection
+                    ? POLICY_EDITOR_TARGETS[highlightTarget].idSuffix : undefined}
                 onSubmit={(event) => {
                     event.preventDefault()
                     void handleSubmit()
@@ -142,7 +167,7 @@ function ModelPolicyModalSession(props: ModelPolicyModalProps) {
                 <PolicyFormTabs
                     formId={formId}
                     selected={activeSection}
-                    onSelect={setActiveSection}
+                    onSelect={(tab) => {setHighlightTarget(undefined); setActiveSection(tab)}}
                     panels={panels}
                     previewStatus={previewStatus}
                 />

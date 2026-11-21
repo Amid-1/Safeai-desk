@@ -44,167 +44,223 @@ class OrganizationModelPolicyServiceTest {
     @Mock
     private AuditEventService audit;
 
+    @Mock
+    private ModelPolicyPreviewConfirmationService confirmations;
+
     private OrganizationModelPolicyService service;
 
     @BeforeEach
     void setUp() {
         service = new OrganizationModelPolicyService(
-                repository,
-                audit,
-                ModelTestFixtures.CLOCK
+            repository,
+            audit,
+            ModelTestFixtures.CLOCK, confirmations
         );
+    }
+
+    @Test
+    void rejectedConfirmationNeverInsertsVersionOrRecordsSuccess() {
+        var request = validRequest();
+        var principal = ModelTestFixtures.adminPrincipal();
+        when(repository.lockOrganization(ModelTestFixtures.ORGANIZATION_ID)).thenReturn(true);
+        when(repository.findLatest(ModelTestFixtures.ORGANIZATION_ID)).thenReturn(Optional.empty());
+        org.mockito.Mockito.doThrow(new ConflictException("Повторите проверку"))
+            .when(confirmations).requireCurrent(ModelTestFixtures.ORGANIZATION_ID, request, principal);
+        assertThatThrownBy(() -> service.createVersion(ModelTestFixtures.ORGANIZATION_ID, request, principal))
+            .isInstanceOf(ConflictException.class);
+        verify(repository, never()).insert(any());
+        org.mockito.Mockito.verifyNoInteractions(audit);
+        verify(confirmations, never()).complete(any(), any(), any(), any());
     }
 
     @Test
     void adminCanReadOwnUnconfiguredPolicy() {
         when(repository.organizationExists(
-                ModelTestFixtures.ORGANIZATION_ID
+            ModelTestFixtures.ORGANIZATION_ID
         )).thenReturn(true);
         when(repository.findLatest(
-                ModelTestFixtures.ORGANIZATION_ID
+            ModelTestFixtures.ORGANIZATION_ID
         )).thenReturn(Optional.empty());
 
         var response = service.current(
-                ModelTestFixtures.ORGANIZATION_ID,
-                ModelTestFixtures.adminPrincipal()
+            ModelTestFixtures.ORGANIZATION_ID,
+            ModelTestFixtures.adminPrincipal()
         );
 
         assertThat(response.configured())
-                .isFalse();
+            .isFalse();
         assertThat(response.organizationId())
-                .isEqualTo(ModelTestFixtures.ORGANIZATION_ID);
+            .isEqualTo(ModelTestFixtures.ORGANIZATION_ID);
         assertThat(response.version())
-                .isZero();
+            .isZero();
     }
 
     @Test
     void superAdminGetsNotFoundForMissingOrganizationInsteadOfFakeUnconfiguredPolicy() {
         when(repository.organizationExists(
-                ModelTestFixtures.OTHER_ORGANIZATION_ID
+            ModelTestFixtures.OTHER_ORGANIZATION_ID
         )).thenReturn(false);
 
         assertThatThrownBy(() -> service.current(
-                ModelTestFixtures.OTHER_ORGANIZATION_ID,
-                ModelTestFixtures.superAdminPrincipal()
+            ModelTestFixtures.OTHER_ORGANIZATION_ID,
+            ModelTestFixtures.superAdminPrincipal()
         )).isInstanceOf(ResourceNotFoundException.class);
 
         verify(repository, never())
-                .findLatest(ModelTestFixtures.OTHER_ORGANIZATION_ID);
+            .findLatest(ModelTestFixtures.OTHER_ORGANIZATION_ID);
     }
 
     @Test
     void ordinaryUserCannotReadPolicy() {
         assertThatThrownBy(() -> service.current(
-                ModelTestFixtures.ORGANIZATION_ID,
-                ModelTestFixtures.userPrincipal()
+            ModelTestFixtures.ORGANIZATION_ID,
+            ModelTestFixtures.userPrincipal()
         )).isInstanceOf(ForbiddenOperationException.class);
 
         verify(repository, never())
-                .organizationExists(any());
+            .organizationExists(any());
     }
 
     @Test
     void tenantAdminCannotReadAnotherOrganizationPolicy() {
         assertThatThrownBy(() -> service.current(
-                ModelTestFixtures.OTHER_ORGANIZATION_ID,
-                ModelTestFixtures.adminPrincipal()
+            ModelTestFixtures.OTHER_ORGANIZATION_ID,
+            ModelTestFixtures.adminPrincipal()
         )).isInstanceOf(ForbiddenOperationException.class);
     }
 
     @Test
     void superAdminCanReadAnotherOrganizationPolicy() {
         OrganizationModelPolicy policy = new OrganizationModelPolicy(
-                ModelTestFixtures.POLICY_ID,
-                ModelTestFixtures.OTHER_ORGANIZATION_ID,
-                1,
-                true,
-                Set.of(),
-                Set.of(),
-                null,
-                null,
-                null,
-                null,
-                null,
-                BudgetEnforcement.SOFT,
-                false,
-                false,
-                false,
-                ModelTestFixtures.USER_ID,
-                ModelTestFixtures.NOW
+            ModelTestFixtures.POLICY_ID,
+            ModelTestFixtures.OTHER_ORGANIZATION_ID,
+            1,
+            true,
+            Set.of(),
+            Set.of(),
+            null,
+            null,
+            null,
+            null,
+            null,
+            BudgetEnforcement.SOFT,
+            false,
+            false,
+            false,
+            ModelTestFixtures.USER_ID,
+            ModelTestFixtures.NOW
         );
         when(repository.organizationExists(
-                ModelTestFixtures.OTHER_ORGANIZATION_ID
+            ModelTestFixtures.OTHER_ORGANIZATION_ID
         )).thenReturn(true);
         when(repository.findLatest(
-                ModelTestFixtures.OTHER_ORGANIZATION_ID
+            ModelTestFixtures.OTHER_ORGANIZATION_ID
         )).thenReturn(Optional.of(policy));
 
         var response = service.current(
-                ModelTestFixtures.OTHER_ORGANIZATION_ID,
-                ModelTestFixtures.superAdminPrincipal()
+            ModelTestFixtures.OTHER_ORGANIZATION_ID,
+            ModelTestFixtures.superAdminPrincipal()
         );
 
         assertThat(response.configured())
-                .isTrue();
+            .isTrue();
         assertThat(response.organizationId())
-                .isEqualTo(ModelTestFixtures.OTHER_ORGANIZATION_ID);
+            .isEqualTo(ModelTestFixtures.OTHER_ORGANIZATION_ID);
     }
 
     @Test
     void createLocksOrganizationBeforeVersionAllocation() {
-        when(repository.lockOrganization(
-                ModelTestFixtures.ORGANIZATION_ID
-        )).thenReturn(true);
-        when(repository.findLatest(
-                ModelTestFixtures.ORGANIZATION_ID
-        )).thenReturn(Optional.empty());
+        var organizationId = ModelTestFixtures.ORGANIZATION_ID;
+        var principal = ModelTestFixtures.adminPrincipal();
+        var request = validRequest();
 
-        service.createVersion(
-                ModelTestFixtures.ORGANIZATION_ID,
-                validRequest(),
-                ModelTestFixtures.adminPrincipal()
+        when(repository.lockOrganization(organizationId))
+            .thenReturn(true);
+
+        when(repository.findLatest(organizationId))
+            .thenReturn(Optional.empty());
+
+        var response = service.createVersion(
+            organizationId, request, principal
         );
 
-        var inOrder = org.mockito.Mockito.inOrder(repository);
+        var captor = ArgumentCaptor.forClass(
+            OrganizationModelPolicy.class
+        );
+
+        var inOrder = org.mockito.Mockito.inOrder(
+            repository, confirmations, audit
+        );
+
         inOrder.verify(repository)
-                .lockOrganization(ModelTestFixtures.ORGANIZATION_ID);
+            .lockOrganization(organizationId);
+
         inOrder.verify(repository)
-                .findLatest(ModelTestFixtures.ORGANIZATION_ID);
+            .findLatest(organizationId);
+
+        inOrder.verify(confirmations)
+            .retry(organizationId, request, principal);
+
+        inOrder.verify(confirmations)
+            .requireCurrent(organizationId, request, principal);
+
         inOrder.verify(repository)
-                .insert(any(OrganizationModelPolicy.class));
+            .insert(captor.capture());
+
+        var policy = captor.getValue();
+
+        inOrder.verify(confirmations)
+            .complete(
+                organizationId,
+                request,
+                principal,
+                policy.id()
+            );
+
+        inOrder.verify(audit)
+            .recordPrincipalSnapshot(
+                same(principal),
+                eq(organizationId),
+                eq(AuditEventType.MODEL_POLICY_VERSION_CREATED),
+                isA(AuditDetails.class)
+            );
+
+        assertThat(policy.version()).isEqualTo(1);
+        assertThat(policy.organizationId()).isEqualTo(organizationId);
+        assertThat(response.version()).isEqualTo(1);
     }
 
     @Test
     void missingOrganizationFailsBeforePolicyLookupOrInsert() {
         when(repository.lockOrganization(
-                ModelTestFixtures.ORGANIZATION_ID
+            ModelTestFixtures.ORGANIZATION_ID
         )).thenReturn(false);
 
         assertThatThrownBy(() -> service.createVersion(
-                ModelTestFixtures.ORGANIZATION_ID,
-                validRequest(),
-                ModelTestFixtures.adminPrincipal()
+            ModelTestFixtures.ORGANIZATION_ID,
+            validRequest(),
+            ModelTestFixtures.adminPrincipal()
         )).isInstanceOf(ResourceNotFoundException.class);
 
         verify(repository, never())
-                .findLatest(any());
+            .findLatest(any());
         verify(repository, never())
-                .insert(any());
+            .insert(any());
     }
 
     @Test
     void optimisticVersionConflictPreventsInsert() {
         when(repository.lockOrganization(
-                ModelTestFixtures.ORGANIZATION_ID
+            ModelTestFixtures.ORGANIZATION_ID
         )).thenReturn(true);
         when(repository.findLatest(
-                ModelTestFixtures.ORGANIZATION_ID
+            ModelTestFixtures.ORGANIZATION_ID
         )).thenReturn(Optional.of(ModelTestFixtures.hardPolicy()));
 
         assertThatThrownBy(() -> service.createVersion(
-                ModelTestFixtures.ORGANIZATION_ID,
-                validRequest(),
-                ModelTestFixtures.adminPrincipal()
+            ModelTestFixtures.ORGANIZATION_ID,
+            validRequest(),
+            ModelTestFixtures.adminPrincipal()
         )).isInstanceOf(ConflictException.class);
 
         verify(repository, never()).insert(any());
@@ -213,29 +269,29 @@ class OrganizationModelPolicyServiceTest {
     @Test
     void modelKeysAreCanonicalizedAndSorted() {
         when(repository.lockOrganization(
-                ModelTestFixtures.ORGANIZATION_ID
+            ModelTestFixtures.ORGANIZATION_ID
         )).thenReturn(true);
         when(repository.findLatest(
-                ModelTestFixtures.ORGANIZATION_ID
+            ModelTestFixtures.ORGANIZATION_ID
         )).thenReturn(Optional.empty());
 
         CreateOrganizationModelPolicyVersionRequest request =
-                canonicalizationRequest();
+            canonicalizationRequest();
 
         service.createVersion(
-                ModelTestFixtures.ORGANIZATION_ID,
-                request,
-                ModelTestFixtures.adminPrincipal()
+            ModelTestFixtures.ORGANIZATION_ID,
+            request,
+            ModelTestFixtures.adminPrincipal()
         );
 
         ArgumentCaptor<OrganizationModelPolicy> captor =
-                ArgumentCaptor.forClass(OrganizationModelPolicy.class);
+            ArgumentCaptor.forClass(OrganizationModelPolicy.class);
         verify(repository).insert(captor.capture());
 
         assertThat(captor.getValue().allowModelKeys())
-                .containsExactly("a:model", "z:model");
+            .containsExactly("a:model", "z:model");
         assertThat(captor.getValue().defaultModelKey())
-                .isEqualTo("a:model");
+            .isEqualTo("a:model");
     }
 
     @Test
@@ -244,12 +300,12 @@ class OrganizationModelPolicyServiceTest {
         allow.add(" Z:Model ");
         allow.add("z:model");
         CreateOrganizationModelPolicyVersionRequest request = new CreateOrganizationModelPolicyVersionRequest(
-                0, true, allow, Set.of(), null, null, null, null, null,
-                BudgetEnforcement.SOFT, false, false, false
+            0, true, allow, Set.of(), null, null, null, null, null,
+            BudgetEnforcement.SOFT, false, false, false
         );
         stubReadyForFirstVersion();
         assertThatThrownBy(() -> service.createVersion(
-                ModelTestFixtures.ORGANIZATION_ID, request, ModelTestFixtures.adminPrincipal()
+            ModelTestFixtures.ORGANIZATION_ID, request, ModelTestFixtures.adminPrincipal()
         )).isInstanceOf(BadRequestException.class);
         verify(repository, never()).insert(any());
     }
@@ -257,14 +313,14 @@ class OrganizationModelPolicyServiceTest {
     @Test
     void overlappingAllowAndDenyListsAreRejected() {
         CreateOrganizationModelPolicyVersionRequest request =
-                overlappingListsRequest();
+            overlappingListsRequest();
 
         stubReadyForFirstVersion();
 
         assertThatThrownBy(() -> service.createVersion(
-                ModelTestFixtures.ORGANIZATION_ID,
-                request,
-                ModelTestFixtures.adminPrincipal()
+            ModelTestFixtures.ORGANIZATION_ID,
+            request,
+            ModelTestFixtures.adminPrincipal()
         )).isInstanceOf(BadRequestException.class);
 
         verify(repository, never()).insert(any());
@@ -273,45 +329,45 @@ class OrganizationModelPolicyServiceTest {
     @Test
     void defaultModelMustBelongToNonEmptyAllowList() {
         CreateOrganizationModelPolicyVersionRequest request =
-                defaultOutsideAllowListRequest();
+            defaultOutsideAllowListRequest();
 
         stubReadyForFirstVersion();
 
         assertThatThrownBy(() -> service.createVersion(
-                ModelTestFixtures.ORGANIZATION_ID,
-                request,
-                ModelTestFixtures.adminPrincipal()
+            ModelTestFixtures.ORGANIZATION_ID,
+            request,
+            ModelTestFixtures.adminPrincipal()
         )).isInstanceOf(BadRequestException.class);
     }
 
     @Test
     void invalidNumericBudgetIsRejectedAtServiceBoundary() {
         CreateOrganizationModelPolicyVersionRequest request =
-                invalidNumericBudgetRequest();
+            invalidNumericBudgetRequest();
 
         stubReadyForFirstVersion();
 
         assertThatThrownBy(() -> service.createVersion(
-                ModelTestFixtures.ORGANIZATION_ID,
-                request,
-                ModelTestFixtures.adminPrincipal()
+            ModelTestFixtures.ORGANIZATION_ID,
+            request,
+            ModelTestFixtures.adminPrincipal()
         )).isInstanceOf(BadRequestException.class);
     }
 
     @Test
     void nullBudgetEnforcementFailsAsBadRequestEvenWhenBeanValidationIsBypassed() {
         CreateOrganizationModelPolicyVersionRequest request =
-                nullBudgetEnforcementRequest();
+            nullBudgetEnforcementRequest();
 
         stubReadyForFirstVersion();
 
         assertThatThrownBy(() -> service.createVersion(
-                ModelTestFixtures.ORGANIZATION_ID,
-                request,
-                ModelTestFixtures.adminPrincipal()
+            ModelTestFixtures.ORGANIZATION_ID,
+            request,
+            ModelTestFixtures.adminPrincipal()
         ))
-                .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("budgetEnforcement");
+            .isInstanceOf(BadRequestException.class)
+            .hasMessageContaining("budgetEnforcement");
     }
 
     @Test
@@ -319,26 +375,26 @@ class OrganizationModelPolicyServiceTest {
         stubReadyForFirstVersion();
 
         CreateOrganizationModelPolicyVersionRequest request =
-                monetaryCanonicalizationRequest();
+            monetaryCanonicalizationRequest();
 
         service.createVersion(
-                ModelTestFixtures.ORGANIZATION_ID,
-                request,
-                ModelTestFixtures.adminPrincipal()
+            ModelTestFixtures.ORGANIZATION_ID,
+            request,
+            ModelTestFixtures.adminPrincipal()
         );
 
         ArgumentCaptor<OrganizationModelPolicy> captor =
-                ArgumentCaptor.forClass(OrganizationModelPolicy.class);
+            ArgumentCaptor.forClass(OrganizationModelPolicy.class);
         verify(repository).insert(captor.capture());
 
         assertThat(captor.getValue().maxRequestCostUsd())
-                .isEqualTo(
-                        new BigDecimal("5.000000000000")
-                );
+            .isEqualTo(
+                new BigDecimal("5.000000000000")
+            );
         assertThat(captor.getValue().monthlyBudgetUsd())
-                .isEqualTo(
-                        new BigDecimal("50.500000000000")
-                );
+            .isEqualTo(
+                new BigDecimal("50.500000000000")
+            );
     }
 
     @Test
@@ -346,72 +402,85 @@ class OrganizationModelPolicyServiceTest {
         stubReadyForFirstVersion();
 
         CreateOrganizationModelPolicyVersionRequest request =
-                largeAllowListRequest();
+            largeAllowListRequest();
 
         var principal =
-                ModelTestFixtures.adminPrincipal();
+            ModelTestFixtures.adminPrincipal();
 
         service.createVersion(
-                ModelTestFixtures.ORGANIZATION_ID,
-                request,
-                principal
+            ModelTestFixtures.ORGANIZATION_ID,
+            request,
+            principal
         );
 
         var details =
-                requirePolicyCreatedAuditDetails(
-                        principal
-                ).toMap();
+            requirePolicyCreatedAuditDetails(
+                principal
+            ).toMap();
 
         assertThat(details)
-                .containsEntry("organizationId", ModelTestFixtures.ORGANIZATION_ID)
-                .containsEntry("version", 1)
-                .containsEntry("enabled", true)
-                .containsEntry("budgetEnforcement", BudgetEnforcement.SOFT)
-                .containsEntry("allowModelKeyCount", 200)
-                .containsEntry("denyModelKeyCount", 0)
-                .containsEntry("modelKeyListsIncluded", false)
-                .containsKeys(
-                        "policyId",
-                        "allowModelKeysSha256",
-                        "denyModelKeysSha256"
-                )
-                .doesNotContainKeys(
-                        "allowModelKeys",
-                        "denyModelKeys"
-                );
+            .containsEntry("organizationId", ModelTestFixtures.ORGANIZATION_ID)
+            .containsEntry("version", 1)
+            .containsEntry("enabled", true)
+            .containsEntry("budgetEnforcement", BudgetEnforcement.SOFT)
+            .containsEntry("allowModelKeyCount", 200)
+            .containsEntry("denyModelKeyCount", 0)
+            .containsEntry("modelKeyListsIncluded", false)
+            .containsKeys(
+                "policyId",
+                "allowModelKeysSha256",
+                "denyModelKeysSha256"
+            )
+            .doesNotContainKeys(
+                "allowModelKeys",
+                "denyModelKeys"
+            );
 
         assertThat(details.get("allowModelKeysSha256"))
-                .asString()
-                .matches("[0-9a-f]{64}");
+            .asString()
+            .matches("[0-9a-f]{64}");
 
         assertThat(details.get("denyModelKeysSha256"))
-                .asString()
-                .matches("[0-9a-f]{64}");
+            .asString()
+            .matches("[0-9a-f]{64}");
     }
 
     @Test
     void adminCannotMutateAnotherTenantButSuperAdminCan() {
         assertThatThrownBy(() -> service.createVersion(
-                ModelTestFixtures.OTHER_ORGANIZATION_ID,
-                validRequest(),
-                ModelTestFixtures.adminPrincipal()
+            ModelTestFixtures.OTHER_ORGANIZATION_ID,
+            validRequest(),
+            ModelTestFixtures.adminPrincipal()
         )).isInstanceOf(ForbiddenOperationException.class);
 
         when(repository.lockOrganization(
-                ModelTestFixtures.OTHER_ORGANIZATION_ID
+            ModelTestFixtures.OTHER_ORGANIZATION_ID
         )).thenReturn(true);
         when(repository.findLatest(
-                ModelTestFixtures.OTHER_ORGANIZATION_ID
+            ModelTestFixtures.OTHER_ORGANIZATION_ID
         )).thenReturn(Optional.empty());
 
         service.createVersion(
-                ModelTestFixtures.OTHER_ORGANIZATION_ID,
-                validRequest(),
-                ModelTestFixtures.superAdminPrincipal()
+            ModelTestFixtures.OTHER_ORGANIZATION_ID,
+            validRequest(),
+            ModelTestFixtures.superAdminPrincipal()
         );
 
         verify(repository)
-                .insert(any(OrganizationModelPolicy.class));
+            .insert(any(OrganizationModelPolicy.class));
+    }
+
+    @Test
+    void confirmedLockoutAuditIsImmutableAndRetainsBaseEvidence() {
+        var policy = ModelTestFixtures.hardPolicy();
+        var base = OrganizationModelPolicyAuditDetailsFactory.create(policy);
+        var confirmed = OrganizationModelPolicyAuditDetailsFactory.createConfirmedAuditDetails(policy, true).toMap();
+        assertThat(confirmed).containsAllEntriesOf(base)
+            .containsEntry("previewConfirmed", true)
+            .containsEntry("lockoutAcknowledged", true)
+            .doesNotContainKey("previewConfirmationId");
+        assertThatThrownBy(() -> confirmed.put("lockoutAcknowledged", false))
+            .isInstanceOf(UnsupportedOperationException.class);
     }
 
     @Test
@@ -419,48 +488,54 @@ class OrganizationModelPolicyServiceTest {
         stubReadyForFirstVersion();
 
         var principal =
-                ModelTestFixtures.adminPrincipal();
+            ModelTestFixtures.adminPrincipal();
 
         service.createVersion(
-                ModelTestFixtures.ORGANIZATION_ID,
-                validRequest(),
-                principal
+            ModelTestFixtures.ORGANIZATION_ID,
+            validRequest(),
+            principal
         );
 
         var details =
-                requirePolicyCreatedAuditDetails(
-                        principal
-                ).toMap();
+            requirePolicyCreatedAuditDetails(
+                principal
+            ).toMap();
 
         assertThat(details)
-                .containsEntry("organizationId", ModelTestFixtures.ORGANIZATION_ID)
-                .containsEntry("version", 1)
-                .containsEntry("enabled", true)
-                .containsEntry("defaultModelKey", "openai:gpt-test")
-                .containsEntry("budgetEnforcement", BudgetEnforcement.HARD)
-                .containsEntry("requireCompletePricing", true)
-                .containsEntry("requireNoTraining", true)
-                .containsEntry("requireZeroDataRetention", true)
-                .containsEntry("maxInputTokens", 8_000)
-                .containsEntry("maxOutputTokens", 1_000)
-                .containsEntry(
-                        "maxRequestCostUsd",
-                        "5.000000000000"
-                )
-                .containsEntry(
-                        "monthlyBudgetUsd",
-                        "50.000000000000"
-                )
-                .containsEntry("allowModelKeyCount", 1)
-                .containsEntry("denyModelKeyCount", 0)
-                .containsEntry("modelKeyListsIncluded", true)
-                .containsKeys(
-                        "policyId",
-                        "allowModelKeysSha256",
-                        "denyModelKeysSha256",
-                        "allowModelKeys",
-                        "denyModelKeys"
-                );
+            .containsEntry("organizationId", ModelTestFixtures.ORGANIZATION_ID)
+            .containsEntry("version", 1)
+            .containsEntry("enabled", true)
+            .containsEntry("defaultModelKey", "openai:gpt-test")
+            .containsEntry("budgetEnforcement", BudgetEnforcement.HARD)
+            .containsEntry("requireCompletePricing", true)
+            .containsEntry("requireNoTraining", true)
+            .containsEntry("requireZeroDataRetention", true)
+            .containsEntry("previewConfirmed", true)
+            .containsEntry("lockoutAcknowledged", false)
+            .containsEntry("maxInputTokens", 8_000)
+            .containsEntry("maxOutputTokens", 1_000)
+            .containsEntry(
+                "maxRequestCostUsd",
+                "5.000000000000"
+            )
+            .containsEntry(
+                "monthlyBudgetUsd",
+                "50.000000000000"
+            )
+            .containsEntry("allowModelKeyCount", 1)
+            .containsEntry("denyModelKeyCount", 0)
+            .containsEntry("modelKeyListsIncluded", true)
+            .containsKeys(
+                "policyId",
+                "allowModelKeysSha256",
+                "denyModelKeysSha256",
+                "allowModelKeys",
+                "denyModelKeys"
+            );
+        assertThatThrownBy(() -> details.put("previewConfirmed", false))
+            .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> details.remove("lockoutAcknowledged"))
+            .isInstanceOf(UnsupportedOperationException.class);
     }
 
     /**
@@ -474,62 +549,62 @@ class OrganizationModelPolicyServiceTest {
      * OrganizationModelPolicyAuditDetailsFactory.</p>
      */
     private AuditDetails requirePolicyCreatedAuditDetails(
-            SafeAiUserPrincipal principal
+        SafeAiUserPrincipal principal
     ) {
         verify(audit).recordPrincipalSnapshot(
-                same(principal),
-                eq(ModelTestFixtures.ORGANIZATION_ID),
-                eq(AuditEventType.MODEL_POLICY_VERSION_CREATED),
-                isA(AuditDetails.class)
+            same(principal),
+            eq(ModelTestFixtures.ORGANIZATION_ID),
+            eq(AuditEventType.MODEL_POLICY_VERSION_CREATED),
+            isA(AuditDetails.class)
         );
 
         var matches =
-                org.mockito.Mockito.mockingDetails(audit)
-                        .getInvocations()
-                        .stream()
-                        .filter(invocation ->
-                                "recordPrincipalSnapshot".equals(
-                                        invocation.getMethod().getName()
-                                )
-                        )
-                        .filter(invocation ->
-                                invocation.getMethod().getParameterCount() == 4
-                        )
-                        .filter(invocation ->
-                                invocation.getMethod()
-                                        .getParameterTypes()[3]
-                                        == AuditDetails.class
-                        )
-                        .filter(invocation ->
-                                invocation.getArgument(0) == principal
-                        )
-                        .filter(invocation ->
-                                ModelTestFixtures.ORGANIZATION_ID.equals(
-                                        invocation.getArgument(1)
-                                )
-                        )
-                        .filter(invocation ->
-                                AuditEventType.MODEL_POLICY_VERSION_CREATED
-                                        == invocation.getArgument(2)
-                        )
-                        .map(invocation ->
-                                invocation.<AuditDetails>getArgument(3)
-                        )
-                        .toList();
+            org.mockito.Mockito.mockingDetails(audit)
+                .getInvocations()
+                .stream()
+                .filter(invocation ->
+                    "recordPrincipalSnapshot".equals(
+                        invocation.getMethod().getName()
+                    )
+                )
+                .filter(invocation ->
+                    invocation.getMethod().getParameterCount() == 4
+                )
+                .filter(invocation ->
+                    invocation.getMethod()
+                        .getParameterTypes()[3]
+                        == AuditDetails.class
+                )
+                .filter(invocation ->
+                    invocation.getArgument(0) == principal
+                )
+                .filter(invocation ->
+                    ModelTestFixtures.ORGANIZATION_ID.equals(
+                        invocation.getArgument(1)
+                    )
+                )
+                .filter(invocation ->
+                    AuditEventType.MODEL_POLICY_VERSION_CREATED
+                        == invocation.getArgument(2)
+                )
+                .map(invocation ->
+                    invocation.<AuditDetails>getArgument(3)
+                )
+                .toList();
 
         assertThat(matches)
-                .as("exactly one typed policy-created audit invocation")
-                .hasSize(1);
+            .as("exactly one typed policy-created audit invocation")
+            .hasSize(1);
 
         return matches.getFirst();
     }
 
     private void stubReadyForFirstVersion() {
         when(repository.lockOrganization(
-                ModelTestFixtures.ORGANIZATION_ID
+            ModelTestFixtures.ORGANIZATION_ID
         )).thenReturn(true);
         when(repository.findLatest(
-                ModelTestFixtures.ORGANIZATION_ID
+            ModelTestFixtures.ORGANIZATION_ID
         )).thenReturn(Optional.empty());
     }
 
@@ -540,114 +615,114 @@ class OrganizationModelPolicyServiceTest {
         allow.add("a:model");
 
         return new CreateOrganizationModelPolicyVersionRequest(
-                0,
-                true,
-                allow,
-                Set.of(),
-                " A:MODEL ",
-                null,
-                null,
-                null,
-                null,
-                BudgetEnforcement.SOFT,
-                false,
-                false,
-                false
+            0,
+            true,
+            allow,
+            Set.of(),
+            " A:MODEL ",
+            null,
+            null,
+            null,
+            null,
+            BudgetEnforcement.SOFT,
+            false,
+            false,
+            false
         );
     }
 
     private static CreateOrganizationModelPolicyVersionRequest
     overlappingListsRequest() {
         return new CreateOrganizationModelPolicyVersionRequest(
-                0,
-                true,
-                Set.of("openai:gpt-test"),
-                Set.of(" OPENAI:GPT-TEST "),
-                null,
-                null,
-                null,
-                null,
-                null,
-                BudgetEnforcement.SOFT,
-                false,
-                false,
-                false
+            0,
+            true,
+            Set.of("openai:gpt-test"),
+            Set.of(" OPENAI:GPT-TEST "),
+            null,
+            null,
+            null,
+            null,
+            null,
+            BudgetEnforcement.SOFT,
+            false,
+            false,
+            false
         );
     }
 
     private static CreateOrganizationModelPolicyVersionRequest
     defaultOutsideAllowListRequest() {
         return new CreateOrganizationModelPolicyVersionRequest(
-                0,
-                true,
-                Set.of("openai:a"),
-                Set.of(),
-                "openai:b",
-                null,
-                null,
-                null,
-                null,
-                BudgetEnforcement.SOFT,
-                false,
-                false,
-                false
+            0,
+            true,
+            Set.of("openai:a"),
+            Set.of(),
+            "openai:b",
+            null,
+            null,
+            null,
+            null,
+            BudgetEnforcement.SOFT,
+            false,
+            false,
+            false
         );
     }
 
     private static CreateOrganizationModelPolicyVersionRequest
     invalidNumericBudgetRequest() {
         return new CreateOrganizationModelPolicyVersionRequest(
-                0,
-                true,
-                Set.of(),
-                Set.of(),
-                null,
-                null,
-                null,
-                null,
-                new BigDecimal("0.0000000000001"),
-                BudgetEnforcement.HARD,
-                false,
-                false,
-                false
+            0,
+            true,
+            Set.of(),
+            Set.of(),
+            null,
+            null,
+            null,
+            null,
+            new BigDecimal("0.0000000000001"),
+            BudgetEnforcement.HARD,
+            false,
+            false,
+            false
         );
     }
 
     private static CreateOrganizationModelPolicyVersionRequest
     nullBudgetEnforcementRequest() {
         return new CreateOrganizationModelPolicyVersionRequest(
-                0,
-                true,
-                Set.of(),
-                Set.of(),
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                false,
-                false,
-                false
+            0,
+            true,
+            Set.of(),
+            Set.of(),
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            false,
+            false,
+            false
         );
     }
 
     private static CreateOrganizationModelPolicyVersionRequest
     monetaryCanonicalizationRequest() {
         return new CreateOrganizationModelPolicyVersionRequest(
-                0,
-                true,
-                Set.of(),
-                Set.of(),
-                null,
-                null,
-                null,
-                new BigDecimal("5"),
-                new BigDecimal("50.5"),
-                BudgetEnforcement.HARD,
-                false,
-                false,
-                false
+            0,
+            true,
+            Set.of(),
+            Set.of(),
+            null,
+            null,
+            null,
+            new BigDecimal("5"),
+            new BigDecimal("50.5"),
+            BudgetEnforcement.HARD,
+            false,
+            false,
+            false
         );
     }
 
@@ -657,45 +732,45 @@ class OrganizationModelPolicyServiceTest {
 
         for (int index = 0; index < 200; index++) {
             allow.add(
-                    "m"
-                            + index
-                            + ":"
-                            + "a".repeat(150)
+                "m"
+                    + index
+                    + ":"
+                    + "a".repeat(150)
             );
         }
 
         return new CreateOrganizationModelPolicyVersionRequest(
-                0,
-                true,
-                allow,
-                Set.of(),
-                null,
-                null,
-                null,
-                null,
-                null,
-                BudgetEnforcement.SOFT,
-                false,
-                false,
-                false
+            0,
+            true,
+            allow,
+            Set.of(),
+            null,
+            null,
+            null,
+            null,
+            null,
+            BudgetEnforcement.SOFT,
+            false,
+            false,
+            false
         );
     }
 
     private static CreateOrganizationModelPolicyVersionRequest validRequest() {
         return new CreateOrganizationModelPolicyVersionRequest(
-                0,
-                true,
-                Set.of("openai:gpt-test"),
-                Set.of(),
-                "openai:gpt-test",
-                8_000,
-                1_000,
-                new BigDecimal("5.000000000000"),
-                new BigDecimal("50.000000000000"),
-                BudgetEnforcement.HARD,
-                true,
-                true,
-                true
+            0,
+            true,
+            Set.of("openai:gpt-test"),
+            Set.of(),
+            "openai:gpt-test",
+            8_000,
+            1_000,
+            new BigDecimal("5.000000000000"),
+            new BigDecimal("50.000000000000"),
+            BudgetEnforcement.HARD,
+            true,
+            true,
+            true
         );
     }
 }

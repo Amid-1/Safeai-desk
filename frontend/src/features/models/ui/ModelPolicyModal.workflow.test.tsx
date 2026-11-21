@@ -23,6 +23,8 @@ const initialPolicy = createOrganizationModelPolicy({
 
 function preview(): ModelPolicyPreview {
     return {
+        previewConfirmationId: '12345678-1234-4123-8123-123456789abc',
+        confirmationExpiresAt: new Date(Date.now() + 300_000).toISOString(),
         organizationId, basePolicyVersion: initialPolicy.version, enabled: true,
         evaluatedAt: '2026-10-24T12:00:00Z',
         runtimeProvider: runtime.provider, runtimeModel: runtime.model,
@@ -37,7 +39,7 @@ function mount(options: {
     onPreview?: (request: CreateOrganizationModelPolicyVersionRequest) => Promise<ModelPolicyPreview>
 } = {}) {
     const onSubmit = options.onSubmit ?? vi.fn(async () => {})
-    const onPreview = options.onPreview ?? vi.fn(async () => preview())
+    const onPreview = options.onPreview ?? vi.fn(async (request: CreateOrganizationModelPolicyVersionRequest) => ({...preview(), enabled: request.enabled}))
     const ui = (provider = runtime.provider, version = entry.version) => (
         <ModelPolicyModal
             policy={initialPolicy}
@@ -72,6 +74,8 @@ describe('Правила моделей — перенос и проверка',
         fireEvent.click(screen.getByRole('button', {name: 'Подтвердить перенос'}))
         expect(screen.queryByRole('list', {name: 'Разрешённые модели: выбранные модели'})).not.toBeInTheDocument()
         expect(screen.getByRole('list', {name: 'Запрещённые модели: выбранные модели'})).toHaveTextContent(entry.modelKey)
+        fireEvent.click(screen.getByRole('button', {name: 'Проверить правила'}))
+        await waitFor(() => expect(screen.getByRole('button', {name: 'Сохранить правила'})).toBeEnabled())
         fireEvent.click(screen.getByRole('button', {name: 'Сохранить правила'}))
         await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
             allowModelKeys: [], denyModelKeys: [entry.modelKey], defaultModelKey: null,
@@ -96,11 +100,11 @@ describe('Правила моделей — перенос и проверка',
         expect(screen.getByText('Доступ к моделям')).toBeInTheDocument()
         expect(screen.getByText('Совместимость')).toBeInTheDocument()
         expect(screen.getByText('Стоимость и лимиты')).toBeInTheDocument()
-        expect(screen.getAllByText('Требования к данным').length).toBeGreaterThan(0)
+        expect(screen.getAllByText('Требования').length).toBeGreaterThan(0)
         expect(screen.getByText('Проверка ещё не выполнена')).toBeInTheDocument()
         fireEvent.click(screen.getByRole('checkbox', {name: 'Правила выключены'}))
-        fireEvent.click(screen.getByRole('button', {name: 'Запустить проверку'}))
-        await screen.findByText('Серверная проверка черновика')
+        fireEvent.click(screen.getByRole('button', {name: 'Проверить правила'}))
+        await screen.findByText('Результат проверки правил')
         expect(onPreview).toHaveBeenCalledTimes(1)
         expect(screen.getByText(/Положительный результат предварительной оценки/)).toBeInTheDocument()
     })
@@ -110,20 +114,20 @@ describe('Правила моделей — перенос и проверка',
         const {rerender, ui} = mount({onSubmit})
         fireEvent.click(screen.getByRole('checkbox', {name: 'Правила выключены'}))
         fireEvent.click(screen.getByRole('tab', {name: /Проверка/}))
-        fireEvent.click(screen.getByRole('button', {name: 'Запустить проверку'}))
-        await screen.findByText('Серверная проверка черновика')
+        fireEvent.click(screen.getByRole('button', {name: 'Проверить правила'}))
+        await screen.findByText('Результат проверки правил')
         rerender(ui('another-provider'))
         expect(screen.getByText(/изменилась конфигурация моделей/)).toBeInTheDocument()
         fireEvent.click(screen.getByRole('button', {name: 'Сохранить правила'}))
         expect(onSubmit).not.toHaveBeenCalled()
         rerender(ui(runtime.provider, 5))
-        expect(screen.queryByText('Серверная проверка черновика')).not.toBeInTheDocument()
+        expect(screen.queryByText('Результат проверки правил')).not.toBeInTheDocument()
         expect(onSubmit).not.toHaveBeenCalled()
     })
 
     it('объясняет NOT_DECLARED как неподтверждённое требование, а не проверенный отказ', () => {
         mount()
-        fireEvent.click(screen.getByRole('tab', {name: /Требования к данным/}))
+        fireEvent.click(screen.getByRole('tab', {name: /Требования/}))
         // Existing metadata remains unchanged, only administrator messaging changes.
         expect(screen.getByText(/Отсутствие сведений не считается подтверждением/)).toBeInTheDocument()
         expect(screen.queryByText(/NOT_DECLARED/)).not.toBeInTheDocument()

@@ -16,7 +16,7 @@ function ResizableScrollRegion(props: ResizableScrollRegionProps) {
         defaultHeight = 420, autoFitHeight, preserveUpperContent = false,
     } = props
     const {
-        rootRef, upperRef, viewportRef, manualHeight, renderedHeight,
+        rootRef, upperRef, viewportRef, manualHeight, renderedHeight, collapsed,
         effectiveProtectedUpperHeight, effectiveMinHeight, effectiveMaxHeight,
         beginResize, moveResize, finishResize, restoreBodyState,
         resetHeight, handleKeyDown,
@@ -32,6 +32,7 @@ function ResizableScrollRegion(props: ResizableScrollRegionProps) {
                 autoFitHeight != null && !manualHeight && autoFitHeight < defaultHeight
                     ? 'resizable-scroll-region--auto-fit'
                     : '',
+                collapsed ? 'resizable-scroll-region--collapsed' : '',
                 className,
             ]
                 .filter(Boolean)
@@ -123,6 +124,7 @@ function ResizableScrollRegion(props: ResizableScrollRegionProps) {
                         .filter(Boolean)
                         .join(' ')}
                     ref={viewportRef}
+                    hidden={collapsed}
                 >
                     {children}
                 </div>

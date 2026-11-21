@@ -21,6 +21,7 @@ import type { UserRole } from '../shared/api/types'
 import { AuthProvider } from '../features/auth/state/AuthContext'
 import { useAuth } from '../features/auth/state/useAuth'
 import { ErrorState, LoadingState } from '../shared/ui/StateBlock'
+import { roleLabel } from '../shared/lib/roleLabel'
 
 const LoginPage = lazy(() => import('../pages/LoginPage'))
 const ChatPage = lazy(() => import('../pages/ChatPage'))
@@ -42,6 +43,7 @@ const AdminAuditPage = lazy(
 const AdminUsagePage = lazy(
     () => import('../pages/AdminUsagePage'),
 )
+const AdminDashboardPage = lazy(() => import('../pages/AdminDashboardPage'))
 const AdminModelsPage = lazy(
     () => import('../pages/AdminModelsPage'),
 )
@@ -75,7 +77,7 @@ function isSuperAdmin(user: AuthUser | null): boolean {
 
 function getDefaultAuthenticatedRoute(user: AuthUser): string {
     return isSuperAdmin(user)
-        ? '/admin/users'
+        ? '/admin/dashboard'
         : '/chat'
 }
 
@@ -358,6 +360,7 @@ function AppLayout() {
 
                         {canAccessAdmin && (
                             <>
+                                {canAccessOrganizations && <NavLink to="/admin/dashboard" className={getNavLinkClass}>Обзор</NavLink>}
                                 <NavLink
                                     to="/admin/users"
                                     className={getNavLinkClass}
@@ -412,7 +415,7 @@ function AppLayout() {
                                                 : 'role-badge role-user'
                                     }
                                 >
-                                    {displayRole}
+                                    {roleLabel(displayRole)}
                                 </span>
                             </div>
                         )}
@@ -469,6 +472,12 @@ function AppLayout() {
                             element={<ProtectedRoute roles={['ADMIN','USER']}><KnowledgeDetailsPage /></ProtectedRoute>}
                         />
 
+                        <Route
+                            path="/admin/dashboard"
+                            element={<ProtectedRoute roles={['SUPER_ADMIN']}>
+                                {user => <AdminDashboardPage key={user.id} />}
+                            </ProtectedRoute>}
+                        />
                         <Route
                             path="/admin/users"
                             element={

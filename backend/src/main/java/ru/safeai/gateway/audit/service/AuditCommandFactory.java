@@ -4,6 +4,7 @@ import org.springframework.stereotype.Component;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.details.AuditDetails;
 import ru.safeai.gateway.audit.model.AuditActor;
+import ru.safeai.gateway.common.security.CorrelationContext;
 
 import java.util.Map;
 import java.util.Objects;
@@ -109,7 +110,8 @@ public final class AuditCommandFactory {
                 targetOrganizationId,
                 eventType,
                 details,
-                databaseClock.now()
+                databaseClock.now(),
+                CorrelationContext.currentOrNew()
         );
     }
 }

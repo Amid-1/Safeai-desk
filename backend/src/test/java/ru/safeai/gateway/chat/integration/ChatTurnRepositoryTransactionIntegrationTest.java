@@ -8,6 +8,7 @@ import org.springframework.test.context.ActiveProfiles;
 import ru.safeai.gateway.chat.repository.ChatTurnRepository;
 
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -31,7 +32,7 @@ class ChatTurnRepositoryTransactionIntegrationTest
     private ChatTurnRepository turnRepository;
 
     @Test
-    void renewLeaseStartsItsOwnTransactionForWatchdogThreadCalls() {
+    void renewLeaseWithExplicitTimestampCommitsTheUpdate() {
         UUID clientRequestId =
                 UUID.randomUUID();
 
@@ -151,4 +152,74 @@ class ChatTurnRepositoryTransactionIntegrationTest
         assertThat(updated)
                 .isZero();
     }
+
+    @Test
+    void watchdogRenewalCommitsUsingOneDatabaseTimestamp() {
+        Instant beforeRenewal = databaseNow();
+        UUID processingToken = UUID.randomUUID();
+        UUID turnId = insertWatchdogTurn(processingToken, beforeRenewal.plusSeconds(60));
+        Duration extension = Duration.ofMinutes(3);
+
+        assertThat(turnRepository.renewLeaseUsingDatabaseClock(turnId, processingToken, extension.toMillis()))
+                .isEqualTo(1);
+
+        WatchdogLease lease = readWatchdogLease(turnId);
+        assertThat(lease.updatedAt()).isBetween(beforeRenewal, databaseNow());
+        assertThat(lease.leaseUntil()).isEqualTo(lease.updatedAt().plus(extension));
+        assertThat(lease.version()).isEqualTo(1);
+    }
+
+    @Test
+    void watchdogRenewalLeavesLeaseUnchangedForStaleToken() {
+        UUID processingToken = UUID.randomUUID();
+        UUID turnId = insertWatchdogTurn(processingToken, databaseNow().plusSeconds(60));
+        WatchdogLease original = readWatchdogLease(turnId);
+
+        assertThat(turnRepository.renewLeaseUsingDatabaseClock(turnId, UUID.randomUUID(), 180_000))
+                .isZero();
+
+        assertThat(readWatchdogLease(turnId)).isEqualTo(original);
+    }
+
+    @Test
+    void watchdogRenewalCannotReviveAnExpiredLease() {
+        UUID processingToken = UUID.randomUUID();
+        UUID turnId = insertWatchdogTurn(processingToken, databaseNow().minusSeconds(1));
+        WatchdogLease original = readWatchdogLease(turnId);
+
+        assertThat(turnRepository.renewLeaseUsingDatabaseClock(turnId, processingToken, 180_000))
+                .isZero();
+
+        assertThat(readWatchdogLease(turnId)).isEqualTo(original);
+    }
+
+    private Instant databaseNow() {
+        Timestamp timestamp = jdbcTemplate.queryForObject("select clock_timestamp()", Timestamp.class);
+        assertThat(timestamp).isNotNull();
+        return timestamp.toInstant();
+    }
+
+    private UUID insertWatchdogTurn(UUID processingToken, Instant leaseUntil) {
+        UUID clientRequestId = UUID.randomUUID();
+        UUID userMessageId = insertUserMessage(CHAT_ID, ORGANIZATION_ID, clientRequestId, "Question",
+                NOW.minusSeconds(10));
+        return insertProcessingTurn(CHAT_ID, ORGANIZATION_ID, USER_ID, clientRequestId, userMessageId,
+                processingToken, leaseUntil, null);
+    }
+
+    private WatchdogLease readWatchdogLease(UUID turnId) {
+        return jdbcTemplate.queryForObject("""
+                select lease_until, updated_at, version
+                from public.chat_turns
+                where id = ?
+                """, (row, index) -> new WatchdogLease(
+                row.getTimestamp("lease_until").toInstant(),
+                row.getTimestamp("updated_at").toInstant(),
+                row.getLong("version")
+        ), turnId);
+    }
+
+    private record WatchdogLease(Instant leaseUntil, Instant updatedAt, long version) {
+    }
+
 }

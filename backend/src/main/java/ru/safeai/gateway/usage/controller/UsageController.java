@@ -1,5 +1,7 @@
 package ru.safeai.gateway.usage.controller;
 
+import ru.safeai.gateway.common.budget.PlatformBudgetClassification.Status;
+
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -8,6 +10,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.usage.dto.PagedResponse;
@@ -16,6 +19,7 @@ import ru.safeai.gateway.usage.dto.UsageDataQualityResponse;
 import ru.safeai.gateway.usage.dto.UsageDateFilter;
 import ru.safeai.gateway.usage.dto.UsageDateModelFilter;
 import ru.safeai.gateway.usage.dto.UsageModelSummaryResponse;
+import ru.safeai.gateway.usage.dto.UsageOrganizationSummaryResponse;
 import ru.safeai.gateway.usage.dto.UsagePageRequest;
 import ru.safeai.gateway.usage.dto.UsageSummaryResponse;
 import ru.safeai.gateway.usage.dto.UsageUserSummaryResponse;
@@ -43,7 +47,11 @@ public class UsageController {
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
         return PagedResponse.from(
-                usageQueryService.getUsageSummary(
+                filter.userId() != null
+                        ? usageQueryService.getUsageSummaryForUser(null, filter.userId(),
+                                filter.dateFrom(), filter.dateTo(), filter.normalizedModel(),
+                                pageRequest.toPageable(), currentUser)
+                        : usageQueryService.getUsageSummary(
                         filter.dateFrom(),
                         filter.dateTo(),
                         filter.normalizedModel(),
@@ -53,6 +61,31 @@ public class UsageController {
         );
     }
 
+    @GetMapping("/organizations")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    public PagedResponse<UsageOrganizationSummaryResponse> organizations(
+            @Valid @ModelAttribute UsageDateModelFilter filter,
+            @Valid @ModelAttribute UsagePageRequest pageRequest,
+            @RequestParam(required = false) String organizationQuery,
+            @RequestParam(defaultValue = "false") boolean usedOnly,
+            @RequestParam(required = false) Status budgetStatus,
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        if (budgetStatus != null) {
+            return PagedResponse.from(usageQueryService.getUsageByOrganizations(
+                    filter.dateFrom(), filter.dateTo(), filter.normalizedModel(), filter.userId(),
+                    pageRequest.toPageable(), currentUser, organizationQuery, usedOnly, budgetStatus));
+        }
+        if (organizationQuery == null && !usedOnly) {
+            return PagedResponse.from(usageQueryService.getUsageByOrganizations(
+                    filter.dateFrom(), filter.dateTo(), filter.normalizedModel(), filter.userId(),
+                    pageRequest.toPageable(), currentUser));
+        }
+        return PagedResponse.from(usageQueryService.getUsageByOrganizations(
+                filter.dateFrom(), filter.dateTo(), filter.normalizedModel(), filter.userId(),
+                pageRequest.toPageable(), currentUser, organizationQuery, usedOnly));
+    }
+
     @GetMapping("/users")
     public PagedResponse<UsageUserSummaryResponse> users(
             @Valid @ModelAttribute UsageDateModelFilter filter,
@@ -60,7 +93,11 @@ public class UsageController {
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
         return PagedResponse.from(
-                usageQueryService.getUsageByUsers(
+                filter.userId() != null
+                        ? usageQueryService.getUsageUsersForUser(null, filter.userId(),
+                                filter.dateFrom(), filter.dateTo(), filter.normalizedModel(),
+                                pageRequest.toPageable(), currentUser)
+                        : usageQueryService.getUsageByUsers(
                         filter.dateFrom(),
                         filter.dateTo(),
                         filter.normalizedModel(),
@@ -75,6 +112,10 @@ public class UsageController {
             @Valid @ModelAttribute UsageDateModelFilter filter,
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
+        if (filter.userId() != null) {
+            return usageQueryService.getUsageModelsForUser(null, filter.userId(),
+                    filter.dateFrom(), filter.dateTo(), filter.normalizedModel(), currentUser);
+        }
         return usageQueryService.getUsageByModels(
                 filter.dateFrom(),
                 filter.dateTo(),
@@ -91,7 +132,11 @@ public class UsageController {
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
         return PagedResponse.from(
-                usageQueryService.getUsageByUsersForOrganization(
+                filter.userId() != null
+                        ? usageQueryService.getUsageUsersForUser(organizationId, filter.userId(),
+                                filter.dateFrom(), filter.dateTo(), filter.normalizedModel(),
+                                pageRequest.toPageable(), currentUser)
+                        : usageQueryService.getUsageByUsersForOrganization(
                         organizationId,
                         filter.dateFrom(),
                         filter.dateTo(),
@@ -108,6 +153,10 @@ public class UsageController {
             @Valid @ModelAttribute UsageDateModelFilter filter,
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
+        if (filter.userId() != null) {
+            return usageQueryService.getUsageModelsForUser(organizationId, filter.userId(),
+                    filter.dateFrom(), filter.dateTo(), filter.normalizedModel(), currentUser);
+        }
         return usageQueryService.getUsageByModelsForOrganization(
                 organizationId,
                 filter.dateFrom(),
@@ -123,6 +172,10 @@ public class UsageController {
             @Valid @ModelAttribute UsageDateModelFilter filter,
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
+        if (filter.userId() != null) {
+            return usageQueryService.getUsageDailyForUser(null, filter.userId(),
+                    filter.dateFrom(), filter.dateTo(), filter.normalizedModel(), currentUser);
+        }
         return usageQueryService.getUsageDaily(
                 filter.dateFrom(),
                 filter.dateTo(),
@@ -137,6 +190,10 @@ public class UsageController {
             @Valid @ModelAttribute UsageDateModelFilter filter,
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
+        if (filter.userId() != null) {
+            return usageQueryService.getUsageDailyForUser(organizationId, filter.userId(),
+                    filter.dateFrom(), filter.dateTo(), filter.normalizedModel(), currentUser);
+        }
         return usageQueryService.getUsageDailyForOrganization(
                 organizationId,
                 filter.dateFrom(),
@@ -173,7 +230,11 @@ public class UsageController {
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
         return PagedResponse.from(
-                usageQueryService.getUsageByOrganizationId(
+                filter.userId() != null
+                        ? usageQueryService.getUsageSummaryForUser(organizationId, filter.userId(),
+                                filter.dateFrom(), filter.dateTo(), filter.normalizedModel(),
+                                pageRequest.toPageable(), currentUser)
+                        : usageQueryService.getUsageByOrganizationId(
                         organizationId,
                         filter.dateFrom(),
                         filter.dateTo(),

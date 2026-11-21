@@ -122,6 +122,8 @@ const UNCONFIGURED_POLICY = {
 }
 
 const PREVIEW = {
+    previewConfirmationId: '12345678-1234-4123-8123-123456789abc',
+    confirmationExpiresAt: '2026-09-09T17:05:00Z',
     organizationId: '44444444-4444-4444-8444-444444444444',
     basePolicyVersion: 3,
     enabled: true,
@@ -246,5 +248,11 @@ describe('Model API production hardening', () => {
             automaticOutcome: 'ALLOWED',
             automaticReason: 'MODEL_DENIED',
         })).toThrow(/automaticReason/)
+    })
+
+    it('rejects preview without a valid server confirmation', () => {
+        expect(() => parseModelPolicyPreview({...PREVIEW, previewConfirmationId: undefined})).toThrow(/previewConfirmationId/)
+        expect(() => parseModelPolicyPreview({...PREVIEW, previewConfirmationId: 'forged'})).toThrow(/previewConfirmationId/)
+        expect(() => parseModelPolicyPreview({...PREVIEW, confirmationExpiresAt: null})).toThrow(/confirmationExpiresAt/)
     })
 })

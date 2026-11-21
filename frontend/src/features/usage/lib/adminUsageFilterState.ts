@@ -3,6 +3,7 @@
 import type {
     UsageSummaryFilter,
 } from '../api/usageApi'
+import { parseBudgetStatus } from './usageBudgetStatus'
 import {
     uuidPathSegment,
 } from '../../../shared/api/query'
@@ -18,17 +19,21 @@ export type UsageReportTab =
     | 'users'
     | 'models'
     | 'daily'
+    | 'organizations'
 
 export type UsageDraftFilter = {
     dateFrom: string
     dateTo: string
     model: string
     organizationId: string
+    userId?: string
 }
 
 export type UsageUrlState = {
     tab: UsageReportTab
     page: number
+    order?: UsageSummaryFilter['order']
+    budgetStatus?: UsageSummaryFilter['budgetStatus']
     draft: UsageDraftFilter
 }
 
@@ -41,10 +46,13 @@ export type NormalizedUsageFilter = {
 export type UsageUrlValues = {
     tab: UsageReportTab
     page: number
+    order?: UsageSummaryFilter['order']
+    budgetStatus?: UsageSummaryFilter['budgetStatus']
     dateFrom: string
     dateTo: string
     model: string
     organizationId: string
+    userId?: string
 }
 
 export const MAX_USAGE_RANGE_DAYS = 366
@@ -54,6 +62,7 @@ const USAGE_TABS: readonly UsageReportTab[] = [
     'users',
     'models',
     'daily',
+    'organizations',
 ]
 
 const UUID_PATTERN =
@@ -104,6 +113,11 @@ export function readUsageUrlState(
 
     const requestedDateFrom = params.get('dateFrom') ?? ''
     const requestedDateTo = params.get('dateTo') ?? ''
+    const userId = safeNormalizeOptionalUuid(params.get('userId') ?? '')
+    const order = params.get('order')
+    const budgetStatus = superAdmin && params.get('report') === 'organizations'
+        && !safeNormalizeOptionalUuid(params.get('organizationId') ?? '')
+        ? parseBudgetStatus(params.get('budgetStatus')) : undefined
 
     let dateFrom = fallback.dateFrom
     let dateTo = fallback.dateTo
@@ -124,11 +138,16 @@ export function readUsageUrlState(
     }
 
     return {
-        tab: parseTab(params.get('report')),
+        tab: parseTab(params.get('report')) === 'organizations'
+            && (!superAdmin || Boolean(safeNormalizeOptionalUuid(params.get('organizationId') ?? '')))
+            ? 'summary' : parseTab(params.get('report')),
         page: parsePage(params.get('page')),
+        ...(budgetStatus ? {budgetStatus} : {}),
+        ...(order === 'total' || order === 'cost' || order === 'responses' || order === 'coverage' ? {order} : {}),
         draft: {
             dateFrom,
             dateTo,
+            ...(userId ? { userId } : {}),
             model: safeNormalizeModel(
                 params.get('model') ?? '',
             ),
@@ -145,10 +164,12 @@ export function toUsageFilter(
     draft: UsageDraftFilter,
     superAdmin: boolean,
 ): NormalizedUsageFilter {
+    const userId = normalizeOptionalUuid(draft.userId ?? '')
     const normalized: UsageDraftFilter = {
         dateFrom: draft.dateFrom.trim(),
         dateTo: draft.dateTo.trim(),
         model: normalizeModel(draft.model),
+        ...(userId ? { userId } : {}),
         organizationId: superAdmin
             ? normalizeOptionalUuid(
                 draft.organizationId,
@@ -178,6 +199,7 @@ export function toUsageFilter(
                 normalized.dateTo,
             ),
             model: normalized.model || undefined,
+            ...(userId ? { userId } : {}),
         },
         organizationId: normalized.organizationId,
     }
@@ -214,15 +236,21 @@ export function buildUsageSearchParams(
     next.set('report', values.tab)
     next.set('dateFrom', values.dateFrom)
     next.set('dateTo', values.dateTo)
+    if (values.order && values.order !== 'tokens') next.set('order', values.order)
+    if (values.tab === 'organizations' && !values.organizationId && values.budgetStatus) {
+        next.set('budgetStatus', values.budgetStatus)
+    }
 
     if (values.page > 0) {
         next.set('page', String(values.page))
     }
 
-    // Preserve the summary-only model filter while the user inspects another
-    // tab so switching views never silently loses a deliberate selection.
+    // All views share the same applied filters.
     if (values.model) {
         next.set('model', values.model)
+    }
+    if (values.userId) {
+        next.set('userId', values.userId)
     }
 
     if (values.organizationId) {

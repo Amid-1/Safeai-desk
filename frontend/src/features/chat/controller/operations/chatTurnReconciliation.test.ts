@@ -109,9 +109,10 @@ describe('Reconciliation состояния AI-turn', () => {
     it('при 404 сохраняет неизвестный исход и прежний requestId', async () => {
         getTurnMock.mockRejectedValue(new ApiError('Не найден', { code: 'NOT_FOUND' }, 404))
         const h = mount()
-        await h.reconcilePendingTurn(pending)
+        await h.reconcilePendingTurn({ ...pending, error: 'Сервис временно недоступен.' })
         expect(h.putPendingTurn).toHaveBeenCalledWith(expect.objectContaining({
             status: 'SEND_UNKNOWN', clientRequestId: IDS.request,
+            error: 'Сервис временно недоступен.',
         }))
     })
 

@@ -1,3 +1,4 @@
+// SafeAI-Desk/backend/src/main/java/ru/safeai/gateway/knowledge/rag/KnowledgeRagContextReceiptService.java
 package ru.safeai.gateway.knowledge.rag;
 
 import org.springframework.stereotype.Service;
@@ -84,6 +85,17 @@ public class KnowledgeRagContextReceiptService {
                 preparedRequestSha256,
                 clock.instant()
         );
+    }
+
+    /**
+     * Отдельная короткая DB-транзакция перед физическим AI-вызовом.
+     * Это дополнительная проверка, а не гарантия отмены уже начатого I/O.
+     */
+    @Transactional
+    public void assertSourcesAvailable(RagPreparation preparation, UUID organizationId) {
+        Objects.requireNonNull(preparation, "preparation");
+        Objects.requireNonNull(organizationId, "organizationId");
+        repository.assertSourcesAvailable(preparation, organizationId);
     }
 
     private static void requirePreparedRequestIdentity(

@@ -7,12 +7,16 @@ import org.springframework.data.domain.Slice;
 import ru.safeai.gateway.usage.dto.UsageDailySummaryResponse;
 import ru.safeai.gateway.usage.dto.UsageDataQualityResponse;
 import ru.safeai.gateway.usage.dto.UsageModelSummaryResponse;
+import ru.safeai.gateway.usage.dto.UsageOrganizationSummaryResponse;
 import ru.safeai.gateway.usage.dto.UsageSummaryResponse;
 import ru.safeai.gateway.usage.dto.UsageUserSummaryResponse;
 
 import java.util.List;
 
 public interface UsageQueryRepository {
+
+    Slice<UsageOrganizationSummaryResponse> findOrganizations(
+            UsageQueryCriteria criteria, UsageQueryPlan plan, Pageable pageable);
 
     Slice<UsageSummaryResponse> findSummary(
             UsageQueryCriteria criteria,

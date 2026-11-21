@@ -1,5 +1,5 @@
-# # SafeAI-Desk/backend/docs/config/application-security-example.yaml
-# Windows path: D:\Java projects\Safeai-desk\backend\docs\config\application-security-example.yaml
+# # SafeAI-Desk/backend/docs/config/application-security-example.yml
+# Windows path: D:\Java projects\Safeai-desk\backend\docs\config\application-security-example.yml
 # Documentation ONLY, not a production config file.
 # Examples must never be copied into the live application.yml without review.
 safeai:

@@ -74,6 +74,11 @@ export type ResizableScrollRegionProps = {
      */
     preserveUpperContent?: boolean
 
+    /** Reserve the minimum lower height and a usable drag range when the upper content needs scrolling. */
+    reserveLowerHeight?: boolean
+    /** Разрешает вручную свернуть содержимое до разделителя и измеренного footer. */
+    collapseToFooter?: boolean
+
     /**
      * Небольшой зазор между защищённой границей и разделителем.
      */
@@ -91,6 +96,8 @@ export type DragState = {
 export type LayoutMetrics = {
     containerHeight: number
     protectedUpperHeight: number
+    preferredUpperHeight: number | null
+    collapsedLowerHeight: number | null
 }
 
 export type BodyDragStyle = {

@@ -11,6 +11,19 @@ import {
 } from './modelValues'
 import { validatePricingDraft } from './modelPricing'
 
+export type CatalogSection = 'identity' | 'limits' | 'pricing' | 'data' | 'capabilities'
+
+export class CatalogDraftValidationError extends Error {
+    constructor(readonly section: CatalogSection, message: string) {
+        super(message)
+        this.name = 'CatalogDraftValidationError'
+    }
+}
+
+function priceText(value: string | null | undefined): string {
+    // Only format the initial presentation; never round a persisted tariff.
+    return (value ?? '').replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '')
+}
 
 export function createCatalogDraft(
     base: ModelCatalogEntry | null,
@@ -35,10 +48,10 @@ export function createCatalogDraft(
             trainingUseStatus: base.trainingUseStatus,
             pricingStatus: base.pricingStatus,
             pricingComplete: base.pricingComplete,
-            inputUsdPer1mTokens: base.inputUsdPer1mTokens ?? '',
-            cachedInputUsdPer1mTokens: base.cachedInputUsdPer1mTokens ?? '',
-            cacheWriteInputUsdPer1mTokens: base.cacheWriteInputUsdPer1mTokens ?? '',
-            outputUsdPer1mTokens: base.outputUsdPer1mTokens ?? '',
+            inputUsdPer1mTokens: priceText(base.inputUsdPer1mTokens),
+            cachedInputUsdPer1mTokens: priceText(base.cachedInputUsdPer1mTokens),
+            cacheWriteInputUsdPer1mTokens: priceText(base.cacheWriteInputUsdPer1mTokens),
+            outputUsdPer1mTokens: priceText(base.outputUsdPer1mTokens),
             extraPricingJson: base.extraPricingJson,
             pricingVersion: base.pricingVersion ?? '',
             effectiveFrom: '',
@@ -66,10 +79,10 @@ export function createCatalogDraft(
                 ? 'INCOMPLETE'
                 : 'UNPRICED',
         pricingComplete: runtime.pricingStatus === 'FREE',
-        inputUsdPer1mTokens: runtime.inputUsdPer1mTokens ?? '',
+        inputUsdPer1mTokens: priceText(runtime.inputUsdPer1mTokens),
         cachedInputUsdPer1mTokens: '',
         cacheWriteInputUsdPer1mTokens: '',
-        outputUsdPer1mTokens: runtime.outputUsdPer1mTokens ?? '',
+        outputUsdPer1mTokens: priceText(runtime.outputUsdPer1mTokens),
         extraPricingJson: '{}',
         pricingVersion: runtime.pricingVersion ?? '',
         effectiveFrom: '',
@@ -121,6 +134,19 @@ export function buildCatalogRequest(
     draft: CatalogDraft,
     expectedPreviousVersion: number,
 ): CreateModelCatalogVersionRequest {
+    let section: CatalogSection = 'identity'
+    try {
+        return buildCatalogRequestInternal(draft, expectedPreviousVersion, value => { section = value })
+    } catch (failure) {
+        throw new CatalogDraftValidationError(section, failure instanceof Error ? failure.message : 'Проверьте параметры модели.')
+    }
+}
+
+function buildCatalogRequestInternal(
+    draft: CatalogDraft,
+    expectedPreviousVersion: number,
+    selectSection: (section: CatalogSection) => void,
+): CreateModelCatalogVersionRequest {
     const modelKey =
         normalizeModelKey(draft.modelKey)
 
@@ -142,6 +168,11 @@ export function buildCatalogRequest(
             'Название модели',
         )
 
+    const effectiveFrom = draft.effectiveFrom ? new Date(draft.effectiveFrom) : null
+    if (effectiveFrom && !Number.isFinite(effectiveFrom.getTime())) {
+        throw new Error('Укажите корректную дату вступления версии в силу.')
+    }
+    selectSection('limits')
     const maxInputTokens =
         parsePositiveInteger(
             draft.maxInputTokens,
@@ -154,6 +185,7 @@ export function buildCatalogRequest(
             'Максимум выходных токенов',
         )
 
+    selectSection('capabilities')
     if (draft.inputModalities.length === 0) {
         throw new Error(
             'Выберите минимум один тип входных данных.',
@@ -172,6 +204,7 @@ export function buildCatalogRequest(
         )
     }
 
+    selectSection('data')
     const retentionDays =
         parseOptionalNonNegativeInteger(
             draft.retentionDays,
@@ -189,6 +222,7 @@ export function buildCatalogRequest(
         )
     }
 
+    selectSection('pricing')
     const input =
         parseOptionalDecimal(
             draft.inputUsdPer1mTokens,
@@ -256,11 +290,7 @@ export function buildCatalogRequest(
         outputUsdPer1mTokens: output,
         extraPricingJson,
         pricingVersion,
-        effectiveFrom: draft.effectiveFrom
-            ? new Date(
-                draft.effectiveFrom,
-            ).toISOString()
-            : null,
+        effectiveFrom: effectiveFrom?.toISOString() ?? null,
         expectedPreviousVersion,
     }
 }

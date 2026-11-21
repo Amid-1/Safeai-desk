@@ -32,6 +32,10 @@ public class ChatTurnEntity {
     @Column(name = "id", nullable = false)
     private UUID id;
 
+    @Column(name = "correlation_id", updatable = false)
+    @Setter(lombok.AccessLevel.NONE)
+    private UUID correlationId;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "session_id", nullable = false)
     private ChatSessionEntity session;
@@ -247,6 +251,8 @@ public class ChatTurnEntity {
                         session.getUser(),
                         "session.user не должен быть null"
                 );
+
+        turn.correlationId = ru.safeai.gateway.common.security.CorrelationContext.current();
 
         turn.clientRequestId =
                 Objects.requireNonNull(

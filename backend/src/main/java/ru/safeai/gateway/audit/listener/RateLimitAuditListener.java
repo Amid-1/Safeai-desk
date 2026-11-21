@@ -7,6 +7,7 @@ import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.model.AuditActor;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.ratelimit.RateLimitExceededEvent;
+import ru.safeai.gateway.ratelimit.LoginRateLimitExceededEvent;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -17,6 +18,12 @@ import java.util.Objects;
 public class RateLimitAuditListener {
 
     private final AuditEventService auditEventService;
+
+    @EventListener
+    public void onLoginRateLimitExceeded(LoginRateLimitExceededEvent event) {
+        auditEventService.recordSystemStandaloneRequired(
+                event.targetOrganizationId(), AuditEventType.RATE_LIMIT_EXCEEDED, event::auditDetails);
+    }
 
     /**
      * Listener намеренно синхронный.

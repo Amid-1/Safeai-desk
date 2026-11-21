@@ -81,11 +81,11 @@ public final class ProductionAuthCookieInvariantValidator
         if (!authCookieProperties
                 .refreshTokenName()
                 .startsWith(
-                        "__Host-"
+                        "__Secure-"
                 )) {
             throw new IllegalStateException(
                     "В production refresh-token cookie "
-                            + "должна использовать __Host- prefix"
+                            + "должна использовать __Secure- prefix при Path=/api/auth"
             );
         }
 

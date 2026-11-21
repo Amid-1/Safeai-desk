@@ -1,5 +1,6 @@
 // frontend/src/features/audit/ui/auditEventGroups.ts
 import { getAuditEventTypeLabel } from '../constants/auditEvents'
+import { auditEventTitle } from './auditEventPresentation'
 
 /** Visual categories only; the exact server-provided eventType is preserved. */
 export const AUDIT_EVENT_GROUPS = [
@@ -37,7 +38,8 @@ export function getAuditEventGroup(type: string): AuditEventGroup {
 export function groupAuditEventTypes(
     types: readonly string[], search: string, selected: string,
 ): Array<{ group: AuditEventGroup; types: string[] }> {
-    const needle = search.trim().toLocaleLowerCase('ru')
+    const normalize = (value: string) => value.trim().toLocaleLowerCase('ru').replaceAll('ё', 'е')
+    const needle = normalize(search)
     const unique = new Set(types)
     if (selected) unique.add(selected)
     return AUDIT_EVENT_GROUPS.map((group) => ({
@@ -45,9 +47,9 @@ export function groupAuditEventTypes(
         types: [...unique]
             .filter((type) => getAuditEventGroup(type) === group
                 && (type === selected || !needle
-                    || type.toLocaleLowerCase('ru').includes(needle)
-                    || getAuditEventTypeLabel(type)
-                        .toLocaleLowerCase('ru').includes(needle)))
+                    || normalize(type).includes(needle)
+                    || normalize(getAuditEventTypeLabel(type)).includes(needle)
+                    || normalize(auditEventTitle(type)).includes(needle)))
             .sort((a, b) => getAuditEventTypeLabel(a).localeCompare(
                 getAuditEventTypeLabel(b), 'ru', { sensitivity: 'base' },
             )),

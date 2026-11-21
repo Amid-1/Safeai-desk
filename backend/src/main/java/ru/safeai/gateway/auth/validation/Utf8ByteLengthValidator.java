@@ -4,6 +4,7 @@ import jakarta.validation.ConstraintDeclarationException;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
 import org.jspecify.annotations.Nullable;
+import ru.safeai.gateway.common.validation.UnicodeValidationSupport;
 
 import java.nio.charset.StandardCharsets;
 
@@ -45,11 +46,13 @@ public final class Utf8ByteLengthValidator
             return true;
         }
 
-        int actualBytes = value
-                .toString()
-                .getBytes(StandardCharsets.UTF_8)
-                .length;
+        String text = value.toString();
+        try {
+            UnicodeValidationSupport.requireWellFormedUtf16(text, "value");
+        } catch (IllegalArgumentException invalidUnicode) {
+            return false;
+        }
 
-        return actualBytes <= maxBytes;
+        return text.getBytes(StandardCharsets.UTF_8).length <= maxBytes;
     }
 }

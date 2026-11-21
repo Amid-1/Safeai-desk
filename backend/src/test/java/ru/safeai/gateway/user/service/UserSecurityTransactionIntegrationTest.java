@@ -149,7 +149,7 @@ class UserSecurityTransactionIntegrationTest extends AbstractPostgresIntegration
                 "USER",
                 Instant.parse("2026-07-20T10:00:00Z")
         );
-        insertActiveRefreshToken(USER_ID, 0L);
+        insertActiveRefreshToken(USER_ID);
     }
 
     private SafeAiUserPrincipal adminPrincipal() {

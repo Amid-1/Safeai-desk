@@ -36,6 +36,7 @@ export function CreateUserDialog(props: CreateUserDialogProps) {
         <>
             {createModalOpen && (
                 <Modal
+                    className="admin-details-dialog"
                     title={
                         'Создать пользователя'
                     }

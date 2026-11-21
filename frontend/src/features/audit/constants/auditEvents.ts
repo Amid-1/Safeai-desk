@@ -7,6 +7,15 @@ export const AUDIT_EVENT_TYPES = [
     'CHAT_CREATED',
     'CHAT_RENAMED',
     'CHAT_ARCHIVED',
+    'CHAT_RESTORED',
+    'CHAT_CONTENT_ERASURE_REQUESTED',
+    'CHAT_CONTENT_ERASURE_COMPLETED',
+    'CHAT_CONTENT_ERASURE_REVIEW_REQUIRED',
+    'CHAT_CONTENT_ERASURE_RETENTION_BLOCKED',
+    'CHAT_CONTENT_ERASURE_RESUMED',
+    'CHAT_CONTENT_ERASURE_CANCELLED',
+    'CHAT_RETENTION_HOLD_RELEASED',
+    'CHAT_ERASURE_OPERATOR_APPROVED',
     'CHAT_MESSAGE_SENT',
     'AI_RESPONSE_RECEIVED',
     'AI_RESPONSE_FAILED',
@@ -31,11 +40,21 @@ export const AUDIT_EVENT_TYPES = [
     'KNOWLEDGE_BASE_MEMBER_ADDED',
     'KNOWLEDGE_BASE_MEMBER_UPDATED',
     'KNOWLEDGE_BASE_MEMBER_REMOVED',
+    'KNOWLEDGE_BASE_DELETION_REQUESTED',
+    'KNOWLEDGE_BASE_DELETION_RESUMED',
+    'KNOWLEDGE_BASE_DELETION_COMPLETED',
+    'KNOWLEDGE_BASE_DELETION_REVIEW_REQUIRED',
+    'KNOWLEDGE_BASE_DELETION_RETENTION_BLOCKED',
 
     'KNOWLEDGE_DOCUMENT_CREATED',
     'KNOWLEDGE_DOCUMENT_UPDATED',
     'KNOWLEDGE_DOCUMENT_VERSION_UPLOADED',
     'KNOWLEDGE_DOCUMENT_DOWNLOADED',
+    'KNOWLEDGE_DOCUMENT_DELETION_REQUESTED',
+    'KNOWLEDGE_DOCUMENT_DELETION_RESUMED',
+    'KNOWLEDGE_DOCUMENT_DELETION_COMPLETED',
+    'KNOWLEDGE_DOCUMENT_DELETION_REVIEW_REQUIRED',
+    'KNOWLEDGE_DOCUMENT_DELETION_RETENTION_BLOCKED',
 
     'KNOWLEDGE_REINDEX_REQUESTED',
     'KNOWLEDGE_INGESTION_READY',
@@ -48,6 +67,7 @@ export const AUDIT_EVENT_TYPES = [
     'MODEL_POLICY_VERSION_CREATED',
     'MODEL_ROUTE_DECIDED',
     'MODEL_ROUTE_DENIED',
+    'AUDIT_OUTBOX_DEAD_LETTER_RECOVERED',
 ] as const
 
 export type AuditEventType =
@@ -69,6 +89,16 @@ const AUDIT_EVENT_TYPE_LABELS:
 
     CHAT_ARCHIVED:
         'Чат убран из списка',
+
+    CHAT_RESTORED: 'Чат восстановлен из архива',
+    CHAT_CONTENT_ERASURE_REQUESTED: 'Запрошено удаление содержимого чата',
+    CHAT_CONTENT_ERASURE_COMPLETED: 'Удаление содержимого чата завершено',
+    CHAT_CONTENT_ERASURE_REVIEW_REQUIRED: 'Удаление чата требует проверки',
+    CHAT_CONTENT_ERASURE_RETENTION_BLOCKED: 'Удаление чата ограничено сроком хранения',
+    CHAT_CONTENT_ERASURE_RESUMED: 'Удаление содержимого чата возобновлено',
+    CHAT_CONTENT_ERASURE_CANCELLED: 'Удаление содержимого чата отменено',
+    CHAT_RETENTION_HOLD_RELEASED: 'Снято ограничение хранения чата',
+    CHAT_ERASURE_OPERATOR_APPROVED: 'Оператор подтвердил удаление чата',
 
     CHAT_MESSAGE_SENT:
         'Отправлено сообщение',
@@ -130,6 +160,12 @@ const AUDIT_EVENT_TYPE_LABELS:
     KNOWLEDGE_BASE_MEMBER_REMOVED:
         'Удалён участник базы знаний',
 
+    KNOWLEDGE_BASE_DELETION_REQUESTED: 'Запрошено удаление базы знаний',
+    KNOWLEDGE_BASE_DELETION_RESUMED: 'Удаление базы знаний возобновлено',
+    KNOWLEDGE_BASE_DELETION_COMPLETED: 'Удаление базы знаний завершено',
+    KNOWLEDGE_BASE_DELETION_REVIEW_REQUIRED: 'Удаление базы знаний требует проверки',
+    KNOWLEDGE_BASE_DELETION_RETENTION_BLOCKED: 'Удаление базы знаний ограничено сроком хранения',
+
     KNOWLEDGE_DOCUMENT_CREATED:
         'Загружен документ',
 
@@ -141,6 +177,12 @@ const AUDIT_EVENT_TYPE_LABELS:
 
     KNOWLEDGE_DOCUMENT_DOWNLOADED:
         'Скачан документ',
+
+    KNOWLEDGE_DOCUMENT_DELETION_REQUESTED: 'Запрошено удаление документа',
+    KNOWLEDGE_DOCUMENT_DELETION_RESUMED: 'Удаление документа возобновлено',
+    KNOWLEDGE_DOCUMENT_DELETION_COMPLETED: 'Удаление документа завершено',
+    KNOWLEDGE_DOCUMENT_DELETION_REVIEW_REQUIRED: 'Удаление документа требует проверки',
+    KNOWLEDGE_DOCUMENT_DELETION_RETENTION_BLOCKED: 'Удаление документа ограничено сроком хранения',
 
     KNOWLEDGE_REINDEX_REQUESTED:
         'Запущена повторная индексация',
@@ -164,13 +206,15 @@ const AUDIT_EVENT_TYPE_LABELS:
         'Создана версия каталога модели',
 
     MODEL_POLICY_VERSION_CREATED:
-        'Создана версия model policy',
+        'Создана версия правил использования AI',
 
     MODEL_ROUTE_DECIDED:
         'Маршрут модели разрешён',
 
     MODEL_ROUTE_DENIED:
         'Маршрут модели отклонён',
+    AUDIT_OUTBOX_DEAD_LETTER_RECOVERED:
+        'Восстановлено событие аудита из очереди ошибок',
 }
 
 export function getAuditEventTypeLabel(
@@ -185,10 +229,6 @@ export function getAuditEventTypeLabel(
         return AUDIT_EVENT_TYPE_LABELS[
             eventType as AuditEventType
         ]
-    }
-
-    if (eventType === 'AUDIT_OUTBOX_DEAD_LETTER_RECOVERED') {
-        return 'Восстановлено событие аудита из очереди ошибок'
     }
 
     return eventType

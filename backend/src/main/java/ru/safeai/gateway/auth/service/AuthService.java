@@ -109,7 +109,8 @@ public class AuthService {
 
         // Fail closed if the limit backend is unavailable. Never produce
         // a duplicate auth failure audit for a limiter rejection.
-        loginRateLimitService.checkAllowed(email, ipAddress);
+        LoginRateLimitService.Attempt rateLimitAttempt =
+                loginRateLimitService.checkAllowed(email, ipAddress);
 
         LoginSessionResult session;
         try {
@@ -136,7 +137,7 @@ public class AuthService {
         String accessToken = jwtService.generateToken(session.accessTokenSubject());
 
         authEventService.loginSuccess(session.currentUser(), httpRequest);
-        loginRateLimitService.onLoginSuccess(email, ipAddress);
+        loginRateLimitService.onLoginSuccess(rateLimitAttempt);
         csrfTokenRepository.saveToken(null, httpRequest, response);
         authCookieService.addAccessTokenCookie(response, accessToken);
         authCookieService.addRefreshTokenCookie(

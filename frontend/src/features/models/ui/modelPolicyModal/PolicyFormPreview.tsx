@@ -2,11 +2,13 @@
 // Серверная оценка черновика: состояния, ограничения и осознанная блокировка.
 
 import type {ModelPolicyModalController} from './useModelPolicyModalController'
+import type {ModelPolicyModalProps} from './policyModalTypes'
 import {ErrorState} from '../../../../shared/ui/StateBlock'
 import { previewReasonLabel } from './policyModalLabels'
 import {POLICY_PREVIEW_LABEL, policyPreviewState} from './policyPreviewStatus'
+import {formatUsd} from '../../../../shared/lib/format'
 
-type Props = {control: ModelPolicyModalController}
+type Props = {control: ModelPolicyModalController; effectiveCatalog: ModelPolicyModalProps['effectiveCatalog']}
 
 const CHECKS = [
     ['Доступ к моделям', 'Разрешения и запреты'],
@@ -15,10 +17,13 @@ const CHECKS = [
     ['Требования к данным', 'Обучение и хранение'],
 ] as const
 
-export function PolicyFormPreview({control}: Props) {
+function usd(value: string | null): string {
+    return value === null ? 'Не рассчитано' : formatUsd(value)
+}
+
+export function PolicyFormPreview({control, effectiveCatalog}: Props) {
     const {activationWarning, previewError, policyPreview, currentPreview,
-        lockoutAcknowledged, setLockoutAcknowledged, previewPending, pending,
-        policyChangedExternally, handlePreview} = control
+        lockoutAcknowledged, setLockoutAcknowledged, previewPending} = control
 
     const status = policyPreviewState({currentPreview, policyPreview, previewPending, previewError})
     const statusLabel = POLICY_PREVIEW_LABEL[status]
@@ -34,8 +39,8 @@ export function PolicyFormPreview({control}: Props) {
                 <span className={`models-policy-check__status models-policy-check__status--${status}`} role="status">{statusLabel}</span>
             </div>
 
-            <section className="models-policy-check__criteria" aria-label="Параметры проверки">
-                <h4>Что будет проверено</h4>
+            <details key={currentPreview ? 'completed' : 'pending'} open={!currentPreview} className="models-policy-check__criteria" aria-label="Параметры проверки">
+                <summary>{currentPreview ? 'Параметры выполненной проверки' : 'Что будет проверено'}</summary>
                 <div className="models-policy-check__criteria-grid">
                     {CHECKS.map(([title, description]) => (
                         <div key={title} className="models-policy-check__criterion">
@@ -44,7 +49,7 @@ export function PolicyFormPreview({control}: Props) {
                         </div>
                     ))}
                 </div>
-            </section>
+            </details>
 
             {activationWarning && (
                 <div className="models-policy-form__warning" role="alert">
@@ -66,12 +71,7 @@ export function PolicyFormPreview({control}: Props) {
             {!currentPreview && !previewPending && (
                 <div className="models-policy-check__empty">
                     <strong>{policyPreview ? 'Результат проверки устарел' : previewError ? 'Не удалось проверить правила' : 'Проверка ещё не выполнена'}</strong>
-                    <p>Запустите предварительную проверку, чтобы увидеть доступные модели, ограничения и решение сервера.</p>
-                    <button type="button" className="btn-primary"
-                            disabled={pending || policyChangedExternally}
-                            onClick={() => {void handlePreview()}}>
-                        Запустить проверку
-                    </button>
+                    <p>Нажмите «Проверить правила» внизу окна, чтобы увидеть доступные модели, ограничения и решение сервера.</p>
                 </div>
             )}
 
@@ -89,11 +89,12 @@ export function PolicyFormPreview({control}: Props) {
                          aria-label="Результат серверной проверки" aria-live="polite">
                     <div className="models-policy-form__preview-summary">
                         <div>
-                            <strong>Серверная проверка черновика</strong>
+                            <strong>Результат проверки правил</strong>
                             <small>
                                 Подключение: {currentPreview.runtimeProvider}/{currentPreview.runtimeModel}
-                                {' · '}Исполняемых моделей: {currentPreview.executableModelCount}
+                                {' · '}Доступных моделей: {currentPreview.executableModelCount}
                                 {' · '}Проверено сервером: {new Date(currentPreview.evaluatedAt).toLocaleString('ru-RU')}
+                                {' · '}Подтверждение до: {new Date(currentPreview.confirmationExpiresAt).toLocaleTimeString('ru-RU')}
                             </small>
                         </div>
                         <span>
@@ -112,7 +113,7 @@ export function PolicyFormPreview({control}: Props) {
                                         <small>Версия модели в каталоге: {item.catalogVersion}</small>
                                     </div>
                                     <span className={`models-policy-check__model-outcome models-policy-check__model-outcome--${item.outcome.toLowerCase()}`}>
-                                        {item.outcome === 'ALLOWED' ? 'Доступ разрешён' : 'Доступ отклонён'}
+                                        {item.outcome === 'ALLOWED' ? 'Разрешена при проверке правил' : 'Отклонена при проверке правил'}
                                     </span>
                                 </div>
                                 <div className="models-policy-check__model-reason">
@@ -124,7 +125,21 @@ export function PolicyFormPreview({control}: Props) {
                                         <strong>{item.effectiveInputLimit.toLocaleString('ru-RU')} / {item.effectiveOutputLimit.toLocaleString('ru-RU')}</strong></div>
                                     <div><small>Стоимость · сведения каталога</small>
                                         <strong>{item.pricingComplete ? 'Данные о стоимости полные' : 'Данные о стоимости неполные'}</strong></div>
+                                    <div><small>Расчётная стоимость при максимальных лимитах</small>
+                                        <strong>{!item.pricingComplete ? 'Не рассчитано полностью' : item.estimatedMaxCostUsd !== null
+                                            && /^0+(?:\.0+)?$/.test(item.estimatedMaxCostUsd)
+                                            && effectiveCatalog.some(entry => entry.modelKey === item.modelKey
+                                                && entry.version === item.catalogVersion && entry.pricingStatus === 'FREE')
+                                            ? 'Бесплатно · 0 USD' : usd(item.estimatedMaxCostUsd)}</strong></div>
                                 </div>
+                                {item.monthlyBudgetUsd !== null && <details className="models-policy-check__budget-details">
+                                    <summary>Месячный бюджет · {item.budgetExceeded ? 'Превышение' : item.monthlyCostKnown ? 'Расчёт доступен' : 'Стоимость неизвестна'}</summary>
+                                    <div className="models-policy-check__model-facts">
+                                        <div><small>Установленный бюджет</small><strong>{usd(item.monthlyBudgetUsd)}</strong></div>
+                                        <div><small>Прогноз после тестового запроса</small><strong>{item.monthlyCostKnown ? usd(item.monthlyProjectedUsd) : 'Не рассчитано'}</strong></div>
+                                    </div>
+                                    <p>Расчёт сервера на момент проверки; фактическая стоимость зависит от запроса.</p>
+                                </details>}
                             </article>
                         ))}
                         {currentPreview.models.length === 0 && (

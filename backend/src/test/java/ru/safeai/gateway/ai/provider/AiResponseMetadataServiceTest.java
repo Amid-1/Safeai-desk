@@ -4,9 +4,8 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import ru.safeai.gateway.ai.metadata.PricingStatus;
 import ru.safeai.gateway.ai.execution.ProviderExecutionTarget;
-import ru.safeai.gateway.ai.pricing.ModelPricingProperties;
-import ru.safeai.gateway.ai.pricing.ModelPricingService;
-import ru.safeai.gateway.ai.pricing.StaticConfigurationPricingResolver;
+import ru.safeai.gateway.ai.testsupport.CatalogPricingFixture;
+import ru.safeai.gateway.ai.testsupport.AiTestFixtures;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -48,7 +47,7 @@ class AiResponseMetadataServiceTest {
 
         AiResponseMetadataService.AiResponseMetadata metadata =
                 service.extract(
-                        response,
+                        AiTestFixtures.OPERATION_ID, response,
                         target(),
                         "gpt-snapshot"
                 );
@@ -81,7 +80,7 @@ class AiResponseMetadataServiceTest {
     }
 
     @Test
-    void malformedSpecializedUsageIsCalculationFailedNotPriced() {
+    void malformedSpecializedUsageIsUnpriced() {
         AiResponseMetadataService service =
                 service();
 
@@ -100,7 +99,7 @@ class AiResponseMetadataServiceTest {
 
         AiResponseMetadataService.AiResponseMetadata metadata =
                 service.extract(
-                        response,
+                        AiTestFixtures.OPERATION_ID, response,
                         target(),
                         "gpt-snapshot"
                 );
@@ -115,7 +114,7 @@ class AiResponseMetadataServiceTest {
 
         assertThat(metadata.pricing().status())
                 .isEqualTo(
-                        PricingStatus.CALCULATION_FAILED
+                        PricingStatus.UNPRICED
                 );
 
         assertThat(metadata.pricing().costUsd())
@@ -123,29 +122,10 @@ class AiResponseMetadataServiceTest {
     }
 
     private AiResponseMetadataService service() {
-        ModelPricingProperties.ModelPrice price =
-                new ModelPricingProperties.ModelPrice(
-                        "gpt-snapshot",
-                        new BigDecimal("2"),
-                        new BigDecimal("8"),
-                        "USD",
-                        "v1"
-                );
-
-        ModelPricingService pricingService =
-                new ModelPricingService(
-                        new ModelPricingProperties(
-                                List.of(price)
-                        ),
-                        Clock.fixed(
-                                NOW,
-                                ZoneOffset.UTC
-                        )
-                );
-
-        return new AiResponseMetadataService(
-                new StaticConfigurationPricingResolver(pricingService)
-        );
+        return new AiResponseMetadataService(CatalogPricingFixture.resolver(
+                "openai", "gpt-snapshot", AiTestFixtures.OPERATION_ID,
+                List.of(new CatalogPricingFixture.Price("gpt-snapshot", new BigDecimal("2"),
+                        new BigDecimal("8"), "USD", "v1")), Clock.fixed(NOW, ZoneOffset.UTC)));
     }
 
     private static ProviderExecutionTarget target() {

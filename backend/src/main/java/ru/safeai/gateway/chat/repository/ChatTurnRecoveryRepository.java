@@ -64,7 +64,8 @@ public class ChatTurnRecoveryRepository {
                 ct.client_request_id,
                 ct.state,
                 ct.failure_code,
-                ct.outcome_ambiguous
+                ct.outcome_ambiguous,
+                ct.correlation_id
             """;
 
     private final JdbcTemplate jdbcTemplate;
@@ -125,7 +126,8 @@ public class ChatTurnRecoveryRepository {
                                 ),
                                 resultSet.getBoolean(
                                         "outcome_ambiguous"
-                                )
+                                ),
+                                resultSet.getObject("correlation_id", UUID.class)
                         ),
                 timestamp,
                 batchSize,

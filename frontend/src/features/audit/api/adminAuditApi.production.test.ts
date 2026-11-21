@@ -4,7 +4,7 @@
 // ============================================================
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { apiRequest, API_TIMEOUTS } from '../../../shared/api/http'
-import { getAuditEvents, getAuditEventTypes, searchAuditActors,
+import { getAuditEvents, getAuditSummary, getAuditEventTypes, searchAuditActors,
     searchAuditTargetOrganizations, parseAuditEvent, parseAuditDetails } from './adminAuditApi'
 vi.mock('../../../shared/api/http',async importOriginal=>({...await importOriginal<typeof import('../../../shared/api/http')>(),apiRequest:vi.fn()}))
 const request=vi.mocked(apiRequest)
@@ -17,6 +17,36 @@ const page={content:[],page:0,size:50,totalElements:0,totalPages:0}
 beforeEach(()=>vi.resetAllMocks())
 
 describe('adminAuditApi — HTTP',()=>{
+  it('передаёт Correlation ID в список и сводку, отклоняет неправильный UUID',async()=>{
+    request.mockResolvedValueOnce(page).mockResolvedValueOnce({total:0,successful:0,denied:0,critical:0})
+    await getAuditEvents(0,50,{correlationId:ID})
+    await getAuditSummary({correlationId:ID})
+    for (const [url] of request.mock.calls) expect(url).toContain('correlationId='+ID)
+    await expect(getAuditEvents(0,50,{correlationId:'not-a-uuid'})).rejects.toThrow()
+    expect(request).toHaveBeenCalledTimes(2)
+  })
+  it('проверяет тип серверного Correlation ID, поддерживает старые записи',()=>{
+    expect(parseAuditEvent({...event(),correlationId:ID}).correlationId).toBe(ID)
+    expect(parseAuditEvent({...event(),correlationId:null}).correlationId).toBeUndefined()
+    expect(()=>parseAuditEvent({...event(),correlationId:'not-a-uuid'})).toThrow()
+  })
+  it('использует общие серверные фильтры для сводки и списка',async()=>{
+    request.mockResolvedValueOnce(page).mockResolvedValueOnce({total:159,successful:145,denied:9,critical:5})
+    const filter={targetOrganizationId:ORG,dateFrom:'2026-08-01',dateTo:'2026-08-31',category:'SECURITY' as const,metric:'DENIED' as const}
+    await getAuditEvents(0,50,filter)
+    expect(await getAuditSummary(filter)).toEqual({total:159,successful:145,denied:9,critical:5})
+    for(const [url] of request.mock.calls) {
+      expect(url).toContain('category=SECURITY')
+      expect(url).toContain('organizationId='+ORG)
+    }
+    expect(request.mock.calls[0][0]).toContain('metric=DENIED')
+    expect(request.mock.calls[1][0]).toContain('/summary?')
+    expect(request.mock.calls[1][0]).not.toContain('metric=')
+  })
+  it('не превращает повреждённую сводку в нули',async()=>{
+    request.mockResolvedValueOnce({total:1,successful:2,denied:0,critical:0})
+    await expect(getAuditSummary({})).rejects.toThrow()
+  })
   it('сохраняет все четыре GET и точные tenant/actor фильтры',async()=>{
     request.mockResolvedValueOnce(page).mockResolvedValueOnce(['USER_CREATED','USER_CREATED','CHAT_SENT'])
       .mockResolvedValueOnce([]).mockResolvedValueOnce([])

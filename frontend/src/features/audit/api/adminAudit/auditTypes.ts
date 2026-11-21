@@ -19,6 +19,7 @@ export type JsonValue =
 
 export type AuditEvent = {
     id: string
+    correlationId?: string
 
     targetOrganizationId: string
     targetOrganizationName: string | null
@@ -43,6 +44,9 @@ export type AuditEvent = {
 
 export type AuditEventFilter = {
     eventType?: string
+    correlationId?: string
+    category?: AuditCategory
+    metric?: AuditMetric
 
     actorUserId?: string
     actorEmail?: string
@@ -52,6 +56,12 @@ export type AuditEventFilter = {
 
     targetOrganizationId?: string
 }
+
+export const AUDIT_CATEGORIES = ['SECURITY', 'USERS', 'ORGANIZATIONS', 'AI', 'KNOWLEDGE', 'SYSTEM'] as const
+export const AUDIT_METRICS = ['SUCCESS', 'DENIED', 'CRITICAL'] as const
+export type AuditCategory = typeof AUDIT_CATEGORIES[number]
+export type AuditMetric = typeof AUDIT_METRICS[number]
+export type AuditSummary = { total: number; successful: number; denied: number; critical: number }
 
 export type AuditActorDirectoryItem = {
     actorUserId: string | null

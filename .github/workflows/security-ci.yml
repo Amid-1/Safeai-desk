@@ -1,0 +1,175 @@
+# SafeAI-Desk/.github/workflows/security-ci.yml
+name: Security и зависимости
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '31 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  codeql:
+    name: CodeQL / ${{ matrix.language }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: java-kotlin
+            build-mode: manual
+          - language: javascript-typescript
+            build-mode: none
+
+    steps:
+      - name: Получение исходного кода
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Установка Java 21 для анализа backend
+        if: matrix.language == 'java-kotlin'
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Инициализация CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - name: Компиляция backend для CodeQL
+        if: matrix.language == 'java-kotlin'
+        working-directory: backend
+        run: ./mvnw --batch-mode --no-transfer-progress -DskipTests package
+
+      - name: Анализ CodeQL
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: '/language:${{ matrix.language }}'
+
+  trivy-filesystem:
+    name: Trivy / зависимости и секреты
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Получение исходного кода
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Maven Central rate-limits Trivy when transitive POMs are absent.
+      # Prime ~/.m2 and restore it across CI runs. Scan still fails closed.
+      - name: Java 21 и кеш Maven для Trivy
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+
+      - name: Предварительное разрешение Maven-зависимостей
+        shell: bash
+        working-directory: backend
+        run: |
+          set -Eeuo pipefail
+          ./mvnw --batch-mode --no-transfer-progress dependency:go-offline
+          ./mvnw --batch-mode --no-transfer-progress --offline dependency:tree \
+            -DoutputFile="$RUNNER_TEMP/safeai-maven-dependency-tree.txt"
+          test -s "$RUNNER_TEMP/safeai-maven-dependency-tree.txt"
+
+      - name: Формирование SARIF отчёта Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.76.2
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: sarif
+          output: trivy-results.sarif
+          exit-code: '0'
+
+      - name: Загрузка отчёта Trivy в GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v4
+        if: ${{ always() && hashFiles('trivy-results.sarif') != '' }}
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: Обязательный gate по исправимым HIGH/CRITICAL уязвимостям
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.76.2
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: '1'
+
+      - name: Блокирующая проверка обнаруженных секретов
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.76.2
+          scan-type: fs
+          scan-ref: .
+          scanners: secret
+          exit-code: '1'
+
+      - name: Блокирующая проверка всех CRITICAL, включая необновляемые
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.76.2
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: CRITICAL
+          ignore-unfixed: false
+          exit-code: '1'
+
+  dependency-review:
+    name: Проверка новых зависимостей в PR
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Получение исходного кода
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Проверенный коммит GitHub dependency-review-action v5 на 7 ноября 2026 года.
+      # Для работы необходим включённый Dependency Graph в настройках репозитория.
+      - name: Проверка уязвимых зависимостей в PR
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5
+        with:
+          fail-on-severity: low
+          comment-summary-in-pr: always

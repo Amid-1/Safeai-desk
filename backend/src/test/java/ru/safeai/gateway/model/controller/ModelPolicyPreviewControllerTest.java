@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.model.dto.CreateOrganizationModelPolicyVersionRequest;
 import ru.safeai.gateway.model.dto.ModelPolicyPreviewResponse;
-import ru.safeai.gateway.model.service.ModelPolicyPreviewService;
+import ru.safeai.gateway.model.service.ModelPolicyPreviewConfirmationService;
 import ru.safeai.gateway.model.testsupport.ModelTestFixtures;
 
 import java.lang.reflect.Method;
@@ -29,7 +29,7 @@ class ModelPolicyPreviewControllerTest {
 
     @Test
     void previewDelegatesExactTenantDraftAndPrincipal() {
-        ModelPolicyPreviewService service = mock(ModelPolicyPreviewService.class);
+        ModelPolicyPreviewConfirmationService service = mock(ModelPolicyPreviewConfirmationService.class);
         ModelPolicyPreviewController controller = new ModelPolicyPreviewController(service);
         UUID organizationId = ModelTestFixtures.ORGANIZATION_ID;
         CreateOrganizationModelPolicyVersionRequest request =

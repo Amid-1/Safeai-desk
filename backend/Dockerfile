@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1.7
 # SafeAI-Desk/backend/Dockerfile
 
-ARG BUILD_IMAGE=eclipse-temurin:21-jdk
-ARG RUNTIME_IMAGE=eclipse-temurin:21-jre
+ARG BUILD_IMAGE=eclipse-temurin:21.0.13_9-jdk-noble@sha256:bc12ebd88ffa6dda0092940e179365b05aef8d813b867f9df5a1f168c9a44feb
+ARG RUNTIME_IMAGE=eclipse-temurin:21.0.13_9-jre-noble@sha256:b4f9d2a0bc273417cf5219b7b832bbf0493ed500b7b57d5001d9f83374659060
 
 FROM ${BUILD_IMAGE} AS build
 
@@ -17,15 +17,27 @@ RUN --mount=type=cache,target=/root/.m2 \
 
 COPY src src
 
+# Spring Boot собирает один исполняемый JAR. Исключаем архивы исходников и тестов.
+# При отсутствии JAR или нескольких подходящих файлах сборка завершится ошибкой.
+# find -exec не требует промежуточной shell-переменной.
 RUN --mount=type=cache,target=/root/.m2 \
     ./mvnw -q -DskipTests clean package \
-    && JAR_FILE="$(find target -maxdepth 1 -type f -name '*.jar' \
-        ! -name '*-sources.jar' ! -name '*-javadoc.jar' -print -quit)" \
-    && test -n "$JAR_FILE" \
-    && test -s "$JAR_FILE" \
-    && cp "$JAR_FILE" /app/app.jar
+    && find target -maxdepth 1 -type f \
+        -name 'safeai-backend-*.jar' \
+        ! -name '*-sources.jar' \
+        ! -name '*-javadoc.jar' \
+        ! -name '*-tests.jar' \
+        -exec sh -ec 'test "$#" -eq 1 && cp -- "$1" /app/app.jar' sh {} + \
+    && test -s /app/app.jar
 
 FROM ${RUNTIME_IMAGE} AS runtime
+
+# Fail closed if an overridden runtime is not Noble or contains Pebble.
+RUN . /etc/os-release \
+    && test "$ID" = ubuntu \
+    && test "$VERSION_ID" = 24.04 \
+    && test ! -e /usr/bin/pebble \
+    && test ! -L /usr/bin/pebble
 
 ARG APP_VERSION=dev
 ARG VCS_REF=unknown
@@ -41,8 +53,10 @@ LABEL org.opencontainers.image.title="SafeAI Backend" \
 
 WORKDIR /app
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
+# Обновляем системные пакеты и не скрываем ошибки менеджера пакетов.
+RUN apt-get -o Acquire::Retries=0 update \
+    && apt-get -o Acquire::Retries=0 upgrade -y \
+    && apt-get -o Acquire::Retries=0 install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10001 safeai \
     && useradd --system --uid 10001 --gid safeai \

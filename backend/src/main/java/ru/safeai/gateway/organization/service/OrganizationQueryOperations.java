@@ -5,12 +5,17 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.repository.query.QueryUtils;
 import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.pagination.StablePageableNormalizer;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.organization.dto.OrganizationDirectoryResponse;
 import ru.safeai.gateway.organization.dto.OrganizationDisableImpactResponse;
 import ru.safeai.gateway.organization.dto.OrganizationResponse;
+import ru.safeai.gateway.organization.dto.OrganizationType;
+import jakarta.persistence.criteria.Predicate;
+import java.util.ArrayList;
+import java.util.Locale;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
 import ru.safeai.gateway.organization.repository.OrganizationImpactQueryRepository;
 import ru.safeai.gateway.organization.repository.OrganizationRepository;
@@ -115,6 +120,40 @@ final class OrganizationQueryOperations {
         return page.getContent().stream()
                 .map(responseMapper::toDirectoryResponse)
                 .toList();
+    }
+
+    Page<OrganizationResponse> search(
+            SafeAiUserPrincipal principal, String query, OrganizationType type,
+            Boolean enabled, Pageable pageable
+    ) {
+        accessPolicy.requireSuperAdmin(principal);
+        if (query != null && (query.length() > 255 || query.chars().anyMatch(Character::isISOControl))) {
+            throw new BadRequestException("Некорректная строка поиска организаций");
+        }
+        String exact = query == null || query.isBlank() ? null : query.strip().toLowerCase(Locale.ROOT);
+        String pattern = exact == null ? null : "%" + escapeDirectoryLikeLiteral(exact) + "%";
+        Pageable stablePageable = normalizePageable(pageable);
+        return organizationRepository.findAll((root, criteria, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            if (pattern != null) predicates.add(cb.like(cb.lower(root.get("name")), pattern, '!'));
+            if (enabled != null) predicates.add(cb.equal(root.get("enabled"), enabled));
+            if (type != null) {
+                var platform = cb.equal(root.get("id"), accessPolicy.platformOrganizationId());
+                predicates.add(type == OrganizationType.PLATFORM ? platform : cb.not(platform));
+            }
+            if (exact != null && criteria != null && criteria.getResultType() != Long.class
+                    && criteria.getResultType() != long.class) {
+                var name = cb.lower(root.<String>get("name"));
+                var priority = cb.<Integer>selectCase().when(cb.equal(name, exact), 0)
+                        .when(cb.like(name, escapeDirectoryLikeLiteral(exact) + "%", '!'), 1).otherwise(2);
+                var orders = new ArrayList<jakarta.persistence.criteria.Order>();
+                orders.add(cb.asc(priority));
+                orders.addAll(QueryUtils.toOrders(stablePageable.getSort(), root, cb));
+                criteria.orderBy(orders);
+            }
+            return cb.and(predicates.toArray(Predicate[]::new));
+        }, exact == null ? stablePageable : PageRequest.of(stablePageable.getPageNumber(), stablePageable.getPageSize()))
+                .map(responseMapper::toResponse);
     }
 
     OrganizationResponse findCurrentOrganization(SafeAiUserPrincipal currentUser) {

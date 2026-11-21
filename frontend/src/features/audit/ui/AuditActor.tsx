@@ -11,11 +11,17 @@ import type {
 type AuditActorProps = {
     event: AuditEvent
     showIds?: boolean
+    hideIds?: boolean
+    onFilterActor?: () => void
+    filterDisabled?: boolean
 }
 
 function AuditActor({
     event,
     showIds = false,
+    hideIds = false,
+    onFilterActor,
+    filterDisabled = false,
 }: AuditActorProps) {
     const [copyStatus, setCopyStatus] = useState('')
 
@@ -23,9 +29,9 @@ function AuditActor({
         if (!event.actorUserId) return
         try {
             await navigator.clipboard.writeText(event.actorUserId)
-            setCopyStatus('UUID скопирован')
+            setCopyStatus('Идентификатор скопирован')
         } catch {
-            setCopyStatus('Не удалось скопировать UUID')
+            setCopyStatus('Не удалось скопировать идентификатор')
         }
     }
 
@@ -50,7 +56,7 @@ function AuditActor({
     if (isSystem) {
         return (
             <span className="audit-identity__system">
-                Система
+                {event.eventType === 'USER_LOGIN_FAILED' ? 'Пользователь не установлен' : 'Система'}
             </span>
         )
     }
@@ -66,7 +72,7 @@ function AuditActor({
         email
         ?? displayName
         ?? (
-            'Исторический инициатор'
+            'Пользователь без имени'
         )
 
     const secondaryText =
@@ -76,17 +82,24 @@ function AuditActor({
 
     return (
         <div className="audit-actor audit-identity">
-            <strong
+            {onFilterActor && event.actorUserId ? (
+                <button type="button" className="audit-identity__primary audit-actor-link"
+                    disabled={filterDisabled}
+                    title={filterDisabled ? 'Сначала примените фильтры или дождитесь загрузки' : 'Показать события пользователя за выбранный период'}
+                    aria-label={'Показать события: ' + primaryText} onClick={onFilterActor}>
+                    {primaryText}
+                </button>
+            ) : <strong
                 className={
                     'audit-identity__primary'
                 }
             >
                 {primaryText}
-            </strong>
+            </strong>}
 
             {!hasReadableIdentity && (
                 <span className="audit-identity__historical-note">
-                    Имя инициатора не сохранено в исторической записи.
+                    Имя пользователя не сохранено в исторической записи.
                 </span>
             )}
 
@@ -100,33 +113,32 @@ function AuditActor({
                 </span>
             )}
 
-            {(showIds || !hasReadableIdentity)
+            {!hideIds && (showIds || !hasReadableIdentity)
                 && event.actorUserId
                 && (
                     <span
                         className={
-                            'audit-identity__meta '
-                            + 'audit-monospace'
+                            'audit-identity__meta audit-copy-line'
                         }
                         title={event.actorUserId}
                     >
-                        Пользователь ID: {' '}
+                        <span>Идентификатор пользователя: {' '}
                         {shortAuditIdentifier(event.actorUserId)}
-                        {' '}
+                        </span>
                         <button
                             type="button"
                             className="audit-copy-uuid"
-                            aria-label="Скопировать полный UUID инициатора"
-                            title="Скопировать полный UUID инициатора"
+                            aria-label="Скопировать идентификатор пользователя"
+                            title="Скопировать идентификатор пользователя"
                             onClick={() => void copyUserId()}
                         >
-                            Копировать UUID
+                            Копировать
                         </button>
                         {copyStatus && <span role="status" className="audit-copy-status">{copyStatus}</span>}
                     </span>
                 )}
 
-            {showIds
+            {!hideIds && showIds
                 && event.actorOrganizationId
                 && (
                     <span
@@ -135,7 +147,7 @@ function AuditActor({
                             + 'audit-monospace'
                         }
                     >
-                        Организация инициатора ID:
+                        Идентификатор организации пользователя:
                         {' '}
                         {
                             shortAuditIdentifier(event.actorOrganizationId)

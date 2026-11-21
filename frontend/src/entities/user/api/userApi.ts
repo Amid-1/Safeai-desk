@@ -53,6 +53,7 @@ export type UserDetails = User & {
 
 export type UserStatistics = {
     total: number
+    superAdministrators?: number
     administrators: number
     users: number
     enabled: number
@@ -160,9 +161,10 @@ export async function searchUsers(
     page = 0,
     size = 50,
     filters: {
-        role?: UserListRoleFilter
+        role?: UserListRoleFilter | 'SUPER_ADMIN'
         enabled?: boolean
         query?: string
+        organizationId?: string
     } = {},
     options: RequestOptions = {},
 ): Promise<PageResponse<User>> {
@@ -172,6 +174,7 @@ export async function searchUsers(
         role: filters.role,
         enabled: filters.enabled,
         query: filters.query || undefined,
+        organizationId: filters.organizationId || undefined,
     })
     const response = await apiRequest<unknown>(
         `/api/users/search${queryString}`,
@@ -201,10 +204,12 @@ export async function getUserDetails(
 }
 
 export async function getUserStatistics(
-    options: RequestOptions = {},
+    options: RequestOptions & { directory?: boolean; organizationId?: string } = {},
 ): Promise<UserStatistics> {
     const response = await apiRequest<unknown>(
-        '/api/users/statistics',
+        options.directory
+            ? '/api/users/search/statistics' + buildQueryString({organizationId: options.organizationId})
+            : '/api/users/statistics',
         {
             method: 'GET',
             signal: options.signal,
@@ -447,11 +452,14 @@ export function parseUserStatistics(
         record.disabled,
         `${field}.disabled`,
     )
+    const superAdministrators = record.superAdministrators === undefined
+        ? undefined : parseCount(record.superAdministrators, `${field}.superAdministrators`)
 
     if (
         administrators > total
         || users > total
         || enabled + disabled !== total
+        || (superAdministrators !== undefined && superAdministrators + administrators + users !== total)
     ) {
         throw contractError(
             `${field} содержит несогласованные значения`,
@@ -464,6 +472,7 @@ export function parseUserStatistics(
         users,
         enabled,
         disabled,
+        ...(superAdministrators === undefined ? {} : {superAdministrators}),
     }
 }
 

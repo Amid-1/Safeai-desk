@@ -4,6 +4,7 @@ import type { User } from '../../../entities/user/api/userApi'
 import type { AuthUser } from '../../auth/api/authApi'
 import type { UserRole } from '../../../shared/api/types'
 import type { OrganizationDirectoryItem } from '../../../entities/organization/api/organizationApi'
+import { roleLabel } from '../../../shared/lib/roleLabel'
 
 export type AssignableRole = Exclude<UserRole, 'SUPER_ADMIN'>
 
@@ -38,20 +39,13 @@ export function getOrganizationName(
     return findOrganizationName(
         id,
         organizations,
-    ) ?? id
+    ) ?? 'Организация (название не загружено)'
 }
 
 export function getRoleLabel(
     role: UserRole,
 ): string {
-    switch (role) {
-        case 'SUPER_ADMIN':
-            return 'Суперадминистратор'
-        case 'ADMIN':
-            return 'Администратор'
-        case 'USER':
-            return 'Пользователь'
-    }
+    return roleLabel(role)
 }
 
 export function getUnmanageableReason(

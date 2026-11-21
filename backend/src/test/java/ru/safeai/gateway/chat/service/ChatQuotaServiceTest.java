@@ -30,9 +30,8 @@ import static org.mockito.Mockito.when;
 /**
  * Quota reservation tests for the V67 route-bound contract.
  *
- * <p>No test calls deprecated five-argument reserve(), or the legacy
- * insertReservation(..., ChatQuotaProperties, ...). All verification of
- * overloaded insertReservation() uses an explicit ChatQuotaReservation type.</p>
+ * <p>Legacy reserve() is covered only to verify that it cannot bypass hard
+ * limits. Route-bound tests select the explicit ChatQuotaReservation overload.</p>
  */
 @ExtendWith(MockitoExtension.class)
 class ChatQuotaServiceTest {
@@ -202,6 +201,46 @@ class ChatQuotaServiceTest {
                 .hasMessageContaining("monthlyCostUnverifiable");
 
         verifyNoRouteReservationInserted();
+    }
+
+    @Test
+    void legacyReservationCannotUseStaticEstimateForHardMoneyLimit() {
+        when(repository.lockOrganizationPolicy(any(UUID.class)))
+                .thenReturn(new ChatQuotaPolicy(true, null, null, null, BigDecimal.TEN));
+        when(repository.lockUserPolicy(any(UUID.class))).thenReturn(ChatQuotaPolicy.unlimited());
+        when(repository.organizationConsumption(any(UUID.class), any(LocalDate.class)))
+                .thenReturn(emptyConsumption());
+
+        assertThatThrownBy(this::reserveLegacy)
+                .isInstanceOf(ChatQuotaExceededException.class)
+                .hasMessageContaining("monthlyCostUnverifiable");
+        verifyNoLegacyReservationInserted();
+    }
+
+    @Test
+    void legacyReservationCannotIgnoreUnknownTokenLiability() {
+        when(repository.lockOrganizationPolicy(any(UUID.class)))
+                .thenReturn(new ChatQuotaPolicy(true, null, 1_000L, null, null));
+        when(repository.lockUserPolicy(any(UUID.class))).thenReturn(ChatQuotaPolicy.unlimited());
+        when(repository.organizationConsumption(any(UUID.class), any(LocalDate.class)))
+                .thenReturn(consumption(0L, 0L, "0", true, false));
+
+        assertThatThrownBy(this::reserveLegacy)
+                .isInstanceOf(ChatQuotaExceededException.class)
+                .hasMessageContaining("monthlyTokensUnverifiable");
+        verifyNoLegacyReservationInserted();
+    }
+
+    @SuppressWarnings("deprecation")
+    private void reserveLegacy() {
+        service.reserve(ChatTestFixtures.CHAT_ID, ChatTestFixtures.TURN_ID,
+                ChatTestFixtures.CLIENT_REQUEST_ID, ChatTestFixtures.ORGANIZATION_ID, ChatTestFixtures.USER_ID);
+    }
+
+    @SuppressWarnings("deprecation")
+    private void verifyNoLegacyReservationInserted() {
+        verify(repository, never()).insertReservation(any(UUID.class), any(UUID.class), any(UUID.class),
+                any(LocalDate.class), any(ChatQuotaProperties.class), any(Instant.class));
     }
 
     @Test

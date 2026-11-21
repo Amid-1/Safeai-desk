@@ -37,4 +37,12 @@ describe('exact usage metrics', () => {
     it('does not silently sum different currencies', () => {
         expect(summarizeUsageRows([row(), row({currency: 'EUR'})]).knownCost).toBeNull()
     })
+    it('distinguishes known zero from incomplete pricing', () => {
+        const sum = summarizeUsageRows([row({
+            costUsd: '0', coverage: {...row().coverage, pricingComplete: false, unpricedMessages: '1'},
+        })])
+        expect(sum.knownCost).toBe('0')
+        expect(sum.incompleteCostRows).toBe(1)
+        expect(sum.unknownCostRows).toBe(0)
+    })
 })

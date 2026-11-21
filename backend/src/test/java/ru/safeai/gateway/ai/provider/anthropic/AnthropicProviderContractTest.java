@@ -21,11 +21,10 @@ import ru.safeai.gateway.ai.exception.AiProviderOverloadedException;
 import ru.safeai.gateway.ai.exception.AiProviderRateLimitedException;
 import ru.safeai.gateway.ai.metadata.AiResponseStatus;
 import ru.safeai.gateway.ai.metadata.PricingStatus;
-import ru.safeai.gateway.ai.pricing.ModelPricingProperties;
-import ru.safeai.gateway.ai.pricing.ModelPricingService;
-import ru.safeai.gateway.ai.pricing.StaticConfigurationPricingResolver;
 import ru.safeai.gateway.ai.provider.*;
 import ru.safeai.gateway.ai.testsupport.ProviderContractTestServer;
+import ru.safeai.gateway.ai.testsupport.CatalogPricingFixture;
+import ru.safeai.gateway.ai.pricing.PricingResolver;
 import tools.jackson.databind.JsonNode;
 
 import java.io.IOException;
@@ -93,7 +92,7 @@ class AnthropicProviderContractTest {
 
         assertThat(result.responseStatus()).isEqualTo(expectedStatus);
         assertThat(result.finishReason()).isEqualTo(stopReason);
-        assertThat(result.requestedModel()).isEqualTo(REQUESTED_MODEL);
+        assertThat(result.requestedModel()).isEqualTo(ACTUAL_MODEL);
         assertThat(result.model()).isEqualTo(ACTUAL_MODEL);
         assertThat(result.providerRequestId())
                 .isEqualTo("anthropic-request-123");
@@ -245,19 +244,21 @@ class AnthropicProviderContractTest {
     }
 
     private AnthropicProvider provider(
-            List<ModelPricingProperties.ModelPrice> prices
+            List<CatalogPricingFixture.Price> prices
     ) {
         return provider(100_000, prices);
     }
 
     private AnthropicProvider provider(
             int maxResponseChars,
-            List<ModelPricingProperties.ModelPrice> prices
+            List<CatalogPricingFixture.Price> prices
     ) {
+        String requestedModel = prices.stream().anyMatch(p -> p.model().equals(ACTUAL_MODEL))
+                ? ACTUAL_MODEL : REQUESTED_MODEL;
         AnthropicProperties properties = new AnthropicProperties(
                 "https://api.anthropic.com/v1",
                 "test-secret-key",
-                REQUESTED_MODEL,
+                requestedModel,
                 "2023-06-01",
                 64_000,
                 2_048,
@@ -267,11 +268,9 @@ class AnthropicProviderContractTest {
                 Duration.ofSeconds(2)
         );
 
-        ModelPricingService pricingService =
-                new ModelPricingService(
-                        new ModelPricingProperties(prices),
-                        Clock.fixed(NOW, ZoneOffset.UTC)
-                );
+        PricingResolver pricingResolver = CatalogPricingFixture.resolver(
+                "anthropic", requestedModel, request().providerOperationId(), prices,
+                Clock.fixed(NOW, ZoneOffset.UTC));
 
         AiRetryProperties retryProperties = new AiRetryProperties(
                 false,
@@ -292,7 +291,7 @@ class AnthropicProviderContractTest {
         return new AnthropicProvider(
                 properties,
                 new AiResponseMetadataService(
-                        new StaticConfigurationPricingResolver(pricingService)
+                        pricingResolver
                 ),
                 new AiProviderRetryExecutor(retryProperties, attemptScope),
                 new AiContextWindowService(
@@ -303,8 +302,8 @@ class AnthropicProviderContractTest {
         );
     }
 
-    private ModelPricingProperties.ModelPrice price(String model) {
-        return new ModelPricingProperties.ModelPrice(
+    private CatalogPricingFixture.Price price(String model) {
+        return new CatalogPricingFixture.Price(
                 model,
                 new BigDecimal("3"),
                 new BigDecimal("15"),

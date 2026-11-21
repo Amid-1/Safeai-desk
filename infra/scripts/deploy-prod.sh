@@ -30,10 +30,29 @@ postgres_secret_gid="$(
     exit 1
 }
 
+# Do not switch an existing physical PGDATA to a different runtime image.
+# A logical restore on an isolated volume is NOT proof of in-place PGDATA safety.
+current_pg="$(docker compose --env-file "$env_file" -f "$compose_file" ps -aq postgres)"
+if [[ -n "$current_pg" ]]; then
+    current_image="$(docker inspect --format '{{.Config.Image}}' "$current_pg")"
+    [[ "$current_image" == "$POSTGRES_IMAGE" ]] || {
+        echo 'BLOCKED: PostgreSQL image changed over an existing container.' >&2
+        echo 'First complete a reviewed logical cutover to a NEW volume.' >&2
+        exit 1
+    }
+elif docker volume inspect safeai_postgres_data >/dev/null 2>&1; then
+    echo 'BLOCKED: unknown existing PostgreSQL volume without container.' >&2
+    echo 'Require a separate reviewed migration/cutover procedure.' >&2
+    exit 1
+fi
+
 docker compose \
     --env-file "$env_file" \
     -f "$compose_file" \
     up -d --wait --wait-timeout 180 postgres redis
+
+# The runtime ACL is revoked during bootstrap. Close traffic before changing it.
+docker compose --env-file "$env_file" -f "$compose_file" stop nginx backend
 
 # Recreate the one-shot bootstrap job on every deployment.
 # Do not recreate PostgreSQL or Redis as a side effect.
@@ -63,6 +82,13 @@ bootstrap_exit="$(docker wait "$bootstrap_id")"
 
 echo "Database role bootstrap completed successfully."
 
+docker compose --env-file "$env_file" -f "$compose_file" \
+    up -d --no-deps --force-recreate db-migrate
+migration_id="$(docker compose --env-file "$env_file" -f "$compose_file" ps -aq db-migrate)"
+[[ -n "$migration_id" ]] || { echo 'db-migrate container missing' >&2; exit 1; }
+[[ "$(docker wait "$migration_id")" == 0 ]] || { echo 'Migration or ACL failed; backend remains offline' >&2; exit 1; }
+echo 'Flyway migration and runtime ACL completed successfully.'
+
 docker compose \
     --env-file "$env_file" \
     -f "$compose_file" \
@@ -70,7 +96,7 @@ docker compose \
     --wait \
     --wait-timeout 180 \
     --remove-orphans \
-    backend nginx
+    backend nginx prometheus
 
 docker compose --env-file "$env_file" -f "$compose_file" ps
 curl --fail --silent --show-error "http://${SAFEAI_PUBLIC_BIND}/healthz"

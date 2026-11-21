@@ -1,0 +1,79 @@
+# SafeAI-Desk/infra/prometheus/tests/audit-integrity.test.yml
+rule_files:
+  - ../rules/safeai-audit-integrity.yml
+evaluation_interval: 1m
+tests:
+  - name: isolated-violation-not-masked-by-healthy-replica
+    interval: 1m
+    input_series:
+      - series: 'safeai_audit_integrity_state{instance="bad"}'
+        values: '1 2 2 2'
+      - series: 'safeai_audit_integrity_state{instance="healthy"}'
+        values: '1 1 1 1'
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: SafeAiAuditIntegrityViolation
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: SafeAiAuditIntegrityViolation
+        exp_alerts:
+          - exp_labels: {instance: bad, severity: critical, service: safeai-backend}
+            exp_annotations:
+              summary: "Audit checkpoint evidence mismatch"
+              description: "Preserve evidence; suspend checkpoint publication and retention until security review."
+  - name: stale-report
+    interval: 1m
+    input_series:
+      - series: 'safeai_audit_integrity_state{instance="stale"}'
+        values: '1 4 4 4'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: SafeAiAuditIntegrityUnavailable
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: SafeAiAuditIntegrityUnavailable
+        exp_alerts:
+          - exp_labels: {instance: stale, severity: critical, service: safeai-backend}
+            exp_annotations:
+              summary: "Independent audit verification unavailable"
+              description: "Check external verifier, signature, freshness, database and archive connectivity."
+  - name: missing
+    interval: 1m
+    input_series: []
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: SafeAiAuditIntegrityMetricMissing
+        exp_alerts:
+          - exp_labels: {severity: critical, service: safeai-backend}
+            exp_annotations:
+              summary: "Audit verification monitoring is missing"
+              description: "Check backend metrics registration, availability and scrape configuration."
+  - name: pending-checkpoint
+    interval: 1m
+    input_series:
+      - series: 'safeai_audit_integrity_state{instance="pending"}'
+        values: '6+0x16'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: SafeAiAuditIntegrityPending
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: SafeAiAuditIntegrityPending
+        exp_alerts:
+          - exp_labels: {instance: pending, severity: warning, service: safeai-backend}
+            exp_annotations:
+              summary: "Audit events remain without external checkpoint"
+              description: "Check approved checkpoint publication cadence and external pin advancement."
+  - name: not-configured
+    interval: 1m
+    input_series:
+      - series: 'safeai_audit_integrity_state{instance="local"}'
+        values: '0+0x6'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: SafeAiAuditIntegrityNotConfigured
+        exp_alerts:
+          - exp_labels: {instance: local, severity: warning, service: safeai-backend}
+            exp_annotations:
+              summary: "Independent audit verification not configured"
+              description: "Production readiness requires a configured independent verifier and pinned status key."

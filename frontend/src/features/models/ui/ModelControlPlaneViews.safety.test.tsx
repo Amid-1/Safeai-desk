@@ -75,11 +75,22 @@ const routeDecision: ModelRouteDecision = {
 }
 
 describe('RuntimeCard: достоверность сведений', () => {
+    it('не показывает успешную проверку другой модели или отключённого подключения', () => {
+        const {rerender} = render(<RuntimeCard runtime={runtime} effectiveCatalog={[entry]}
+            probe={{...probe, model: 'different'}} probePending={false} canProbe onProbe={vi.fn()} />)
+        expect(screen.getByText('Не выполнялась')).toBeVisible()
+        expect(screen.queryByText('Доступна')).not.toBeInTheDocument()
+        rerender(<RuntimeCard runtime={{...runtime, enabled: false}} effectiveCatalog={[entry]}
+            probe={probe} probePending={false} canProbe onProbe={vi.fn()} />)
+        expect(screen.getByRole('button', {name: 'Проверить доступность'})).toBeDisabled()
+        expect(screen.queryByText('Доступна')).not.toBeInTheDocument()
+    })
     it('использует возможности Runtime, а не рекламные возможности каталога', () => {
         render(<RuntimeCard runtime={runtime}
             effectiveCatalog={[createModelCatalogEntry({capabilities: ['TOOLS','VISION','STRUCTURED_OUTPUT']})]}
             probe={null} probePending={false} canProbe={false} onProbe={vi.fn()} />)
         expect(screen.getByText('Поддерживаемые возможности')).toBeInTheDocument()
+        expect(screen.getByText('Поддерживаемые возможности').closest('details')).not.toHaveAttribute('open')
         const dt = screen.getByText('Поддерживаемые возможности').closest('dt')!
         expect(dt.nextElementSibling).toHaveTextContent('Текст')
         expect(dt.nextElementSibling).not.toHaveTextContent('Инструменты')
@@ -102,13 +113,70 @@ describe('RuntimeCard: достоверность сведений', () => {
         expect(onProbe).toHaveBeenCalledTimes(1)
     })
 
+    it('не выбирает произвольную запись каталога при нескольких совпадениях', () => {
+        const onOpenCatalogVersion = vi.fn()
+        render(<RuntimeCard runtime={runtime} effectiveCatalog={[entry, {...entry, modelKey: 'alias'}]}
+            probe={null} probePending={false} canProbe={false} onProbe={vi.fn()} onOpenCatalogVersion={onOpenCatalogVersion} />)
+        expect(screen.getByText('Совпадений: 2')).toBeVisible()
+        expect(screen.getByText('Несколько действующих записей')).toBeVisible()
+        expect(screen.queryByRole('button', {name: 'Открыть историю версий'})).not.toBeInTheDocument()
+        expect(onOpenCatalogVersion).not.toHaveBeenCalled()
+    })
+
+    it('раскрывает свойства и пояснение о данных, не выполняя probe; ADMIN не получает лишних действий', () => {
+        const onProbe = vi.fn()
+        const onOpenCatalogVersion = vi.fn()
+        render(<RuntimeCard runtime={runtime} effectiveCatalog={[entry]}
+            probe={null} probePending={false} canProbe={false} onProbe={onProbe} onOpenCatalogVersion={onOpenCatalogVersion} />)
+        const details = screen.getByRole('button', {name: 'Характеристики модели'})
+        const indicator = details.querySelector('.models-runtime-tile-indicator')!
+        expect(indicator).toHaveAttribute('aria-hidden', 'true')
+        expect(details).toHaveAttribute('aria-expanded', 'false')
+        fireEvent.click(details)
+        expect(details).toHaveAttribute('aria-expanded', 'true')
+        expect(screen.getByText('Лимиты токенов', {exact: true})).toBeVisible()
+        expect(indicator).toHaveClass('models-runtime-tile-indicator--expanded')
+        expect(screen.getByText('Поддерживаемые возможности').closest('details')).toHaveAttribute('open')
+        fireEvent.click(indicator)
+        expect(details).toHaveAttribute('aria-expanded', 'false')
+        expect(indicator).not.toHaveClass('models-runtime-tile-indicator--expanded')
+        expect(screen.getByText('Поддерживаемые возможности').closest('details')).not.toHaveAttribute('open')
+        expect(screen.getByText('Поддерживаемые возможности')).not.toBeVisible()
+        fireEvent.click(details)
+        expect(details).toHaveAttribute('aria-expanded', 'true')
+        const retention = screen.getByRole('button', {name: 'Условия обработки данных'})
+        fireEvent.click(retention)
+        expect(retention).toHaveAttribute('aria-expanded', 'true')
+        expect(screen.getByText(/Сведения о хранении сами по себе/)).toBeVisible()
+        fireEvent.click(retention)
+        expect(retention).toHaveAttribute('aria-expanded', 'false')
+        expect(screen.queryByRole('button', {name: 'Перейти к проверке'})).not.toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', {name: 'Открыть историю версий'}))
+        expect(onOpenCatalogVersion).toHaveBeenCalledWith(entry)
+        expect(onProbe).not.toHaveBeenCalled()
+    })
+
+    it('переход к проверке только фокусирует элемент управления, запрос требует отдельного нажатия', () => {
+        const onProbe = vi.fn()
+        render(<RuntimeCard runtime={runtime} effectiveCatalog={[entry]}
+            probe={null} probePending={false} canProbe onProbe={onProbe} />)
+        fireEvent.click(screen.getByRole('button', {name: 'Перейти к проверке'}))
+        expect(document.getElementById('models-runtime-probe')).toHaveFocus()
+        expect(onProbe).not.toHaveBeenCalled()
+        fireEvent.click(screen.getByRole('button', {name: 'Проверить доступность'}))
+        expect(onProbe).toHaveBeenCalledTimes(1)
+    })
+
     it('отключает кнопку на время проверки и сообщает HTTP/status отдельно', () => {
         const onProbe = vi.fn()
         render(<RuntimeCard runtime={runtime} effectiveCatalog={[entry]} probe={{...probe, status:'AUTH_ERROR', httpStatus:401}}
             probePending canProbe onProbe={onProbe} />)
         expect(screen.getByRole('button', {name: 'Проверяем...'})).toBeDisabled()
         expect(screen.getByRole('status')).toHaveTextContent('Ошибка авторизации')
-        expect(screen.getByRole('status')).toHaveTextContent('HTTP 401')
+        expect(screen.getByText('HTTP 401')).not.toBeVisible()
+        fireEvent.click(screen.getByText('Технические сведения проверки'))
+        expect(screen.getByText('HTTP 401')).toBeVisible()
+        expect(screen.queryByText(probe.message)).not.toBeInTheDocument()
         expect(onProbe).not.toHaveBeenCalled()
     })
 })
@@ -120,16 +188,15 @@ describe('PolicyCard: права и смысл политики', () => {
         const onSelect = vi.fn()
         const organization = {id:'00000000-0000-0000-0000-000000000088', name:'Дочерняя компания', enabled:true, type:'TENANT' as const, protected:false, version:1}
         const {rerender} = render(<PolicyCard {...policyProps} />)
-        expect(screen.queryByPlaceholderText('Начните вводить название или UUID')).not.toBeInTheDocument()
+        expect(screen.queryByRole('combobox', {name:'Управляемая организация'})).not.toBeInTheDocument()
         rerender(<PolicyCard {...policyProps} isSuperAdmin
             organizationQuery="Доч" organizationResults={[organization]}
             onOrganizationQueryChange={onQueryChange} onOrganizationSearch={onSearch}
             onOrganizationSelect={onSelect} />)
-        fireEvent.change(screen.getByPlaceholderText('Начните вводить название или UUID'), {target:{value:'Дочерняя'}})
+        fireEvent.change(screen.getByRole('combobox', {name:'Управляемая организация'}), {target:{value:'Дочерняя'}})
         expect(onQueryChange).toHaveBeenCalledWith('Дочерняя')
-        fireEvent.click(screen.getByRole('button', {name:'Найти'}))
-        expect(onSearch).toHaveBeenCalledTimes(1)
-        fireEvent.click(screen.getByRole('button', {name:/Дочерняя компания/}))
+        expect(onSearch).not.toHaveBeenCalled()
+        fireEvent.click(screen.getByRole('option', {name:/Дочерняя компания/}))
         expect(onSelect).toHaveBeenCalledWith(organization)
     })
 
@@ -192,7 +259,10 @@ describe('CatalogTable: последняя и действующая верси�
 describe('RouteDecisionEvidence: точность доказательств', () => {
     it('показывает provenance версии v3, хэш и безопасные decimal-строки', () => {
         render(<RouteDecisionEvidence decision={routeDecision} />)
-        expect(screen.getByText('Доказательства маршрутизации V48')).toBeInTheDocument()
+        const details = screen.getByText('Технические сведения решения').closest('details')!
+        expect(details).not.toHaveAttribute('open')
+        expect(screen.queryByText(/V48/)).not.toBeInTheDocument()
+        fireEvent.click(screen.getByText('Технические сведения решения'))
         expect(screen.getByText('v3')).toBeInTheDocument()
         expect(screen.getByText('UTF8_STRUCTURAL_UNITS_V2')).toBeInTheDocument()
         expect(screen.getByText('512')).toBeInTheDocument()
@@ -210,8 +280,9 @@ describe('RouteDecisionEvidence: точность доказательств', (
         }} />)
         expect(screen.getByText('Неизвестно')).toBeInTheDocument()
         expect(screen.getAllByText('Не применялся', {exact:false}).length).toBeGreaterThan(0)
-        expect(screen.getByText('Неизвестна', {exact:false})).toBeInTheDocument()
-        expect(screen.getByText(/Отклонено · Невозможно надёжно проверить месячный бюджет/)).toBeInTheDocument()
+        expect(within(screen.getByText('Месячный бюджет').closest('div')!).getByText('Неизвестна', {exact:false})).toBeInTheDocument()
+        expect(screen.getByText('Отклонён')).toBeInTheDocument()
+        expect(screen.getByText('Причина блокировки')).toBeInTheDocument()
     })
 
     it('отображает исторические решения без придуманного provenance v3', () => {
@@ -220,6 +291,22 @@ describe('RouteDecisionEvidence: точность доказательств', (
             decisionIntegrityVersion:2,
         }} />)
         expect(screen.getByText('v2')).toBeInTheDocument()
-        expect(screen.getByText('Историческое решение V1/V2')).toBeInTheDocument()
+        expect(screen.getByText('Не зафиксирован в историческом решении')).toBeInTheDocument()
+    })
+
+    it('отличает отсутствие политики от запрета настроенной модели и непройденной проверки бюджета', () => {
+        const earlyDenial: ModelRouteDecision = { ...routeDecision, outcome: 'DENIED', reason: 'MODEL_NOT_ALLOWED',
+            selectedModelKey: null, selectedCatalogVersion: null, selectedCatalogEntryId: null,
+            selectedProvider: null, selectedProviderModelId: null, estimatedInputTokens: null,
+            estimatedOutputTokens: null, estimatedMaxCostUsd: null, monthlyCostState: 'NOT_EVALUATED',
+            monthlyCostKnown: false, monthlyBudgetUsd: null, budgetEnforcement: null, pricingComplete: false }
+        const { rerender } = render(<RouteDecisionEvidence decision={earlyDenial} />)
+        expect(screen.getByText('Правила доступа к AI не были настроены.')).toBeInTheDocument()
+        expect(screen.getByText('Модель не выбрана')).toBeInTheDocument()
+        expect(screen.getByText('Не рассчитывалась')).toBeInTheDocument()
+        expect(screen.getByText('Проверка не выполнялась')).toBeInTheDocument()
+        rerender(<RouteDecisionEvidence decision={{ ...earlyDenial, policyId: policy.id, policyVersion: 1 }} />)
+        expect(screen.queryByText('Правила доступа к AI не были настроены.')).not.toBeInTheDocument()
+        expect(screen.getByText(/Модель не разрешена для вашей организации/)).toBeInTheDocument()
     })
 })

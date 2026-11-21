@@ -9,10 +9,10 @@ export function budgetEnforcementLabel(
         value
     ) {
         case 'SOFT':
-            return 'Мягкий — предупреждать'
+            return 'Мягкий — фиксировать превышение'
 
         case 'HARD':
-            return 'Жёсткий — блокировать'
+            return 'Жёсткий — блокировать запрос'
     }
 }
 

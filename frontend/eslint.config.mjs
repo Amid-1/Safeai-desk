@@ -9,7 +9,14 @@ import typescriptEslint from 'typescript-eslint'
 const typescriptFiles = ['**/*.{ts,tsx}']
 
 export default [
-    { ignores: ['dist/**', 'coverage/**', 'node_modules/**'] },
+    // Only generated Playwright reports are excluded; test sources stay linted.
+    { ignores: [
+        'dist/**',
+        'coverage/**',
+        'node_modules/**',
+        'e2e/**/playwright-report/**',
+        'e2e/**/test-results/**',
+    ] },
     js.configs.recommended,
     ...typescriptEslint.configs.recommended,
     {
@@ -64,7 +71,7 @@ export default [
         },
     },
     {
-        files: ['scripts/**/*.cjs'],
+        files: ['scripts/**/*.cjs', 'e2e/**/*.cjs'],
         languageOptions: {
             globals: {
                 require: 'readonly',

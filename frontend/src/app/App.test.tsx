@@ -5,6 +5,7 @@
 import {
     render,
     screen,
+    fireEvent,
 } from '@testing-library/react'
 import {
     MemoryRouter,
@@ -120,6 +121,9 @@ vi.mock('../pages/AdminUsagePage', () => ({
             Admin usage page
         </div>
     ),
+}))
+vi.mock('../pages/AdminDashboardPage', () => ({
+    default: () => <div data-testid="admin-dashboard-page">Dashboard</div>,
 }))
 
 vi.mock('../pages/AdminModelsPage', () => ({
@@ -254,6 +258,28 @@ describe(
                 ).toBeInTheDocument()
             },
         )
+
+        it.each([
+            [SUPER_ADMIN, '/admin/dashboard', 'admin-dashboard-page'],
+            [ADMIN, '/chat', 'chat-page'],
+            [USER, '/chat', 'chat-page'],
+        ] as const)('выбирает главную страницу по роли: %j', async (user, home, testId) => {
+            for (const path of ['/', '/login']) {
+                setAuth(user, 'authenticated')
+                const view = renderAt(path)
+                expect(await screen.findByTestId(testId)).toBeInTheDocument()
+                expect(screen.getByTitle('На главную')).toHaveAttribute('href', home)
+                view.unmount()
+            }
+        })
+
+        it('возвращает суперадминистратора с каталога пользователей на обзор по логотипу', async () => {
+            setAuth(SUPER_ADMIN, 'authenticated')
+            renderAt('/admin/users')
+            expect(await screen.findByTestId('admin-users-page')).toBeInTheDocument()
+            fireEvent.click(screen.getByTitle('На главную'))
+            expect(await screen.findByTestId('admin-dashboard-page')).toBeInTheDocument()
+        })
 
         it(
             'включает chat-specific классы только для рабочего чата',
@@ -390,6 +416,7 @@ describe(
         )
 
         it.each([
+            ['/admin/dashboard', 'admin-dashboard-page'],
             [
                 '/admin/users',
                 'admin-users-page',
@@ -431,6 +458,14 @@ describe(
                 ).toBeInTheDocument()
             },
         )
+
+        it.each([ADMIN, USER])('запрещает доступ к Dashboard без SUPER_ADMIN: $email', async user => {
+            setAuth(user, 'authenticated')
+            renderAt('/admin/dashboard')
+            expect(await screen.findByRole('alert')).toHaveTextContent('Недостаточно прав')
+            expect(screen.queryByTestId('admin-dashboard-page')).not.toBeInTheDocument()
+            expect(screen.queryByRole('link', {name: 'Обзор'})).not.toBeInTheDocument()
+        })
 
         it(
             'показывает 404 state для неизвестного route',

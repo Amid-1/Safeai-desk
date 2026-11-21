@@ -89,6 +89,28 @@ export async function getKnowledgeDocuments(kb: string, page = 0, size = 50, sig
     return parsePageResponse(value, parseKnowledgeDocument)
 }
 
+/** Existing backend PATCH. Version check and permissions are enforced on the server. */
+export async function updateKnowledgeDocument(
+    kb: string,
+    documentId: string,
+    request: {
+        name: string
+        enabled: boolean
+        expectedVersion: number
+    },
+): Promise<KnowledgeDocumentMutationResult> {
+    const value = await apiRequest<unknown>(
+        `${path(kb)}/${uuidPathSegment(documentId)}`,
+        {
+            method: 'PATCH',
+            json: request,
+            timeoutMs: API_TIMEOUTS.default,
+        },
+    )
+
+    return parseKnowledgeDocumentMutationResult(value, 'document')
+}
+
 export async function uploadKnowledgeDocument(
     kb: string,
     file: File,
@@ -110,7 +132,7 @@ export async function uploadKnowledgeDocument(
         {
             method: 'POST',
             body: form,
-            timeoutMs: API_TIMEOUTS.default,
+            timeoutMs: API_TIMEOUTS.upload,
         },
     )
 
@@ -140,7 +162,7 @@ export async function uploadKnowledgeDocumentVersion(
         {
             method: 'POST',
             body: form,
-            timeoutMs: API_TIMEOUTS.default,
+            timeoutMs: API_TIMEOUTS.upload,
         },
     )
 

@@ -1,6 +1,7 @@
 // frontend/src/features/admin-users/lib/useAdminUsersDirectory.ts
 import {
     useEffect,
+    useCallback,
     useRef,
     useState,
 } from 'react'
@@ -30,6 +31,7 @@ import {
 import {
     normalizePageResponse,
 } from '../../../shared/lib/page'
+import { directoryPage, directoryUuid, useDirectoryUrl } from '../../../shared/lib/adminDirectoryUrl'
 import type {
     AdminUsersFilter,
 } from '../ui/AdminUsersView'
@@ -60,6 +62,7 @@ export function useAdminUsersDirectory(
         )
     const [organizations, setOrganizations] =
         useState<OrganizationDirectoryItem[]>([])
+    const [displayOrganizations, setDisplayOrganizations] = useState<OrganizationDirectoryItem[]>([])
 
     const [loadError, setLoadError] =
         useState('')
@@ -70,17 +73,23 @@ export function useAdminUsersDirectory(
     const [organizationsLoading, setOrganizationsLoading] =
         useState(false)
 
-    const [page, setPage] = useState(0)
+    const { params, change } = useDirectoryUrl()
+    const linkedUserId = directoryUuid(params.get('userId'))
+    const organizationId = currentUserIsSuperAdmin ? directoryUuid(params.get('organizationId')) : ''
+    const page = directoryPage(params.get('page'))
+    const setPage = useCallback((next: number) => change({page: next ? String(next) : ''}), [change])
     const [totalPages, setTotalPages] =
         useState(0)
     const [reloadToken, setReloadToken] =
         useState(0)
-    const [filter, setFilter] =
-        useState<AdminUsersFilter>('ALL')
-    const [status, setStatus] =
-        useState<'ALL' | 'ACTIVE' | 'DISABLED'>('ALL')
-    const [searchDraft, setSearchDraft] = useState('')
-    const [appliedSearch, setAppliedSearch] = useState('')
+    const rawRole = params.get('role')
+    const filter: AdminUsersFilter = rawRole === 'ADMIN' || rawRole === 'USER'
+        || (rawRole === 'SUPER_ADMIN' && currentUserIsSuperAdmin) ? rawRole : 'ALL'
+    const rawStatus = params.get('status')
+    const status: 'ALL' | 'ACTIVE' | 'DISABLED' = rawStatus === 'ACTIVE' || rawStatus === 'DISABLED' ? rawStatus : 'ALL'
+    const appliedSearch = (params.get('query') ?? '').slice(0, 120)
+    const [searchDraft, setSearchDraft] = useState(appliedSearch)
+    useEffect(() => { setSearchDraft(appliedSearch) }, [appliedSearch])
     const [totalMatched, setTotalMatched] = useState(0)
 
     // Query is applied automatically after a pause. Deleting the text
@@ -88,13 +97,12 @@ export function useAdminUsersDirectory(
     useEffect(() => {
         const query = searchDraft.trim()
         if (query === appliedSearch) return
-        if (query.length < 2 || query.length > 120) return
+        if (query.length > 120) return
         const timeout = window.setTimeout(() => {
-            setAppliedSearch(query)
-            setPage(0)
-        }, 350)
+            change({query, page: ''}, true)
+        }, 300)
         return () => window.clearTimeout(timeout)
-    }, [searchDraft, appliedSearch])
+    }, [searchDraft, appliedSearch, change])
 
     const [detailsUser, setDetailsUser] =
         useState<UserDetails | null>(null)
@@ -102,6 +110,8 @@ export function useAdminUsersDirectory(
         useState<string | null>(null)
     const [detailsError, setDetailsError] =
         useState('')
+    const [linkedDetailsError, setLinkedDetailsError] = useState('')
+    const previousLinkedId = useRef('')
 
     const usersSequenceRef = useRef(0)
     const usersControllerRef =
@@ -141,10 +151,12 @@ export function useAdminUsersDirectory(
                                 ? undefined
                                 : status === 'ACTIVE',
                             query: appliedSearch || undefined,
+                            ...(organizationId ? {organizationId} : {}),
                         },
                         {signal: controller.signal},
                     ),
                     getUserStatistics({
+                        ...(currentUserIsSuperAdmin ? {directory: true, organizationId: organizationId || undefined} : {}),
                         signal:
                             controller.signal,
                     }),
@@ -228,6 +240,11 @@ export function useAdminUsersDirectory(
         filter,
         status,
         appliedSearch,
+        organizationId,
+        currentUserIsSuperAdmin,
+        currentUser.id,
+        currentUser.organizationId,
+        setPage,
     ])
 
     useEffect(() => {
@@ -242,6 +259,7 @@ export function useAdminUsersDirectory(
                 }
 
                 setOrganizations([])
+                setDisplayOrganizations([])
                 setOrganizationsError('')
                 setOrganizationsLoading(false)
             })
@@ -275,6 +293,7 @@ export function useAdminUsersDirectory(
                 if (controller.signal.aborted) {
                     return
                 }
+                setDisplayOrganizations(loaded)
 
                 setOrganizations(
                     loaded.filter(
@@ -312,6 +331,30 @@ export function useAdminUsersDirectory(
         }
     }, [currentUserIsSuperAdmin])
 
+    // The creation picker stays restricted to enabled client organizations.
+    // Resolve missing display names separately, including PLATFORM and disabled tenants.
+    useEffect(() => {
+        if (!currentUserIsSuperAdmin || !users.length) return
+        const controller = new AbortController()
+        const known = new Set(displayOrganizations.map(row => row.id))
+        const missing = [...new Set(users.map(row => row.organizationId))].filter(id => !known.has(id))
+        if (!missing.length) return
+        async function resolveMissing() {
+            const resolved: OrganizationDirectoryItem[] = []
+            for (let i = 0; i < missing.length && !controller.signal.aborted; i += 5) {
+                const batch = await Promise.all(missing.slice(i, i + 5).map(id =>
+                    searchOrganizationDirectory(id, 1, {signal: controller.signal})
+                        .then(rows => rows.filter(row => row.id === id)).catch(() => [])))
+                resolved.push(...batch.flat())
+            }
+            if (!controller.signal.aborted && resolved.length) {
+                setDisplayOrganizations(previous => [...new Map([...previous, ...resolved].map(row => [row.id, row])).values()])
+            }
+        }
+        void resolveMissing()
+        return () => controller.abort()
+    }, [currentUserIsSuperAdmin, users, displayOrganizations])
+
     useEffect(() => {
         return () => {
             usersControllerRef.current?.abort()
@@ -333,21 +376,18 @@ export function useAdminUsersDirectory(
     function changeFilter(
         nextFilter: AdminUsersFilter,
     ) {
-        setFilter(nextFilter)
-        setPage(0)
+        change({role: nextFilter === 'ALL' ? '' : nextFilter, page: ''})
     }
 
     function changeStatus(next: 'ALL' | 'ACTIVE' | 'DISABLED') {
-        setStatus(next)
-        setPage(0)
+        change({status: next === 'ALL' ? '' : next, page: ''})
     }
 
     function changeSearchDraft(value: string) {
         setSearchDraft(value)
         // The native clear icon must reset the applied server query immediately.
         if (!value.trim()) {
-            setAppliedSearch('')
-            setPage(0)
+            change({query: '', page: ''})
         }
     }
 
@@ -356,26 +396,62 @@ export function useAdminUsersDirectory(
         if (next.length > 120) {
             return
         }
-        setAppliedSearch(next)
-        setPage(0)
+        change({query: next, page: ''})
     }
 
     function clearSearch() {
         setSearchDraft('')
-        setAppliedSearch('')
-        setPage(0)
+        change({query: '', page: ''})
     }
 
     function selectSearchSuggestion(user: User) {
         // Exact email is unambiguous even for users sharing full names.
         setSearchDraft(user.email)
-        setAppliedSearch(user.email)
-        setPage(0)
+        change({query: user.email, page: ''})
     }
+
+    // A direct link is resolved by the existing protected details endpoint,
+    // never by searching a loaded page or trusting an ID supplied in the URL.
+    useEffect(() => {
+        if (!linkedUserId && !previousLinkedId.current) return
+        previousLinkedId.current = linkedUserId
+        const sequence = ++detailsSequenceRef.current
+        detailsControllerRef.current?.abort()
+        setDetailsUser(null)
+        setDetailsError('')
+        setLinkedDetailsError('')
+        setDetailsLoadingUserId(linkedUserId || null)
+        if (!linkedUserId) return
+        const controller = new AbortController()
+        detailsControllerRef.current = controller
+        void getUserDetails(linkedUserId, { signal: controller.signal })
+            .then(details => {
+                if (controller.signal.aborted || sequence !== detailsSequenceRef.current) return
+                if (details.id !== linkedUserId || (!currentUserIsSuperAdmin
+                    && details.organizationId !== currentUser.organizationId)) {
+                    setLinkedDetailsError('Карточка пользователя недоступна.')
+                    return
+                }
+                setDetailsUser(details)
+            })
+            .catch(() => {
+                if (!controller.signal.aborted && sequence === detailsSequenceRef.current) {
+                    setLinkedDetailsError('Не удалось открыть карточку пользователя. Проверьте права доступа или повторите попытку.')
+                }
+            })
+            .finally(() => {
+                if (!controller.signal.aborted && sequence === detailsSequenceRef.current) setDetailsLoadingUserId(null)
+            })
+        return () => controller.abort()
+    }, [linkedUserId, currentUserIsSuperAdmin, currentUser.organizationId, currentUser.id, reloadToken])
 
     async function openDetailsModal(
         user: User,
     ) {
+        if (linkedUserId) {
+            change({userId: user.id})
+            return
+        }
         const sequence =
             ++detailsSequenceRef.current
 
@@ -444,6 +520,7 @@ export function useAdminUsersDirectory(
         setDetailsUser(null)
         setDetailsError('')
         setDetailsLoadingUserId(null)
+        if (linkedUserId) change({userId: ''}, true)
     }
 
     return {
@@ -451,7 +528,8 @@ export function useAdminUsersDirectory(
         users,
         statistics,
         organizations,
-        loadError,
+        displayOrganizations: currentUserIsSuperAdmin ? displayOrganizations : [],
+        loadError: loadError || linkedDetailsError,
         organizationsError,
         loading,
         organizationsLoading,
@@ -462,6 +540,10 @@ export function useAdminUsersDirectory(
         searchDraft,
         appliedSearch,
         totalMatched,
+        organizationId,
+        changeOrganization: (id: string) => {
+            if (currentUserIsSuperAdmin) change({organizationId: directoryUuid(id), page: ''})
+        },
         setSearchDraft: changeSearchDraft,
         changeStatus,
         applySearch,

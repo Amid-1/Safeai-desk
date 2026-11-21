@@ -8,6 +8,7 @@ import ru.safeai.gateway.audit.config.AuditOutboxProperties;
 import ru.safeai.gateway.audit.entity.AuditOutboxEntity;
 import ru.safeai.gateway.audit.repository.AuditEventRepository;
 import ru.safeai.gateway.audit.repository.AuditOutboxRepository;
+import ru.safeai.gateway.common.security.CorrelationContext;
 
 import java.util.Objects;
 import java.util.Optional;
@@ -123,6 +124,7 @@ public final class AuditOutboxProcessor {
     private ItemResult processOne() {
         AtomicReference<UUID> selectedId =
                 new AtomicReference<>();
+        AtomicReference<UUID> selectedCorrelationId = new AtomicReference<>();
 
         try {
             Boolean found =
@@ -143,26 +145,17 @@ public final class AuditOutboxProcessor {
                                 selectedId.set(
                                         item.getId()
                                 );
+                                selectedCorrelationId.set(item.getCorrelationId());
 
+                                try (var ignored = CorrelationContext.open(item.getCorrelationId())) {
                                 int insertedRows =
                                         eventRepository
                                                 .insertFromOutbox(
                                                         item.getId()
                                                 );
 
-                                /*
-                                 * 1 = inserted.
-                                 * 0 = same event id already exists: delivery is
-                                 * idempotently complete.
-                                 */
-                                if (insertedRows != 0
-                                        && insertedRows != 1) {
-
-                                    throw new IllegalStateException(
-                                            "Unexpected insertFromOutbox affected rows: "
-                                                    + insertedRows
-                                    );
-                                }
+                                AuditDeliveryEvidence.requireDelivered(
+                                        eventRepository, item.getId(), insertedRows);
 
                                 outboxRepository.delete(
                                         item
@@ -171,6 +164,7 @@ public final class AuditOutboxProcessor {
                                 outboxRepository.flush();
 
                                 return true;
+                                }
                             }
                     );
 
@@ -187,6 +181,7 @@ public final class AuditOutboxProcessor {
                 throw failure;
             }
 
+            try (var ignored = CorrelationContext.open(selectedCorrelationId.get())) {
             AuditOutboxFailureService.FailureResult
                     result =
                     failureService.markFailure(
@@ -197,6 +192,13 @@ public final class AuditOutboxProcessor {
             metrics.recordDeliveryFailure(
                     result.deadLettered()
             );
+
+            if (failure instanceof AuditEvidenceConflictException) {
+                metrics.recordIntegrityConflict();
+                if (!result.rowFound()) {
+                    throw failure;
+                }
+            }
 
             if (!result.rowFound()) {
                 /*
@@ -209,6 +211,7 @@ public final class AuditOutboxProcessor {
             return result.deadLettered()
                     ? ItemResult.DEAD_LETTERED
                     : ItemResult.FAILED;
+            }
         }
     }
 

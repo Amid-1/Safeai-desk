@@ -1,642 +1,255 @@
 /* frontend/src/features/usage/styles/AdminUsagePage.css */
+/* Desktop dashboard: one scroll owner for report data; upper controls stay put. */
 .usage-page {
     --usage-border: #dbe3ef;
-    --usage-muted: #64748b;
-    --usage-surface: #ffffff;
-    --usage-shadow: 0 10px 28px rgba(15, 23, 42, 0.07);
-
+    --usage-muted: #465b78;
     width: 100%;
     height: 100%;
     min-width: 0;
     min-height: 0;
-    overflow: hidden;
-}
-
-.usage-page__upper {
     display: flex;
-    min-width: 0;
-    min-height: 0;
-    flex: 1 1 auto;
     flex-direction: column;
     gap: 12px;
-    overflow: auto;
-    padding-bottom: 8px;
+    overflow: hidden;
 }
-
-.usage-page__header {
-    display: flex;
-    flex: 0 0 auto;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: 24px;
+.content--workspace:not(.content--chat) > .page.usage-page { overflow: hidden; }
+.usage-workspace-upper { display: flex; flex-direction: column; gap: 12px; flex: 0 0 auto; min-width: 0; min-height: 0; }
+.usage-summary-viewport { min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.usage-summary-content { display: flex; flex-direction: column; gap: 12px; }
+.usage-page__upper { display: flex; flex-direction: column; gap: 10px; flex: 0 0 auto; min-width: 0; position: relative; z-index: 3; }
+.usage-dashboard-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 20px; background: linear-gradient(110deg,#fff,#f0f3ff); border: 1px solid var(--usage-border); border-left: 4px solid #5261e9; border-radius: 14px; }
+.usage-eyebrow { font-size: 12px; font-weight: 750; letter-spacing: .08em; color: #5147db; }
+.usage-dashboard-header h1 { margin: 3px 0 0; font-size: clamp(26px,2.2vw,32px); line-height: 1.15; color: #172644; }
+.usage-page .usage-scope { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 6px 12px; background: #ffffffb3; border: 1px solid #dbe3f3; border-radius: 9px; text-align: right; overflow-wrap: anywhere; }
+.usage-scope span { color: var(--usage-muted); font-size: 13px; font-weight: 650; }
+.usage-scope strong { color: #243956; font-size: 16px; }
+.usage-filters { padding: 9px 15px; background: #fff; border: 1px solid var(--usage-border); border-radius: 12px; }
+.usage-filter-bar, .usage-filter-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.usage-applied-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.usage-applied-filters strong { font-size: 15px; margin-right: 4px; color: #263953; }
+.usage-applied-filters span { background: #f5f8fd; border: 1px solid #dbe5f2; border-radius: 7px; padding: 5px 9px; color: #405a82; font-size: 14px; overflow-wrap: anywhere; }
+.usage-applied-filters .usage-filter-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 5px 3px 9px; max-width: 100%; }
+.usage-page .usage-filter-chip button { border: 0; background: transparent; color: #405a82; box-shadow: none; border-radius: 5px; padding: 0; width: 27px; min-height: 27px; flex: 0 0 auto; font-size: 21px; line-height: 1; }
+.usage-page .usage-filter-chip button:hover:not(:disabled) { background: #e1e9f7; color: #213d71; }
+.usage-page .usage-filter-chip button:focus-visible { outline: 2px solid #356de8; }
+.usage-page .usage-filter-chip button:disabled { opacity: .45; }
+.usage-page .secondary-button, .usage-page .usage-filter-actions button { min-height: 36px; padding: 7px 12px; font-size: 14px; white-space: nowrap; }
+.usage-filter-editor { margin-top: 9px; padding-top: 9px; border-top: 1px solid #e5eaf3; }
+.usage-filter-editor[hidden] { display: none; }
+.usage-filter-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; align-items: start; }
+.usage-filter-grid--org { grid-template-columns: repeat(4,minmax(0,1fr)); }
+.usage-filter-grid label { display: grid; min-width: 0; gap: 4px; font-size: 14px; font-weight: 650; color: #344a6a; }
+.usage-filter-grid input { width: 100%; min-width: 0; }
+.usage-filter-grid input[type=date] { min-height: 36px; padding: 6px 10px; }
+.usage-filter-grid .usage-filter-combobox__label { margin-bottom: 4px; font-size: 14px; line-height: 1.4; color: #344a6a; font-weight: 650; }
+.usage-filter-grid .usage-filter-combobox__control { min-height: 36px; }
+.usage-filter-grid .usage-filter-combobox__control input { min-height: 34px; padding-block: 6px; }
+.usage-filter-actions { justify-content: flex-end; margin-top: 8px; }
+.usage-filter-actions small { color: var(--usage-muted); font-size: 13px; margin-right: auto; }
+.usage-filter-dirty, .usage-export-error { margin: 6px 0 0; color: #92400e; font-size: 14px; line-height: 1.4; }
+.usage-export-error { color: #b91c1c; }
+.usage-tabs { display: flex; flex-wrap: wrap; gap: 7px; }
+.usage-page .usage-tabs .filter-button { min-height: 40px; padding: 8px 17px; border-radius: 9px; font-size: 15px; }
+.usage-page .usage-tabs .active { background: #285be6; color: white; border-color: #285be6; box-shadow: 0 3px 8px #285be625; }
+.usage-kpi-section { flex: 0 0 auto; min-width: 0; }
+.usage-filter-summary { flex: 0 0 auto; padding: 8px 14px; border: 1px solid var(--usage-border); border-radius: 10px; background: #fff; color: #33496a; font-size: 13px; }
+.usage-kpis { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+.usage-kpi { min-width: 0; padding: 14px 18px; background: linear-gradient(130deg,#f1f5ff,#fff 85%); border: 1px solid #dbe5f5; border-top: 3px solid #356de8; border-radius: 12px; display: flex; flex-direction: column; gap: 5px; }
+.usage-kpi:nth-child(2) { background: linear-gradient(130deg,#f3efff,#fff 85%); border-top-color: #7955d7; }
+.usage-kpi:nth-child(3) { background: linear-gradient(130deg,#effaf3,#fff 85%); border-top-color: #21925b; }
+.usage-kpi.usage-kpi--attention { background: #fff9ed; border-top-color: #c47b19; }
+.usage-kpi__label { color: #3b5274; font-size: 15px; font-weight: 700; }
+.usage-kpi__value { font-size: clamp(30px,2.6vw,38px); line-height: 1.15; color: #172644; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.usage-kpi__hint, .usage-kpi-context { color: var(--usage-muted); font-size: 13px; line-height: 1.45; }
+.usage-kpi-context { margin: 4px 2px 0; }
+.usage-results-panel { display: flex; flex: 0 1 auto; flex-direction: column; min-height: 0; min-width: 0; background: #fff; border: 1px solid var(--usage-border); border-radius: 14px; overflow: hidden; }
+.usage-results-toolbar { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 15px 18px; border-bottom: 1px solid #e1e7f0; }
+.usage-results-heading { min-width: 0; flex: 1 1 220px; }
+.usage-results-heading h2 { margin: 0; font-size: 21px; color: #213756; }
+.usage-results-heading p { margin: 4px 0 0; color: var(--usage-muted); font-size: 13px; line-height: 1.4; }
+.usage-results-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.usage-view-switch { display: inline-flex; padding: 3px; gap: 2px; background: #edf2fa; border: 1px solid #dce5f2; border-radius: 9px; }
+.usage-page .usage-view-switch button { font-size: 14px; color: #405572; background: transparent; border: 1px solid transparent; box-shadow: none; padding: 6px 12px; min-height: 34px; border-radius: 6px; }
+.usage-page .usage-view-switch button[aria-pressed=true] { background: white; color: #2055d6; border-color: #d8e3f5; box-shadow: 0 1px 3px #162d5220; }
+.usage-results-body { display: contents; }
+.usage-results-body > .usage-export-error { padding: 0 13px 6px; }
+.usage-data-viewport { flex: 0 1 auto; min-height: 0; min-width: 0; overflow: auto; overscroll-behavior: contain; }
+/* Inserting a sticky organization detail must not anchor the scroller on the displaced SVG. */
+.usage-data-viewport:has(.usage-breakdown-chart--organizations) { overflow-anchor: none; }
+.usage-results-panel--table .usage-data-viewport { --usage-table-max-height: none; max-height: var(--usage-table-max-height); }
+.usage-data-viewport:focus-visible { outline: 2px solid #356de8; outline-offset: -2px; }
+.usage-report-resizer { display: flex; flex: 0 0 18px; align-items: center; justify-content: center; background: #f8faff; border-bottom: 1px solid #e1e7f0; cursor: ns-resize; touch-action: none; user-select: none; }
+.usage-report-resizer span { width: 56px; height: 5px; border-radius: 5px; background: #a1b1c9; }
+.usage-report-resizer:hover { background: #e8efff; }
+.usage-report-resizer:hover span { background: #356de8; }
+.usage-report-resizer:focus-visible { outline: 2px solid #356de8; outline-offset: -2px; }
+@media (min-width: 901px) and (min-height: 621px) {
+    .usage-page--resized .usage-summary-viewport { max-height: var(--usage-summary-height); }
+    .usage-page--summary-hidden .usage-summary-viewport { visibility: hidden; overflow: hidden; }
+    .usage-page--summary-hidden .usage-workspace-upper { gap: 0; }
+    .usage-page--resized .usage-results-panel { flex: 1 1 0; }
+    .usage-page--resized .usage-data-viewport { flex: 1 1 0; }
+    .usage-page--resized .usage-breakdown-chart__frame, .usage-page--resized .usage-chart-viewport {
+        height: calc(var(--usage-normal-plot-height) + var(--usage-released-height));
+    }
+    .usage-page--resized.usage-page--expanded .usage-breakdown-chart__frame,
+    .usage-page--resized.usage-page--expanded .usage-chart-viewport {
+        height: calc(var(--usage-normal-plot-height) + var(--usage-released-height) + clamp(100px,16vh,200px));
+    }
 }
-
-.usage-page__header h1,
-.usage-page__header p,
-.usage-section-heading h2,
-.usage-section-heading p,
-.usage-report-heading h2,
-.usage-report-heading p {
-    margin: 0;
-}
-
-.usage-page__header p,
-.usage-section-heading p,
-.usage-report-heading p {
-    margin-top: 8px;
-}
-
-.usage-scope {
-    display: grid;
-    min-width: 210px;
-    flex: 0 0 auto;
-    gap: 3px;
-    padding: 14px 18px;
-    border: 1px solid var(--usage-border);
-    border-radius: 14px;
-    background: var(--usage-surface);
-    box-shadow: var(--usage-shadow);
-}
-
-.usage-scope__label {
-    color: #64748b;
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-}
-
-.usage-filters {
-    flex: 0 0 auto;
-    padding: 24px;
-}
-
-.usage-section-heading {
-    margin-bottom: 18px;
-}
-
-.usage-filter-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    align-items: start;
-    gap: 16px;
-}
-
-.usage-filter-grid label {
-    display: grid;
-    min-width: 0;
-    gap: 7px;
-    font-weight: 700;
-}
-
-.usage-filter-grid input {
+.usage-data-viewport > .state-block { margin: 12px; }
+.usage-page .usage-table { width: 100%; min-width: 940px; margin: 0; border-collapse: separate; border-spacing: 0; }
+.usage-page .usage-table thead tr th { position: sticky; top: 0; z-index: 2; background: #edf3fc; box-shadow: 0 1px 0 #dce5f2; color: #314b6c; font-size: 14px; text-transform: none; }
+/* Keep feature typography independent of the lazy-loaded shared admin stylesheet. */
+.usage-page .usage-table thead tr th, .usage-page .usage-table tbody td { padding: 13px 16px; vertical-align: middle; line-height: 1.45; white-space: normal; overflow-wrap: anywhere; }
+.usage-page .usage-table tbody td { font-size: 16px; border-bottom: 1px solid #e8edf5; }
+.usage-page .usage-table tr > :nth-last-child(n+2):nth-last-child(-n+5) { text-align: right; font-variant-numeric: tabular-nums; }
+.usage-page .usage-table td:nth-last-child(3) { font-weight: 700; color: #203555; }
+.usage-page .usage-table tbody tr:nth-child(even) { background: #f8fafd; }
+.usage-page .usage-table tbody tr:hover { background: #f7faff; }
+.usage-user-label { font-weight: 650; color: #243956; overflow-wrap: anywhere; }
+.usage-page button.usage-drilldown { padding: 0; text-align: left; min-height: 0; border: 0; background: transparent; color: #2357cf; box-shadow: none; font-size: inherit; font-weight: 650; overflow-wrap: anywhere; white-space: normal; }
+.usage-page button.usage-drilldown:hover { text-decoration: underline; }
+.usage-page button.usage-drilldown:disabled { color: #64748b; text-decoration: none; }
+.usage-coverage { display: flex; min-width: 178px; align-items: flex-start; gap: 8px; font-size: 14px; }
+.usage-coverage__indicator { width: 8px; height: 8px; flex: 0 0 auto; margin-top: 5px; border-radius: 50%; background: #64748b; }
+.usage-coverage > div { display: grid; gap: 2px; }
+.usage-coverage--complete .usage-coverage__indicator { background: #16a34a; box-shadow: 0 0 0 3px #dcfce7; }
+.usage-coverage--partial .usage-coverage__indicator { background: #d97706; }
+.usage-results-footer { flex: 0 0 auto; border-top: 1px solid #e1e7f0; padding: 8px 16px; background: #fafcff; min-height: 44px; display: flex; align-items: center; }
+.usage-results-footer .pagination { width: 100%; margin: 0; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.usage-results-footer .pagination__summary { background: transparent; border: 0; padding: 4px 0; gap: 8px; }
+.usage-results-footer .pagination__summary strong, .usage-results-footer .pagination__summary span, .usage-footer-status { font-size: 14px; }
+.usage-footer-status { color: var(--usage-muted); }
+.usage-breakdown-chart, .usage-chart-card { min-width: 0; padding: 16px 20px; display: flex; flex-direction: column; box-sizing: border-box; }
+.usage-breakdown-chart__top, .usage-chart-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.usage-breakdown-chart__top h3, .usage-chart-heading h3 { margin: 0; font-size: 18px; color: #213756; }
+.usage-breakdown-chart__top p, .usage-chart-heading p, .usage-chart-note { margin: 5px 0 0; font-size: 14px; color: var(--usage-muted); line-height: 1.45; }
+#usage-breakdown-chart-content { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 10px; }
+.usage-breakdown-chart__plot { min-width: 540px; width: 100%; display: flex; flex: 1 0 auto; flex-direction: column; }
+.usage-breakdown-chart__frame {
+    --usage-normal-plot-height: max(var(--usage-row-height, 0px), clamp(180px,22vh,250px));
     width: 100%;
-    min-width: 0;
-}
-
-.usage-filter-grid small {
-    line-height: 1.35;
-}
-
-.usage-filter-actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 10px;
-    margin-top: 20px;
-}
-
-.usage-report {
-    display: flex;
-    min-width: 0;
-    min-height: 0;
-    flex-direction: column;
-    gap: 16px;
-}
-
-.usage-tabs {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-.usage-tabs .filter-button {
-    border-radius: 10px;
-}
-
-.usage-report-heading {
-    display: grid;
-    gap: 2px;
-}
-
-.usage-report .state-block--empty {
-    display: flex;
-    min-height: 190px;
-    flex-direction: column;
-    justify-content: center;
-}
-
-.usage-page__upper > .state-block,
-.usage-report > .state-block {
+    height: var(--usage-normal-plot-height);
     flex: 0 0 auto;
-    margin: 0;
 }
-
-.usage-page .usage-report-card {
-    display: flex;
-    box-sizing: border-box;
-    min-width: 0;
-    min-height: 0;
-    flex-direction: column;
-    margin: 0;
-    overflow: hidden;
+.usage-chart-links { margin-top: 8px; border: 1px solid #dbe3ef; border-radius: 8px; padding: 8px; }
+.usage-chart-links summary { cursor: pointer; color: #2357cf; font-weight: 600; }
+.usage-chart-links > div { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.usage-chart-links > div button { min-height: 34px; font-size: 13px; }
+:is(.usage-page, .platform-dashboard) button.usage-chart-choice {
+    min-height: 34px; max-width: 100%; padding: 6px 11px; border: 1px solid #cedaee;
+    border-radius: 8px; background: #f4f7fc; color: #28518c; box-shadow: none;
+    font-size: 13px; font-weight: 650; white-space: normal; overflow-wrap: anywhere;
 }
-
-.usage-page .resizable-scroll-region__viewport.usage-table-scroll {
+:is(.usage-page, .platform-dashboard) button.usage-chart-choice:hover:not(:disabled) { background: #e9effc; }
+:is(.usage-page, .platform-dashboard) button.usage-chart-choice[aria-pressed=true], .usage-page button.usage-chart-primary-action {
+    background: #285be6; color: #fff; border: 1px solid #285be6; box-shadow: none;
+}
+:is(.usage-page, .platform-dashboard) button.usage-chart-choice[aria-pressed=true]:hover:not(:disabled),
+.usage-page button.usage-chart-primary-action:hover:not(:disabled) { background: #204cc8; }
+:is(.usage-page, .platform-dashboard) button.usage-chart-choice:focus-visible, .usage-page button.usage-chart-primary-action:focus-visible {
+    outline: 2px solid #356de8; outline-offset: 2px;
+}
+.usage-chart-selection { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.usage-chart-selection strong, .usage-chart-selection span { flex-basis: 100%; }
+.usage-chart-selection--organization {
+    position: sticky; top: 0; z-index: 2; flex: 0 0 auto; background: #fff; margin: 0;
+    box-shadow: 0 3px 10px #17264415;
+    /* A sticky card taller than the scrollport otherwise traps its bottom actions. */
+    box-sizing: border-box; max-height: var(--usage-chart-viewport-height, 60vh);
+    min-height: 0; align-content: flex-start; overflow: auto;
+    overscroll-behavior: contain; overflow-anchor: none;
+}
+.usage-chart-selection--organization:focus-visible { outline: 2px solid #356de8; outline-offset: -2px; }
+.usage-chart-selection--organization .usage-budget-cell { flex-basis: 100%; grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); border-top: 1px solid #dbe3ef; padding-top: 8px; }
+.usage-chart-selection--organization .usage-budget-cell small { grid-column: 1 / -1; }
+.usage-budget-cell { display: grid; gap: 4px; min-width: 160px; text-align: left; }
+.usage-chart-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.usage-daily-scroll { overflow-x: auto; min-width: 0; width: 100%; }
+.usage-chart-action-tick { cursor: pointer; }
+.usage-breakdown-chart__legend { display: flex; flex-wrap: wrap; gap: 18px; color: #405572; font-size: 14px; }
+.usage-breakdown-chart__legend span::before { display: inline-block; width: 9px; height: 9px; margin-right: 5px; border-radius: 3px; content: ''; background: #356de8; }
+.usage-breakdown-chart__legend span:last-child::before { background: #169f8d; }
+.usage-breakdown-chart__warning { color: #92400e; font-size: 14px; margin: 8px 0; }
+.usage-chart-heading { flex: 0 0 auto; }
+.usage-chart-select { display: grid; gap: 4px; font-size: 14px; color: #43536a; font-weight: 650; }
+.usage-chart-select select { max-width: 100%; min-height: 36px; padding: 5px 8px; border: 1px solid #cedaeb; border-radius: 8px; background: white; }
+#usage-daily-chart-content { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+/* Recharts needs a definite parent height, including inside a scroll container. */
+.usage-chart-viewport {
+    --usage-normal-plot-height: clamp(200px,22vh,250px);
+    flex: 0 0 auto;
+    height: var(--usage-normal-plot-height);
     min-width: 0;
-    min-height: 0;
+    width: 100%;
+}
+.usage-chart-note { flex: 0 0 auto; }
+.usage-page--expanded .usage-results-panel { flex: 1 1 0; }
+.usage-page--expanded .usage-data-viewport { flex: 1 1 0; }
+.usage-page--expanded .usage-breakdown-chart, .usage-page--expanded .usage-chart-card { height: auto; }
+/* Add height even when many rows already make the normal plot tall.
+   The report viewport, not the page or the SVG, owns vertical scrolling. */
+.usage-page--expanded .usage-breakdown-chart__frame, .usage-page--expanded .usage-chart-viewport {
+    height: calc(var(--usage-normal-plot-height) + clamp(100px,16vh,200px));
+}
+/* Long filter forms must never squeeze the report to zero height on short displays. */
+@media (min-height: 621px) and (max-height: 820px) and (min-width: 901px) {
+    /* On short desktop displays the organization chart has more toolbar controls.
+       Reserve a usable data viewport; only when necessary can the upper region scroll. */
+    .usage-page:not(.usage-page--lowered):has(.usage-results-panel--chart .usage-breakdown-chart--organizations):not(:has(.usage-filter-editor:not([hidden]))) .usage-workspace-upper {
+        flex: 0 1 auto;
+    }
+    .usage-page:not(.usage-page--lowered):not(:has(.usage-filter-editor:not([hidden]))) .usage-results-panel--chart:has(.usage-breakdown-chart--organizations) {
+        flex: 1 1 0; min-height: min(380px, 60%);
+    }
+    .usage-page:not(.usage-page--lowered):not(:has(.usage-filter-editor:not([hidden]))) .usage-results-panel--chart:has(.usage-breakdown-chart--organizations) .usage-data-viewport {
+        flex: 1 1 0;
+    }
+    .content--workspace:not(.content--chat) > .page.usage-page:has(.usage-filter-editor:not([hidden])) { overflow-y: auto; }
+    .usage-page:has(.usage-filter-editor:not([hidden])) .usage-results-panel { flex: 0 0 auto; max-height: 440px; }
+}
+@media (max-width: 900px), (max-height: 620px) {
+    .content--workspace:not(.content--chat) > .page.usage-page, .usage-page { overflow-y: auto; }
+    .usage-results-panel, .usage-page--expanded .usage-results-panel { flex: 0 0 auto; }
+    .usage-data-viewport, .usage-page--expanded .usage-data-viewport { flex: 0 0 auto; overscroll-behavior: auto; }
+    .usage-results-panel--table .usage-data-viewport { max-height: min(60dvh, 560px); }
+    .usage-report-resizer { display: none; }
+    .usage-summary-viewport { overflow: visible; }
+    .usage-filter-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (min-width: 901px) and (min-height: 621px) {
+    .usage-page--lowered .usage-workspace-upper { flex: 0 0 auto; }
+    .usage-page--lowered .usage-summary-viewport { height: var(--usage-summary-height); }
+    /* In the lower range the report is a curtain: its body shrinks, but the
+       grip and footer never shrink. If the toolbar wraps it remains reachable. */
+    .usage-page.usage-page--lowered .usage-results-panel {
+        flex: 1 1 0; min-height: 0;
+    }
+    .usage-page--lowered .usage-results-body {
+        display: flex; flex: 1 1 0; flex-direction: column; min-height: 0; overflow: auto;
+    }
+    .usage-page--lowered .usage-results-body .usage-data-viewport { flex: 1 1 0; }
+    .usage-page--folded .usage-results-body { display: none; }
+}
+@media (max-width: 620px) {
+    .usage-page { gap: 8px; }
+    .usage-dashboard-header { align-items: flex-start; flex-direction: column; gap: 7px; }
+    .usage-scope { text-align: left; }
+    .usage-kpis { grid-template-columns: 1fr; }
+    .usage-filter-grid { grid-template-columns: 1fr; }
+    .usage-tabs { display: grid; grid-template-columns: 1fr 1fr; }
+    .usage-results-actions { width: 100%; }
+    .usage-results-actions > .secondary-button { white-space: normal; }
+    .usage-page .usage-tabs .filter-button { white-space: normal; min-width: 0; }
+    .usage-page .usage-filter-chip button { width: 34px; min-height: 34px; }
+    .usage-chart-heading { align-items: flex-start; }
+    .usage-results-footer .pagination { flex-wrap: wrap; }
+}
+.usage-organization-table {
     overflow: auto;
-}
-
-.usage-table {
-    min-width: 980px;
-}
-
-.usage-table thead th {
-    position: sticky;
-    z-index: 2;
-    top: 0;
-    background: #ffffff;
-    box-shadow: 0 1px 0 #e2e8f0;
-}
-
-.usage-table th,
-.usage-table td {
-    vertical-align: top;
-}
-
-.usage-table tbody tr {
-    transition: background-color 150ms ease;
-}
-
-.usage-table tbody tr:hover {
-    background: #f8fafc;
-}
-
-.usage-coverage {
-    display: flex;
-    min-width: 180px;
-    align-items: flex-start;
-    gap: 8px;
-}
-
-.usage-coverage__indicator {
-    width: 8px;
-    height: 8px;
-    flex: 0 0 auto;
-    margin-top: 5px;
-    border-radius: 50%;
-    background: #94a3b8;
-}
-
-.usage-coverage > div {
-    display: grid;
-    min-width: 0;
-    gap: 3px;
-}
-
-.usage-coverage small {
-    line-height: 1.35;
-}
-
-.usage-coverage--complete .usage-coverage__indicator {
-    background: #16a34a;
-}
-
-.usage-coverage--partial .usage-coverage__indicator {
-    background: #d97706;
-}
-
-.usage-coverage--unknown .usage-coverage__indicator {
-    background: #64748b;
-}
-
-.usage-page .resizable-scroll-region__footer {
-    flex: 0 0 auto;
-    padding: 0 14px 12px;
-    border-top: 1px solid #e2e8f0;
-    background: #ffffff;
-}
-
-.usage-page .resizable-scroll-region__footer .pagination {
-    width: auto;
-    margin: 0;
-    border-radius: 0;
-    background: #ffffff;
-    box-shadow: none;
-}
-
-@media (max-width: 900px) {
-    .usage-filter-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-}
-
-@media (max-width: 640px) {
-    .usage-page__header {
-        align-items: stretch;
-        flex-direction: column;
-    }
-
-    .usage-scope {
-        min-width: 0;
-    }
-
-    .usage-filters {
-        padding: 16px;
-    }
-
-    .usage-filter-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .usage-filter-actions {
-        width: 100%;
-    }
-
-    .usage-filter-actions button {
-        width: 100%;
-    }
-
-    .usage-tabs {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-    }
-
-    .usage-tabs button {
-        width: 100%;
-    }
-
-    .usage-page .resizable-scroll-region__footer .pagination {
-        flex-wrap: wrap;
-        justify-content: center;
-    }
-}
-
-@media (max-height: 760px) and (min-width: 641px) {
-    .usage-page__upper {
-        gap: 8px;
-    }
-
-    .usage-filters {
-        padding: 16px 20px;
-    }
-
-    .usage-section-heading {
-        margin-bottom: 10px;
-    }
-
-    .usage-filter-grid {
-        gap: 10px 12px;
-    }
-
-    .usage-filter-actions {
-        margin-top: 12px;
-    }
-
-    .usage-report {
-        gap: 10px;
-    }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .usage-table tbody tr {
-        transition: none;
-    }
-}
-
-/* Usage production workspace: clear filters, bounded tables, exact scope. */
-.usage-page .usage-filters { padding: 16px 20px; }
-.usage-page .usage-section-heading { margin-bottom: 12px; }
-.usage-page .usage-filter-grid { gap: 12px; }
-.usage-page .usage-filter-actions { margin-top: 12px; align-items: center; }
-.usage-filter-dirty { margin-right: auto; padding: 8px 12px; border: 1px solid #f0d49b; border-radius: 9px; background: #fffbeb; color: #824b0d; font-size: 12px; font-weight: 650; }
-.usage-applied-filters { display: flex; flex-wrap: wrap; gap: 6px; }
-.usage-applied-filters span { padding: 5px 9px; border: 1px solid #d8e2f2; border-radius: 999px; background: #f8fbff; color: #445670; font-size: 11px; font-weight: 650; }
-.usage-page .resizable-scroll-region__viewport.usage-table-scroll { padding-bottom: 12px; }
-.usage-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
-.usage-kpi { min-width: 0; padding: 13px 16px; border: 1px solid #dce5f5; border-radius: 13px; background: #ffffff; box-shadow: 0 5px 14px rgb(15 23 42 / 3%); }
-.usage-kpi__label { display: block; color: #607086; font-size: 11px; font-weight: 700; }
-.usage-kpi__value { display: block; margin-top: 5px; color: #172237; font-size: clamp(17px, 1.7vw, 25px); font-weight: 780; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
-.usage-kpi__hint { display: block; margin-top: 5px; color: #64748b; font-size: 11px; line-height: 1.35; }
-.usage-kpi--attention { border-color: #eed49c; background: #fffcf6; }
-.usage-chart-card { min-width: 0; padding: 16px; border: 1px solid #dce5f5; border-radius: 14px; background: #ffffff; }
-.usage-chart-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
-.usage-chart-heading h3 { margin: 0; font-size: 16px; }
-.usage-chart-heading p { margin: 5px 0 0; color: #64748b; font-size: 12px; }
-.usage-chart-select { display: grid; gap: 4px; color: #43536a; font-size: 11px; font-weight: 750; }
-.usage-chart-select select { padding: 7px 10px; border: 1px solid #cedaeb; border-radius: 9px; background: white; }
-.usage-chart-viewport { width: 100%; height: 290px; min-width: 0; }
-.usage-chart-note { margin: 8px 0 0; color: #64748b; font-size: 11px; }
-.usage-export-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 10px 12px; border: 1px solid #dce5f5; border-radius: 12px; background: #f8fbff; }
-.usage-export-toolbar > div { display: grid; gap: 4px; }
-.usage-export-toolbar strong { font-size: 12px; }
-.usage-export-toolbar small { color: #64748b; font-size: 11px; }
-.usage-export-error { margin: 0; color: #b91c1c; }
-@media (max-width: 1250px) { .usage-kpis { grid-template-columns: repeat(3,minmax(0,1fr)); } }
-@media (max-width: 1050px) { .usage-kpis { grid-template-columns: repeat(2,minmax(0,1fr)); } }
-@media (max-width: 600px) { .usage-kpis { grid-template-columns: 1fr; } .usage-filter-dirty { width: 100%; } .usage-chart-viewport { height: 250px; } .usage-export-toolbar > button { width: 100%; } }
-
-.usage-chart-discovery { margin-top: 6px; color: #3554a0; font-size: 12px; line-height: 1.45; }
-
-/* KPI and day chart live within the result viewport, visible before the table. */
-.usage-report-results { min-width: 0; }
-.usage-report-insights { display: grid; gap: 12px; padding: 14px 14px 10px; }
-.usage-report-results .usage-table { width: 100%; }
-@media (max-width: 640px) {
-  .usage-report-insights { padding: 10px 10px 8px; }
-}
-
-
-/* Usage full-height analytics workspace, isolated from other split panes. */
-.usage-page .usage-compact-rail[hidden] { display: none !important; }
-.usage-page .usage-compact-rail {
-    display: flex;
-    flex: 0 0 auto;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    min-width: 0;
-    min-height: 74px;
-    padding: 10px 14px;
-    border: 1px solid #d7e3f7;
-    border-radius: 12px;
-    background: linear-gradient(120deg, #f9fbff 0%, #eef3ff 100%);
-}
-.usage-page .usage-compact-rail__summary {
-    display: grid;
-    min-width: 0;
-    gap: 4px;
-}
-.usage-page .usage-compact-rail__summary strong {
-    color: #172a46;
-    font-size: 15px;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-}
-.usage-page .usage-compact-rail__summary span {
-    overflow: hidden;
-    color: #586e8c;
-    font-size: 12px;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-}
-.usage-page .usage-compact-rail__restore { flex: 0 0 auto; min-height: 39px; }
-/* Keep React state and form drafts intact: collapse visually, don't unmount. */
-.usage-page .usage-page__upper[data-compact="true"] {
-    gap: 0;
-    padding: 5px 7px;
-    overflow: hidden;
-}
-.usage-page .usage-page__upper[data-compact="true"] > :not(.usage-compact-rail) {
-    display: none !important;
-}
-.usage-page .usage-report-heading {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 10px;
-}
-.usage-page .usage-report-heading__title { display: grid; gap: 4px; min-width: 0; }
-.usage-page .usage-expand-results { flex: 0 0 auto; min-height: 39px; }
-.usage-page .resizable-scroll-region__handle {
-    height: 17px;
-    min-height: 17px;
-    flex-basis: 17px;
-    background: #f8faff;
-}
-.usage-page .resizable-scroll-region__handle span { width: 56px; height: 4px; }
-.usage-page .resizable-scroll-region__handle:hover span,
-.usage-page .resizable-scroll-region__handle:focus-visible span { width: 72px; }
-@media (max-width: 680px) {
-    .usage-page .usage-compact-rail { gap: 8px; padding: 8px; }
-    .usage-page .usage-compact-rail__summary strong { font-size: 13px; }
-    .usage-page .usage-compact-rail__summary span { font-size: 11px; }
-    .usage-page .usage-compact-rail__restore { min-height: 36px; padding-inline: 8px; font-size: 12px; }
-    .usage-page .usage-expand-results { width: 100%; }
-}
-
-/* Consistent report workspace for all four tabs.
-   A compact rail allows switching reports without restoring the filter form. */
-.usage-page .usage-compact-rail__tabs {
-    display: flex;
-    flex: 1 1 180px;
-    align-items: center;
-    gap: 5px;
-    min-width: 0;
-    overflow-x: auto;
-    padding: 3px 1px;
-    scrollbar-width: thin;
-}
-.usage-page .usage-compact-rail__tabs .filter-button {
-    flex: 0 0 auto;
-    min-height: 34px;
-    padding: 6px 10px;
-    border-radius: 8px;
-    font-size: 12px;
-    white-space: nowrap;
-}
-.usage-page .usage-compact-rail__summary { flex: 0 1 310px; }
-/* In the normal split view, the first result and the fixed footer remain
-   visually distinct. Native vertical scrolling preserves all report rows. */
-.usage-page .usage-report-results {
-    display: flow-root;
-    padding-bottom: 6px;
-}
-.usage-page .usage-report-results .usage-table {
-    margin-bottom: 4px;
-}
-.usage-page .resizable-scroll-region__footer {
-    position: relative;
-    z-index: 1;
-    padding-top: 6px;
-    box-shadow: 0 -4px 10px rgb(255 255 255 / 82%);
-}
-@media (max-width: 600px) {
-    .usage-page .usage-compact-rail__tabs .filter-button { font-size: 11px; }
-    .usage-page .usage-compact-rail__tabs { gap: 4px; }
-}
-
-
-/* -------------------------------------------------------------------------
-   Usage report layout v5.
-
-   In the ordinary view use ONE document-level vertical scroller. A row must
-   never disappear behind the split footer because an earlier drag preference
-   happened to be stored in localStorage. The user can opt into the focused
-   resizable split with "Развернуть результаты" and return with "Показать
-   фильтры". Only the usage page receives these rules; other split regions
-   are not touched.
-   ------------------------------------------------------------------------- */
-.usage-page--flow {
-    height: 100%;
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior-y: contain;
-    scrollbar-gutter: stable;
-}
-
-.usage-page--flow .resizable-scroll-region {
-    height: auto;
-    min-height: 100%;
-    overflow: visible;
-}
-
-.usage-page--flow .resizable-scroll-region__upper {
     min-height: 0;
-    flex: 0 0 auto;
-    overflow: visible;
+    max-height: 55vh;
 }
-
-.usage-page--flow .usage-page__upper {
-    overflow: visible;
-    flex: 0 0 auto;
-}
-
-.usage-page--flow .resizable-scroll-region__lower {
-    height: auto;
-    flex: 0 0 auto;
-    overflow: visible;
-}
-
-.usage-page--flow .resizable-scroll-region__handle {
-    /* No pointless draggable divider in a natural-height document. */
-    display: none;
-}
-
-.usage-page--flow .resizable-scroll-region__viewport.usage-table-scroll {
-    flex: 0 0 auto;
-    height: auto;
-    min-height: 0;
-    overflow-x: auto;
-    overflow-y: auto;
-    padding-bottom: 4px;
-}
-
-.usage-page--flow .resizable-scroll-region__footer {
-    position: static;
-    box-shadow: none;
-    padding-top: 10px;
-}
-
-/* The focused view retains the existing keyboard/pointer split controls. */
-.usage-page--focused {
-    height: 100%;
-    overflow: hidden;
-}
-
-@media (max-width: 640px) {
-    .usage-page--flow { scrollbar-gutter: auto; }
-}
-
-/* Usage reports v6: the grip remains usable in normal document flow.
-   The lower card must take its NATURAL content height outside focus:
-   neither the old saved panel height nor the fixed footer may cut a row. */
-.usage-page--flow .resizable-scroll-region__handle {
-    display: grid;
-    flex: 0 0 18px;
-    min-height: 18px;
-    margin-block: 7px 3px;
-    cursor: ns-resize;
-    touch-action: none;
-    background: #f5f8ff;
-    border-radius: 10px;
-}
-.usage-page--flow .resizable-scroll-region__handle:focus-visible {
-    outline: 2px solid #2563eb;
-}
-.usage-page--flow .resizable-scroll-region__lower.usage-report-card {
-    height: auto;
-    min-height: 0;
-    flex: 0 0 auto;
-    overflow: visible;
-}
-.usage-page--flow .resizable-scroll-region__viewport.usage-table-scroll {
-    display: block;
-    height: auto;
-    min-height: 0;
-    max-height: none;
-    flex: none;
-    overflow-x: auto;
-    overflow-y: visible;
-}
-.usage-page--flow .usage-report-results {
-    display: flow-root;
-    min-height: 0;
-    overflow: visible;
-}
-.usage-page--flow .resizable-scroll-region__footer {
-    position: static;
-    flex: none;
-    padding-top: 10px;
-    margin-top: 6px;
-    overflow: visible;
-    box-shadow: none;
-}
-/* In focused workspace scrolling is intentional and the footer is fixed
-   outside the scroll viewport. This is NOT applied to the flow layout. */
-.usage-page--focused .resizable-scroll-region__lower.usage-report-card {
-    min-height: 0;
-    overflow: hidden;
-}
-.usage-page--focused .resizable-scroll-region__viewport.usage-table-scroll {
-    min-height: 0;
-    overflow: auto;
-}
-.usage-breakdown-chart {
-    min-width: 0;
-    padding: 16px;
-    background: #fff;
-    border: 1px solid #dbe5f4;
-    border-radius: 13px;
-}
-.usage-breakdown-chart__top {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 9px;
-    margin-bottom: 10px;
-}
-.usage-breakdown-chart__top h3 { margin: 0; font-size: 16px; color: #1e293b; }
-.usage-breakdown-chart__top p { margin: 5px 0 0; font-size: 12px; line-height: 1.45; color: #64748b; }
-.usage-breakdown-chart__top button {
-    min-height: 35px;
-    padding: 7px 12px;
-    border-radius: 9px;
-    border: 1px solid #cdd9ea;
-    background: #f8fbff;
-    color: #1e293b;
-    font: inherit;
-    font-size: 12px;
-    font-weight: 700;
-    cursor: pointer;
-}
-.usage-breakdown-chart__plot { width: 100%; min-width: 0; }
-.usage-breakdown-chart__legend { display: flex; flex-wrap: wrap; gap: 16px; color: #53647f; font-size: 12px; }
-.usage-breakdown-chart__legend span::before {
-    display: inline-block;
-    width: 9px;
-    height: 9px;
-    margin-right: 6px;
-    border-radius: 3px;
-    content: '';
-    background: #4d92ef;
-}
-.usage-breakdown-chart__legend span:last-child::before { background: #58bd7c; }
-.usage-breakdown-chart__warning { margin: 8px 0 0; font-size: 12px; color: #8a4b11; }
-@media(max-width: 680px) {
-    .usage-breakdown-chart { padding: 11px; }
-}
+.usage-budget-drilldown { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; justify-content: space-between; padding: 12px 16px; border: 1px solid #b1c5ee; border-radius: 10px; background: #eef4ff; color: #213756; margin-block: 8px; }
+.usage-budget-drilldown p { margin: 3px 0 0; font-size: 13px; }

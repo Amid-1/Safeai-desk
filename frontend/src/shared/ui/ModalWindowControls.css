@@ -1,0 +1,80 @@
+/* frontend/src/shared/ui/ModalWindowControls.css */
+/* Shared window controls, independent of route-specific CSS and portal origin. */
+.modal-card > .modal-header > h2 {
+    min-width: 0;
+}
+
+.modal-card > .modal-header > .modal-window-actions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: calc(7px * var(--modal-resize-scale, 1));
+}
+
+.modal-card > .modal-header > .modal-window-actions > :is(.modal-maximize-button, .modal-close-button) {
+    display: grid;
+    flex: 0 0 auto;
+    width: var(--modal-resize-control-height, 38px);
+    min-width: var(--modal-resize-control-height, 38px);
+    height: var(--modal-resize-control-height, 38px);
+    min-height: var(--modal-resize-control-height, 38px);
+    padding: 0;
+    place-items: center;
+    border: 1px solid #cbd7e8;
+    border-radius: calc(10px * var(--modal-resize-scale, 1));
+    background: #fff;
+    box-shadow: none;
+    color: #1f2a3b;
+    font-size: calc(20px * var(--modal-resize-scale, 1));
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+.modal-card > .modal-header > .modal-window-actions > button:hover:not(:disabled) {
+    border-color: #8da0f7;
+    background: #f3f6ff;
+}
+
+.modal-card > .modal-header > .modal-window-actions > button:focus-visible {
+    outline: 3px solid #2457d6;
+    outline-offset: 2px;
+}
+
+.modal-card > .modal-header > .modal-window-actions > button:disabled {
+    cursor: not-allowed;
+    opacity: .55;
+}
+
+.modal-card > .modal-header > .modal-window-actions > .modal-maximize-button {
+    isolation: isolate;
+}
+
+.modal-card > .modal-header > .modal-window-actions > .modal-maximize-button > span {
+    position: relative;
+    display: block;
+    width: calc(13px * var(--modal-resize-scale, 1));
+    height: calc(11px * var(--modal-resize-scale, 1));
+    border: 1px solid currentcolor;
+    border-radius: calc(2px * var(--modal-resize-scale, 1));
+    background: inherit;
+}
+
+.modal-card--maximized > .modal-header > .modal-window-actions > .modal-maximize-button > span {
+    transform: translate(-2px, 2px);
+    background: #fff;
+}
+
+.modal-card--maximized > .modal-header > .modal-window-actions > .modal-maximize-button > span::after {
+    position: absolute;
+    z-index: -1;
+    top: -5px;
+    right: -5px;
+    width: 100%;
+    height: 100%;
+    border: inherit;
+    border-radius: inherit;
+    background: #fff;
+    content: '';
+}

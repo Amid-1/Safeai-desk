@@ -79,7 +79,7 @@ export function AdminUsersWorkspace({
                     directory.statistics
                 }
                 organizations={
-                    directory.organizations
+                    directory.displayOrganizations ?? directory.organizations
                 }
                 loadError={
                     directory.loadError
@@ -107,6 +107,8 @@ export function AdminUsersWorkspace({
                     directory.totalPages
                 }
                 filter={directory.filter}
+                organizationId={directory.organizationId}
+                onOrganizationChange={directory.changeOrganization}
                 status={directory.status}
                 searchDraft={directory.searchDraft}
                 appliedSearch={directory.appliedSearch}

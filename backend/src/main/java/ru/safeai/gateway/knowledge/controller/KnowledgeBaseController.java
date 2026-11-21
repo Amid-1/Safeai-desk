@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
@@ -31,6 +32,7 @@ import ru.safeai.gateway.knowledge.model.KnowledgeBaseAccessLevel;
 import ru.safeai.gateway.knowledge.service.KnowledgeAccessService;
 import ru.safeai.gateway.knowledge.service.KnowledgeBaseService;
 
+import java.net.URI;
 import java.util.List;
 import java.util.UUID;
 
@@ -94,17 +96,19 @@ public class KnowledgeBaseController {
 
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public KnowledgeBaseResponse create(
+    public ResponseEntity<KnowledgeBaseResponse> create(
             @Valid
             @RequestBody
             CreateKnowledgeBaseRequest request,
             @AuthenticationPrincipal(errorOnInvalidType = true)
             SafeAiUserPrincipal currentUser
     ) {
-        return knowledgeBaseService.create(
+        KnowledgeBaseResponse created = knowledgeBaseService.create(
                 request,
                 currentUser
         );
+        return ResponseEntity.created(URI.create("/api/knowledge-bases/" + created.id()))
+                .body(created);
     }
 
     @PatchMapping("/{knowledgeBaseId}")

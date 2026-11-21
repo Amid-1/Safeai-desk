@@ -31,7 +31,7 @@ public class ModelRuntimeController {
     @GetMapping("/runtime")
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public RuntimeModelStatusWireResponse runtime() {
-        return RuntimeModelStatusWireResponse.from(statusService.current());
+        return RuntimeModelStatusWireResponse.from(statusService.currentWithCatalogPricing());
     }
 
     /** Performs a metadata-only provider/model availability check. */

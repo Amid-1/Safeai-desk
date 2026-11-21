@@ -44,15 +44,14 @@ public final class DatabaseConstraintClassifier {
             return false;
         }
 
-        String actualConstraint =
-                findConstraintName(
-                        throwable
-                );
+        for (Throwable current : throwableChain(throwable)) {
+            String constraint = findUniqueConstraintName(current);
+            if (constraint != null && accepted.contains(constraint)) {
+                return true;
+            }
+        }
 
-        return actualConstraint != null
-                && accepted.contains(
-                        actualConstraint
-                );
+        return false;
     }
 
     public static boolean isForeignKeyViolation(
@@ -143,39 +142,15 @@ public final class DatabaseConstraintClassifier {
         return false;
     }
 
-    private static String findConstraintName(
-            Throwable throwable
-    ) {
-        for (Throwable current
-                : throwableChain(
-                throwable
-        )) {
+    private static String findUniqueConstraintName(Throwable error) {
+        if (error instanceof ConstraintViolationException violation
+                && UNIQUE_VIOLATION.equals(violation.getSQLState())) {
+            return violation.getConstraintName();
+        }
 
-            if (current
-                    instanceof ConstraintViolationException violation) {
-
-                String constraintName =
-                        violation.getConstraintName();
-
-                if (constraintName != null
-                        && !constraintName.isBlank()) {
-
-                    return constraintName;
-                }
-            }
-
-            if (current
-                    instanceof SQLException sqlException) {
-
-                String constraintName =
-                        findPostgresConstraintName(
-                                sqlException
-                        );
-
-                if (constraintName != null) {
-                    return constraintName;
-                }
-            }
+        if (error instanceof SQLException sqlException
+                && UNIQUE_VIOLATION.equals(sqlException.getSQLState())) {
+            return findPostgresConstraintName(sqlException);
         }
 
         return null;

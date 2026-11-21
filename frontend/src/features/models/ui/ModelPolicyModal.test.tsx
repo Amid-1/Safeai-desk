@@ -22,6 +22,7 @@ import type {
     RuntimeModelStatus,
 } from '../../../entities/model/api/modelApi'
 import { ModelPolicyModal } from './ModelPolicyModal'
+import {createPolicyPreview} from '../../../test/fixtures/modelControlPlaneTestFixtures'
 
 const ORGANIZATION_ID =
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -112,7 +113,7 @@ function renderPolicyModal({
     catalog = [],
     effectiveCatalog = catalog,
     onPreview = vi.fn<PolicyPreviewFn>()
-        .mockRejectedValue(new Error('Preview не ожидался в этом тесте')),
+        .mockImplementation(async request => createPolicyPreview(request, ORGANIZATION_ID, RUNTIME)),
     onSubmit = vi.fn<PolicySubmit>()
         .mockResolvedValue(undefined),
 }: {
@@ -145,7 +146,7 @@ describe('ModelPolicyModal', () => {
             screen.getByRole(
                 'heading',
                 {
-                    name: 'Правила использования моделей',
+                    name: 'Настройка правил использования моделей',
                 },
             ),
         ).toBeInTheDocument()
@@ -167,7 +168,7 @@ describe('ModelPolicyModal', () => {
             screen.getByRole(
                 'option',
                 {
-                    name: 'Мягкий — предупреждать',
+                    name: 'Мягкий',
                 },
             ),
         ).toBeInTheDocument()
@@ -176,7 +177,7 @@ describe('ModelPolicyModal', () => {
             screen.getByRole(
                 'option',
                 {
-                    name: 'Жёсткий — блокировать',
+                    name: 'Жёсткий',
                 },
             ),
         ).toBeInTheDocument()
@@ -266,7 +267,7 @@ describe('ModelPolicyModal', () => {
 
         expect(
             screen.getByText(
-                'Ограничения и лимиты применяются к запросам этой организации.',
+                'Ограничения черновика вступят в силу после сохранения.',
             ),
         ).toBeInTheDocument()
     })
@@ -274,18 +275,18 @@ describe('ModelPolicyModal', () => {
     it('переключает вкладки семантически, а поля скрытых разделов недоступны', () => {
         renderPolicyModal()
         expect(screen.getByRole('tab', {name: /Доступ/})).toHaveAttribute('aria-selected', 'true')
-        expect(screen.queryByPlaceholderText('Например: 32000')).not.toBeVisible()
+        expect(screen.queryByLabelText('Максимум входных токенов')).not.toBeVisible()
 
         fireEvent.click(screen.getByRole('tab', {name: /Лимиты/}))
         expect(screen.getByRole('tab', {name: /Лимиты/})).toHaveAttribute('aria-selected', 'true')
-        expect(screen.getByPlaceholderText('Например: 32000')).toBeVisible()
+        expect(screen.getByLabelText('Максимум входных токенов')).toBeVisible()
         expect(screen.queryByRole('combobox', {name: 'Разрешённые модели'})).not.toBeInTheDocument()
 
         fireEvent.click(screen.getByRole('tab', {name: /Бюджет/}))
         expect(screen.getByLabelText(/Контроль бюджета/)).toBeVisible()
 
-        fireEvent.click(screen.getByRole('tab', {name: /Требования к данным/}))
-        expect(screen.getByRole('checkbox', {name: 'Полные данные о стоимости'})).toBeVisible()
+        fireEvent.click(screen.getByRole('tab', {name: /Требования/}))
+        expect(screen.getByRole('checkbox', {name: 'Полные сведения о стоимости'})).toBeVisible()
     })
 
     it('стрелки, Home и End переключают вкладки без потери фокуса', () => {
@@ -311,6 +312,9 @@ describe('ModelPolicyModal', () => {
         renderPolicyModal({
             onSubmit,
         })
+
+        fireEvent.click(screen.getByRole('button', {name: 'Проверить правила'}))
+        await waitFor(() => expect(screen.getByRole('button', {name: 'Сохранить правила'})).toBeEnabled())
 
         fireEvent.click(
             screen.getByRole(
@@ -365,6 +369,9 @@ describe('ModelPolicyModal', () => {
             ),
         )
 
+        fireEvent.click(screen.getByRole('button', {name: 'Проверить правила'}))
+        await waitFor(() => expect(screen.getByRole('button', {name: 'Сохранить правила'})).toBeEnabled())
+
         fireEvent.click(
             screen.getByRole(
                 'button',
@@ -409,7 +416,7 @@ describe('ModelPolicyModal', () => {
         fireEvent.click(
             screen.getByRole(
                 'button',
-                {name: 'Сохранить правила'},
+                {name: 'Проверить правила'},
             ),
         )
 

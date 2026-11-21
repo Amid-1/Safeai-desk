@@ -8,4 +8,19 @@ public interface AiExecutionIdentity {
     UUID decisionId();
 
     UUID chatTurnId();
+
+    /** True only for an execution bound to a Knowledge base. */
+    default boolean usesKnowledge() {
+        return false;
+    }
+
+    /** Knowledge base identity, when this execution uses Knowledge. */
+    default UUID knowledgeBaseId() {
+        return null;
+    }
+
+    /** Tenant identity, when the concrete execution capability carries it. */
+    default UUID organizationId() {
+        return null;
+    }
 }

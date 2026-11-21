@@ -1,20 +1,23 @@
 // frontend/src/features/models/ui/AdminModelsUpper.tsx
 // Область заголовка. Действия вынесены в соответствующие разделы.
 import type { RuntimeModelStatus } from '../../../entities/model/api/modelApi'
+import { AdminPageHeader } from '../../../shared/ui/AdminPageHeader'
 
 export function AdminModelsUpper({ runtime }: { runtime: RuntimeModelStatus }) {
     return (
-        <header className="models-hero models-sections-hero">
+        <AdminPageHeader className="models-hero models-sections-hero">
             <div className="models-hero__content">
-                <span className="models-eyebrow">SAFEAI DESK / УПРАВЛЕНИЕ</span>
-                <h1>Модели и доступ</h1>
-                <p>Подключение, каталог, правила организаций и диагностика.</p>
+                <h1>Управление AI-моделями</h1>
+                <p>Каталог, правила доступа и диагностика</p>
             </div>
             <div className="models-runtime-badge" aria-label="Подключённая модель">
-                <span>Сейчас настроена модель</span>
+                <span>Подключение на сервере</span>
                 <strong>{runtime.provider} · {runtime.model}</strong>
-                <small>{runtime.enabled ? 'Включена в настройках' : 'Отключена в настройках'}</small>
+                <small className={runtime.enabled ? 'models-runtime-state' : 'models-runtime-state is-disabled'}>
+                    {runtime.enabled ? 'Настроена · доступность проверяется отдельно' : 'Отключена в настройках'}
+                    {runtime.provider === 'mock' && ' · Тестовая модель'}
+                </small>
             </div>
-        </header>
+        </AdminPageHeader>
     )
 }

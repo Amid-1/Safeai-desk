@@ -2,6 +2,9 @@ package ru.safeai.gateway.model.repository;
 
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import ru.safeai.gateway.common.budget.PlatformBudgetClassification;
+import ru.safeai.gateway.common.security.CorrelationContext;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -11,6 +14,7 @@ import ru.safeai.gateway.model.domain.ModelCapability;
 import ru.safeai.gateway.model.domain.ModelRouteDecision;
 import ru.safeai.gateway.model.domain.ModelRouteOutcome;
 import ru.safeai.gateway.model.domain.ModelRouteReason;
+import ru.safeai.gateway.model.dto.PlatformBudgetSummaryResponse;
 
 import java.math.BigDecimal;
 import java.sql.Array;
@@ -171,11 +175,50 @@ public class ModelRouteDecisionRepository {
         );
     }
 
-    /** Uses the immutable policy version referenced by the sealed decision, never the latest policy. */
+    /** Classifies current policies using the same query as the organization drill-down. */
+    public PlatformBudgetSummaryResponse loadPlatformBudgetSummary(Instant start, Instant end, Instant now) {
+        return Objects.requireNonNull(new NamedParameterJdbcTemplate(jdbc).queryForObject(PlatformBudgetClassification.CTE + """
+                select count(*) as total,
+                       count(*) filter (where organization_enabled) as enabled,
+                       count(*) filter (where state = 'WITHIN') as within_count,
+                       count(*) filter (where state = 'NEAR') as near_count,
+                       count(*) filter (where state = 'EXCEEDED') as exceeded_count,
+                       count(*) filter (where state = 'NO_LIMIT') as no_limit_count,
+                       count(*) filter (where state = 'UNKNOWN') as unknown_count,
+                       count(*) filter (where state = 'DISABLED') as disabled_count,
+                       count(*) filter (where state = 'UNCONFIGURED') as unconfigured_count
+                from classified
+                """, java.util.Map.of("budgetStart", Timestamp.from(start), "budgetEnd", Timestamp.from(end)),
+                (rs, row) -> new PlatformBudgetSummaryResponse(start, end, now,
+                rs.getLong("total"), rs.getLong("enabled"), rs.getLong("within_count"),
+                rs.getLong("near_count"), rs.getLong("exceeded_count"), rs.getLong("no_limit_count"),
+                rs.getLong("unknown_count"), rs.getLong("disabled_count"), rs.getLong("unconfigured_count"))));
+    }
+
+    /** Снимок маршрута и резерва плюс актуальные квоты; окончательный барьер — V95. */
     public boolean requiresSinglePhysicalAttempt(UUID decisionId) {
         Boolean single = jdbc.queryForObject("""
                 select (d.budget_enforcement = 'HARD' and d.monthly_budget_usd is not null)
                     or coalesce((p.enabled = true and p.max_request_cost_usd is not null), false)
+                    or exists (
+                        select 1 from chat_quota_reservations r
+                         where r.turn_id = d.chat_turn_id
+                           and r.single_physical_attempt is distinct from false
+                    )
+                    or exists (
+                        select 1 from organization_ai_quotas q
+                         where q.organization_id = d.organization_id and q.enabled
+                           and (q.monthly_input_token_limit is not null
+                                or q.monthly_output_token_limit is not null
+                                or q.monthly_cost_limit_usd is not null)
+                    )
+                    or exists (
+                        select 1 from user_ai_quotas q
+                         where q.user_id = d.user_id and q.enabled
+                           and (q.monthly_input_token_limit is not null
+                                or q.monthly_output_token_limit is not null
+                                or q.monthly_cost_limit_usd is not null)
+                    )
                 from model_route_decisions d
                 left join organization_model_policies p
                   on p.id = d.policy_id and p.version = d.policy_version
@@ -267,10 +310,10 @@ public class ModelRouteDecisionRepository {
                     monthly_spent_usd, monthly_projected_usd,
                     monthly_cost_known, budget_enforcement, budget_exceeded,
                     pricing_complete, outcome, reason,
-                    decision_integrity_version, decision_sha256, created_at
+                    decision_integrity_version, decision_sha256, created_at, correlation_id
                 ) values (
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """
         );
@@ -313,7 +356,8 @@ public class ModelRouteDecisionRepository {
         statement.setString(index++, decision.reason().name());
         statement.setShort(index++, decision.decisionIntegrityVersion());
         statement.setString(index++, decision.decisionSha256());
-        statement.setTimestamp(index, Timestamp.from(decision.createdAt()));
+        statement.setTimestamp(index++, Timestamp.from(decision.createdAt()));
+        statement.setObject(index, CorrelationContext.current());
         return statement;
     }
 

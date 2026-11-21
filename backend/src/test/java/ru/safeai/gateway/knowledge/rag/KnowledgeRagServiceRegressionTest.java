@@ -1,3 +1,4 @@
+// SafeAI-Desk/backend/src/test/java/ru/safeai/gateway/knowledge/rag/KnowledgeRagServiceRegressionTest.java
 package ru.safeai.gateway.knowledge.rag;
 
 import org.junit.jupiter.api.Tag;
@@ -47,7 +48,23 @@ class KnowledgeRagServiceRegressionTest {
     KnowledgeRagContextReceiptService contextReceiptService;
 
     @Mock
+    KnowledgeRagExecutionPermitService executionPermitService;
+
+    @Mock
     SafeAiUserPrincipal principal;
+
+    @Test
+    void materializedKnowledgeSourcesAreRecheckedBeforePhysicalProviderCall() {
+        var prepared = preparation(KnowledgeMode.KNOWLEDGE_ONLY, 1);
+        when(principal.getOrganizationId()).thenReturn(
+                ru.safeai.gateway.knowledge.testsupport.KnowledgeRegressionFixtures.ORG_ID);
+
+        service().assertSourcesAvailable(prepared, principal);
+
+        verify(contextReceiptService).assertSourcesAvailable(
+                prepared,
+                ru.safeai.gateway.knowledge.testsupport.KnowledgeRegressionFixtures.ORG_ID);
+    }
 
     @Test
     void generalModeNeverCallsRetrievalOrMaterializesKnowledgeContext() {
@@ -116,6 +133,11 @@ class KnowledgeRagServiceRegressionTest {
                                 "Evidence"
                         )
                 );
+        UUID permitId = UUID.randomUUID();
+        when(executionPermitService.createPermit(
+                TURN_ID, baseRequest.organizationId(), KB_ID, RUN_ID,
+                "e".repeat(64), java.util.List.of(new KnowledgeContextSource("C1", hit(0, "Evidence")))))
+                .thenReturn(permitId);
 
         var preparedRequest =
                 baseRequest.withInstructions(
@@ -182,6 +204,7 @@ class KnowledgeRagServiceRegressionTest {
                 .isSameAs(
                         assembled.request()
                 );
+        assertThat(prepared.executionPermitId()).isEqualTo(permitId);
 
         verify(retrieval).retrieveForChat(
                 KB_ID,
@@ -212,6 +235,9 @@ class KnowledgeRagServiceRegressionTest {
                 "e".repeat(64),
                 assembled.request()
         );
+        verify(executionPermitService).createPermit(
+                TURN_ID, baseRequest.organizationId(), KB_ID, RUN_ID,
+                "e".repeat(64), assembled.sources());
     }
 
     @Test
@@ -254,7 +280,8 @@ class KnowledgeRagServiceRegressionTest {
         verifyNoInteractions(
                 retrieval,
                 assembler,
-                contextReceiptService
+                contextReceiptService,
+                executionPermitService
         );
     }
 
@@ -268,7 +295,8 @@ class KnowledgeRagServiceRegressionTest {
                         8,
                         1_000,
                         300
-                )
+                ),
+                executionPermitService
         );
     }
 

@@ -1,0 +1,50 @@
+// frontend/src/features/usage/controller/useUsageBudget.test.ts
+import { act, renderHook, waitFor } from '@testing-library/react'
+import { beforeEach, expect, it, vi } from 'vitest'
+import { getOrganizationBudgetStatus } from '../api/usage/usageBudget'
+import type { OrganizationBudgetStatus } from '../api/usage/usageBudget'
+import { useUsageBudget } from './useUsageBudget'
+import { ApiError } from '../../../shared/api/httpErrors'
+
+vi.mock('../api/usage/usageBudget', () => ({getOrganizationBudgetStatus: vi.fn()}))
+const read = vi.mocked(getOrganizationBudgetStatus)
+const policy = { organizationId: 'one', monthlyBudgetUsd: '0', policyVersion: '2', remainingUsd: '0' } as OrganizationBudgetStatus
+beforeEach(() => read.mockReset())
+
+it('does not request a platform-wide budget or substitute zero for missing policy', async () => {
+    const {result, rerender} = renderHook(({org}) => useUsageBudget('admin', org, 0), {initialProps: {org: ''}})
+    expect(result.current.scoped).toBe(false)
+    expect(read).not.toHaveBeenCalled()
+    read.mockRejectedValueOnce(new Error('denied'))
+    rerender({org: 'one'})
+    await waitFor(() => expect(result.current.error).toBe(true))
+    expect(result.current.policy).toBeNull()
+})
+
+it.each([[403, 'Нет доступа'], [404, 'Сервер не предоставил'], [500, 'Ошибка сервера'], [0, 'некорректные сведения']] as const)(
+    'classifies budget failures safely (%s)', async (status, message) => {
+        read.mockRejectedValueOnce(new ApiError('secret SQL diagnostic', {error: status === 0 ? 'INVALID_RESPONSE' : 'ERROR'}, status))
+        const {result} = renderHook(() => useUsageBudget('admin', 'one', 0))
+        await waitFor(() => expect(result.current.error).toBe(true))
+        expect(result.current.errorMessage).toContain(message)
+        expect(result.current.errorMessage).not.toContain('secret')
+        expect(result.current.policy).toBeNull()
+    })
+
+it('discards stale results, accepts an exact zero budget, and rejects a mismatched tenant', async () => {
+    let resolve!: (value: OrganizationBudgetStatus) => void
+    read.mockImplementationOnce(() => new Promise(r => {resolve = r}))
+    const {result, rerender} = renderHook(({org}) => useUsageBudget('admin', org, 0), {initialProps: {org: 'one'}})
+    const signal = read.mock.calls[0][1]
+    read.mockResolvedValueOnce({...policy, organizationId: 'two'})
+    rerender({org: 'two'})
+    expect(signal?.aborted).toBe(true)
+    await waitFor(() => expect(result.current.policy?.organizationId).toBe('two'))
+    expect(result.current.policy?.monthlyBudgetUsd).toBe('0')
+    await act(async () => resolve(policy))
+    expect(result.current.policy?.organizationId).toBe('two')
+    read.mockResolvedValueOnce(policy)
+    rerender({org: 'three'})
+    expect(result.current.policy).toBeNull()
+    await waitFor(() => expect(result.current.error).toBe(true))
+})

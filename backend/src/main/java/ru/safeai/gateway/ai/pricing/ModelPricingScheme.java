@@ -11,11 +11,10 @@ import java.util.Objects;
  * automatic settlement until a new audited catalog version explicitly selects
  * {@link #FLAT_TOKEN_V1}.</p>
  *
- * <p>This type is intentionally retained even while the corresponding pricing
- * call-site integration is being rolled out. Do not replace it with a boolean:
+ * <p>This type is used by the catalog and settlement contract.
+ * Do not replace it with a boolean:
  * the scheme name is immutable settlement evidence.</p>
  */
-@SuppressWarnings("unused")
 public enum ModelPricingScheme {
 
     /**

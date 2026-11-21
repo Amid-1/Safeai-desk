@@ -127,6 +127,7 @@ class AuditOutboxProcessorTest {
         ).thenReturn(
                 0
         );
+        when(eventRepository.hasMatchingEvidence(item.getId())).thenReturn(true);
 
         AuditOutboxProcessor.BatchResult result =
                 processor(
@@ -152,6 +153,23 @@ class AuditOutboxProcessorTest {
         verify(
                 outboxRepository
         ).flush();
+    }
+
+    @Test
+    void mismatchingEvidenceIsNeverDeletedOrReportedAsSuccessful() {
+        AuditOutboxEntity item = item();
+        whenNextRows(item);
+        when(eventRepository.insertFromOutbox(item.getId())).thenReturn(0);
+        when(eventRepository.hasMatchingEvidence(item.getId())).thenReturn(false);
+        when(failureService.markFailure(eq(item.getId()), any(AuditEvidenceConflictException.class)))
+                .thenReturn(new AuditOutboxFailureService.FailureResult(item.getId(), true, true, 1));
+
+        var result = processor(new TestTransactionManager()).processBatch();
+        assertThat(result.processed()).isZero();
+        assertThat(result.failed()).isEqualTo(1);
+        assertThat(result.deadLettered()).isEqualTo(1);
+        verify(outboxRepository, never()).delete(item);
+        verify(metrics).recordIntegrityConflict();
     }
 
     @Test

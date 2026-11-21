@@ -4,65 +4,59 @@ import type { UsageReportTab } from '../lib/adminUsageFilterState'
 import { formatCount, trimDecimal } from '../lib/adminUsagePresentation'
 import { summarizeUsageRows } from './usageMetrics'
 
-export function UsageKpis({rows, tab}: {
+export function UsageKpis({ rows, tab, hasMore = true, appliedModel, dailyTotals = false, status, assistantResponses }: {
     rows: UsageAmounts[]
     tab: UsageReportTab
+    hasMore?: boolean
+    appliedModel?: string
+    dailyTotals?: boolean
+    status?: string
+    assistantResponses?: string | null
 }) {
     const sum = summarizeUsageRows(rows)
-    const partial = BigInt(sum.partial) > 0n
-    const cost = sum.pricedRows === 0 && sum.unknownCostRows > 0
-        ? '—'
-        : sum.knownCost === null
-            ? 'Разные валюты'
+    const incomplete = sum.unknownCostRows > 0 || sum.incompleteCostRows > 0
+    const cost = sum.rowCount === 0 || (sum.pricedRows === 0 && sum.unknownCostRows > 0)
+        ? '—' : sum.knownCost === null ? 'Разные валюты'
             : `${trimDecimal(sum.knownCost)} ${sum.currency ?? 'USD'}`
-    const scope = tab === 'users' || tab === 'summary'
-        ? 'Итог только загруженной страницы; не всей организации.'
-        : 'Итог всех строк показанного ограниченного отчета.'
+    const paged = (tab === 'users' || tab === 'summary') && hasMore
+    const mock = appliedModel === 'mock-safeai' || rows.some(row => 'model' in row && row.model === 'mock-safeai')
     return (
-        <section aria-label="Ключевые показатели загруженного отчета">
-            <div className="usage-kpis">
+        <section className="usage-kpi-section" aria-label="Ключевые показатели загруженного отчета">
+            <div className={`usage-kpis${assistantResponses !== undefined ? ' usage-kpis--four' : ''}`}>
                 <div className="usage-kpi">
-                    <span className="usage-kpi__label">Входные токены</span>
-                    <strong className="usage-kpi__value">{formatCount(sum.input)}</strong>
-                    <small className="usage-kpi__hint">Подтвержденный учет</small>
+                    <span className="usage-kpi__label">Подтверждённые токены</span>
+                    <strong className="usage-kpi__value">{sum.rowCount ? formatCount(sum.total) : '—'}</strong>
+                    <small className="usage-kpi__hint">{sum.rowCount
+                        ? `Вход: ${formatCount(sum.input)} · Выход: ${formatCount(sum.output)}` : 'Нет данных отчёта'}</small>
+                    {BigInt(sum.partial) > 0n && <small className="usage-kpi__hint">Отдельно из частичных ответов: {formatCount(sum.partial)}</small>}
                 </div>
-                <div className="usage-kpi">
-                    <span className="usage-kpi__label">Выходные токены</span>
-                    <strong className="usage-kpi__value">{formatCount(sum.output)}</strong>
-                    <small className="usage-kpi__hint">Подтвержденный учет</small>
-                </div>
-                <div className="usage-kpi">
-                    <span className="usage-kpi__label">Всего токенов</span>
-                    <strong className="usage-kpi__value">{formatCount(sum.total)}</strong>
-                    <small className="usage-kpi__hint">{partial
-                        ? `Отдельно известно из частичных ответов: ${formatCount(sum.partial)}`
-                        : 'Частичные ответы не прибавляются к подтвержденному итогу'}</small>
-                </div>
-                <div className={`usage-kpi${sum.unknownCostRows > 0 ? ' usage-kpi--attention' : ''}`}>
+                <div className={`usage-kpi${incomplete ? ' usage-kpi--attention' : ''}`}>
                     <span className="usage-kpi__label">Известная стоимость</span>
                     <strong className="usage-kpi__value">{cost}</strong>
-                    <small className="usage-kpi__hint">
-                        {sum.unknownCostRows > 0
-                            ? `Неизвестная стоимость: ${sum.unknownCostRows} строк. Это не общие расходы.`
-                            : 'Стоимость известных строк; не счет внешнего провайдера.'}
-                    </small>
+                    <small className="usage-kpi__hint">{!sum.rowCount ? 'Нет данных отчёта' : incomplete
+                        ? 'Не все цены известны. Ноль не означает бесплатно.'
+                        : 'Расчётная, не счёт провайдера.'}</small>
                 </div>
                 <div className={`usage-kpi${sum.completeRows !== sum.rowCount ? ' usage-kpi--attention' : ''}`}>
-                    <span className="usage-kpi__label">Качество данных</span>
-                    <strong className="usage-kpi__value">{sum.completeRows} / {sum.rowCount}</strong>
-                    <small className="usage-kpi__hint">
-                        Строк с подтвержденной полнотой токенов и тарификации.
-                        Не количество AI-запросов.
-                    </small>
+                    <span className="usage-kpi__label">Полнота учёта</span>
+                    <strong className="usage-kpi__value">{sum.rowCount ? `${Math.floor(sum.completeRows * 100 / sum.rowCount)}%` : '—'}</strong>
+                    <small className="usage-kpi__hint">{sum.rowCount
+                        ? `${sum.completeRows} из ${sum.rowCount} ${dailyTotals ? 'дней с записями' : 'строк'} · полный учёт токенов и цены`
+                        : 'Нет данных отчёта'}</small>
                 </div>
+                {assistantResponses !== undefined && <div className="usage-kpi usage-kpi--responses">
+                    <span className="usage-kpi__label">Попытки ответа AI</span>
+                    <strong className="usage-kpi__value">{assistantResponses === null ? '—' : formatCount(assistantResponses)}</strong>
+                    <small className="usage-kpi__hint">Записи ассистента, включая неуспешные ответы.</small>
+                </div>}
             </div>
-            <p className="usage-chart-note">{scope}</p>
-            {rows.some(row => 'model' in row && row.model === 'mock-safeai') && (
-                <p className="usage-chart-note">
-                    mock-safeai — тестовая Runtime-модель. Рассчитанная стоимость не является счетом внешнего AI-провайдера.
-                    Нулевая известная стоимость не означает отсутствие данных о цене.
-                </p>
-            )}
+            {(dailyTotals || paged || mock || status) && <p className="usage-kpi-context" role="status">
+                {status || (dailyTotals ? 'Весь выбранный период · серверные агрегаты по дням (UTC). '
+                    : !paged ? 'Весь выбранный период · серверные агрегаты. ' : '')}
+                {paged && 'Итоги текущей страницы. Остальные страницы не включены.'}
+                {paged && mock && ' · '}
+                {mock && 'mock-safeai — тестовая модель.'}
+            </p>}
         </section>
     )
 }

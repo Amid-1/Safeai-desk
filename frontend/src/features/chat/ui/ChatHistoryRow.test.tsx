@@ -74,7 +74,7 @@ describe('ChatHistoryRow', () => {
             name: `Действия с чатом «${chat.title}»`,
         }))
         expect(onArchive).not.toHaveBeenCalled()
-        fireEvent.click(screen.getByRole('button', { name: 'Убрать из списка' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Архивировать' }))
         expect(onArchive).toHaveBeenCalledWith(chat)
     })
 

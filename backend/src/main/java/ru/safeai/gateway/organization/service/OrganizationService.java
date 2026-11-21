@@ -18,6 +18,7 @@ import ru.safeai.gateway.organization.dto.EnableOrganizationRequest;
 import ru.safeai.gateway.organization.dto.OrganizationDirectoryResponse;
 import ru.safeai.gateway.organization.dto.OrganizationDisableImpactResponse;
 import ru.safeai.gateway.organization.dto.OrganizationResponse;
+import ru.safeai.gateway.organization.dto.OrganizationType;
 import ru.safeai.gateway.organization.dto.UpdateOrganizationRequest;
 import ru.safeai.gateway.organization.repository.OrganizationImpactQueryRepository;
 import ru.safeai.gateway.organization.repository.OrganizationRepository;
@@ -77,6 +78,12 @@ public class OrganizationService {
             Pageable pageable
     ) {
         return queries.findAll(currentUser, pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<OrganizationResponse> search(SafeAiUserPrincipal principal,
+            String query, OrganizationType type, Boolean enabled, Pageable pageable) {
+        return queries.search(principal, query, type, enabled, pageable);
     }
 
     @Transactional(readOnly = true)

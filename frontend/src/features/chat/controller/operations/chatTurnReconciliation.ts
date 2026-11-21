@@ -10,6 +10,7 @@ import { delay, failureMessage, isRequestAborted } from '../../lib/chatPageSuppo
 const RECONCILIATION_ATTEMPTS = 12
 const RECONCILIATION_DELAY_MS = 2_500
 import type { ChatControllerDependencies } from './chatControllerTypes'
+import { withPendingState } from './chatPendingState'
 
 export function createTurnReconciliation(deps: Pick<ChatControllerDependencies,
     | 'reconciliationControllersRef'
@@ -66,12 +67,7 @@ export function createTurnReconciliation(deps: Pick<ChatControllerDependencies,
                     // При несовпадении нельзя показывать чужие сообщения.
                     if (turn.chatId !== pending.chatId
                         || turn.clientRequestId !== pending.clientRequestId) {
-                        putPendingTurn({
-                            ...pending,
-                            status: 'AMBIGUOUS',
-                            error: 'Backend вернул состояние другого chat turn.',
-                            retryAfterUntil: null,
-                        })
+                        putPendingTurn(withPendingState(pending, 'AMBIGUOUS', 'Backend вернул состояние другого chat turn.'))
                         setSendError(
                             'Идентификаторы операции не совпали. '
                             + 'Автоматический повтор запрещён.',
@@ -88,12 +84,7 @@ export function createTurnReconciliation(deps: Pick<ChatControllerDependencies,
                         turn.state === 'NEW'
                         || turn.state === 'PROCESSING'
                     ) {
-                        putPendingTurn({
-                            ...pending,
-                            status: 'PROCESSING',
-                            error: null,
-                            retryAfterUntil: null,
-                        })
+                        putPendingTurn(withPendingState(pending, 'PROCESSING'))
 
                         await delay(
                             RECONCILIATION_DELAY_MS,
@@ -138,24 +129,15 @@ export function createTurnReconciliation(deps: Pick<ChatControllerDependencies,
                         const message =
                             failureMessage(turn)
 
-                        putPendingTurn({
-                            ...pending,
-                            status: 'FAILED',
-                            error: message,
-                            retryAfterUntil: null,
-                        })
+                        putPendingTurn(withPendingState(pending, 'FAILED', message))
                         setSendError(message)
                         return
                     }
 
-                    putPendingTurn({
-                        ...pending,
-                        status: 'AMBIGUOUS',
-                        error:
-                            'Результат операции неоднозначен. '
-                            + 'Нельзя создавать автоматический повтор с новым ID.',
-                        retryAfterUntil: null,
-                    })
+                    putPendingTurn(withPendingState(
+                        pending, 'AMBIGUOUS',
+                        'Результат операции неоднозначен. Нельзя создавать автоматический повтор с новым ID.',
+                    ))
                     setSendError(
                         'Проверьте исходную операцию или закройте предупреждение '
                         + 'без её повторной отправки.',
@@ -170,15 +152,10 @@ export function createTurnReconciliation(deps: Pick<ChatControllerDependencies,
                         error instanceof ApiError
                         && error.status === 404
                     ) {
-                        putPendingTurn({
-                            ...pending,
-                            status: 'SEND_UNKNOWN',
-                            error:
-                                'Backend пока не видит turn по clientRequestId. '
-                                + 'Безопасен только повтор исходного запроса '
-                                + 'с тем же clientRequestId.',
-                            retryAfterUntil: null,
-                        })
+                        putPendingTurn(withPendingState(
+                            pending, 'SEND_UNKNOWN',
+                            pending.error ?? 'Сервер пока не подтвердил получение сообщения.',
+                        ))
                         return
                     }
 
@@ -186,15 +163,10 @@ export function createTurnReconciliation(deps: Pick<ChatControllerDependencies,
                         attempt
                         === RECONCILIATION_ATTEMPTS - 1
                     ) {
-                        putPendingTurn({
-                            ...pending,
-                            status: 'SEND_UNKNOWN',
-                            error: getApiErrorMessage(
-                                error,
-                                'Не удалось определить состояние turn.',
-                            ),
-                            retryAfterUntil: null,
-                        })
+                        putPendingTurn(withPendingState(
+                            pending, 'SEND_UNKNOWN',
+                            pending.error ?? getApiErrorMessage(error, 'Не удалось определить состояние turn.'),
+                        ))
                         return
                     }
 

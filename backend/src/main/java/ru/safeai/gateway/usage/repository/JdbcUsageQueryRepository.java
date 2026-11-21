@@ -13,12 +13,15 @@ import ru.safeai.gateway.usage.config.UsageJdbcClients;
 import ru.safeai.gateway.usage.dto.UsageDailySummaryResponse;
 import ru.safeai.gateway.usage.dto.UsageDataQualityResponse;
 import ru.safeai.gateway.usage.dto.UsageModelSummaryResponse;
+import ru.safeai.gateway.usage.dto.UsageOrganizationSummaryResponse;
 import ru.safeai.gateway.usage.dto.UsageProblemModelResponse;
 import ru.safeai.gateway.usage.dto.UsageSummaryResponse;
 import ru.safeai.gateway.usage.dto.UsageUserSummaryResponse;
 
 import java.util.List;
 import java.util.Objects;
+import java.sql.Timestamp;
+import ru.safeai.gateway.common.budget.PlatformBudgetClassification;
 
 import static ru.safeai.gateway.usage.repository.UsageSqlFragments.AGGREGATE_COLUMNS;
 import static ru.safeai.gateway.usage.repository.UsageSqlFragments.AGGREGATE_COLUMNS_WITHOUT_ASSISTANT;
@@ -38,6 +41,53 @@ public class JdbcUsageQueryRepository implements UsageQueryRepository {
     }
 
     @Override
+    public Slice<UsageOrganizationSummaryResponse> findOrganizations(
+            UsageQueryCriteria criteria, UsageQueryPlan plan, Pageable pageable
+    ) {
+        if (criteria.organizationId() != null) {
+            throw new IllegalArgumentException("Cross-organization report requires platform scope");
+        }
+        UsageFactSql facts = factQueryBuilder.organizationFacts(criteria, plan, false, true);
+        MapSqlParameterSource parameters = facts.parameters();
+        addPage(parameters, pageable);
+        String where = "";
+        String relevance = "";
+        if (criteria.organizationQuery() != null) {
+            String query = criteria.organizationQuery().toLowerCase(java.util.Locale.ROOT);
+            String literal = query.replace("!", "!!").replace("%", "!%").replace("_", "!_");
+            parameters.addValue("orgExact", query).addValue("orgPrefix", literal + "%")
+                    .addValue("orgContains", "%" + literal + "%");
+            where = " where lower(o.name) like :orgContains escape '!' ";
+            relevance = "case when lower(o.name) = :orgExact then 0 when lower(o.name) like :orgPrefix escape '!' then 1 else 2 end, ";
+        }
+        String having = criteria.usedOnly()
+                ? " having coalesce(sum(input_tokens), 0) + coalesce(sum(output_tokens), 0) > 0 " : "";
+        if (criteria.budgetFilter() != null) {
+            var budget = criteria.budgetFilter();
+            parameters.addValue("budgetStart", Timestamp.from(budget.start()))
+                    .addValue("budgetEnd", Timestamp.from(budget.end()))
+                    .addValue("budgetStatus", budget.status().name());
+            where += (where.isEmpty() ? " where " : " and ")
+                    + "o.id in (" + PlatformBudgetClassification.CTE
+                    + " select organization_id from classified where state = :budgetStatus) ";
+        }
+        String sql = facts.cte() + """
+                select o.id as organization_id, o.name as organization_name,
+                """ + AGGREGATE_COLUMNS + """
+                from public.organizations o
+                left join facts on facts.organization_id = o.id
+                """ + where + """
+                group by o.id, o.name
+                """ + having + """
+                order by
+                """ + relevance + reportOrder(pageable, "known_cost_usd desc", "o.id asc") + """
+
+                limit :limit offset :offset
+                """;
+        return slice(sql, parameters, pageable, UsageRowMapperSupport.organizationSummaryMapper());
+    }
+
+    @Override
     public Slice<UsageSummaryResponse> findSummary(
             UsageQueryCriteria criteria, UsageQueryPlan plan, Pageable pageable
     ) {
@@ -49,7 +99,9 @@ public class JdbcUsageQueryRepository implements UsageQueryRepository {
                 """ + AGGREGATE_COLUMNS + """
                 from facts
                 group by user_id, current_user_email, model
-                order by user_id asc, model asc
+                order by
+                """ + reportOrder(pageable, "", "user_id asc, model asc") + """
+
                 limit :limit offset :offset
                 """;
         return slice(sql, parameters, pageable, UsageRowMapperSupport.summaryMapper());
@@ -67,7 +119,9 @@ public class JdbcUsageQueryRepository implements UsageQueryRepository {
                 """ + AGGREGATE_COLUMNS + """
                 from facts
                 group by user_id, current_user_email
-                order by user_id asc
+                order by
+                """ + reportOrder(pageable, "", "user_id asc") + """
+
                 limit :limit offset :offset
                 """;
         return slice(sql, parameters, pageable, UsageRowMapperSupport.userSummaryMapper());
@@ -176,6 +230,22 @@ public class JdbcUsageQueryRepository implements UsageQueryRepository {
     private static void addPage(MapSqlParameterSource parameters, Pageable pageable) {
         parameters.addValue("limit", Math.addExact(pageable.getPageSize(), 1));
         parameters.addValue("offset", pageable.getOffset());
+    }
+
+    // Sort expressions are a closed allowlist, never request-derived SQL.
+    static String reportOrder(Pageable pageable, String defaultOrder, String tie) {
+        String metric = pageable.getSort().stream().findFirst().map(o -> o.getProperty()).orElse("");
+        String order = switch (metric) {
+            case "tokens", "total" -> "coalesce(sum(input_tokens), 0) + coalesce(sum(output_tokens), 0) desc";
+            case "cost" -> "case when coalesce(sum(priced_message_count + free_message_count), 0) > 0 "
+                    + "then sum(cost_usd) end desc nulls last";
+            case "responses" -> "coalesce(sum(assistant_message_count), 0) desc";
+            case "coverage" -> "case when coalesce(sum(assistant_message_count), 0) > 0 then "
+                    + "least(1 - sum(partial_usage_message_count + missing_usage_message_count)::numeric / sum(assistant_message_count), "
+                    + "1 - sum(unpriced_message_count + pricing_failed_message_count)::numeric / sum(assistant_message_count)) end desc nulls last";
+            default -> defaultOrder;
+        };
+        return order.isEmpty() ? tie : order + ", " + tie;
     }
 
     private <T> Slice<T> slice(

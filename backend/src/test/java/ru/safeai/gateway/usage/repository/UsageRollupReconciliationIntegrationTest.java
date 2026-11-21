@@ -6,14 +6,23 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.usage.config.UsageProperties;
 import ru.safeai.gateway.usage.dto.UsageModelSummaryResponse;
+import ru.safeai.gateway.usage.service.UsageDirtyDateProcessor;
+import ru.safeai.gateway.usage.service.UsageQueryService;
+import ru.safeai.gateway.usage.service.UsageReportExecutor;
 import ru.safeai.gateway.usage.service.UsageRollupDayProcessor;
 import ru.safeai.gateway.usage.testsupport.UsagePostgresIntegrationTestSupport;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -40,6 +49,92 @@ class UsageRollupReconciliationIntegrationTest
 
     @Autowired
     private UsageRollupStateRepository stateRepository;
+
+    @Autowired
+    private UsageDirtyDateProcessor dirtyProcessor;
+
+    @Autowired
+    private UsageReportExecutor reportExecutor;
+
+    @Test
+    void concurrentCommitCannotMixDirtyMarkerAndFactsAcrossSnapshots() {
+        Instant from = utcStart(ROLLUP_DATE);
+        Instant to = utcStart(ROLLUP_DATE.plusDays(1));
+        insertCompletedAssistant(SESSION_A_ID, ORGANIZATION_A_ID, MODEL, "COMPLETED",
+                10, 20, "AVAILABLE", new BigDecimal("0.10"), "PRICED", from.plusSeconds(60));
+        dayProcessor.rebuildDay(ROLLUP_DATE, true);
+        assertThat(dirtyProcessor.rebuildIfPending(ROLLUP_DATE)).isTrue();
+        var criteria = criteria(ORGANIZATION_A_ID, null, MODEL, from, to);
+
+        reportExecutor.execute("models", () -> {
+            assertThat(stateRepository.findLastCompletedDate()).isEqualTo(ROLLUP_DATE);
+            assertThat(stateRepository.findDirtyDates(ROLLUP_DATE, ROLLUP_DATE.plusDays(1))).isEmpty();
+            CompletableFuture.runAsync(() -> insertCompletedAssistant(
+                    SESSION_A_ID, ORGANIZATION_A_ID, MODEL, "COMPLETED", 30, 40, "AVAILABLE",
+                    new BigDecimal("0.20"), "PRICED", from.plusSeconds(120)))
+                    .orTimeout(10, TimeUnit.SECONDS).join();
+            assertThat(stateRepository.findDirtyDates(ROLLUP_DATE, ROLLUP_DATE.plusDays(1))).isEmpty();
+            assertThat(repository.findModels(criteria, livePlan(from, to)).getFirst()
+                    .responses().assistantMessages()).isEqualTo(1);
+            return true;
+        });
+        assertThat(stateRepository.findDirtyDates(ROLLUP_DATE, ROLLUP_DATE.plusDays(1)))
+                .containsExactly(ROLLUP_DATE);
+        assertThat(repository.findModels(criteria, livePlan(from, to)).getFirst()
+                .responses().assistantMessages()).isEqualTo(2);
+    }
+
+    @Test
+    void serviceReportsLateFactsBeforeAndAfterAtomicDirtyRebuild() {
+        LocalDate next = ROLLUP_DATE.plusDays(1);
+        Instant from = utcStart(ROLLUP_DATE);
+        Instant to = utcStart(next.plusDays(1));
+        insertCompletedAssistant(SESSION_A_ID, ORGANIZATION_A_ID, MODEL, "COMPLETED",
+                10, 20, "AVAILABLE", new BigDecimal("0.10"), "PRICED", from.plusSeconds(60));
+        insertCompletedAssistant(SESSION_A_ID, ORGANIZATION_A_ID, MODEL, "COMPLETED",
+                30, 40, "AVAILABLE", new BigDecimal("0.20"), "PRICED", utcStart(next).plusSeconds(60));
+        for (LocalDate date : List.of(ROLLUP_DATE, next)) {
+            dayProcessor.rebuildDay(date, true);
+            assertThat(dirtyProcessor.rebuildIfPending(date)).isTrue();
+        }
+        assertThat(stateRepository.findDirtyDates(ROLLUP_DATE, next.plusDays(1))).isEmpty();
+
+        insertCompletedAssistant(SESSION_A_ID, ORGANIZATION_A_ID, MODEL, "COMPLETED",
+                50, 60, "AVAILABLE", new BigDecimal("0.30"), "PRICED", from.plusSeconds(120));
+        insertCompletedAssistant(SESSION_B_ID, ORGANIZATION_B_ID, MODEL, "COMPLETED",
+                900, 900, "AVAILABLE", new BigDecimal("99.00"), "PRICED", from.plusSeconds(180));
+        assertThat(stateRepository.findDirtyDates(ROLLUP_DATE, next.plusDays(1))).containsExactly(ROLLUP_DATE);
+
+        var properties = new UsageProperties(null, null, null, null, null, null, null, null,
+                UsageProperties.Rollup.defaults());
+        var service = new UsageQueryService(repository, stateRepository, properties, reportExecutor, Clock.systemUTC());
+        var admin = SafeAiUserPrincipal.accessTokenPrincipal(USER_A_ID, ORGANIZATION_A_ID, 0, 0,
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+        var criteria = criteria(ORGANIZATION_A_ID, null, null, from, to);
+        var live = livePlan(from, to);
+        var expected = repository.findModels(criteria, live).getFirst();
+        assertThat(expected.responses().assistantMessages()).isEqualTo(3);
+        assertThat(expected.cost().knownCostUsd()).isEqualByComparingTo("0.60");
+
+        assertReportsMatchLive(service, admin, criteria, live, from, to);
+        assertThat(dirtyProcessor.rebuildIfPending(ROLLUP_DATE)).isTrue();
+        assertThat(stateRepository.findDirtyDates(ROLLUP_DATE, next.plusDays(1))).isEmpty();
+        assertReportsMatchLive(service, admin, criteria, live, from, to);
+    }
+
+    private void assertReportsMatchLive(UsageQueryService service, SafeAiUserPrincipal admin,
+                                        UsageQueryCriteria criteria, UsageQueryPlan live, Instant from, Instant to) {
+        assertSameAggregate(service.getUsageByModels(from, to, admin).getFirst(),
+                repository.findModels(criteria, live).getFirst());
+        assertThat(service.getUsageSummary(from, to, null, PAGEABLE, admin).getContent())
+                .usingRecursiveComparison().isEqualTo(repository.findSummary(criteria, live, PAGEABLE).getContent());
+        assertThat(service.getUsageByUsers(from, to, PAGEABLE, admin).getContent())
+                .usingRecursiveComparison().isEqualTo(repository.findUsers(criteria, live, PAGEABLE).getContent());
+        assertThat(service.getUsageDaily(from, to, admin))
+                .usingRecursiveComparison().isEqualTo(repository.findDaily(criteria, live));
+        assertThat(service.getDataQuality(from, to, admin))
+                .usingRecursiveComparison().isEqualTo(repository.findDataQuality(criteria, live));
+    }
 
     @Test
     void rollupMatchesSourceChatMessagesForAllCounters() {

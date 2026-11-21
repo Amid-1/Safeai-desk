@@ -23,6 +23,7 @@ export function DeleteUserDialog(props: DeleteUserDialogProps) {
         <>
             {deleteUser && (
                 <Modal
+                    className="admin-details-dialog"
                     title={
                         'Удалить пользователя навсегда?'
                     }

@@ -8,6 +8,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import ru.safeai.gateway.common.exception.BadRequestException;
+import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.usage.config.UsageProperties;
 import ru.safeai.gateway.usage.repository.UsagePhysicalSpendRepository;
@@ -56,6 +57,16 @@ class UsagePhysicalSpendServiceTest {
     void superAdminCanReadGlobalPhysicalSpend() {
         service.findCoverage(null, null, principal("ROLE_SUPER_ADMIN"));
         verify(repository).findCoverage(NOW.minus(Duration.ofDays(30)), NOW, null);
+    }
+
+    @Test
+    void directCallsRejectOrdinaryUserForBothPhysicalReports() {
+        var user = principal("ROLE_USER");
+        assertThatThrownBy(() -> service.findCoverage(null, null, user))
+                .isInstanceOf(ForbiddenOperationException.class);
+        assertThatThrownBy(() -> service.reconcile(null, null, user))
+                .isInstanceOf(ForbiddenOperationException.class);
+        verifyNoInteractions(repository);
     }
 
     @Test

@@ -61,7 +61,7 @@ class OpenAiKnowledgeEmbeddingProvenanceRegressionTest {
         KnowledgeEmbeddingProperties properties = new KnowledgeEmbeddingProperties(
                 "openai", null, "test-key", "text-embedding-3-small",
                 384, 16, 20_000, Duration.ofSeconds(1), Duration.ofSeconds(2));
-        return new Setup(new OpenAiKnowledgeEmbeddingProvider(properties, builder.build()), server);
+        return new Setup(EmbeddingAssuranceTestSupport.provider(properties, builder.build()), server);
     }
 
     private record Setup(OpenAiKnowledgeEmbeddingProvider provider,

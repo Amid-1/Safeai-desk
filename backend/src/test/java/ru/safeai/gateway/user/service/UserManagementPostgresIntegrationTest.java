@@ -65,8 +65,39 @@ class UserManagementPostgresIntegrationTest
     @Autowired
     private UserService userService;
 
+    @Autowired
+    private UserDirectorySearchService directorySearch;
+
     @MockitoBean
     private AuditOutboxScheduler auditOutboxScheduler;
+
+    @Test
+    void directoryAppliesOrganizationAndRoleBeforePagination() {
+        insertOrganization(ORGANIZATION_A_ID, "Organization A", true);
+        insertOrganization(ORGANIZATION_B_ID, "Organization B", true);
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        insertUser(first, ORGANIZATION_A_ID, "directory-a1@test.com", true, "USER", CREATED_AT);
+        insertUser(second, ORGANIZATION_A_ID, "directory-a2@test.com", true, "USER", CREATED_AT.plusSeconds(1));
+        insertUser(UUID.randomUUID(), ORGANIZATION_A_ID, "directory-admin@test.com", true, "ADMIN", CREATED_AT.plusSeconds(2));
+        insertUser(UUID.randomUUID(), ORGANIZATION_B_ID, "directory-b@test.com", true, "USER", CREATED_AT.plusSeconds(3));
+
+        var page0 = directorySearch.search(superAdminPrincipal(), "USER", true, "directory", 0, 1, ORGANIZATION_A_ID);
+        var page1 = directorySearch.search(superAdminPrincipal(), "USER", true, "directory", 1, 1, ORGANIZATION_A_ID);
+        assertThat(page0.getTotalElements()).isEqualTo(2);
+        assertThat(page1.getTotalElements()).isEqualTo(2);
+        assertThat(page0.getContent()).extracting(UserResponse::id).containsExactly(second);
+        assertThat(page1.getContent()).extracting(UserResponse::id).containsExactly(first);
+        var statistics = directorySearch.statistics(superAdminPrincipal(), ORGANIZATION_A_ID);
+        assertThat(statistics.total()).isEqualTo(3);
+        assertThat(statistics.administrators()).isEqualTo(1);
+        assertThat(statistics.users()).isEqualTo(2);
+        assertThat(statistics.superAdministrators()).isZero();
+        assertThatThrownBy(() -> directorySearch.search(adminPrincipal(), null, null, null, 0, 1, ORGANIZATION_B_ID))
+                .isInstanceOf(ForbiddenOperationException.class);
+        assertThatThrownBy(() -> directorySearch.statistics(adminPrincipal(), ORGANIZATION_B_ID))
+                .isInstanceOf(ForbiddenOperationException.class);
+    }
 
     @Test
     void adminOrgACannotSeeOrChangeUserOrgB() {
@@ -350,7 +381,7 @@ class UserManagementPostgresIntegrationTest
     @Test
     void activeRefreshTokenBlocksPermanentDeletion() {
         DeletionFixture fixture = disabledUserFixture("refresh@test.com");
-        insertActiveRefreshToken(fixture.userId(), 0L);
+        insertActiveRefreshToken(fixture.userId());
 
         assertDeletionConflict(fixture, "refresh-сессии");
     }

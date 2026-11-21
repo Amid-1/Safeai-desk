@@ -1,6 +1,7 @@
 // frontend/src/features/usage/ui/usageCsv.ts
 import type { UsageAmounts, UsageDailySummary, UsageModelSummary, UsageSummary, UsageUserSummary } from '../api/usageApi'
 import type { UsageReportTab } from '../lib/adminUsageFilterState'
+import type { UsageOrganizationSummary } from '../api/usage/usageTypes'
 
 function safeCell(value: string): string {
     const raw = String(value)
@@ -30,10 +31,17 @@ const HEADER = [
 ]
 
 /** Pure serializer: current loaded rows only; never fetches other pages or tenants. */
-export function serializeUsageCsv(tab: UsageReportTab, rows: UsageAmounts[]): string {
+export function serializeUsageCsv(tab: UsageReportTab | 'organizations', rows: UsageAmounts[]): string {
     let leading: string[]
     let values: string[][]
-    if (tab === 'summary') {
+    if (tab === 'organizations') {
+        leading = ['ID организации', 'Организация', 'Наличие данных']
+        values = (rows as UsageOrganizationSummary[]).map(row => [
+            row.organizationId, row.organizationName,
+            row.coverage.assistantMessages === '0' ? 'Нет данных' : 'Есть данные',
+            ...(row.coverage.assistantMessages === '0' ? HEADER.map(() => '') : coverageCells(row)),
+        ])
+    } else if (tab === 'summary') {
         leading = ['ID пользователя', 'Email пользователя', 'Модель']
         values = (rows as UsageSummary[]).map(row => [row.userId, row.userEmail, row.model, ...coverageCells(row)])
     } else if (tab === 'users') {
@@ -50,13 +58,13 @@ export function serializeUsageCsv(tab: UsageReportTab, rows: UsageAmounts[]): st
         .map(row => row.map(safeCell).join(';')).join('\r\n')
 }
 
-export function downloadUsageCsv(tab: UsageReportTab, rows: UsageAmounts[]): void {
+export function downloadUsageCsv(tab: UsageReportTab | 'organizations', rows: UsageAmounts[], scope: 'displayed' | 'filtered' = 'displayed'): void {
     if (rows.length === 0) return
     const csv = serializeUsageCsv(tab, rows)
     const objectUrl = URL.createObjectURL(new Blob([`\uFEFF${csv}`], {type: 'text/csv;charset=utf-8'}))
     const link = document.createElement('a')
     link.href = objectUrl
-    link.download = `safeai-usage-${tab}-displayed.csv`
+    link.download = `safeai-usage-${tab}-${scope}.csv`
     document.body.appendChild(link)
     try { link.click() } finally {
         link.remove()

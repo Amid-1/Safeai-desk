@@ -27,6 +27,20 @@ beforeEach(() => {
 })
 
 describe('usage aggregation filtering before paging', () => {
+    it('requests a bounded export in the selected organization and rejects an incomplete response', async () => {
+        vi.mocked(api.getUsageByOrganization).mockResolvedValue({
+            content: [], page: 0, size: 100, totalElements: 101, totalPages: 2,
+        })
+        const signal = new AbortController().signal
+        const result = await loadUsageReport({tab: 'summary', page: 0, pageSize: 100,
+            filter: FILTER, organizationId: ORG, superAdmin: true, signal})
+        expect(api.getUsageByOrganization).toHaveBeenCalledWith(ORG, 0, 100, FILTER, {signal})
+        expect(result.complete).toBe(false)
+        expect(result.hasNext).toBe(true)
+        vi.mocked(api.getUsageByOrganization).mockResolvedValue({...PAGE, size: 100})
+        expect((await loadUsageReport({tab: 'summary', page: 0, pageSize: 100,
+            filter: FILTER, organizationId: ORG, superAdmin: true, signal})).complete).toBe(true)
+    })
     it.each(['summary', 'users', 'models', 'daily'] as const)(
         'passes exact model to %s (tenant-scoped ADMIN)', async tab => {
             await loadUsageReport({tab, page: 0, filter: FILTER, organizationId: ORG,

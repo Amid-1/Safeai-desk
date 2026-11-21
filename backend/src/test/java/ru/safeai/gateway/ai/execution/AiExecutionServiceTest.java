@@ -33,7 +33,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
-/** V53/V54: execution is impossible without DB-backed request/route binding. */
+/**
+ * V53/V54: execution is impossible without DB-backed request/route binding.
+ */
 @ExtendWith(MockitoExtension.class)
 class AiExecutionServiceTest {
     private static final Instant NOW = Instant.parse("2026-09-13T12:00:00Z");
@@ -44,11 +46,18 @@ class AiExecutionServiceTest {
     private static final UUID CHAT = UUID.fromString("10000000-0000-4000-8000-000000000005");
     private static final UUID OPERATION = UUID.fromString("10000000-0000-4000-8000-000000000006");
 
-    @Mock AiProvider provider;
-    @Mock AiExecutionPlanService plans;
-    @Mock AiExecutionAttemptRecorder recorder;
-    @Mock ModelRouteExecutionBindingService binding;
-    @Mock ModelRouteExecutionIdentity identity;
+    @Mock
+    AiProvider provider;
+    @Mock
+    AiExecutionPlanService plans;
+    @Mock
+    AiExecutionAttemptRecorder recorder;
+    @Mock
+    ModelRouteExecutionBindingService binding;
+    @Mock
+    ModelRouteExecutionIdentity identity;
+    @Mock
+    AiDataAssurancePort dataAssurance;
 
     private AiExecutionAttemptScope scope;
     private AiExecutionService service;
@@ -60,10 +69,11 @@ class AiExecutionServiceTest {
     void setUp() {
         scope = new AiExecutionAttemptScope();
         service = new AiExecutionService(
-                provider, new AiProviderProperties("openai"), plans, recorder, scope, binding);
+            provider, new AiProviderProperties("openai"), plans, recorder, scope, binding,
+            AiExecutionAttemptAuthorization.noOp(), dataAssurance);
         target = ProviderExecutionTarget.staticTarget("openai", "gpt-5");
         AiChatRequest base = new AiChatRequest(USER, ORG, CHAT, OPERATION,
-                null, null, "question", List.of(), 4_096L, 512);
+            null, null, "question", List.of(), 4_096L, 512);
         lenient().when(identity.decisionId()).thenReturn(DECISION);
         lenient().when(identity.chatTurnId()).thenReturn(TURN);
         request = new AiExecutionRequest(TURN, DECISION, base, target, identity, base);
@@ -88,7 +98,7 @@ class AiExecutionServiceTest {
         assertThat(result.response()).isSameAs(response);
         InOrder order = inOrder(binding, plans, provider, recorder);
         order.verify(binding).authorizePhysicalExecution(identity, TURN, DECISION,
-                request.reservedAiRequest(), request.aiRequest(), "openai", "gpt-5");
+            request.reservedAiRequest(), request.aiRequest(), "openai", "gpt-5");
         order.verify(plans).createOrRead(request);
         order.verify(provider).sendMessage(request.aiRequest());
         order.verify(recorder).started(plan.getId(), target, attempt);
@@ -98,11 +108,11 @@ class AiExecutionServiceTest {
     @Test
     void badReservedIdentityFailsBeforePlanAndAdapter() {
         doThrow(new IllegalStateException("Pre-RAG request differs from sealed reservation"))
-                .when(binding).authorizePhysicalExecution(eq(identity), eq(TURN), eq(DECISION),
-                        any(), any(), eq("openai"), eq("gpt-5"));
+            .when(binding).authorizePhysicalExecution(eq(identity), eq(TURN), eq(DECISION),
+                any(), any(), eq("openai"), eq("gpt-5"));
         assertThatThrownBy(() -> service.execute(request))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("sealed reservation");
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("sealed reservation");
         verifyNoInteractions(plans, recorder);
         verifyNoInteractions(provider);
     }
@@ -111,8 +121,8 @@ class AiExecutionServiceTest {
     void adapterWithoutEvidenceFailsBeforePlanAndProviderIo() {
         when(provider.recordsPhysicalAttempts()).thenReturn(false);
         assertThatThrownBy(() -> service.execute(request))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("durable attempt evidence");
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("durable attempt evidence");
         verifyNoInteractions(plans, recorder);
         verify(provider, never()).sendMessage(any());
     }
@@ -122,10 +132,10 @@ class AiExecutionServiceTest {
         when(provider.recordsPhysicalAttempts()).thenReturn(true);
         ProviderExecutionTarget different = ProviderExecutionTarget.staticTarget("openai", "gpt-6");
         AiExecutionRequest bad = new AiExecutionRequest(TURN, DECISION,
-                request.aiRequest(), different, identity, request.reservedAiRequest());
+            request.aiRequest(), different, identity, request.reservedAiRequest());
         assertThatThrownBy(() -> service.execute(bad))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("active provider configuration");
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("active provider configuration");
         verifyNoInteractions(plans, recorder);
         verify(provider, never()).sendMessage(any());
     }
@@ -135,13 +145,13 @@ class AiExecutionServiceTest {
         when(provider.recordsPhysicalAttempts()).thenReturn(true);
         when(plans.createOrRead(request)).thenReturn(plan);
         AiProviderAttemptContext foreign = new AiProviderAttemptContext(
-                UUID.randomUUID(), UUID.randomUUID(), 1, 1);
+            UUID.randomUUID(), UUID.randomUUID(), 1, 1);
         when(provider.sendMessage(request.aiRequest())).thenAnswer(inv -> {
             scope.started(foreign);
             return response("gpt-5");
         });
         assertThatThrownBy(() -> service.execute(request))
-                .isInstanceOf(IllegalStateException.class).hasMessageContaining("operationId");
+            .isInstanceOf(IllegalStateException.class).hasMessageContaining("operationId");
         verifyNoInteractions(recorder);
     }
 
@@ -157,7 +167,7 @@ class AiExecutionServiceTest {
             return response;
         });
         assertThatThrownBy(() -> service.execute(request))
-                .isInstanceOf(ResolvedModelMismatchException.class);
+            .isInstanceOf(ResolvedModelMismatchException.class);
         InOrder order = inOrder(recorder);
         order.verify(recorder).started(plan.getId(), target, attempt);
         order.verify(recorder).succeeded(attempt.attemptId(), response);
@@ -172,22 +182,22 @@ class AiExecutionServiceTest {
         when(provider.recordsPhysicalAttempts()).thenReturn(true);
         when(plans.createOrRead(request)).thenReturn(plan);
         doThrow(new IllegalStateException("DB acknowledgement lost"))
-                .when(recorder).succeeded(attempt.attemptId(), response);
+            .when(recorder).succeeded(attempt.attemptId(), response);
         when(provider.sendMessage(request.aiRequest())).thenAnswer(inv -> {
             scope.started(attempt);
             scope.succeeded(attempt, response);
             return response;
         });
         assertThatThrownBy(() -> service.execute(request))
-                .isInstanceOf(PhysicalAttemptReconciliationRequiredException.class)
-                .hasCauseInstanceOf(IllegalStateException.class)
-                .satisfies(error -> {
-                    PhysicalAttemptReconciliationRequiredException reconciliation =
-                            (PhysicalAttemptReconciliationRequiredException) error;
+            .isInstanceOf(PhysicalAttemptReconciliationRequiredException.class)
+            .hasCauseInstanceOf(IllegalStateException.class)
+            .satisfies(error -> {
+                PhysicalAttemptReconciliationRequiredException reconciliation =
+                    (PhysicalAttemptReconciliationRequiredException) error;
 
-                    assertThat(reconciliation.providerAttemptId())
-                            .isEqualTo(attempt.attemptId());
-                });
+                assertThat(reconciliation.providerAttemptId())
+                    .isEqualTo(attempt.attemptId());
+            });
         verify(provider, times(1)).sendMessage(any());
         verify(recorder, never()).failed(any(), any());
         verify(recorder, never()).ambiguous(any(), any());
@@ -202,11 +212,11 @@ class AiExecutionServiceTest {
         AiChatResponse response = response("gpt-5");
         AiProviderRateLimitedException rejection = rateLimited();
         when(provider.sendMessage(request.aiRequest())).thenAnswer(inv -> retry.execute(
-                "openai", "gpt-5", OPERATION, Duration.ZERO, attempt -> {
-                    physical.add(attempt);
-                    if (attempt.attemptNumber() == 1) throw rejection;
-                    return response;
-                }));
+            "openai", "gpt-5", OPERATION, Duration.ZERO, attempt -> {
+                physical.add(attempt);
+                if (attempt.attemptNumber() == 1) throw rejection;
+                return response;
+            }));
 
         assertThat(service.execute(request).response()).isSameAs(response);
         assertThat(physical).hasSize(2);
@@ -216,6 +226,86 @@ class AiExecutionServiceTest {
         order.verify(recorder).started(plan.getId(), target, physical.get(1));
         order.verify(recorder).succeeded(physical.get(1).attemptId(), response);
         verify(plans, times(1)).createOrRead(request);
+        verify(dataAssurance, times(2)).require(request, false);
+        verify(dataAssurance, times(2)).require(request, true);
+    }
+
+    @Test
+    void assuranceRevokedAfterStartedDoesNotDispatchOrRetry() {
+        when(provider.recordsPhysicalAttempts()).thenReturn(true);
+        when(plans.createOrRead(request)).thenReturn(plan);
+
+        var denied = new ru.safeai.gateway.ai.exception.AiProviderException(
+            "openai", "gpt-5",
+            null, null, "DATA_ASSURANCE_DENIED",
+            ru.safeai.gateway.ai.exception.AiProviderErrorType.PERMISSION_DENIED,
+            false, false, null, "assurance expired", null
+        );
+
+        doNothing().when(dataAssurance).require(request, false);
+        doThrow(denied).when(dataAssurance).require(request, true);
+
+        var retry = retry(3);
+        AtomicInteger networkCalls = new AtomicInteger();
+
+        when(provider.sendMessage(request.aiRequest())).thenAnswer(inv ->
+            retry.execute(
+                "openai", "gpt-5", OPERATION, Duration.ZERO,
+                attempt -> {
+                    networkCalls.incrementAndGet();
+                    return response("gpt-5");
+                }
+            )
+        );
+
+        assertThatThrownBy(() -> service.execute(request))
+            .isSameAs(denied);
+
+        assertThat(networkCalls).hasValue(0);
+
+        var started = org.mockito.ArgumentCaptor.forClass(
+            AiProviderAttemptContext.class
+        );
+
+        InOrder order = inOrder(dataAssurance, recorder);
+
+        order.verify(dataAssurance).require(request, false);
+        order.verify(recorder).started(
+            eq(plan.getId()), eq(target), started.capture()
+        );
+        order.verify(dataAssurance).require(request, true);
+        order.verify(recorder).failed(
+            eq(started.getValue().attemptId()), same(denied)
+        );
+
+        verify(dataAssurance, times(1)).require(request, false);
+        verify(dataAssurance, times(1)).require(request, true);
+        verify(recorder, times(1)).started(
+            eq(plan.getId()), eq(target), any()
+        );
+        verify(recorder, times(1)).failed(any(), same(denied));
+        verify(recorder, never()).succeeded(any(), any());
+        verify(recorder, never()).ambiguous(any(), any());
+        verify(provider, times(1)).sendMessage(request.aiRequest());
+    }
+
+    @Test
+    void financialAdmissionRevokedBeforeDispatchNeverCallsProvider() {
+        when(provider.recordsPhysicalAttempts()).thenReturn(true);
+        when(plans.createOrRead(request)).thenReturn(plan);
+        var revoked = new IllegalStateException("Financial admission revoked");
+        doThrow(revoked).when(recorder).beforeNetworkDispatch(eq(plan.getId()), any());
+        AiProviderRetryExecutor retry = retry(3);
+        AtomicInteger networkCalls = new AtomicInteger();
+        when(provider.sendMessage(request.aiRequest())).thenAnswer(inv -> retry.execute(
+                "openai", "gpt-5", OPERATION, Duration.ZERO, attempt -> {
+                    networkCalls.incrementAndGet();
+                    return response("gpt-5");
+                }));
+        assertThatThrownBy(() -> service.execute(request)).isSameAs(revoked);
+        assertThat(networkCalls).hasValue(0);
+        verify(recorder, never()).succeeded(any(), any());
+        verify(recorder).ambiguous(any(), same(revoked));
     }
 
     @Test
@@ -226,13 +316,13 @@ class AiExecutionServiceTest {
         AiProviderRetryExecutor retry = retry(3);
         AtomicInteger attempts = new AtomicInteger();
         when(provider.sendMessage(request.aiRequest())).thenAnswer(inv -> retry.execute(
-                "openai", "gpt-5", OPERATION, Duration.ZERO, attempt -> {
-                    attempts.incrementAndGet();
-                    throw rateLimited();
-                }));
+            "openai", "gpt-5", OPERATION, Duration.ZERO, attempt -> {
+                attempts.incrementAndGet();
+                throw rateLimited();
+            }));
 
         assertThatThrownBy(() -> service.execute(request))
-                .isInstanceOf(AiProviderRateLimitedException.class);
+            .isInstanceOf(AiProviderRateLimitedException.class);
         assertThat(attempts).hasValue(1);
         verify(recorder, times(1)).started(eq(plan.getId()), eq(target), any());
         verify(recorder, times(1)).failed(any(), any());
@@ -241,13 +331,13 @@ class AiExecutionServiceTest {
 
     private AiProviderRetryExecutor retry(int max) {
         return new AiProviderRetryExecutor(new AiRetryProperties(true, max,
-                Duration.ofMillis(10), Duration.ofMillis(10),
-                Duration.ofSeconds(1), Duration.ofSeconds(2)), scope);
+            Duration.ofMillis(10), Duration.ofMillis(10),
+            Duration.ofSeconds(1), Duration.ofSeconds(2)), scope);
     }
 
     private static AiProviderRateLimitedException rateLimited() {
         return new AiProviderRateLimitedException("openai", "gpt-5", 429,
-                "request-1", Duration.ZERO, true, "rate limited", null);
+            "request-1", Duration.ZERO, true, "rate limited", null);
     }
 
     private static AiProviderAttemptContext firstPhysicalAttempt() {
@@ -256,7 +346,7 @@ class AiExecutionServiceTest {
 
     private static AiChatResponse response(String actual) {
         return AiChatResponse.fromProvider("answer", "gpt-5", actual,
-                "message-id", "request-id", AiResponseStatus.COMPLETED, "stop",
-                new AiTokenUsage(10, 4, 2, 5, true, true), PricingResult.unpriced(NOW));
+            "message-id", "request-id", AiResponseStatus.COMPLETED, "stop",
+            new AiTokenUsage(10, 4, 2, 5, true, true), PricingResult.unpriced(NOW));
     }
 }

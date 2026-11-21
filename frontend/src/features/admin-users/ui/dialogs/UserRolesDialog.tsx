@@ -28,6 +28,7 @@ export function UserRolesDialog(props: UserRolesDialogProps) {
                 && currentUserIsSuperAdmin
                 && (
                     <Modal
+                        className="admin-details-dialog"
                         title={
                             'Изменить роль пользователя'
                         }

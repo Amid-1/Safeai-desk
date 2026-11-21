@@ -1,0 +1,52 @@
+# SafeAI-Desk/infra/prometheus/tests/knowledge-erasure.test.yml
+# Promtool unit tests; never loaded as live alert rules by rule_files/*.yml.
+rule_files:
+  - ../rules/safeai-knowledge-erasure.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: need-review-enters-firing-only-after-five-minutes
+    interval: 1m
+    input_series:
+      - series: 'safeai_knowledge_erasure_operations{scope="document",state="NEEDS_REVIEW"}'
+        values: '1+0x15'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: SafeAIKnowledgeErasureNeedsReview
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: SafeAIKnowledgeErasureNeedsReview
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: safeai-backend
+            exp_annotations:
+              summary: "Knowledge erasure requires operator review"
+              description: "Inspect the ADMIN diagnostics and recovery runbook. Do not manually change deletion state in PostgreSQL."
+
+  - name: verified-retention-alert-preserves-operator-evidence
+    interval: 1m
+    input_series:
+      - series: 'safeai_knowledge_erasure_operations{scope="base",state="BLOCKED_BY_RETENTION"}'
+        values: '1+0x15'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: SafeAIKnowledgeErasureRetentionBlocked
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: safeai-backend
+            exp_annotations:
+              summary: "Knowledge erasure is blocked by verified retention"
+              description: "Investigate S3 Object Lock / legal hold. Original blocked evidence must remain immutable."
+
+  - name: healthy-deleting-age-does-not-falsely-fire-stuck
+    interval: 1m
+    input_series:
+      - series: 'safeai_knowledge_erasure_oldest_age_seconds{scope="document",state="DELETING"}'
+        values: '120+0x15'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: SafeAIKnowledgeErasureStuck
+        exp_alerts: []

@@ -9,9 +9,22 @@
 
 import type {
     ModelCatalogEntry,
+    ModelPolicyPreview,
+    CreateOrganizationModelPolicyVersionRequest,
     OrganizationModelPolicy,
     RuntimeModelStatus,
 } from '../../entities/model/api/modelApi'
+
+export function createPolicyPreview(request: CreateOrganizationModelPolicyVersionRequest,
+    organizationId: string, runtime: RuntimeModelStatus): ModelPolicyPreview {
+    return {organizationId, basePolicyVersion: request.expectedPreviousVersion,
+        enabled: request.enabled, evaluatedAt: new Date().toISOString(),
+        previewConfirmationId: '12345678-1234-4123-8123-123456789abc',
+        confirmationExpiresAt: new Date(Date.now() + 300_000).toISOString(),
+        runtimeProvider: runtime.provider, runtimeModel: runtime.model,
+        automaticOutcome: 'ALLOWED', automaticReason: 'RUNTIME_ONLY_MATCH',
+        automaticModelKey: null, executableModelCount: 0, wouldLockOutOrganization: false, models: []}
+}
 
 export function createRuntimeModelStatus(
     overrides: Partial<RuntimeModelStatus> = {},

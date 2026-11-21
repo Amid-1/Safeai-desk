@@ -24,6 +24,7 @@ export function ResetUserPasswordDialog(props: ResetUserPasswordDialogProps) {
         <>
             {resetPasswordUser && (
                 <Modal
+                    className="admin-details-dialog"
                     title={
                         'Установить новый пароль'
                     }

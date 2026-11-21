@@ -32,8 +32,7 @@ class OpenAiWireGovernanceContractTest {
         AiRetryProperties retry = new AiRetryProperties(retryEnabled, retryEnabled ? 2 : 1,
                 Duration.ofMillis(10), Duration.ofMillis(10), Duration.ofSeconds(1), Duration.ofSeconds(5));
         return new OpenAiProvider(props,
-                new AiResponseMetadataService(new StaticConfigurationPricingResolver(
-                        new ModelPricingService(new ModelPricingProperties(List.of()), clock))),
+                new AiResponseMetadataService(CatalogPricingFixture.unpriced(clock)),
                 new AiProviderRetryExecutor(retry, scope),
                 new AiContextWindowService(AiContextWindowProperties.defaults()), clock,
                 AiRestClientFactory.create(server.baseUrl(), Duration.ofSeconds(1), Duration.ofSeconds(2), 65_536L));

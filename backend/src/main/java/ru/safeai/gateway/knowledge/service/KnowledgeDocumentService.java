@@ -23,6 +23,7 @@ import ru.safeai.gateway.knowledge.entity.KnowledgeDocumentEntity;
 import ru.safeai.gateway.knowledge.entity.KnowledgeDocumentVersionEntity;
 import ru.safeai.gateway.knowledge.exception.KnowledgeStorageUnavailableException;
 import ru.safeai.gateway.knowledge.model.KnowledgeBaseAccessLevel;
+import ru.safeai.gateway.knowledge.model.KnowledgeDocumentLifecycleState;
 import ru.safeai.gateway.knowledge.repository.KnowledgeDocumentQueryRepository;
 import ru.safeai.gateway.knowledge.repository.KnowledgeDocumentRepository;
 import ru.safeai.gateway.knowledge.repository.KnowledgeDocumentVersionRepository;
@@ -494,6 +495,8 @@ public class KnowledgeDocumentService {
                         knowledgeBaseId,
                         organizationId
                 )
+                .filter(document -> document.getLifecycleState()
+                        == KnowledgeDocumentLifecycleState.AVAILABLE)
                 .orElseThrow(
                         this::documentNotFound
                 );

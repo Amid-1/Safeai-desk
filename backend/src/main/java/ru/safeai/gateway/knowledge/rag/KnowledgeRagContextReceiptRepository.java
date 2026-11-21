@@ -1,17 +1,33 @@
+// SafeAI-Desk/backend/src/main/java/ru/safeai/gateway/knowledge/rag/KnowledgeRagContextReceiptRepository.java
 package ru.safeai.gateway.knowledge.rag;
 
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.stereotype.Repository;
+import org.springframework.stereotype.Component;
 
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
-/** Durable write boundary for the exact context materialized by Knowledge RAG. */
-@Repository
+/**
+ * Хранит неизменяемое доказательство подготовленного RAG-контекста.
+ *
+ * <p>Работает исключительно через JdbcTemplate. Аннотация {@code @Repository}
+ * здесь недопустима: общий JPA-переводчик исключений может преобразовать
+ * {@link KnowledgeRagContextRevokedException} в
+ * {@code InvalidDataAccessApiUsageException}. Тогда слой исполнения ИИ
+ * перестаёт распознавать отзыв контекста как отдельное доменное событие.
+ *
+ * <p>Используется {@code @Component}: SQL-ошибки по-прежнему переводятся самим
+ * JdbcTemplate, а доменные исключения передаются вызывающему коду без подмены.
+ */
+@Component
 @SuppressWarnings({"SqlResolve", "SqlNoDataSourceInspection"})
 class KnowledgeRagContextReceiptRepository {
+
+    void assertSourcesAvailable(RagPreparation preparation, UUID organizationId) {
+        KnowledgeRagErasureGuard.assertAvailable(jdbc, preparation, organizationId);
+    }
 
     private final JdbcTemplate jdbc;
 

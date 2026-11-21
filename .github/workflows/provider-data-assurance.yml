@@ -1,0 +1,56 @@
+name: Provider data assurance
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Provider data assurance / backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - name: Mandatory provider assurance and routing regressions
+        working-directory: backend
+        run: >-
+          ./mvnw --batch-mode --no-transfer-progress
+          -DfailIfNoTests=true -Dsurefire.failIfNoSpecifiedTests=true
+          -Dtest=ProviderDataEvidenceTest,ProviderDataAssuranceBindingTest,ProviderDataDispatchGuardTest,AiExecutionServiceTest,RuntimeModelStatusServiceTest,ModelRoutingSelectionPolicyTest,ModelRoutingCostPolicyTest,ModelPolicyPreviewServiceTest,ModelRoutingServiceTest,EmbeddingDataAssuranceTest,OcrDataAssuranceTest,OpenAiKnowledgeEmbeddingProviderTest,OpenAiKnowledgeEmbeddingProviderRegressionTest,OpenAiKnowledgeEmbeddingProvenanceRegressionTest,KnowledgeOcrBoundaryRegressionTest,AiModelKnowledgeBoundaryArchitectureTest,ModelChatBoundaryArchitectureTest,PolicyNumericRequestTest,ModelRequestValidationTest
+          test
+      - name: Verify operator fingerprint tool matches server
+        run: bash infra/scripts/test-provider-data-evidence.sh
+  frontend:
+    name: Provider data assurance / frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - working-directory: frontend
+        run: npm ci
+      - working-directory: frontend
+        run: npm run typecheck
+      - working-directory: frontend
+        run: npx --no-install vitest run src/features/models src/entities/model/api src/pages/AdminModelsPage.test.tsx src/pages/AdminModelsPage.production.test.tsx

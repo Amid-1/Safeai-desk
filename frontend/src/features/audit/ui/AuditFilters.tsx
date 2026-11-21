@@ -12,6 +12,7 @@ import { AuditActorFields } from './auditFilters/AuditActorFields'
 import { AuditDateFields } from './auditFilters/AuditDateFields'
 import { AuditSubmitActions } from './auditFilters/AuditSubmitActions'
 import { DirectoryWarning } from './auditFilters/auditFilterControls'
+import { applyAuditDatePreset } from '../lib/adminAudit.helpers'
 
 export default function AuditFilters({
     draftFilter, eventTypes, organizations, actors,
@@ -21,16 +22,22 @@ export default function AuditFilters({
     onDatePreset, onApply, onReset,
 }: AuditFiltersProps) {
     const [eventTypeSearch, setEventTypeSearch] = useState('')
-    const [activePreset, setActivePreset] = useState<DatePreset | null>(null)
+    const [activePreset, setActivePreset] = useState<DatePreset | null>(() => {
+        const presets: DatePreset[] = ['today', 'yesterday', 'last7Days', 'last30Days', 'last90Days', 'last365Days']
+        return presets.find((preset) => {
+            const range = applyAuditDatePreset(draftFilter, preset)
+            return range.dateFrom === draftFilter.dateFrom && range.dateTo === draftFilter.dateTo
+        }) ?? null
+    })
     const {
-        organizationQuery, actorQuery, scheduleOrganizationSearch, scheduleActorSearch,
+        organizationQuery, organizationSearchScheduled, actorQuery, scheduleOrganizationSearch, scheduleActorSearch,
     } = useAuditDirectoryQueries(onActorSearch, onOrganizationSearch)
 
     return (
         <section className="card form-card audit-filters" aria-labelledby="audit-filters-title">
-            <h2 id="audit-filters-title">Найти события</h2>
+            <h2 id="audit-filters-title">Поиск событий</h2>
             <p className="muted audit-filters__subtitle">
-                Уточните тип события, участника или период.
+                Выберите событие, пользователя или период. Поиск охватывает весь доступный журнал.
             </p>
             <div className="form">
                 <AuditEventTypeFields
@@ -43,7 +50,7 @@ export default function AuditFilters({
                 {superAdmin && (
                     <AuditOrganizationFields
                         draftFilter={draftFilter} organizations={organizations}
-                        loading={loading} directoriesLoading={directoriesLoading}
+                        loading={loading} directoriesLoading={directoriesLoading || organizationSearchScheduled}
                         organizationsError={organizationsError}
                         onFilterChange={onFilterChange}
                         organizationQuery={organizationQuery}
@@ -61,12 +68,37 @@ export default function AuditFilters({
                     onFilterChange={onFilterChange} onDatePreset={onDatePreset}
                     activePreset={activePreset} setActivePreset={setActivePreset}
                 />
+                <details className="audit-advanced-filters" open={draftFilter.actorEmail || draftFilter.correlationId ? true : undefined}>
+                    <summary>Дополнительные фильтры{draftFilter.actorEmail || draftFilter.correlationId ? ' · активны' : ''}</summary>
+                    <label>Correlation ID
+                        <input type="text" value={draftFilter.correlationId ?? ''} maxLength={36}
+                            disabled={loading} placeholder="UUID запроса" autoComplete="off" spellCheck={false}
+                            onChange={(event) => {
+                                const correlationId = event.target.value
+                                onFilterChange(current => ({ ...current, correlationId }))
+                            }} />
+                        <small>Точное совпадение серверного идентификатора операции.</small>
+                    </label>
+                    <label>Поиск по email в истории
+                        <input type="search" value={draftFilter.actorEmail} maxLength={320}
+                            disabled={loading} placeholder="Например, admin@company.ru"
+                            onChange={(event) => {
+                                const actorEmail = event.target.value
+                                onFilterChange((current) => ({ ...current, actorEmail }))
+                            }} />
+                        <small>Полный email или его начало. Учитывается адрес на момент события, даже если он изменился.</small>
+                    </label>
+                </details>
                 <AuditSubmitActions
                     directoriesLoading={directoriesLoading} filterError={filterError}
                     filtersDirty={filtersDirty} loading={loading}
                     onApply={onApply} onReset={onReset}
                     setActivePreset={setActivePreset}
-                    clearEventTypeSearch={() => setEventTypeSearch('')}
+                    clearEventTypeSearch={() => {
+                        setEventTypeSearch('')
+                        scheduleActorSearch('')
+                        scheduleOrganizationSearch('')
+                    }}
                 />
             </div>
         </section>

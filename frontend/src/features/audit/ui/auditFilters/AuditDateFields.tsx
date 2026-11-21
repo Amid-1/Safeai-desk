@@ -73,6 +73,16 @@ export function AuditDateFields({
                         />
 
                         <PresetButton
+                            label="90 дней"
+                            disabled={loading}
+                            active={activePreset === 'last90Days'}
+                            onClick={() => {
+                                setActivePreset('last90Days')
+                                onDatePreset('last90Days')
+                            }}
+                        />
+
+                        <PresetButton
                             label="365 дней"
                             disabled={loading}
                             active={activePreset === 'last365Days'}
@@ -85,7 +95,7 @@ export function AuditDateFields({
                 </div>
 
                 <label className="audit-filter-field audit-filter-field--date">
-                    Дата с
+                    Начало периода
 
                     <input
                         type="date"
@@ -114,7 +124,7 @@ export function AuditDateFields({
                 </label>
 
                 <label className="audit-filter-field audit-filter-field--date">
-                    Дата по
+                    Конец периода
 
                     <input
                         type="date"

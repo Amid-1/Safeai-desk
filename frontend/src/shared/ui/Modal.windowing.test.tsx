@@ -25,6 +25,41 @@ function renderWindow() {
 }
 
 describe('Управление окном указателем', () => {
+    it('keeps drag and maximize but hides edge handles for read-only profile windows', () => {
+        render(<Modal title="Профиль" onClose={vi.fn()}
+            resize={{ ...dimensions, resizable: false }}>Карточка</Modal>)
+        const dialog = screen.getByRole('dialog', { name: 'Профиль' })
+        expect(dialog.querySelector('[data-modal-drag-handle="true"]')).not.toBeNull()
+        expect(dialog.querySelector('[data-modal-resize-handle]')).toBeNull()
+        fireEvent.click(screen.getByRole('button', { name: 'Развернуть окно на весь экран' }))
+        expect(dialog).toHaveClass('modal-card--maximized')
+        fireEvent.click(screen.getByRole('button', { name: 'Восстановить размер окна' }))
+        expect(dialog.querySelector('[data-modal-resize-handle]')).toBeNull()
+    })
+
+    it('обновляет ручки изменения размера при смене режима карточки', () => {
+        const onClose = vi.fn()
+        const view = render(
+            <Modal title="Карточка" onClose={onClose}
+                resize={{ ...dimensions, resizable: false }}>Сведения</Modal>,
+        )
+        const dialog = screen.getByRole('dialog', { name: 'Карточка' })
+        expect(dialog.querySelectorAll('[data-modal-resize-handle]')).toHaveLength(0)
+        expect(dialog.querySelector('[data-modal-drag-handle="true"]')).not.toBeNull()
+
+        view.rerender(
+            <Modal title="Карточка" onClose={onClose}
+                resize={{ ...dimensions, resizable: true }}>Сведения</Modal>,
+        )
+        expect(dialog.querySelectorAll('[data-modal-resize-handle]')).toHaveLength(8)
+
+        view.rerender(
+            <Modal title="Карточка" onClose={onClose}
+                resize={{ ...dimensions, resizable: false }}>Сведения</Modal>,
+        )
+        expect(dialog.querySelectorAll('[data-modal-resize-handle]')).toHaveLength(0)
+    })
+
     it('позволяет отключить перемещение окна, сохраняя resize и максимизацию', () => {
         render(
             <Modal

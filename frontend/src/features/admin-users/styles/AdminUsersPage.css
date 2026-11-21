@@ -1304,6 +1304,7 @@ body.modal-open {
 .users-directory-search__row select {max-width: 220px; flex: 1 1 170px;}
 .users-directory-search__row button {min-height: 40px; border: 1px solid var(--users-primary); border-radius: 10px; background: var(--users-primary); color: #fff; padding: 0 15px; font-weight: 750;}
 .users-directory-search__row button.secondary-button {background: #f8fafc; color: #334155; border-color: #d6deea;}
+.action-menu__popup .action-menu__security-start {border-top: 1px solid #d6deea; border-radius: 0;}
 .users-directory-search__status-label {font-size: 13px; font-weight: 700;}
 .users-directory-search__summary {color: var(--users-muted); font-size: 13px;}
 .users-page .users-table-scroll {padding-bottom: 14px; scroll-padding-bottom: 14px;}

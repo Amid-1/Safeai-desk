@@ -1,333 +1,672 @@
-# SafeAI Desk — RateLimit
+# SafeAI Desk — Audit
 
-> **Техническое описание и аудит модуля на 17 октября 2026 года**  
-> Стек: Java 21, Spring Boot 4, Spring Data Redis / Lettuce, Redis Lua, Micrometer, Spring Security.  
-> Источники: Java-классы из предоставленного текста; дополнительно сопоставлены одноимённые файлы ветки `main` репозитория `Amid-1/Safeai-desk`, конфигурации `application.yml`, `application-prod.yml`, `ClientIpResolver`, `RateLimitAuditListener` и имеющиеся тесты.  
-> **Статус**: статический аудит. Исправления в исходный код этим README не вносятся; тесты, отказоустойчивость и нагрузка в ходе подготовки отчёта *не запускались*.
-
-## 1. Назначение
-
-Модуль `ru.safeai.gateway.ratelimit` ограничивает частоту обращений к чувствительным API SafeAI Desk. Его задачи:
-
-- затруднять перебор учётных данных на `/login` с учётом **email** и **IP**;
-- ограничивать анонимные запросы обновления сессии по **IP** до обращения к БД токенов;
-- ограничивать платные **AI-запросы** одновременно на уровне **пользователя** и **организации**;
-- одинаково применять лимиты при нескольких экземплярах приложения (включая Kubernetes): счётчики и проверка находятся в общем Redis, а не в памяти JVM;
-- при сбоях Redis не переходить к неограниченному пропуску запросов (*fail-closed*);
-- выдавать клиенту HTTP **429** и `Retry-After`, а при отказе инфраструктуры — безопасный HTTP **503**;
-- генерировать события превышения для аудита и метрики наблюдаемости.
-
-**Границы ответственности.** RateLimit регулирует *частоту*, но не заменяет проверку пароля, JWT/refresh-token, authorization, лимиты финансовых квот AI, учёт физических вызовов провайдера или антибот-защиту. Число допущенных AI-запросов не равно числу оплачиваемых физических AI-вызовов: один логический запрос может порождать несколько попыток выполнения.
-
-## 2. Карта компонентов
+Техническое описание модуля `ru.safeai.gateway.audit` по текущему рабочему дереву.
+Стек проекта: Java 21, Spring Boot, PostgreSQL и Flyway.
+Документ охватывает запись и чтение событий, правила безопасности,
+эксплуатацию, конфигурацию и проверку поведения модуля.
+## Структура
 
 ```text
-ru.safeai.gateway.ratelimit/
-├── exception/
-│   ├── RateLimitExceededException          # 429, Retry-After
-│   ├── RateLimitUnavailableException       # внутренняя ошибка Redis
-│   ├── RateLimitExceptionHandler            # HTTP 429 / 503, ApiErrorResponse
-│   └── RateLimitUnavailableLogger           # подавление повторяющихся логов
-├── AiMessageRateLimitProperties              # user/admin/organization AI лимиты
-├── LoginRateLimitProperties                  # login email+IP, окно, audit org
-├── RefreshRateLimitProperties                # refresh IP, окно
-├── RateLimitRedisKeyProperties               # HMAC secret, namespace, version
-├── RateLimitProductionProperties             # явный escape hatch для AI
-├── RateLimitProductionConfigurationValidator # production fail-fast
-├── RateLimitKeyFactory                       # Redis ключи, HMAC, cluster tags
-├── RedisFixedWindowRateLimiter               # все атомарные Lua-операции
-├── LoginRateLimitService                     # политика входа/компенсация
-├── RefreshRateLimitService                   # политика обновления сессии
-├── RedisRateLimitService                     # политика AI трафика
-├── RateLimitResult                           # одиночный счётчик и TTL
-├── DualRateLimitResult                       # решение по двум измерениям
-├── RateLimitDecision                         # ALLOWED/FIRST/SECOND/BOTH
-├── RateLimitExceededEvent                    # событие аудита
-└── RateLimitMetrics                          # Micrometer счётчики и таймеры
+audit/
+├── config/
+│   ├── AuditDetailsProperties.java
+│   ├── AuditOutboxConfiguration.java
+│   ├── AuditOutboxProperties.java
+│   ├── AuditRetentionConfiguration.java
+│   └── AuditRetentionProperties.java
+├── controller/
+│   ├── AuditController.java
+│   ├── AuditDirectoryController.java
+│   └── AuditOutboxRecoveryController.java
+├── details/
+│   ├── AiResponseAuditDetails.java
+│   ├── AuditDeadLetterRecoveryDetails.java
+│   ├── AuditDetails.java
+│   ├── ChatTurnAuditDetails.java
+│   ├── RateLimitAuditDetails.java
+│   └── SecurityRefreshReuseAuditDetails.java
+├── dto/
+│   ├── AuditActorDirectoryResponse.java
+│   ├── AuditEventCursorResponse.java
+│   ├── AuditEventFilter.java
+│   ├── AuditEventPageResponse.java
+│   ├── AuditEventResponse.java
+│   └── AuditTargetOrganizationDirectoryResponse.java
+├── entity/
+│   ├── AuditEventEntity.java
+│   └── AuditOutboxEntity.java
+├── listener/
+│   └── RateLimitAuditListener.java
+├── model/
+│   └── AuditActor.java
+├── repository/
+│   ├── AuditDirectoryQueryRepository.java
+│   ├── AuditEventCriteria.java
+│   ├── AuditEventCursorRepository.java
+│   ├── AuditEventCursorRepositoryImpl.java
+│   ├── AuditEventRepository.java
+│   └── AuditOutboxRepository.java
+├── service/
+│   ├── AuditCommand.java
+│   ├── AuditCommandFactory.java
+│   ├── AuditCursorCodec.java
+│   ├── AuditDatabaseClock.java
+│   ├── AuditDetailsSanitizer.java
+│   ├── AuditDirectoryService.java
+│   ├── AuditEventCursorService.java
+│   ├── AuditEventQueryPolicy.java
+│   ├── AuditEventQueryService.java
+│   ├── AuditEventService.java
+│   ├── AuditOutboxFailureService.java
+│   ├── AuditOutboxMetrics.java
+│   ├── AuditOutboxProcessor.java
+│   ├── AuditOutboxRecoveryService.java
+│   ├── AuditOutboxScheduler.java
+│   ├── AuditOutboxWriter.java
+│   ├── AuditRetentionBatchService.java
+│   ├── AuditRetentionLockService.java
+│   ├── AuditRetentionService.java
+│   └── BestEffortStandaloneAuditService.java
+├── spi/
+│   ├── AuditActorSnapshotProvider.java
+│   └── AuditTargetOrganizationSnapshotProvider.java
+├── AuditEventType.java
+└── README.md
 ```
 
-Смежные, но важные классы вне модуля:
+[Тесты Audit](../../../../../../test/java/ru/safeai/gateway/audit/README.md).
 
-- `audit/listener/RateLimitAuditListener`: синхронный слушатель `RateLimitExceededEvent`, запись `RATE_LIMIT_EXCEEDED` через standalone audit outbox (`REQUIRES_NEW`);
-- `common/security/ClientIpResolver`: разбор IP и доверенных прокси; в конфигурации production `server.forward-headers-strategy: none`;
-- `common/exception/ApiErrorResponseFactory` и `ApiExceptionResponseSupport`: единый JSON-контракт ошибок;
-- вызовы RateLimit из authentication/chat-кода: **точный порядок всех фильтров и бизнес-транзакций требует отдельной сквозной проверки**.
+## Запись и доставка
 
-## 3. Как работает обработка запросов
+| Режим | Гарантия |
+| --- | --- |
+| Обязательный в текущей транзакции | Бизнес-изменение и намерение аудита коммитятся вместе. |
+| Обязательный автономный | Outbox коммитится в отдельной транзакции. Ошибка возвращается вызывающему коду. |
+| Best effort | Сбой записи диагностируется по типу исключения. Бизнес-операция сохраняет свой результат. |
 
-### 3.1. Вход в систему: LoginRateLimitService
+Типизированный путь проходит через `AuditCommandFactory.createTyped`. Для обычного `Map`
+действует строгий список разрешённых текстовых полей. Санитайзер ограничивает размер и
+редактирует распознаваемые секреты в обоих случаях.
 
-1. При включённом лимитере нормализуются email (`trim` + `Locale.ROOT` lower-case) и IP (`trim`). Пустые значения заменяются специальной строкой `unknown`.
-2. `RateLimitKeyFactory` создаёт псевдонимизированные HMAC-SHA-256 ключи для email/IP, а также ключи маркеров превышения.
-3. `RedisFixedWindowRateLimiter.incrementBothAndCheck(...)` исполняет **один Lua-скрипт** с четырьмя `KEYS`.
-4. Скрипт проверяет существующие счётчики, увеличивает **оба счётчика на попытку** (`INCR`), назначает TTL только если его нет, сравнивает `newCount > limit`.
-5. Если превышена хотя бы одна граница, попытка блокируется. При первом превышении данного измерения в окне через `SET ... NX PX` создаётся notification marker.
-6. Сервис публикует событие превышения (при необходимости), записывает метрику отказа и выбрасывает `RateLimitExceededException` (HTTP 429).
-7. **Только после успешной аутентификации** должен вызываться `onLoginSuccess(...)`: другой Lua-скрипт полностью удаляет email-счётчик и его marker, а IP-счётчик уменьшает на 1, сохраняя ранее накопленные ошибки других пользователей за NAT.
+Auth передаёт в аудит повторного использования refresh данные семейства токенов и
+отпечаток User-Agent. RateLimit передаёт анонимный отказ входа как системное событие
+с HMAC email и IP. User и Organization записывают снимки инициатора и целевой
+организации. Исторический снимок хранится независимо от текущих данных пользователя.
 
-**Семантика:** отличие login от AI важно: отклонённая login-попытка *тоже увеличивает* counters. Это помогает учитывать дальнейший перебор. Ветка успешной авторизации выполняет компенсацию, чтобы добросовестные пользователи за общим NAT не исчерпывали IP-limit.
+Обработчик выбирает готовые записи с `FOR UPDATE SKIP LOCKED`, переносит событие по
+его ID и подтверждает outbox в PostgreSQL. Повторная доставка того же ID идемпотентна.
+После исчерпания повторов запись остаётся в dead-letter. Операторский endpoint
+`POST /api/admin/audit-events/outbox/dead-letters/{eventId}/recover` возвращает 204
+при успешном восстановлении. Действуют ограничения сервиса и собственный аудит операции.
 
-**Пограничная ситуация:** компенсация не содержит идентификатора конкретной попытки/окна. Если ответ об успешном входе задержался до истечения TTL и создания нового окна либо перекрывается параллельными попытками, `DECR` может затронуть чужой или новый IP-счётчик. Это требует отдельного дизайна и теста (см. P1-03).
+## Чтение и хранение
 
-### 3.2. Обновление сессии: RefreshRateLimitService
+- `GET /api/admin/audit-events` и `/users/{userId}` используют постраничную выдачу.
+  Максимальный размер страницы — 100, максимальное смещение — 10 000 строк.
+- `GET /api/admin/audit-events/cursor` использует порядок `createdAt DESC, id DESC`.
+  Клиент передаёт те же фильтры на следующей странице. Tenant scope вычисляется заново.
+- Справочники доступны через `/api/admin/audit-event-types`, `/audit-organizations`
+  и `/audit-actors`. ADMIN ограничен своей организацией, SUPER_ADMIN работает
+  с глобальным набором и фильтром организации.
+- При двух границах периода действует максимум 367 суток. Стоимость запросов
+  с одной границей и поиска по справочникам зависит от размера журнала.
+- Retention удаляет просроченные события партиями. PostgreSQL advisory lock
+  координирует реплики. Размер пула должен учитывать отдельные соединения для lock и batch.
 
-1. Ключ строится по HMAC IP в отдельном namespace `rate-limit:refresh:ip:`.
-2. `incrementAndGet()` атомарно увеличивает **один** счётчик, TTL закрепляется на начале фиксированного окна.
-3. Проверка `count <= ipLimit`: первые N запросов допускаются, N+1 возвращает HTTP 429.
-4. При отказе Redis сервис выдаёт 503. В комментариях указано, что проверка должна выполняться до обращения к хранилищу refresh-токенов; само место вызова нужно подтверждать при интеграционной проверке.
+## Приёмка
 
-### 3.3. AI-запросы: RedisRateLimitService
+Проверить доставку алертов dead-letter, возраст очереди, повтор после сбоя БД,
+восстановление с сохранением ID и очистку истории на нескольких репликах.
+На объёме production измерить планы запросов справочников, курсора и открытых
+диапазонов. При требованиях к защите от привилегированных изменений отдельно
+проверить внешний неизменяемый экспорт и восстановление.
 
-1. Вычисляются лимит пользователя (повышенный для `ROLE_ADMIN` / `ROLE_SUPER_ADMIN`) и общий лимит организации.
-2. Lua `tryIncrementBoth(...)` **сначала проверяет текущие значения** (`current >= limit`). Если какое-либо измерение исчерпано, оба счётчика **не увеличиваются**.
-3. Если оба лимита допускают запрос, скрипт атомарно увеличивает оба counters.
-4. При отказе возвращаются HTTP 429 и оставшийся TTL того/тех измерений, которые блокируют запрос; при двойном превышении берётся максимум TTL.
-5. Redis недоступен — HTTP 503, а не выполнение платного вызова без ограничения.
 
-**Гарантия:** для корректно выполненного Lua-скрипта при едином Redis состоянии допуск user+org линеаризуем в рамках одного Redis server/slot. **Оговорка:** Redis Lua атомарен относительно конкурирующих команд, но не является транзакцией с rollback при ошибке внутри скрипта; уже выполненные операции могут сохраниться, если следующая команда скрипта аварийно завершилась.
+## 1. Назначение и границы модуля
 
-### 3.4. Маркеры уведомлений и аудит
+Модуль `audit` фиксирует **кто**, **что**, **в отношении какой организации**, **когда** сделал и **какие допустимые
+метаданные** характеризуют действие. Он обеспечивает проверяемую историю административных, security-, chat-, AI-,
+rate-limit- и knowledge-операций без сохранения исходных prompt/response, паролей, токенов и других секретов в
+audit details.
 
-- Внутри Lua `SET marker '1' PX ttl NX` снижает число одинаковых событий за окно.
-- `RateLimitExceededEvent` передаётся через `ApplicationEventPublisher`.
-- `RateLimitAuditListener` слушает его синхронно и инициирует durable audit outbox в отдельной транзакции. Системный actor применяется для анонимного login.
-- Если synchronous publish/enqueue провалился, сервис старается удалить созданные markers, чтобы при следующем отказе была повторная попытка аудита.
-- Ошибка публикации **не должна заменять** исходный ответ 429 ошибкой аудита. Это намеренная best-effort модель, а **не** строгая гарантия «каждый отказ сохранён в audit_events».
-- Удаление marker сейчас выполняется по имени ключа; без сравнения уникального ownership token возможна гонка с маркером, созданным позже.
+Основные функции:
 
-**Важная деталь PII:** тест `RateLimitExceededEventPiiTest` демонстрирует безопасно составленный отдельный DTO, однако production-код `LoginRateLimitService` в `buildEventDetails()` добавляет **сырое нормализованное `email`** в `details`, а `RateLimitExceededEvent` получает его как `actorEmail` даже при `actorUserId == null`. Далее listener создаёт системное событие, и центральный unstructured sanitizer, согласно предоставленному коду Audit, не допускает неизвестные свободные строковые ключи (`email`). Это **не доказывает утечку в БД**, но перенос PII по event pipeline существует и требует проверки/сокращения. Тест с ручным DTO не доказывает поведение production-пути.
+1. **Required audit**: обязательное событие сохраняется в `audit_outbox` **в транзакции изменяющей
+  бизнес-операции**. Отказ сохранения audit intent отменяет бизнес-транзакцию.
+2. **Standalone required audit**: для независимых security/operational событий применяется отдельная
+  `REQUIRES_NEW`-транзакция; отказ явно передаётся вызывающему коду.
+3. **Best-effort audit**: запись диагностического события через отдельную транзакцию допускает отказ аудита без
+  отмены исходной операции. Это **не** замена required-аудиту важных изменений.
+4. **Asynchronous materialization**: фоновый обработчик переносит immutable audit intent из `audit_outbox` в
+  `audit_events` с повторными попытками, backoff, dead-letter и защитой от дублирования.
+5. **Чтение истории**: HTTP API для ADMIN/SUPER_ADMIN с фильтрами, page-/cursor-пагинацией и tenant isolation по
+  **target organization**.
+6. **Directory**: получение типов событий, инициаторов и целевых организаций из исторических снимков.
+7. **Retention**: пакетная очистка записей старше установленного срока по времени PostgreSQL, с межрепличной
+  блокировкой.
+8. **Защита details**: typed DTO, списки допустимых полей, подавление секретных значений, Unicode-контроль и
+  бюджеты объёма JSON.
+9. **Наблюдаемость**: метрики backlog, возраста старейшего pending-события, dead-letter, сбоев доставки и сбоев
+  самого worker.
 
-## 4. Redis: ключи, TTL и особенности Cluster
+**Важная граница:** `audit` — журнал действий и решений приложения. Он **не заменяет** физический реестр AI-вызовов
+`model_execution_attempts`, финансовую reconciliation и отдельный security monitoring / SIEM.
 
-Примеры логических форм ключей (реальные HMAC-значения не приводятся):
+## 2. Краткий вывод
 
-```text
-<prefix>:<keyVersion>:rate-limit:{login}:email:<hmac>
-<prefix>:<keyVersion>:rate-limit:{login}:ip:<hmac>
-<prefix>:<keyVersion>:rate-limit:{login}:email:<hmac>:exceeded
-<prefix>:<keyVersion>:rate-limit:refresh:ip:<hmac>
-<prefix>:<keyVersion>:rate-limit:{ai-<org-hmac-prefix>}:user:<user-hmac>
-<prefix>:<keyVersion>:rate-limit:{ai-<org-hmac-prefix>}:organization
+Audit использует транзакционный outbox, PostgreSQL-ограничения на изменение истории
+и чтение с проверкой организации. Поддерживаются повторная доставка, операторское
+восстановление dead-letter и пакетная очистка по сроку хранения.
+
+Готовность к эксплуатации зависит от проверки алертов, восстановления,
+ресурсов пула и планов запросов на объёме целевой среды.
+
+### 2.1. Приоритеты
+
+| Приоритет | Вывод | Статус | Рекомендуемое действие |
+|---|---|---|---|
+| Typed details | `AuditEventService` использует `createTyped`. | Реализовано | Прогнать PostgreSQL-регрессию. |
+| Логи | Best effort пишет класс исключения. | Реализовано | Проверка присутствует в hardening test. |
+| Dead-letter | Есть recovery endpoint и правила алертов. | Реализовано | Подтвердить доставку и восстановление на стенде. |
+| **P1 / compliance-dependent** | **Неизменяемость БД не является криптографическим доказательством отсутствия подмены.** Runtime-trigger препятствует `UPDATE`, но владелец схемы/привилегированный DBA может изменить триггеры или удалить данные; retention намеренно делает `DELETE`. | **Архитектурное ограничение, не установленная уязвимость runtime API** | Для требований регуляторного доказательства: отдельные роли, write-once/off-site export, внешние контрольные суммы/цепочка хэшей, аудит админ-доступа и резервного восстановления. |
+| Чтение | OFFSET ограничен 10 000 строк. Для глубокой истории доступен курсор. | Реализовано | Проверить планы открытых диапазонов. |
+| **P2** | **Период запроса контролируется только если заданы обе границы**. Только `dateFrom`, только `dateTo` или полностью пустой диапазон могут охватывать годы записей. | **Подтверждено по `AuditEventQueryPolicy`** | Сохранить compatibility при обосновании, но ограничить стоимость запроса: statement timeout, rate limit, адекватный range policy, EXPLAIN на prod-like объёме. |
+| **P2** | **Поиск справочников организаций/инициаторов может дорого обходиться**: DISTINCT ON по журналу и подстрочный `position(...)` зависят от всего объёма истории, даже если ответ `LIMIT 20–50`. | **Подтверждено по SQL; эффект зависит от объёма и плана** | EXPLAIN (ANALYZE, BUFFERS), лимиты, при необходимости materialized directory/search index; не добавлять индексы без профилирования. |
+| **P2** | **Cursor — base64-кодировка, не криптографически подписанный токен** и не связан с хэшем фильтров. Это **не обход прав**, потому что tenant scope пересчитывается каждый запрос, но cursor можно менять и использовать с другим фильтром, получая нестабильную семантику продолжения. | **Подтверждено; security-эксплуатация не показана** | Для строгой истории добавить версионированный HMAC cursor, filter fingerprint, TTL, сохранив совместимость `v1` при миграции. |
+| **P2** | **Возраст очереди в метриках вычисляется по JVM `Clock`, а retry / retention — по БД**. При clock skew наблюдаемый возраст может быть неточным. | **Подтверждено по коду; масштаб зависит от синхронизации времени** | Использовать DB clock или фиксировать допуск рассинхронизации; мониторить NTP. |
+| **P2** | **Лок retention удерживает JDBC connection во время `REQUIRES_NEW` batch transactions**, которым нужны другие соединения. При слишком маленьком Hikari pool возможна самоблокировка/timeout. | **Риск подтверждён по архитектуре; тест уже использует pool = 4** | Проверять минимальный размер pool и таймауты, добавить стресс-тест с pool=2/3 и конкурентной нагрузкой; не переносить lock на случайное соединение. |
+| **P2** | В `AuditEventRepository.insertFromOutbox` `ON CONFLICT (id) DO NOTHING` обеспечивает отсутствие дублей, **но не сверяет содержимое** уже существующей записи и источника при конфликте. | **Подтверждено по SQL; практическая вероятность при random UUID мала** | Для строгой reconciliation проверять равенство immutable evidence в collision/uncertain commit path; не заменять на overwrite/upsert. |
+
+### 2.2. Что уже сделано правильно
+
+- **Fail-closed required audit**: невозможно молча пропустить обязательное событие при successful business commit.
+- **Transactional outbox**, а не «сначала бизнес commit, потом отправим лог в очереди».
+- **`REQUIRES_NEW` только там, где нужна независимая сохранность**; три режима аудита имеют разные обещания.
+- **`FOR UPDATE SKIP LOCKED`** позволяет нескольким репликам обрабатывать разные outbox rows без общего JVM mutex.
+- **Idempotency по `audit_events.id`** — повторная доставка не должна создавать второй event с тем же ID.
+- **`@Immutable` + PostgreSQL UPDATE guard** защищают историю в ORM и на уровне таблицы.
+- **V70 отделяет FK живого пользователя от immutable actor snapshot**. Это важное исправление сценария физического
+  удаления аккаунта.
+- **Отдельный `AuditEventQueryPolicy`** повторно проверяет ADMIN/SUPER_ADMIN и tenant scope, независимо от
+  controller annotation.
+- **Детерминированная сортировка `(created_at DESC, id DESC)`** и cursor-based pagination.
+- **Immutable snapshots** email, display name, actor organization и target organization name защищают историю от
+  изменений текущих справочников.
+- **Unicode validation + NFKC внутри sanitizer**, лимиты количества узлов, размера строк и итогового JSON; для
+  actor identity применяется сознательно иная NFC-нормализация.
+- **SQL-side wall-clock** для retention cutoffs и попыток доставки, чтобы не полагаться на локальные часы разных JVM.
+- **SQL/DB constraints** запрещают нетипичные состояния retry/dead-letter и невалидные JSON details.
+- **Есть интеграционные PostgreSQL-тесты**, включая rollback required audit, tenant isolation, cursor pagination,
+  retention и межрепличную advisory lock.
+
+## 3. Архитектура записи, доставки и чтения
+
+```mermaid
+flowchart TD
+  U[Application service / business mutation] --> A{Audit policy}
+  A -->|Required, same transaction| F[AuditEventService / CommandFactory]
+  A -->|Standalone required| G[AuditEventService / REQUIRES_NEW writer]
+  A -->|Best effort| H[BestEffortStandaloneAuditService]
+  F --> S[AuditDetailsSanitizer]
+  G --> S
+  H --> S
+  S --> W[AuditOutboxWriter]
+  W --> O[(audit_outbox)]
+  O --> Q[AuditOutboxScheduler / Processor]
+  Q -->|FOR UPDATE SKIP LOCKED| E[(audit_events)]
+  Q -->|failure| R[Backoff / Dead letter]
+  E --> P[AuditEventQueryService / CursorService]
+  E --> D[AuditDirectoryService]
+  P --> C[ADMIN / SUPER_ADMIN REST]
+  D --> C
+  E --> T[AuditRetentionService / PostgreSQL lock]
+  T -->|retention DELETE| X[Expired records]
 ```
 
-- **HMAC-SHA-256** скрывает исходные email/IP/User UUID в ключах Redis. Используются разные domain separators: `login-email:`, `login-ip:`, `refresh-ip:`, `audit-email:`, `audit-ip:`, `ai-user:`, `ai-organization:`.
-- Все login-ключи используют `{login}` — одинаковый Redis Cluster hash slot, необходимый для скрипта, изменяющего email+IP. **Цена**: весь login rate-limit трафик концентрируется на **одном шарде**; горизонтальный рост Cluster сам по себе этого не снимает.
-- AI user+org используют общий **для конкретной организации** hash tag, т.е. распределяются между организациями. Очень крупная организация остаётся hot slot.
-- Refresh использует один ключ без фиксированного общего hash tag и лучше распределяется по слотам.
-- `key-prefix`/`key-version` являются частью identity namespace; изменение `key-version` фактически переключает трафик на новые, пустые счётчики. Во время rolling deployment с разными версиями появляются **раздельные бюджеты** ограничений.
-- TTL в **миллисекундах**; возвращаемые пользователю TTL округляются **вверх до секунд**. Повторный `INCR` не продлевает первоначальное окно.
-- Это **fixed window с TTL от первой операции**, не sliding-window и не token bucket. На границе двух соседних окон краткосрочная плотность запросов может быть близка к двум лимитам подряд.
+### 3.1. Required audit: атомарность с бизнес-операцией
 
-## 5. HTTP и исключения
+Обязательный audit вызван в существующей бизнес-транзакции. `AuditEventService.record*` создаёт `AuditCommand`;
+`AuditOutboxWriter.writeRequiredInCurrentTransaction` требует `Propagation.MANDATORY`, выполняет `saveAndFlush` и
+тем самым не позволяет вызывающему коду игнорировать ошибки вставки outbox. `flush` **не равен commit**: при
+последующем rollback исчезают и изменение бизнес-данных, и audit intent. При success оба commit-ятся вместе.
 
-| Ситуация | HTTP | Код API | Особенности |
-|---|---:|---|---|
-| Достигнут лимит | `429` | `RATE_LIMIT_EXCEEDED` | `Retry-After` в секундах, если положителен; безопасное сообщение |
-| Redis/script/connection недоступны | `503` | `RATE_LIMIT_UNAVAILABLE` | Фиксированное публичное сообщение, без Redis stack trace |
-| Запрос допустим | Зависит от бизнес-эндпоинта | — | RateLimit продолжает бизнес-операцию |
+**Гарантия:** атомарность `business mutation ↔ outbox intent` при правильном вызове required path внутри той же
+JDBC/JPA транзакции.
 
-`RateLimitExceededException` округляет `Duration` без опасного `Duration.toMillis()` и насыщает значение на `Long.MAX_VALUE`, что корректно для больших Duration. `RateLimitExceptionHandler` использует общую фабрику JSON-ответов.
+**Не гарантируется:** мгновенное наличие записи в `audit_events`. Между commit и worker есть eventual consistency.
+Для административного UI отставание должно быть мониторируемым.
 
-**Риск:** наружу стеки не возвращаются, но внутреннее логирование в ряде веток выводит объект исключения с cause. Разделять безопасность HTTP-response и безопасность логов обязательно.
+### 3.2. Standalone required и best-effort
 
-## 6. Конфигурация
+- **Standalone required:** `AuditEventService.recordStandaloneRequired` → writer с `REQUIRES_NEW`. Создаёт
+  отдельный durable intent независимо от rollback основного workflow; исключение не подавляется.
+- **Best effort:** `BestEffortStandaloneAuditService.tryRecord` оборачивает создание/sanitization/write/commit в
+  `try/catch RuntimeException` и сохраняет доступность основного workflow. Для login/refresh-token abuse,
+  финансовых, IAM/ACL и иных обязательных следов допустимость этого режима надо решать **по явной audit policy**, а
+  не по удобству вызова.
+- **RateLimit:** синхронный listener обрабатывает пользовательские превышения и отдельные
+  анонимные события входа. Сбой постановки в outbox возвращается издателю события,
+  чтобы RateLimit мог освободить принадлежащие ему маркеры уведомления.
 
-Значения по умолчанию из проверенного `backend/src/main/resources/application.yml` (их можно переопределять env):
+### 3.3. Доставка из outbox
 
-| Параметр | Значение | Назначение |
+1. `AuditOutboxScheduler` запускает `processor.processBatch()` с интервалом из `safeai.audit.outbox.poll-delay-ms`.
+2. Worker открывает **новую транзакцию на один элемент** через `TransactionTemplate` + `REQUIRES_NEW`.
+3. `AuditOutboxRepository.findNextForUpdate()` выбирает due row по `next_attempt_at <= clock_timestamp()` с `FOR
+  UPDATE SKIP LOCKED`.
+4. `AuditEventRepository.insertFromOutbox(id)` переносит все снимки/тип/details/`occurred_at` одной SQL-командой;
+  `ON CONFLICT (id) DO NOTHING` предотвращает повторную materialization одного event ID.
+5. Worker удаляет доставленную запись из `audit_outbox` **в той же транзакции** и выполняет flush. При ошибке
+  materialization/deletion вся item transaction откатывается.
+6. `AuditOutboxFailureService.markFailure` в отдельной транзакции увеличивает `attempt_count`, рассчитывает
+  экспоненциальную задержку до `maxBackoff` либо переводит row в terminal dead-letter при достижении `maxAttempts`.
+7. `AuditOutboxMetrics` обновляет счётчики для системы мониторинга.
+
+**Uncertain commit:** если клиент видит ошибку подтверждения commit, уже удалённая из outbox row может означать
+успешный server-side commit. Реализация корректно допускает `missing` как *возможное* успешное завершение. Это
+следует отражать в метриках и тестировать, но не слепо считать отсутствие строки достаточным доказательством
+существования materialized evidence при произвольных внешних модификациях таблицы.
+
+### 3.4. Чтение и tenant isolation
+
+- ADMIN читает только события `audit_events.organization_id = currentUser.organizationId`.
+- SUPER_ADMIN может читать глобальную историю и фильтровать `organizationId`.
+- `organization_id` в audit event — это **target organization**, не организация actor-а. Для последней отдельно
+  существует `actor_organization_id`.
+- `userId` в legacy HTTP response является alias для immutable `actor_user_id`. Даже после удаления пользователя
+  snapshot остаётся; служебная таблица `audit_event_user_links` хранит лишь несущественную для доказательства
+  ссылку на живую строку пользователя.
+- Политика проверяется и на уровне контроллера (`@PreAuthorize`), и на уровне `AuditEventQueryPolicy`;
+  `findByUserId` вызывает общий scoped query path.
+
+## 4. HTTP API и контракт
+
+Все маршруты требуют роли ADMIN либо SUPER_ADMIN, если явно не указано более строгое условие.
+
+| Метод | URL | Назначение |
 |---|---|---|
-| `safeai.rate-limit.login.enabled` | `true` | Обязательность login-limiter |
-| `safeai.rate-limit.login.email-limit` | `10` | Попыток email за окно |
-| `safeai.rate-limit.login.ip-limit` | `100` | Попыток IP за окно |
-| `safeai.rate-limit.login.window` | `10m` | Login fixed window |
-| `safeai.rate-limit.refresh.enabled` | `true` | Refresh limiter |
-| `safeai.rate-limit.refresh.ip-limit` | `600` | Refresh запросов на IP |
-| `safeai.rate-limit.refresh.window` | `1m` | Refresh fixed window |
-| `safeai.rate-limit.ai-messages.enabled` | `true` | User+org AI limiter |
-| `safeai.rate-limit.ai-messages.user-limit-per-hour` | `20` | Часовой лимит пользователя |
-| `safeai.rate-limit.ai-messages.admin-limit-per-hour` | `100` | Часовой лимит администратора |
-| `safeai.rate-limit.ai-messages.organization-limit-per-hour` | `1000` | Часовой лимит организации |
-| `safeai.rate-limit.redis.key-version` | `v1` | Версия namespace счётчиков |
-| `safeai.rate-limit.redis.hmac-secret` | Обязательный env | Не менее 32 UTF-8 байт; не выводить в логи |
-| `safeai.rate-limit.redis.key-prefix` | `safeai:local` в общем конфиге | **В prod обязательное внешнее значение**, без наследования local |
+| `GET` | `/api/admin/audit-events` | Страницы audit history с `AuditEventFilter` и `Pageable` |
+| `GET` | `/api/admin/audit-events/cursor` | Keyset-пагинация по `(createdAt, id)`; `cursor`, `limit` |
+| `GET` | `/api/admin/audit-events/users/{userId}` | События инициатора с повторной проверкой tenant scope |
+| `GET` | `/api/admin/audit-event-types` | Доступные типы событий |
+| `GET` | `/api/admin/audit-organizations` | Исторический справочник target organizations; **только SUPER_ADMIN** |
+| `GET` | `/api/admin/audit-actors` | Исторические инициаторы, scoped для ADMIN |
+| POST | `/api/admin/audit-events/outbox/dead-letters/{eventId}/recover` | Восстановление, только SUPER_ADMIN. |
 
-`safeai.rate-limit.login.audit-organization-id` обязателен для включённого login-limiter; в общей конфигурации предусмотрен fallback через platform organization. Он должен соответствовать реальной существующей организации в БД.
+Recovery возвращает `204` при успехе, `404` для отсутствующей строки и `409` для pending-записи.
+Сервис доставляет событие, ставит обязательное событие восстановления в outbox и удаляет
+исходный dead-letter одной транзакцией. Сбой любого шага откатывает операцию.
 
-`RateLimitProductionConfigurationValidator` запрещает в production отключение **login** и **refresh**. Для отключения AI-limiter требуется явное `safeai.rate-limit.production.allow-unlimited-ai-traffic=true`. Это предохранитель от случайного отключения, но сам escape hatch открывает риск неограниченного платного трафика; нужен отдельный change approval/мониторинг.
+**Фильтры:** `eventType`, `userEmail` (prefix, в lowercase), `userId`, `dateFrom` (inclusive), `dateTo`
+(exclusive), `organizationId`. `dateFrom < dateTo`. На пару границ действует серверный потолок 367 × 24h,
+допускающий транспортные колебания из-за DST. Если одной границы нет, этот потолок сейчас не применяется.
 
-**Deployment:** Redis namespace, HMAC secret и key version должны быть синхронизированы между всеми pod приложения. Разные секреты дают разные Redis-ключи даже при общем префиксе; нарушение означает обход объединённого rate-limit бюджета. При ротации секретов нужен согласованный план cutover.
+**Пагинация:** page default 50, максимальный size 100. Допустимые поля сортировки: `createdAt`, `eventType`,
+`organizationId`, `id`; при отсутствии `id` добавляется tie-breaker для детерминированности. Cursor API отдаёт до
+100 элементов и маркер продолжения, используя `LIMIT limit+1`. Максимальное смещение OFFSET — 10 000 строк.
 
-## 7. Наблюдаемость
+**DTO:** `AuditEventResponse` стабилизирует имена actor/target metadata; `AuditEventPageResponse` скрывает
+внутренний формат Spring Data `PageImpl`; `AuditEventCursorResponse` отдаёт `items`, `nextCursor` и `hasNext`.
 
-Реализованные Micrometer meters (имена до Prometheus-normalization):
+## 5. Инвентаризация Java-классов
 
-- `safeai.rate.limit.allowed` — число допусков (label `type`);
-- `safeai.rate.limit.rejected` — отклонения (`type`, `dimension`);
-- `safeai.rate.limit.unavailable` — ошибки инфраструктуры (`type`);
-- `safeai.rate.limit.audit.publish.failed` — ошибка публикации audit event (`type`);
-- `safeai.rate.limit.redis.duration` — latency Redis-операций (`type`, `operation`, `outcome`) и histogram.
+Все ниже перечисленные классы находятся под `backend/src/main/java/ru/safeai/gateway/audit/`.
 
-`RateLimitMetrics` реализует **best-effort observability**: отказ метрик не может изменить решение о допуске либо скрыть Redis ошибку. Значения tags в штатном использовании имеют низкую кардинальность.
+### 5.1. `config/` — настройки и проверка инвариантов
 
-**Предлагаемые алерты** (пороговые значения настроить на профиле нагрузки):
-
-1. `increase(safeai_rate_limit_unavailable_total[5m]) > 0` — любое событие отказа limiter в production;
-2. `increase(safeai_rate_limit_audit_publish_failed_total[5m]) > 0` — потери надёжности аудита;
-3. высокий p95/p99 `safeai_rate_limit_redis_duration_seconds` — деградация Redis, особенно login hash slot;
-4. резкий рост `safeai_rate_limit_rejected_total` по `type` и `dimension` — brute force, сбой клиента либо слишком низкий лимит;
-5. Redis memory/CPU latency, `rejected_connections`, `evicted_keys`, состояние Cluster, failover, число тайм-аутов Lettuce.
-
-*Примечание:* точный экспорт names зависит от Micrometer/Prometheus registry; сверить с реальным `/actuator/prometheus` перед включением правил. Метрики запроса не являются доказательством доставки Audit: отдельно контролировать Audit Outbox backlog/dead-letter.
-
-## 8. Что хорошо и современно на 2026–2027
-
-| Область | Вывод |
+| Класс | Реализация и роль |
 |---|---|
-| Распределённый rate limit | **Сильно:** общий Redis делает ограничения общими для всех JVM/pod. |
-| Атомарный допуск AI | **Сильно:** user и organization проверяются и резервируются одним Lua-скриптом, нет обычной гонки read-then-INCR. |
-| Fail-closed | **Сильно:** login/refresh/AI не переходят на безлимитную деградацию при сбое Redis. |
-| Redis Cluster | **Хорошо с оговоркой:** ключи multi-key Lua гарантированно относятся к одному slot, но `{login}` создаёт single-shard hotspot. |
-| Privacy by design | **Хорошо:** HMAC keys, domain separation, `RateLimitRedisKeyProperties.toString()` редактирует секрет. Нужен контроль PII в событиях и логах. |
-| Отдельные политики | **Сильно:** login, refresh и AI имеют разные алгоритмы и конфигурации, не смешаны в generic limiter. |
-| Публичный HTTP API | **Хорошо:** 429 + Retry-After, 503 + без раскрытия детали Redis, общий `ApiErrorResponse`. |
-| Audit | **Хорошо:** отдельный durable outbox, retry-on-next-rejection при сбое enqueue; однако доставка самих событий остаётся best effort на границе rate-limit. |
-| Production invariants | **Хорошо:** fail-fast на выключенных login/refresh, явный escape hatch для AI. |
-| Тестируемость | **Хорошо:** уже есть Testcontainers Redis, проверки параллельного допускания, TTL, malformed counters, Cluster slot contract и properties validation. |
+| `AuditDetailsProperties` | `@ConfigurationProperties(safeai.audit.details)`: ограничения дерева details, контейнеров, узлов, текстового бюджета, длины значения, размера JSON и числового текста. Fail-fast проверка диапазонов. |
+| `AuditOutboxConfiguration` | Регистрация `AuditOutboxProperties` и `AuditDetailsProperties`. |
+| `AuditOutboxProperties` | `batchSize`, `maxAttempts`, `initialBackoff`, `maxBackoff`, `maxErrorLength`; защита от недопустимых настроек и `effective*` accessors. |
+| `AuditRetentionConfiguration` | Регистрация настроек retention. |
+| `AuditRetentionProperties` | Включение retention; срок 30–3650 суток, bounded batch size и количество batch за запуск. Отсутствие обязательного period приводит к fail-fast. |
 
-Современный дизайн не означает отсутствие предельных случаев. Особенно важно различать **атомарность выполнения Lua относительно других клиентов** и **транзакционный rollback при внутренней ошибке Lua**: второго Redis Lua не обещает.
+### 5.2. `controller/` — REST
 
-## 9. Найденные проблемы и приоритеты
+| Класс | Реализация и роль |
+|---|---|
+| `AuditController` | REST для page-, cursor- и by-user-чтения. `@PreAuthorize`, Jakarta Validation, `@AuthenticationPrincipal`, `@PageableDefault`. |
+| `AuditDirectoryController` | Получение типов событий, организаций и инициаторов. Отдельное `@PreAuthorize(hasRole('SUPER_ADMIN'))` для каталога организаций. |
+| `AuditOutboxRecoveryController` | REST-восстановление dead-letter для SUPER_ADMIN. |
 
-### P0 — подтверждённых безусловных блокеров по предоставленному коду нет
+### 5.3. `details/` — типизированные разрешённые метаданные
 
-Не выявлен доказанный сценарий, в котором обычная ошибка Redis автоматически разрешает неограниченные AI/авторизационные вызовы. Это **не** заключение о полном отсутствии критических уязвимостей: код вызывающих auth/chat-контроллеров и эксплуатационная инфраструктура не охвачены полным сквозным аудитом.
+| Класс | Реализация и роль |
+|---|---|
+| `AuditDetails` | Функциональный интерфейс `toMap()`; contract **метаданных**, а не произвольных raw payloads. |
+| `AiResponseAuditDetails` | Chat/message IDs, model, token usage, USD price, latency, provider message ID, finish/status, pricing provenance. Проверяет неотрицательные метрики. |
+| `ChatTurnAuditDetails` | Идентификаторы turn/request/provider operation, состояния AI-turn, model/provenance и токены/стоимость. `LinkedHashMap → Map.copyOf`. |
+| `RateLimitAuditDetails` | Тип лимита, лимит, окно, текущее количество; проверяет положительный `limit` и неотрицательный `count`. |
+| `SecurityRefreshReuseAuditDetails` | Token family, IP, request ID и **SHA-256 от User-Agent** вместо исходного User-Agent. |
+| `AuditDeadLetterRecoveryDetails` | Исходный event ID и число попыток доставки. |
 
-### P1-01. Полные исключения / stack traces в логах — риск утечки сведений
+### 5.4. `dto/` — контракты выдачи и фильтры
 
-**Подтверждено кодом:**
+| Класс | Реализация и роль |
+|---|---|
+| `AuditActorDirectoryResponse` | Снимок actor user/org/email/displayName. |
+| `AuditEventCursorResponse` | Неизменяемая копия items + cursor + hasNext. |
+| `AuditEventFilter` | Нормализация email, защита от control chars, проверка границ времени, `@Size` для HTTP. |
+| `AuditEventPageResponse` | Собственный стабильный пагинированный JSON и адаптер `Page<AuditEventResponse>`. |
+| `AuditEventResponse` | Явное представление immutable event; `details` защищена поверхностной копией Map. |
+| `AuditTargetOrganizationDirectoryResponse` | ID и snapshot имени target organization. |
 
-- `RateLimitUnavailableLogger.log()` передаёт `exception` последним аргументом `logger.error(...)` — SLF4J трактует Throwable как stack trace со всеми вложенными сообщениями.
-- `LoginRateLimitService.publishExceededEventBestEffort()` и `warnCleanupFailureRateLimited()` передают exception в `log.warn(...)`.
-- `RedisRateLimitService.publishExceededEventBestEffort()` передаёт exception в `log.warn(...)`.
-- `RateLimitMetrics.warn()` записывает `exception.toString()`, включая сообщение.
-- `RateLimitUnavailableLogger` пишет `request.getRequestURI()` без нормализации; path segments могут быть недоверенными и содержать чувствительные значения.
+### 5.5. `entity/` — JPA
 
-**Риск:** причины Spring Data Redis/Lettuce и сторонних исключений могут содержать адреса, ключи или части запросов. Включение stack trace в журнал не эквивалентно непосредственной утечке секретов, но делает это возможным.
+| Класс | Реализация и роль |
+|---|---|
+| `AuditEventEntity` | Read-only entity таблицы `audit_events`, Hibernate `@Immutable`, `jsonb` через `@JdbcTypeCode(SqlTypes.JSON)`. Database trigger запрещает UPDATE. |
+| `AuditOutboxEntity` | Mutable лишь delivery metadata: `attempt_count`, `next_attempt_at`, `last_error`, `dead_lettered_at`; immutable audit intent. `@PrePersist/@PreUpdate` проверяет согласованность состояний. |
 
-**Рекомендация:** централизованный `SafeRateLimitFailureDescriptor` — класс исключения, bounded error classification и requestId; без `getMessage()`, `toString()`, `Throwable` и произвольного URI. Сохранять корреляцию через requestId и метрики. Полные трассы — только в специально защищённом диагностическом контуре с контролируемой редукцией, если это действительно необходимо.
+### 5.6. `listener/` и `model/`
 
-### P1-02. Общий Redis Cluster slot `{login}` — масштабирование и доступность
+| Класс | Реализация и роль |
+|---|---|
+| `RateLimitAuditListener` | Записывает события RateLimit. Анонимный login идёт по typed пути с HMAC. |
+| `AuditActor` | Immutable snapshot actor identity. NFC normalization email/displayName, длина по Unicode code points, проверка UTF-16 и control chars; `system()` для системного субъекта. |
 
-**Подтверждено кодом:** все email и IP login keys входят в `{login}`. Для `incrementBothAndCheck` Redis Cluster требует общего slot. На интенсивном потоке login один node/slot становится hotspot, даже если Cluster имеет несколько shard.
+### 5.7. `repository/` — persistence/read model
 
-**Рекомендация:** замер CPU/latency и пропускной способности при пиковом login/brute-force. Нельзя просто убрать `{login}`: multi-key Lua начнёт давать `CROSSSLOT`. Возможные архитектурные варианты — отдельный Redis/шард для login, переработка модели на сегменты с понятной гарантией атомарности либо специализированный gateway-level limiter. Выбор требует требования к точной атомарности двух измерений.
+| Класс | Реализация и роль |
+|---|---|
+| `AuditDirectoryQueryRepository` | JDBC `DISTINCT ON` latest snapshot каталогов, поиск по имени/email/UUID; исторический email можно найти даже после смены идентификатора отображения. |
+| `AuditEventCriteria` | Общие JPA Specifications/predicates tenant, type, user, email prefix, date; keyset predicate `(created_at < c) OR (created_at=c AND id < id)`. |
+| `AuditEventCursorRepository` | Контракт keyset-чтения. |
+| `AuditEventCursorRepositoryImpl` | Criteria API, stable descending sort, `setMaxResults`. |
+| `AuditEventRepository` | Spring Data JPA/Specification API; нативное `INSERT ... SELECT FROM audit_outbox ON CONFLICT DO NOTHING`; bounded retention DELETE по DB clock. |
+| `AuditOutboxRepository` | JPA pending/dead counts, oldest pending, due-row с `FOR UPDATE SKIP LOCKED`, row-level lock для failure bookkeeping. |
 
-### P1-03. Компенсация успешного login без привязки к попытке и окну
+### 5.8. `service/` — прикладные use cases и orchestration
 
-**Подтверждено кодом:** после login `resetFirstAndDecrementSecond(emailKey, ipKey, markers)` уменьшает текущий IP counter, но не проверяет факт/идентификатор ранее засчитанной попытки. Временной интервал между check и success не связан с конкретным TTL или reservation token.
+| Класс | Реализация и роль |
+|---|---|
+| `AuditCommand` | Immutable request: event UUID, actor, target organization, eventType, sanitized details, occurredAt. |
+| `AuditCommandFactory` | Создаёт команду, выбирает режим санитизации и получает время PostgreSQL. |
+| `AuditCursorCodec` | Кодирование/декодирование `v1|timestamp|id` через URL-safe Base64, строгий parse/ошибка. |
+| `AuditDatabaseClock` | `SELECT clock_timestamp()` как общий источник времени PostgreSQL. |
+| `AuditDetailsSanitizer` | Центральная защита details: typed/unstructured modes, ключи и значения, рекурсивные ограничения, redaction, JSON size validation. |
+| `AuditDirectoryService` | Service-level RBAC и tenant scoping для исторических каталогов, нормализация строк поиска. |
+| `AuditEventCursorService` | Authorization scope, cursor decode, limit+1, stable continuation marker, общий entity-to-DTO mapper. |
+| `AuditEventQueryPolicy` | Повторное право ADMIN/SUPER_ADMIN вне HTTP, строгий tenant scope, диапазон времени. |
+| `AuditEventQueryService` | Пагинированное чтение, сортировки только по allowlist, tie-breaker `id`, mapper. |
+| `AuditEventService` | Required и standalone API. Typed details направляет в `createTyped`. |
+| `AuditOutboxFailureService` | Отдельная `REQUIRES_NEW` транзакция для retries/backoff/dead-letter, безопасный descriptor причины без raw message. |
+| `AuditOutboxMetrics` | Micrometer counters/gauges + периодический refresh backlog. |
+| `AuditOutboxProcessor` | Batch orchestrator и транзакция на одну доставку, идемпотентность, обработка uncertain commit/failure. |
+| `AuditOutboxScheduler` | Запускает обработчик с конфигурируемым интервалом. |
+| `AuditOutboxRecoveryService` | Восстанавливает dead-letter с прежним ID и обязательным событием восстановления. |
+| `AuditOutboxWriter` | `MANDATORY` или `REQUIRES_NEW` enqueue; snapshot организации; `saveAndFlush`. |
+| `AuditRetentionBatchService` | `REQUIRES_NEW` транзакция на batch удаления истёкших записей. |
+| `AuditRetentionLockService` | Межрепличная PostgreSQL session-level advisory lock, connection pinning и explicit unlock/abort через `PostgresAdvisoryLockExecutor`. |
+| `AuditRetentionService` | Планировщик cleanup, bounded batches под глобальной lock. |
+| `BestEffortStandaloneAuditService` | Автономная запись с обработкой сбоя. В лог передаётся класс исключения. |
 
-**Риск:** запоздалая успешная аутентификация, смена окна или параллельные запросы под одним NAT могут уменьшить счётчик новых/чужих попыток. Сценарий нужно воспроизвести тестом до утверждения степени фактического ущерба.
+### 5.9. `spi/` и корневой enum
 
-**Рекомендация:** reservation id + window id и idempotent компенсация **той самой** инкрементации; либо модель отдельных failed-attempt counters, в которой success не требует раздельного IP `DECR`. Не менять арифметику Lua без нагрузки и регрессионных тестов NAT/параллелизма.
+| Класс | Реализация и роль |
+|---|---|
+| `AuditActorSnapshotProvider` | SPI: user-модуль предоставляет tenant-scoped snapshot actor без зависимости audit от `UserRepository`. |
+| `AuditTargetOrganizationSnapshotProvider` | SPI: organization-модуль предоставляет immutable snapshot имени target organization. |
+| `AuditEventType` | Центральный enum категорий событий: login, chat, AI, user/org management, rate limit, security, knowledge base/document/ingestion/retrieval, model governance. |
 
-### P1-04. PII в production event pipeline и недостаточная coverage теста
+**Вывод по структуре:** границы `controller → service/policy → repository`, immutable DTO, разделение команды от
+read model и SPI для чужих агрегатов выполнены разумно. Полностью переписывать модуль **не нужно**.
 
-**Подтверждено кодом:** `LoginRateLimitService.buildEventDetails()` передаёт нормализованный raw `email`, а `RateLimitExceededEvent` — `actorEmail`; при этом DTO-тест проверяет вручную созданный event без raw email, не сам production producer. Audit sanitizer может не пропустить поле `email` в хранилище, но **внутри приложения** оно присутствует.
+## 6. PostgreSQL и Flyway — подтверждённые гарантии
 
-**Рекомендация:** для анонимного login убрать email из event details и actor snapshot, оставить HMAC fingerprint; проверить фактический `AuditDetailsSanitizer` и DB payload сквозным интеграционным тестом, а также запрет raw email в логах. Не удалять fingerprint, который нужен для расследований.
+| Миграция | Важные решения |
+|---|---|
+| **V24** | Transactional `audit_outbox`, event type FK, отдельный actor snapshot вместо зависимости только от живого User; первичные индексы. |
+| **V26** | Actor organization snapshot, `occurred_at`, retries/dead-letter metadata, ограничения согласованности и `details::text <= 65536` байт. |
+| **V27** | Конкурентное создание составных индексов для `(org, type, actor, created_at, id)` и due/dead outbox. **Flyway выполняется без транзакции**; важна настройка `spring.flyway.postgresql.transactional-lock=false`. |
+| **V37** | `target_organization_name` как снимок при enqueue; historical backfill фиксирует только имя, известное на момент миграции, а не реконструирует прошлое. |
+| **V68** | Append-only `audit_events` через UPDATE trigger, неизменность audit intent в `audit_outbox`, JSON object constraints, DB checks snapshot полей и event type. |
+| **V69** | Промежуточное исключение для FK `ON DELETE SET NULL` при удалении пользователя. **Не считать финальной моделью.** |
+| **V70** | Окончательно выносит live user pointer в `audit_event_user_links` с `ON DELETE CASCADE`, удаляет конфликтующий `audit_events.user_id`, возвращает безусловный UPDATE guard. |
 
-### P1-05. Best-effort audit не равен гарантированному evidence
+### 6.1. Фактическая неизменяемость
 
-Сервис отвечает 429 даже после ошибки публикации; маркер удаляется best-effort. При повторных отказах Redis, отсутствии следующей попытки либо ошибках восстановления markers событие превышения **может не попасть в Audit**.
+`audit_events` не должен изменяться после вставки; V70 запрещает UPDATE **всех колонок**. В `audit_outbox`
+запрещено менять actor, target, event type, details, timestamps; допустима только регламентированная эволюция
+retry/dead-letter bookkeeping. Hibernate `@Immutable` дополняет, но не заменяет триггеры PostgreSQL.
 
-**Рекомендация:** закрепить SLA/требование: является ли каждая блокировка security evidence или достаточны выборочные/агрегированные notifications. Если необходим 100%-й учёт отказов, нужен проект durable-first/event-log подхода, учитывающий failure isolation и latency. Не объявлять нынешний best-effort `at least once` без доказательства.
+**Оговорка:** это **append-only на уровне доступного runtime SQL update path**, а не WORM на физическом носителе.
+Retention делает DELETE. Для внешнего доказательства непрерывной истории нужны отдельные гарантии привилегий,
+backup/export, tamper evidence и настройки мониторинга.
 
-### P2-01. Гонка при удалении notification markers
+### 6.2. Снимки и удаление User
 
-`releaseNotificationMarkers()` удаляет Redis keys без проверки значения маркера. При истечении TTL и создании нового marker между `SET NX` и `DEL` старый обработчик может стереть чужой marker. Возможны лишние повторные уведомления либо изменение политики дедупликации.
+Поле `actor_user_id` — исторический идентификатор, не ссылка, которая обязана существовать в актуальной users
+table. Связь для UI хранится отдельно в `audit_event_user_links`; удаление пользователя не переписывает actor
+snapshot в событии. Это корректное разрешение конфликта privacy lifecycle и непрерывности audit evidence.
 
-**Рекомендация:** случайный ownership token на каждый установленный marker; атомарное Lua compare-and-delete. В существующих scripts marker value сейчас константа `'1'`, её придётся менять согласованно в producer/release.
+### 6.3. Индексная стратегия
 
-### P2-02. Первое предупреждение может быть подавлено из-за `nanoTime()`
+V27 уже покрывает наиболее частые scoped keyset и offset order patterns. **Нельзя автоматически плодить btree
+indexes**: сначала посмотреть `EXPLAIN (ANALYZE, BUFFERS)` на типовых фильтрах (ADMIN own-org, SUPER_ADMIN global,
+actorEmail prefix, eventType, retention cutoff, due outbox). Для тяжелых `DISTINCT ON` directory и `position()`
+могут потребоваться не обычные дублирующие индексы, а отдельный поисковый read model либо иной план запроса.
 
-`RateLimitUnavailableLogger` и `LoginRateLimitService` инициализируют `nextLogNanos = 0`. `System.nanoTime()` не гарантирует положительного значения. При отрицательном базовом значении проверка `now - next < 0` может не дать залогировать **первую** ошибку. Вторая проблема: rate limiting логов локальный на JVM, а не cluster-wide.
+## 7. Санитизация details и чувствительные данные
 
-**Рекомендация:** явный `initialized`/CAS sentinel, независимый от знака `nanoTime()`, либо проверенный monotonic rate-limited logger. Добавить тест с инжектируемым clock/nanoTime source и отрицательным стартовым значением.
+### 7.1. Нынешний контракт
 
-### P2-03. `unknown` объединяет разных клиентов в общий bucket
+- **Typed** (`AuditDetails`): объект определяет разрешённую форму, sanitizer дополнительно проверяет
+  secret-patterns, size/UTF-8/Unicode, ключи и глубину.
+- **Unstructured** (`Map<String,Object>`): строковые значения допускаются только по `SAFE_UNSTRUCTURED_TEXT_KEYS`;
+  неизвестные текстовые поля заменяются `[OMITTED_UNAPPROVED_TEXT]`.
+- Независимо от режима `SENSITIVE_KEYS` заменяются `[REDACTED]` (в том числе в nested maps и разделённых именах).
+- Значения, похожие на Bearer/Basic, JWT, PEM/private keys и ряд распространённых secret prefixes, подавляются.
+- Ограничены `maxDepth`, `maxContainerItems`, `maxTotalNodes`, `maxTotalStringChars`, `maxStringLength`,
+  `maxJsonBytes`, `maxNumberTextLength`.
+- Некорректная Unicode-последовательность отвергается, большие/non-finite numbers получают маркеры, сложные
+  неразрешённые типы не сериализуются произвольно.
+- Итог сериализуется через `JsonMapper`; при превышении размера возвращается маркер усечения вместо переполнения
+  `jsonb`.
 
-`LoginRateLimitService.normalizeEmail/normalizeIp`, `RefreshRateLimitService.normalizeIp` возвращают одинаковое `unknown` для пустого идентификатора. Если upstream validation допускает такие обращения, независимые клиенты оказываются в общем bucket: один атакующий сможет исчерпать лимит для других.
+### 7.2. Типизированный путь и проверки
 
-**Рекомендация:** email валидировать до limiter, IP получать исключительно через `ClientIpResolver`, неизвестный IP обрабатывать отдельной защитной политикой, а не считать его полноценной идентичностью. Важно не превращать отсутствие IP в разрешение запроса без учёта.
+`AuditEventService.record(AuditActor, …, AuditDetails)` формирует команду через
+`AuditCommandFactory.createTyped` и записывает её через
+`writeRequiredInCurrentTransaction`. Типизированная запись системного события
+в отдельной транзакции также использует `createTyped`.
 
-### P2-04. Окна fixed-window и изменения конфигурации
+| Вход | Создание команды | Граница записи |
+| --- | --- | --- |
+| Required `AuditDetails` | `createTyped` → typed sanitizer | Текущая транзакция |
+| Required `Map` | `create` → unstructured sanitizer | Текущая транзакция |
+| Standalone typed | `createTyped` → typed sanitizer | Отдельная транзакция |
+| Best-effort typed | `createTyped` → typed sanitizer | Отдельная транзакция с обработкой сбоя |
 
-На границе окна можно отправить плотный всплеск запросов; Redis key version / HMAC secret / key-prefix при несогласованном rolling deployment порождают несколько независимых наборов counters. Это документированная семантика, не программная ошибка.
+`SecurityRefreshReuseAuditDetails` переносит идентификатор семейства, IP при наличии
+и SHA-256 User-Agent. Исходный User-Agent отсутствует в записанных details.
+`LoginRateLimitExceededEvent` передаёт HMAC-отпечатки email и IP. Listener сохраняет
+событие от системного актора в настроенную организацию через typed API.
 
-**Рекомендация:** если требуется строгий per-minute/per-second enforcement, оценить sliding-window / GCRA / token bucket; для конфигурации — immutable rollout и проверку всех pod на одинаковые namespace/secret/version без вывода самих секретов.
+`AuditEventServiceTest` проверяет маршрутизацию вызовов фабрики.
+`AuditOutboxIntegrationTest` содержит сценарии доставки refresh reuse и отпечатков
+login через PostgreSQL outbox в `audit_events`.
+`BestEffortStandaloneAuditHardeningTest` проверяет безопасную диагностику при сбое.
+Общий allowlist для `Map` остаётся отдельным контрактом.
 
-### P2-05. Redis Lua частичные изменения при runtime-ошибке
+### 7.3. Важные границы безопасности
 
-Скрипт атомарен по отношению к другим запросам, но error после успешного `INCR`, `PEXPIRE` либо первого marker `SET` не откатывает исполненные Redis-команды. В обычных сценариях код валидирует counters до инкрементов, что хорошо, но это не покрывает ошибки вроде OOM после первой записи.
+1. **Typed не означает «можно доверять любому тексту».** В `AuditDetails` должны передаваться контролируемые
+  метаданные, не prompt, не HTTP bodies. Secret-patterns не доказывают полного отсутствия всех возможных секретов.
+2. **No raw User-Agent**: хранить хэш, но не сам header. Имеется известный plaintext IP — его обработка/retention
+  зависит от privacy policy организации.
+3. **Точность evidence:** маркеры `[REDACTED]`, `[MAX_DEPTH]`, `[BUDGET_EXCEEDED]`, `[OMITTED_UNAPPROVED_TEXT]`
+  означают, что подробности изменены при записи; не трактовать такой payload как полную исходную историю
+  параметров.
+4. **Ошибки санитизации:** required-path не должен молча падать на best-effort, а best-effort не должен логировать
+  сырые секретосодержащие сообщения исключений.
 
-**Рекомендация:** fault-injection на стадии мутаций, анализ допустимой консервативной блокировки и мониторинг расхождения/ошибок Redis. Не полагаться на несуществующий Lua rollback.
+## 8. Retention и эксплуатация
 
-### P2-06. Масштабирование счётчиков и мониторинг
+`AuditRetentionService.cleanupExpiredAuditEvents` работает по cron **03:30 UTC** по умолчанию.
+`AuditRetentionLockService` держит PostgreSQL **session-level advisory lock**, поэтому разные pods не выполняют
+retention одновременно. Lock соединения явно снимается; при неопределённости release `PostgresAdvisoryLockExecutor`
+пытается аварийно закрыть connection, потому что session-level lock переживает rollback. Работа каждой пачки
+выполняется отдельно через `AuditRetentionBatchService.deleteBatch(REQUIRES_NEW)`. SQL `DELETE` выбирает до
+`batchSize` событий, у которых `created_at < clock_timestamp() - retention`.
 
-Хотя TTL сдерживает срок жизни большинства ключей, атакующий может создавать очень много разных идентификаторов и раздувать Redis memory. Также нет доказанного теста throughput для единого `{login}` slot и сетевых сбоев Sentinel/Cluster во всех production-сценариях.
+**Текущая конфигурация по умолчанию (`application.yml`):** `enabled=true`, `period=1095d` (3 года, приблизительно),
+`batchSize=10000`, `maxBatchesPerRun=10`. За запуск будет удалено **не более 100 000 событий**, поэтому при backlog
+очистка может занимать несколько плановых запусков. `AuditRetentionProperties` ограничивает период диапазоном
+30–3650 суток.
 
-**Рекомендация:** ограничить длины/кардинальность email перед key derivation, использовать upstream WAF/gateway per-IP protection и Redis memory alerts; провести нагрузочные и failover тесты.
+Операционная политика должна отдельно определить: правовое основание удаления, сроки для разных категорий событий,
+наличие legal hold, откаты restore, поведение audit при удалении пользователя, окно нагрузки для cleanup,
+мониторинг длительности batch и recovery при dead-letter. **Нельзя самовольно увеличить или уменьшить retention
+ради устранения предупреждения статического анализа.**
 
-## 10. Программа тестирования перед production
+## 9. Конфигурация
 
-### Уже присутствуют в репозитории (наличие проверено, успешный прогон не подтверждён)
+Значения по умолчанию из классов `Audit*Properties` (для непереопределённых настроек) и `application.yml`:
 
-- `RedisFixedWindowRateLimiterIntegrationTest`: Testcontainers Redis, atomic limits, TTL, NAT и notifications;
-- `RedisFixedWindowRateLimiterIT`: конкурентная dual reservation, TTL, malformed counter/overflow;
-- `RedisFixedWindowRateLimiterSingleKeyIntegrationTest`: single-key сценарии;
-- `RedisClusterSlotContractTest`: соответствие hash slots для multi-key Lua;
-- `LoginRateLimitServiceTest`, `RedisRateLimitServiceTest`, `RefreshRateLimitServiceTest`: business policies;
-- `RateLimitExceededExceptionTest` и `exception/RateLimitExceptionHandlerTest`: `Retry-After`, 429/503;
-- `RateLimitProductionConfigurationValidatorTest`, `RateLimitPropertiesTest`, `RateLimitKeyFactoryTest`: конфигурация и HMAC;
-- `RateLimitExceededEventPiiTest`: часть PII DTO-contract, **не полноценный end-to-end producer → Audit outbox тест**.
+| Параметр | Default | Ограничение / смысл |
+|---|---:|---|
+| `safeai.audit.details.max-depth` | `4` | 1–16 |
+| `safeai.audit.details.max-container-items` | `100` | 1–10 000 |
+| `safeai.audit.details.max-total-nodes` | `500` | 10–100 000 |
+| `safeai.audit.details.max-total-string-chars` | `24000` | 100–1 000 000 |
+| `safeai.audit.details.max-string-length` | `1024` | 16–100 000 |
+| `safeai.audit.details.max-json-bytes` | `61440` | 1024–61440; отдельный DB предел 65536 |
+| `safeai.audit.details.max-number-text-length` | `256` | 16–10000 |
+| `safeai.audit.outbox.batch-size` | `100` | 1–1000 |
+| `safeai.audit.outbox.max-attempts` | `10` | 1–100 |
+| `safeai.audit.outbox.initial-backoff` | `2s` | строго > 0 |
+| `safeai.audit.outbox.max-backoff` | `1h` | >= initial |
+| `safeai.audit.outbox.max-error-length` | `1000` | 100–1000, без exception message |
+| `safeai.audit.outbox.poll-delay-ms` | `1000` | Worker schedule; отдельно проверить положительность конфигурации |
+| `safeai.audit.retention.enabled` | `true` | Включение регулярной очистки |
+| `safeai.audit.retention.period` | `1095d` в YAML | 30d–3650d; без YAML значение обязательно |
+| `safeai.audit.retention.batch-size` | `10000` в YAML | 100–100000 |
+| `safeai.audit.retention.max-batches-per-run` | `10` в YAML | 1–1000 |
+| `safeai.audit.retention.cron` | `0 30 3 * * *` | 03:30 по configured zone |
+| `safeai.audit.retention.zone` | `UTC` | UTC для предсказуемого расписания |
 
-### Обязательно добавить / проверить
+Некоторые defaults указываются в Java record, некоторые — в YAML. Для production следует проверять итоговые
+значения через property binding и startup tests; не считать Java default гарантирующим настройку, если она
+обязательна в record constructor.
 
-1. **PII leakage regression:** fake exception `new RuntimeException("secret_token=... email=...")`; убедиться, что ответ **и все структурированные журналы** не содержат секретов.
-2. **End-to-end audit:** producer login с настоящими details → listener → outbox → audit_events; verify raw email/user IP/header не попали в immutable event.
-3. **Login post-window compensation:** check в окне A, задержка, новое окно B, затем success A; попытка A не уменьшает счётчик B.
-4. **Marker compare-and-delete concurrency:** TTL expired, new marker claimed, stale failure A не удаляет marker B.
-5. **Kubernetes/Redis Cluster smoke:** два pod с одним HMAC/namespace, подтверждение общего budget; разные секреты/версии должны быть обнаружены в deployment-контроле.
-6. **Single-slot load test:** тысячи одновременных login при допустимых условиях, p95/p99 и CPU shard `{login}`, connect pool/timeouts.
-7. **Redis failure-injection:** timeout, unreachable, failover, error после первой Lua мутации, malformed keys/counters, eviction, Redis OOM.
-8. **Proxy trust validation:** подмена `X-Forwarded-For`, недоверенный client socket, trusted proxy chain, IPv4/IPv6, invalid headers и `unknown`.
-9. **HTTP contract:** 429 с правильным `Retry-After`, 503 без backend details и всегда `Cache-Control: no-store`.
-10. **Alert delivery:** проверить Prometheus scrape/Alertmanager и связать инциденты `rate.limit.unavailable` с состоянием Redis и Audit dead-letter.
+## 10. Тестирование: что есть и чего не хватает
 
-Команды в корне `backend` (при наличии Docker/Testcontainers, JDK 21, Maven wrapper):
+В репозитории присутствуют тесты следующих направлений:
+
+| Функция | Реальные тесты |
+|---|---|
+| HTTP/RBAC | `AuditControllerSecurityTest`, `AuditServiceAuthorizationBoundaryTest`, `AuditTenantIsolationIntegrationTest` |
+| Typed details / sanitizer | `AuditDetailsRecordsTest`, `AuditDetailsSanitizerTest`, `AuditDetailsPropertiesTest` |
+| DTO/фильтры/чтение | `AuditEventPageResponseTest`, `AuditEventQueryServiceTest`, `AuditCursorCodecTest`, `AuditCursorPaginationIntegrationTest` |
+| Actor/target snapshots | `AuditActorSnapshotIntegrationTest`, `AuditDirectoryServiceTest` |
+| Outbox durability/delivery | `AuditEventServiceTest`, `AuditOutboxWriterTest`, `AuditOutboxProcessorTest`, `AuditOutboxFailureServiceTest`, `AuditOutboxIntegrationTest` |
+| Required / best effort policy | `RequiredAuditPolicyIntegrationTest`, `BestEffortAuditPolicyIntegrationTest`, `BestEffortStandaloneAuditServiceTest` |
+| Retention | `AuditRetentionBatchServiceTest`, `AuditRetentionLockServiceTest`, `AuditRetentionLockIntegrationTest`, `AuditRetentionServiceTest`, `AuditRetentionIntegrationTest` |
+| Schema/indexes | `AuditMigrationIntegrityIntegrationTest`, `AuditEmailPrefixIndexIntegrationTest`, `AuditRepositoryContractTest` |
+| Rate limit audit | `RateLimitAuditListenerTest` |
+| PostgreSQL test harness | `AbstractAuditPostgresIntegrationTest` |
+
+**Подтверждённые сильные сценарии:** rollback бизнес-транзакции не создаёт audit intent; бизнес-commit создаёт
+outbox intent, worker materializes event; повторный worker не создаёт дубликат; чужие события недоступны ADMIN;
+keyset-чтение стабильно; DB cutoff retention соблюдён; advisory lock не берётся одновременно двумя конкурентами.
+
+### 10.1. Новые тесты по приоритету
+
+1. **Recovery:** повторный запрос после успешного восстановления, отказ обычному ADMIN и полный откат
+   при сбое обязательного аудита восстановления. Проверить сохранение исходного event ID.
+2. **Операционная приёмка:** довести тестовую запись до dead-letter, подтвердить доставку алерта,
+   восстановить запись через endpoint и проверить, что штатный worker продолжает обрабатывать очередь.
+3. **Read path:** замерить стоимость открытых диапазонов и сортировок. Проверить ограничение OFFSET
+   на граничных значениях и воспроизвести сценарий с большим номером страницы.
+4. **Privacy:** при изменении формата typed details повторять проверки сохранения разрешённых
+   полей и отсутствия исходного User-Agent, сообщений исключений и секретов.
+5. **P2 — cursor security/semantics:** подмена timestamp/UUID не даёт чужих данных; изменение фильтра/tenant при
+  том же cursor документировано или блокируется новой версией.
+6. **P2 — retention/resource:** конкурентная нагрузка `AuditRetentionService` + workers + API при малом Hikari
+  pool; искусственная ошибка unlock и проверка уничтожения unsafe connection.
+7. **P2 — PostgreSQL DDL:** V70 snapshot неизменен после удаления user; прямая попытка UPDATE
+  `audit_events`/immutable intent отвергается; разрешённая правка `attempt_count`/`next_attempt_at` работает.
+8. **P2 — performance:** план выполнения `DISTINCT ON`, prefix-email filter, org-scoped query, retention DELETE на
+  1–10 млн строк; latency SLO, buffers, WAL, indexes.
+9. **P2 — uncertain commit:** смоделировать lost commit acknowledgment; проверить, что `audit_events` содержит
+  именно ожидаемое evidence и outbox обработан идемпотентно.
+
+**Команды для локального прогона:**
 
 ```bash
-./mvnw -Dtest=RateLimitPropertiesTest,RateLimitKeyFactoryTest,RedisClusterSlotContractTest,LoginRateLimitServiceTest,RedisRateLimitServiceTest,RefreshRateLimitServiceTest,RateLimitProductionConfigurationValidatorTest test
-
-./mvnw -Dtest=RedisFixedWindowRateLimiterIntegrationTest,RedisFixedWindowRateLimiterSingleKeyIntegrationTest,RedisFixedWindowRateLimiterIT test
+cd backend
+./mvnw test -Dtest='Audit*Test,BestEffort*Test,RequiredAuditPolicyIntegrationTest'
+# Для полного набора интеграционных тестов нужен доступный Docker/Testcontainers + PostgreSQL.
+./mvnw test
 ```
 
-Если Maven wrapper отсутствует, использовать `mvn`. Уточнить в CI, какие `*IT` запускаются через Surefire и какие вынесены в Failsafe/profile: совпадение имени не является гарантией запуска нужного набора по умолчанию.
+Проверить корректность конкретного набора `-Dtest` и поддерживаемые build profiles следует на вашей версии Maven
+Surefire; команда выше — пример запуска, **не свидетельство выполненного теста**.
 
-## 11. План улучшений без ослабления существующих гарантий
+## 11. План доработки без регресса
 
-**Этап 1 — конфиденциальность и проверяемость (P1):** безопасное логирование без exception messages/Throwable; исключить raw email из audit event producer; добавить end-to-end PII и log-capture тесты. Не менять политику fail-closed и HTTP-коды.
+### Эксплуатационная надёжность
 
-**Этап 2 — консистентность (P1/P2):** согласовать модель компенсации login по window/reservation; ввести ownership-aware notification marker release; добавить конкурентные и boundary-тесты. Обязательно сохранить неизменными смысл двух типов Lua-скриптов: login считает все попытки, AI — только разрешённые.
+Подтвердить на стенде доставку алертов, отработать восстановление по event ID и проверить
+доступность пула при одновременных retention, outbox и API. Зафиксировать время восстановления
+и возраст старейшего pending-события после устранения причины сбоя.
 
-**Этап 3 — эксплуатационная надёжность (P1/P2):** профилировать `{login}` slot; проверить Redis Sentinel/Cluster failover; алерты по недоступности, latency, rejects, audit publish failures; защитить секреты и namespace от несогласованного rollout.
+### Масштабирование чтения
 
-**Этап 4 — масштабирование по измерениям:** при необходимости рассмотреть модель login-limiter без общего hot slot, но только с формальным контрактом атомарного dual limit. Простая смена hash tag сломает Redis Cluster multi-key Lua.
+Измерить планы для открытых диапазонов, фильтра по email и обоих справочников.
+Оценивать необходимость новых индексов по данным `EXPLAIN (ANALYZE, BUFFERS)`.
+При изменении формата курсора учитывать совместимость существующих клиентов.
 
-## 12. Итоговый вердикт
+### Долговременная целостность
 
-**Архитектура RateLimit в целом грамотная и актуальная для 2026–2027 годов**: распределённое состояние, атомарная проверка Redis Lua, детализированные политики, HMAC-псевдонимизация, fail-closed, отдельные домены Redis, безопасный HTTP-контракт, production guards и наличие реальных Redis integration tests.
+Проверить резервное восстановление и разграничение ролей runtime и миграций.
+При требованиях к независимой проверке истории использовать внешний контролируемый экспорт.
 
-**Не следует считать модуль полностью production-hardened без устранения P1:** прежде всего исключить потенциально конфиденциальные stack traces, убрать raw email из production event pipeline, проверить компенсацию успешного login при пересечении окон и измерить нагрузку на единый `{login}` slot. P2 — гонки markers, monotonic logger, `unknown` buckets, window-boundary/rolling secrets и реальные fault/load-тесты.
+## 12. Важные архитектурные инварианты — не нарушать при рефакторинге
 
-**Важное ограничение отчёта:** это инженерный аудит предоставленных классов и дополнительных найденных исходников, а не результат успешного CI/CD или тестирования живого кластера. Указанные выводы отделяют подтверждённые по коду свойства от требующих воспроизведения гипотез.
+- Не заменять `MANDATORY` на `REQUIRES_NEW` для required security/business audit: потеряется атомарность с mutation.
+- Не переводить required audit на best-effort ради доступности.
+- Не выполнять insert `audit_events` и delete `audit_outbox` в разных транзакциях.
+- Не удалять `FOR UPDATE SKIP LOCKED`: конкурентная доставка в Kubernetes перестанет быть безопасной.
+- Не использовать `user_id` текущего пользователя вместо event-time `actor_user_id` snapshot и не смешивать actor
+  org с target org.
+- Не удалять SQL UPDATE-guard из V70 или `@Immutable` без доказанной альтернативы.
+- Не расширять бездумно `SAFE_UNSTRUCTURED_TEXT_KEYS` для исправления typed path.
+- Не писать raw User-Agent, credentials, prompts, provider responses или exception messages в `details`/`last_error`.
+- Не хранить PostgreSQL **session-level** lock только в thread-local переменной, освобождая его на другом pooled
+  connection.
+- Не менять уже применённые Flyway V24…V70. Любые исправления схемы — новая миграция со свободным номером.
+- Не допускать silent truncation финансовых или security-critical fields без явно видимого маркера неполноты.
+
+## 13. Итоговая оценка зрелости (качественная, без искусственных баллов)
+
+| Область | Оценка по просмотренному коду |
+|---|---|
+| Разделение слоёв и зависимостей | **Хорошо:** API, query-policy, command, writer, worker, retention, SPI. |
+| Транзакционная сохранность обязательных событий | **Сильно:** MANDATORY, outbox в business Tx, flush, rollback integration. |
+| Конкурентная обработка / Kubernetes | **Сильно:** `SKIP LOCKED`, per-item transactions, PostgreSQL lock для retention. |
+| Иммутабельность БД | **Сильно для runtime-инвариантов:** V68/V70, immutable snapshots; не криптографическая WORM. |
+| Tenant isolation | **Сильно:** HTTP + service check и scoped SQL/JPA; подтверждено integration tests. |
+| Privacy / sanitizer | Typed API использует `createTyped`. Unstructured сохраняет отдельный allowlist. |
+| Наблюдаемость и dead-letter | Есть метрики, правила Prometheus и recovery endpoint для SUPER_ADMIN. |
+| Read scalability | OFFSET ограничен. Курсор доступен для глубокой выдачи, справочники требуют профилирования. |
+| Целостность истории | Прикладные SQL-гарантии дополняются политикой доступа и резервного копирования. |
+| Автоматические тесты | Есть PostgreSQL-проверки typed delivery. Отдельные сценарии recovery перечислены выше. |
+
+Перед выкладкой проверьте алерты и восстановление на стенде, затем подтвердите планы запросов
+на сопоставимом объёме истории.
+
+---
+
+### Методика и ограничения проверки
+
+Документ сверён с текущим рабочим деревом SafeAI Desk на 13 ноября 2026 года.
+Проверены исходники Audit, связанные участки Auth и RateLimit, миграции Flyway,
+конфигурация Prometheus и наличие тестовых сценариев. Результаты production-выкладки,
+нагрузочного прогона и доставки алертов требуют подтверждения в целевой среде.
+
+- [Тесты Audit](../../../../../../test/java/ru/safeai/gateway/audit/README.md)
+- [Проверки Audit](../../../../../../../../docs/07_AUDIT_VERIFICATION.md)
+- [Правила Prometheus](../../../../../../../../infra/prometheus/rules/safeai-audit-outbox.yml)

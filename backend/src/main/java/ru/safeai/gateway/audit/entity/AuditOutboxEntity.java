@@ -25,6 +25,9 @@ public class AuditOutboxEntity {
     @Column(name = "id", nullable = false)
     private UUID id;
 
+    @Column(name = "correlation_id", updatable = false)
+    private UUID correlationId;
+
     @Column(name = "actor_user_id", updatable = false)
     private UUID actorUserId;
 

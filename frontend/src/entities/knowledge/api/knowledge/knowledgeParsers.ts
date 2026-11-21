@@ -68,6 +68,11 @@ export function parseKnowledgeBase(
                 `${field}.enabled`,
             ),
 
+        ...(record.lifecycleState === undefined ? {} : {
+            lifecycleState: expectEnum(record.lifecycleState,
+                `${field}.lifecycleState`, ['AVAILABLE', 'DELETING'] as const),
+        }),
+
         createdByUserId:
             expectUuid(
                 record.createdByUserId,

@@ -10,6 +10,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.audit.dto.AuditEventFilter;
 import ru.safeai.gateway.audit.dto.AuditEventResponse;
+import ru.safeai.gateway.audit.dto.AuditEventSummary;
+import ru.safeai.gateway.audit.AuditEventClassification;
 import ru.safeai.gateway.audit.entity.AuditEventEntity;
 import ru.safeai.gateway.audit.repository.AuditEventCriteria;
 import ru.safeai.gateway.audit.repository.AuditEventRepository;
@@ -42,6 +44,26 @@ public class AuditEventQueryService {
     );
 
     private final AuditEventRepository repository;
+
+    @Transactional(readOnly = true, timeout = 10)
+    public AuditEventSummary summarize(SafeAiUserPrincipal currentUser, AuditEventFilter filter) {
+        var scope = AuditEventQueryPolicy.resolve(currentUser, filter);
+        if (scope.filter().dateFrom() == null || scope.filter().dateTo() == null) {
+            throw new BadRequestException("Для сводки аудита необходимо задать период");
+        }
+        // Карточки — фасеты: выбранная карточка не меняет соседние счётчики.
+        var counts = repository.countByEventType(scope.organizationId(), scope.filter().withoutMetric());
+        long total = counts.values().stream().mapToLong(Long::longValue).sum();
+        return new AuditEventSummary(total,
+                sumMetric(counts, AuditEventClassification.Metric.SUCCESS),
+                sumMetric(counts, AuditEventClassification.Metric.DENIED),
+                sumMetric(counts, AuditEventClassification.Metric.CRITICAL));
+    }
+
+    private long sumMetric(java.util.Map<String, Long> counts, AuditEventClassification.Metric metric) {
+        return AuditEventClassification.types(metric).stream()
+                .mapToLong(type -> counts.getOrDefault(type, 0L)).sum();
+    }
 
     @Transactional(readOnly = true)
     public Page<AuditEventResponse> findAll(
@@ -131,7 +153,8 @@ public class AuditEventQueryService {
                 entity.getActorDisplayName(),
                 entity.getEventType(),
                 entity.getDetails(),
-                entity.getCreatedAt()
+                entity.getCreatedAt(),
+                entity.getCorrelationId()
         );
     }
 }
