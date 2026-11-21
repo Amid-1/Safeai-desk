@@ -112,8 +112,13 @@ after = load('checkpoint-after.csv', before.sha256)
 assert 'ac000000-0000-4000-8000-000000000010' in dict(before.events())
 assert module.compare(before, after) == {'matched': after.count, 'missing': 1, 'changed': 0, 'new_unanchored': 0}
 assert b'sentinel' not in before.data
+report_spec = importlib.util.spec_from_file_location('report', pathlib.Path(sys.argv[1]).with_name('audit-integrity-report.py'))
+report = importlib.util.module_from_spec(report_spec)
+report_spec.loader.exec_module(report)
+assert report.assess(before, after, set())[1:] == ('VIOLATION', before.count, 1, 0, 'AVAILABLE')
 PY
     echo 'PASS: actual PostgreSQL checkpoint projection, ACL and deletion detection'
+    echo 'PASS: actual PostgreSQL integrity report assessment detects deletion'
 }
 for scenario in clean upgrade; do
     pg="$prefix-$scenario"

@@ -36,6 +36,7 @@ vi.mock('./auditCsv', async (importOriginal) => ({
     ...await importOriginal<typeof import('./auditCsv')>(),
     downloadAuditCsv: vi.fn(),
 }))
+vi.mock('./AuditIntegrityPanel', () => ({ default: () => <div data-testid="audit-integrity-panel" /> }))
 
 const csvMock = vi.mocked(downloadAuditCsv)
 const EVENT = {
@@ -84,6 +85,14 @@ function mount(overrides: Partial<AdminAuditController> = {}) {
 beforeEach(() => vi.clearAllMocks())
 
 describe('AdminAuditPageView — форма и рабочая область', () => {
+    it('не монтирует проверку целостности для администратора организации', () => {
+        mount()
+        expect(screen.queryByTestId('audit-integrity-panel')).not.toBeInTheDocument()
+    })
+    it('монтирует проверку целостности только для суперадминистратора', () => {
+        mount({ superAdmin: true })
+        expect(screen.getByTestId('audit-integrity-panel')).toBeVisible()
+    })
     it('поднимает таблицу по карточке, показывает период и возвращает форму по кнопке', () => {
         const controller = mount()
         const region = screen.getByTestId('audit-scroll-region')

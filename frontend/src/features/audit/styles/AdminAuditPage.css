@@ -67,6 +67,13 @@
 .audit-investigation button:focus-visible { outline: 3px solid #275ded; outline-offset: 2px; }
 .audit-investigation__hint { margin: 9px 0 0; font-size: .82rem; }
 .audit-investigation__error { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.audit-integrity__status { display: inline-block; border-radius: 20px; padding: 5px 12px; margin: 9px 0 0; font-weight: 600; }
+.audit-integrity__status--success { color: #166534; background: #dff4e5; }
+.audit-integrity__status--danger { color: #a61b2b; background: #fff0f0; }
+.audit-integrity__status--warning { color: #854d0e; background: #fff8e6; }
+.audit-integrity__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px; border-top: 1px solid #d5dfef; padding-top: 12px; margin: 12px 0 0; }
+.audit-integrity__grid dt { color: #50627a; font-size: .85rem; }
+.audit-integrity__grid dd { font-weight: 600; margin: 4px 0 0; overflow-wrap: anywhere; }
 .audit-workspace-switch {
     display: flex;
     flex: 0 0 auto;

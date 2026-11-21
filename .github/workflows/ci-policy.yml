@@ -91,6 +91,9 @@ jobs:
       - name: Проверка внешнего архива и ротации ключей аудита
         run: python3 -m unittest discover -s .github/scripts -p 'test_audit_checkpoint_archive.py' -v
 
+      - name: Проверка независимого отчёта целостности аудита
+        run: python3 -m unittest discover -s .github/scripts -p 'test_audit_integrity_report.py' -v
+
       - name: Негативные тесты frontend coverage gate
         run: |
           python3 -m unittest discover -s .github/scripts \

@@ -17,6 +17,7 @@ audit/
 ├── controller/
 │   ├── AuditController.java
 │   ├── AuditDirectoryController.java
+│   ├── AuditIntegrityController.java
 │   └── AuditOutboxRecoveryController.java
 ├── details/
 │   ├── AiResponseAuditDetails.java
@@ -32,6 +33,7 @@ audit/
 │   ├── AuditEventPageResponse.java
 │   ├── AuditEventResponse.java
 │   ├── AuditEventSummary.java
+│   ├── AuditIntegrityStatus.java
 │   └── AuditTargetOrganizationDirectoryResponse.java
 ├── entity/
 │   ├── AuditEventEntity.java
@@ -52,12 +54,16 @@ audit/
 │   ├── AuditCommandFactory.java
 │   ├── AuditCursorCodec.java
 │   ├── AuditDatabaseClock.java
+│   ├── AuditDeliveryEvidence.java
 │   ├── AuditDetailsSanitizer.java
 │   ├── AuditDirectoryService.java
 │   ├── AuditEventCursorService.java
 │   ├── AuditEventQueryPolicy.java
 │   ├── AuditEventQueryService.java
 │   ├── AuditEventService.java
+│   ├── AuditEvidenceConflictException.java
+│   ├── AuditIntegrityReport.java
+│   ├── AuditIntegrityService.java
 │   ├── AuditOutboxFailureService.java
 │   ├── AuditOutboxMetrics.java
 │   ├── AuditOutboxProcessor.java

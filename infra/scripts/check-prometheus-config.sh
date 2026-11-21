@@ -17,6 +17,8 @@ command -v docker >/dev/null 2>&1 || fail 'Docker is required to run promtool fr
 [[ -s "$prometheus_dir/rules/safeai-knowledge-erasure.yml" ]] || fail 'Missing erasure rules'
 [[ -s "$prometheus_dir/tests/knowledge-erasure.test.yml" ]] || fail 'Missing erasure alert unit tests'
 [[ -s "$prometheus_dir/tests/audit-outbox.test.yml" ]] || fail 'Missing audit alert unit tests'
+[[ -s "$prometheus_dir/rules/safeai-audit-integrity.yml" ]] || fail 'Missing integrity alert rules'
+[[ -s "$prometheus_dir/tests/audit-integrity.test.yml" ]] || fail 'Missing integrity alert unit tests'
 [[ "$prometheus_image" != *REPLACE_ME* && "$prometheus_image" != *REPLACE_WITH* ]] || fail 'Prometheus image is a placeholder'
 if [[ "${SAFEAI_REQUIRE_IMMUTABLE_IMAGES:-false}" == true ]]; then
     [[ "$prometheus_image" =~ @sha256:[0-9a-fA-F]{64}$ ]] || fail 'Production Prometheus image must be pinned by digest'
@@ -50,5 +52,14 @@ docker run --rm \
     "$prometheus_image" \
     test rules /etc/prometheus/tests/audit-outbox.test.yml \
     || fail 'Prometheus audit alert unit tests failed'
+
+docker run --rm \
+    --network none --read-only --tmpfs /tmp:rw,nosuid,noexec,size=64m,mode=1777 \
+    --cap-drop ALL --security-opt no-new-privileges \
+    --mount "type=bind,source=$prometheus_dir,target=/etc/prometheus,readonly" \
+    --entrypoint /bin/promtool \
+    "$prometheus_image" \
+    test rules /etc/prometheus/tests/audit-integrity.test.yml \
+    || fail 'Prometheus audit integrity alert unit tests failed'
 
 printf 'Prometheus configuration, canonical rules and erasure/audit unit tests verified.\n'

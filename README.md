@@ -2556,6 +2556,7 @@ audit/
 ├── controller/
 │   ├── AuditController
 │   ├── AuditDirectoryController
+│   ├── AuditIntegrityController
 │   └── AuditOutboxRecoveryController
 ├── details/
 │   ├── AiResponseAuditDetails
@@ -2571,6 +2572,7 @@ audit/
 │   ├── AuditEventPageResponse
 │   ├── AuditEventResponse
 │   ├── AuditEventSummary
+│   ├── AuditIntegrityStatus
 │   └── AuditTargetOrganizationDirectoryResponse
 ├── entity/
 │   ├── AuditEventEntity
@@ -2591,12 +2593,16 @@ audit/
 │   ├── AuditCommandFactory
 │   ├── AuditCursorCodec
 │   ├── AuditDatabaseClock
+│   ├── AuditDeliveryEvidence
 │   ├── AuditDetailsSanitizer
 │   ├── AuditDirectoryService
 │   ├── AuditEventCursorService
 │   ├── AuditEventQueryPolicy
 │   ├── AuditEventQueryService
 │   ├── AuditEventService
+│   ├── AuditEvidenceConflictException
+│   ├── AuditIntegrityReport
+│   ├── AuditIntegrityService
 │   ├── AuditOutboxFailureService
 │   ├── AuditOutboxMetrics
 │   ├── AuditOutboxProcessor

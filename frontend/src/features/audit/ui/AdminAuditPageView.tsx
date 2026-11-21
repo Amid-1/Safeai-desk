@@ -12,6 +12,7 @@ import AuditFilters from './AuditFilters'
 import AuditPagination from './AuditPagination'
 import AuditTable from './AuditTable'
 import AuditSummaryPanel from './AuditSummaryPanel'
+import AuditIntegrityPanel from './AuditIntegrityPanel'
 import { downloadAuditCsv } from './auditCsv'
 import type { AdminAuditController } from '../controller/useAdminAuditController'
 import { getAuditEventTypeLabel } from '../constants/auditEvents'
@@ -139,6 +140,8 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
                             category={draftFilter.category} metric={draftFilter.metric}
                             onMetric={selectMetric} onCategory={selectCategory}
                             onRetry={retryLoad} />
+
+                        {superAdmin && <AuditIntegrityPanel compact={compact} />}
 
                         <div className="audit-workspace-switch"
                             data-resizable-upper-boundary={compact && showTable ? undefined : ''}>

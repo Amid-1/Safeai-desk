@@ -43,6 +43,7 @@ test.beforeEach(async ({ page }) => {
       case '/api/admin/audit-event-types': json = ['MODEL_ROUTE_DENIED', 'USER_LOGOUT', 'USER_LOGIN_SUCCESS']; break
       case '/api/admin/audit-actors': json = [actor]; break
       case '/api/admin/audit-events/summary': json = { total: 159, successful: 145, denied: 9, critical: 0 }; break
+      case '/api/admin/audit-events/integrity': json = { state: 'NOT_CONFIGURED', archiveStatus: 'UNKNOWN' }; break
       case '/api/admin/audit-events': {
         const content = searchParams.get('eventType') === 'USER_LOGOUT'
           || searchParams.get('metric') === 'CRITICAL' || searchParams.get('category') === 'SECURITY' ? [] : [event]
@@ -63,6 +64,7 @@ test('audit summary uses server totals and zero cards drill down via server filt
   await page.goto('/admin/audit')
   const summary = page.getByRole('region', { name: 'Сводка аудита' })
   await expect(summary.getByRole('button', { name: /Всего событий 159/ })).toBeEnabled()
+  await expect(page.getByRole('region', { name: 'Криптографическая целостность журнала' })).toHaveCount(0)
   const filtered = page.waitForRequest(r => {
     const url = new NodeURL(r.url())
     return url.pathname === '/api/admin/audit-events' && url.searchParams.get('metric') === 'CRITICAL'
@@ -78,6 +80,30 @@ test('audit summary uses server totals and zero cards drill down via server filt
   await summary.getByRole('button', { name: 'Безопасность' }).click()
   await category
   await expect(page).toHaveURL(/category=SECURITY/)
+})
+
+test('super admin sees independent integrity status and a violation without demo counts', async ({ page }) => {
+  await page.route('**/api/auth/me', route => route.fulfill({ json: {
+    id: userId, organizationId: orgId, email: actor.actorEmail, fullName: actor.actorDisplayName,
+    enabled: true, roles: ['SUPER_ADMIN'],
+  } }))
+  await page.route('**/api/admin/audit-organizations*', route => route.fulfill({ json: [] }))
+  let violated = false
+  await page.route('**/api/admin/audit-events/integrity', route => {
+    const now = Date.now()
+    return route.fulfill({ json: violated ? { state: 'VIOLATION', checkedEvents: 165, violations: 1,
+      unanchoredEvents: 0, checkedAt: new Date(now).toISOString(), freshUntil: new Date(now + 900000).toISOString(),
+      archiveStatus: 'AVAILABLE' } : { state: 'NOT_CONFIGURED', archiveStatus: 'UNKNOWN' } })
+  })
+  await page.goto('/admin/audit')
+  const panel = page.getByRole('region', { name: 'Криптографическая целостность журнала' })
+  await expect(panel.getByText('Независимая проверка не настроена')).toBeVisible()
+  await expect(panel.getByText('165', { exact: true })).toHaveCount(0)
+  violated = true
+  await panel.getByRole('button', { name: 'Обновить состояние' }).click()
+  await expect(panel.getByText('Обнаружены нарушения целостности')).toBeVisible()
+  await expect(panel.getByText('165', { exact: true })).toBeVisible()
+  await expect(panel.getByText(/Сохраните доказательства/)).toBeVisible()
 })
 
 test('audit correlation drill-down uses exact server scope and preserves URL on reload', async ({ page }) => {

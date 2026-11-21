@@ -221,6 +221,9 @@ public class SecurityConfig {
                                 "SUPER_ADMIN"
                         )
 
+                        .requestMatchers("/api/admin/audit-events/integrity")
+                        .hasRole("SUPER_ADMIN")
+
                         .requestMatchers(
                                 "/api/admin",
                                 "/api/admin/**"

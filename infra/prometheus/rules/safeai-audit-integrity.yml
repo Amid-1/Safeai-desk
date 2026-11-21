@@ -1,0 +1,48 @@
+# SafeAI-Desk/infra/prometheus/rules/safeai-audit-integrity.yml
+groups:
+  - name: safeai-audit-integrity
+    rules:
+      - alert: SafeAiAuditIntegrityViolation
+        expr: safeai_audit_integrity_state == 2
+        labels:
+          severity: critical
+          service: safeai-backend
+        annotations:
+          summary: "Audit checkpoint evidence mismatch"
+          description: "Preserve evidence; suspend checkpoint publication and retention until security review."
+      - alert: SafeAiAuditIntegrityUnavailable
+        expr: safeai_audit_integrity_state >= 3 and safeai_audit_integrity_state <= 5
+        for: 2m
+        labels:
+          severity: critical
+          service: safeai-backend
+        annotations:
+          summary: "Independent audit verification unavailable"
+          description: "Check external verifier, signature, freshness, database and archive connectivity."
+      - alert: SafeAiAuditIntegrityNotConfigured
+        expr: safeai_audit_integrity_state == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: safeai-backend
+        annotations:
+          summary: "Independent audit verification not configured"
+          description: "Production readiness requires a configured independent verifier and pinned status key."
+      - alert: SafeAiAuditIntegrityPending
+        expr: safeai_audit_integrity_state == 6
+        for: 15m
+        labels:
+          severity: warning
+          service: safeai-backend
+        annotations:
+          summary: "Audit events remain without external checkpoint"
+          description: "Check approved checkpoint publication cadence and external pin advancement."
+      - alert: SafeAiAuditIntegrityMetricMissing
+        expr: absent(safeai_audit_integrity_state) or (up{job="safeai-backend"} == 0) or (up{job="safeai-backend"} unless on(job, instance) safeai_audit_integrity_state)
+        for: 3m
+        labels:
+          severity: critical
+          service: safeai-backend
+        annotations:
+          summary: "Audit verification monitoring is missing"
+          description: "Check backend metrics registration, availability and scrape configuration."
