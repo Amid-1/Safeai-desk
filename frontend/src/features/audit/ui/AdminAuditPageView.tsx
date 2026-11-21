@@ -3,7 +3,7 @@
 // frontend/src/features/audit/ui/AdminAuditPageView.tsx
 // Представление журнала аудита: рабочая область, таблица, CSV, детали.
 // ============================================================
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { EmptyState, ErrorState, LoadingState } from '../../../shared/ui/StateBlock'
 import ResizableScrollRegion from '../../../shared/ui/ResizableScrollRegion'
 import { AdminPageHeader } from '../../../shared/ui/AdminPageHeader'
@@ -20,6 +20,18 @@ import type { AuditCategory, AuditMetric } from '../api/adminAuditApi'
 
 export type AdminAuditPageViewProps = {
     controller: AdminAuditController
+}
+
+const SHORT_VIEWPORT_QUERY = '(max-height: 620px)'
+
+function subscribeShortViewport(onChange: () => void) {
+    const media = window.matchMedia?.(SHORT_VIEWPORT_QUERY)
+    media?.addEventListener('change', onChange)
+    return () => media?.removeEventListener('change', onChange)
+}
+
+function isShortViewport() {
+    return typeof window !== 'undefined' && (window.matchMedia?.(SHORT_VIEWPORT_QUERY).matches ?? false)
 }
 
 export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
@@ -54,6 +66,7 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
         changePage,
     } = controller
     const [compact, setCompact] = useState(false)
+    const shortViewport = useSyncExternalStore(subscribeShortViewport, isShortViewport, () => false)
     const [lowerRequest, setLowerRequest] = useState(0)
     const [upperRequest, setUpperRequest] = useState(0)
     const upperRef = useRef<HTMLDivElement>(null)
@@ -306,7 +319,7 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
                 storageKey="safeai:audit-events-height:v4"
                 preserveUpperContent
                 reserveLowerHeight
-                collapseToFooter
+                collapseToFooter={!shortViewport}
                 showLowerRequest={lowerRequest}
                 showUpperRequest={upperRequest}
                 viewportResetKey={`${pageResponse.page}:${events.map(event => event.id).join(',')}`}

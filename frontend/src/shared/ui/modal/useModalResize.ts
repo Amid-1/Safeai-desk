@@ -239,7 +239,9 @@ export function useModalResize(resize: ModalResizeOptions | undefined, topmost: 
                     'none',
 
                 maxHeight:
-                    'none',
+                    resizeState.enabled && resizeState.options.resizable === false && !maximized
+                        ? Math.max(1, window.innerHeight - resizeBounds.top - RESIZE_VIEWPORT_MARGIN)
+                        : 'none',
 
                 '--modal-resize-scale':
                     String(

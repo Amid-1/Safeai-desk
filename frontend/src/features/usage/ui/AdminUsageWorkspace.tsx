@@ -44,21 +44,40 @@ export function AdminUsageWorkspace() {
         const controls = page?.querySelector<HTMLElement>('.usage-page__upper')
         const handle = grip.current
         const bottom = footer.current
-        if (!node || !page || !controls || !handle || !bottom) return
+        const upper = controls?.parentElement
+        const panel = handle?.parentElement
+        if (!node || !page || !controls || !handle || !bottom || !upper || !panel) return
         const measure = () => {
-            setSummaryHeight(node.offsetHeight)
-            setDesktop(window.innerWidth > 900 && window.innerHeight > 620)
+            const isDesktop = window.innerWidth > 900 && window.innerHeight > 620
+            setDesktop(isDesktop)
             const gap = Number.parseFloat(getComputedStyle(page).rowGap) || 0
-            const upperGap = summaryHidden ? gap : Number.parseFloat(getComputedStyle(controls.parentElement!).rowGap) || 0
-            setMaximumSummaryHeight(Math.max(0, page.clientHeight - controls.offsetHeight - gap - upperGap
-                - handle.offsetHeight - bottom.offsetHeight - 2))
+            // Use the normal gap even while the summary is hidden. Budget
+            // drill-down is fixed chrome too; it must not consume the grip/footer.
+            const fixed = [...upper.children].filter((item): item is HTMLElement =>
+                item instanceof HTMLElement && item !== summary.current)
+            const fixedHeight = fixed.reduce((total, item) => {
+                const style = getComputedStyle(item)
+                return total + item.offsetHeight + (Number.parseFloat(style.marginTop) || 0)
+                    + (Number.parseFloat(style.marginBottom) || 0)
+            }, 0)
+            const available = page.clientHeight - fixedHeight - gap * (1 + fixed.length)
+            const maximum = Math.max(0, available - handle.offsetHeight - bottom.offsetHeight - 2)
+            setMaximumSummaryHeight(maximum)
+            const floor = Number.parseFloat(getComputedStyle(panel).getPropertyValue('--usage-report-floor')) || 0
+            // The content can be several screens tall after reconciliation.
+            // The grip operates on available viewport height, not that full content.
+            const naturalLimit = Math.max(0, available - Math.min(floor, page.clientHeight * .6))
+            // With no resolved CSS floor (for example before styles are loaded),
+            // retain the intrinsic height instead of collapsing the resize basis to zero.
+            setSummaryHeight(isDesktop && !filtersOpen && floor > 0
+                ? Math.min(node.offsetHeight, naturalLimit) : node.offsetHeight)
         }
         measure()
         const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
-        for (const target of [node, page, controls, handle, bottom]) observer?.observe(target)
+        for (const target of [node, page, controls, handle, bottom, panel, ...upper.children]) observer?.observe(target)
         window.addEventListener('resize', measure)
         return () => { observer?.disconnect(); window.removeEventListener('resize', measure) }
-    }, [summaryHidden])
+    }, [summaryHidden, filtersOpen, view, providerSelected, report.budgetStatus])
     function resizeSummary(height: number) {
         if (summaryHeight <= 0) return
         if (filtersOpen || height <= summaryHeight || maximumSummaryHeight <= summaryHeight) {
@@ -136,7 +155,8 @@ export function AdminUsageWorkspace() {
                     <p>Текущий календарный месяц UTC, независимо от периода отчёта. Общие KPI скрыты: они не учитывают этот фильтр.</p></div>
                 <button type="button" className="secondary-button" onClick={report.clearBudgetStatus}>Снять фильтр бюджета</button>
             </section>}
-            <div className="usage-summary-viewport" id="usage-summary-viewport" ref={summary}>
+            <div className="usage-summary-viewport" id="usage-summary-viewport" ref={summary}
+                role="region" aria-label="Итоги и сверка расходов" tabIndex={summaryHidden && desktop ? -1 : 0}>
             <div className="usage-summary-content" ref={summaryContent}>
             {!report.budgetStatus && <UsageKpis rows={separateTotals ? report.totals.rows : hasRows ? report.rows : []} tab={report.tab}
                 hasMore={false} appliedModel={report.appliedModel}

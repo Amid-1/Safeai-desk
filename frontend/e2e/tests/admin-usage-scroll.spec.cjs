@@ -10,6 +10,16 @@ const amounts = { inputTokens: '9', outputTokens: '16', totalTokens: '25',
 const model = 'mock-safeai'
 const dates = 'dateFrom=2026-11-01&dateTo=2026-11-16'
 
+async function assertReportLayout(page) {
+  await expect.poll(async () => {
+    const upper = await page.locator('.usage-workspace-upper').boundingBox()
+    const panel = await page.locator('.usage-results-panel').boundingBox()
+    return upper && panel ? upper.y + upper.height - panel.y : Infinity
+  }).toBeLessThanOrEqual(1)
+  await expect(page.getByRole('separator', {name: 'Высота области отчёта'})).toBeInViewport()
+  await expect(page.locator('.usage-results-footer')).toBeInViewport()
+}
+
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/**', route => {
     const { pathname } = new NodeURL(route.request().url())
@@ -227,6 +237,8 @@ test('a distant organization selection remains visible without scrolling to the 
     })),
   }}))
   await page.goto(`/admin/usage?report=organizations&${dates}`)
+  await expect(page.getByRole('table').getByRole('row')).toHaveCount(51)
+  await assertReportLayout(page)
   await page.getByRole('button', {name: 'График', exact: true}).click()
   await page.getByLabel('Строк на графике').selectOption('50')
   const plot = page.locator('.usage-breakdown-chart__frame')
@@ -316,6 +328,7 @@ test('organization table grip is above rows and budget retries without affecting
   })
   await page.goto(`/admin/usage?report=organizations&${dates}`)
   await expect(page.getByRole('table').getByRole('row')).toHaveCount(18)
+  await assertReportLayout(page)
   const grip = page.getByRole('separator', {name: 'Высота области отчёта'})
   const viewport = page.locator('.usage-data-viewport')
   const footer = page.locator('.usage-results-footer')
@@ -348,6 +361,8 @@ test('50 ranked bars retain row space and expand the real SVG, with contained sc
     })), page: 0, size: 50, hasPrevious: false, hasNext: true,
   }}))
   await page.goto(`/admin/usage?report=users&${dates}`)
+  await expect(page.getByRole('table').getByRole('row')).toHaveCount(51)
+  await assertReportLayout(page)
   await page.getByRole('button', {name: 'График', exact: true}).click()
   await page.getByLabel('Строк на графике').selectOption('50')
   const plot = page.locator('.usage-breakdown-chart__frame')
@@ -402,6 +417,54 @@ for (const [width, height] of [[1440, 800], [1280, 720]]) {
   })
 }
 
+for (const [width, height] of [[1280, 720], [1440, 800], [1920, 1080]]) {
+  test(`expanded physical reconciliation leaves report controls reachable at ${width}×${height}`, async ({page}) => {
+    await page.setViewportSize({width, height})
+    await page.route('**/api/admin/usage/physical-attempts/report?**', route => route.fulfill({json: {
+      from: '2026-11-01T00:00:00Z', to: '2026-11-17T00:00:00Z', organizationId: orgId,
+      aggregationBasis: 'PHYSICAL_ATTEMPT_STARTED_AT', planSelectionBasis: 'PLANS_WITH_PHYSICAL_START_IN_RANGE',
+      currency: 'USD', physicalAttempts: '2', startedAttempts: '0', ambiguousAttempts: '0',
+      knownExecutedAttempts: '2', knownNotExecutedAttempts: '0', knownRejectedAttempts: '0',
+      costUnverifiableAttempts: '0', usageUnverifiableAttempts: '0', knownInputTokens: '9',
+      knownOutputTokens: '16', knownCostUsd: '0.02', costComplete: true, usageComplete: true,
+      plans: '1', costMatchedPlans: '0', costMismatchPlans: '1', unverifiablePlans: '0', fullyReconciled: false,
+    }}))
+    await page.goto(`/admin/usage?report=summary&${dates}`)
+    const workspace = page.locator('.usage-page')
+    const upper = page.getByRole('region', {name: 'Итоги и сверка расходов'})
+    const physical = page.getByRole('region', {name: 'Физические вызовы и сверка расходов'})
+    const footer = page.locator('.usage-results-footer')
+    const grip = page.getByRole('separator', {name: 'Высота области отчёта'})
+    await expect(page.getByRole('table')).toBeVisible()
+    await physical.getByRole('button', {name: 'Показать сверку'}).click()
+    await expect(physical.getByRole('alert')).toContainText('Обнаружены финансовые расхождения: 1')
+    await expect(physical.getByText(/Сверка пройдена/)).toHaveCount(0)
+    await expect(footer).toBeInViewport({ratio: 1})
+    await expect(grip).toBeInViewport({ratio: 1})
+    await expect(page.getByRole('tablist')).toBeInViewport({ratio: 1})
+    await expect(workspace).toHaveCSS('overflow-y', 'hidden')
+    expect(await workspace.evaluate(el => el.scrollTop)).toBe(0)
+    const data = page.locator('.usage-data-viewport')
+    await expect.poll(() => data.evaluate(el => el.clientHeight)).toBeGreaterThan(60)
+    await expect(upper).toHaveCSS('overflow-y', 'auto')
+    await page.getByRole('button', {name: 'График', exact: true}).click()
+    await expect(page.locator('#usage-breakdown-chart-content')).toBeVisible()
+    await expect(footer).toBeInViewport({ratio: 1})
+    await grip.press('End')
+    await expect(upper).toBeHidden()
+    await expect(footer).toBeInViewport({ratio: 1})
+    await grip.press('Home')
+    await expect(upper).toBeVisible()
+    await expect(footer).toBeInViewport({ratio: 1})
+    await physical.getByRole('button', {name: 'Свернуть', exact: true}).click()
+    await expect(physical.getByRole('button', {name: 'Показать сверку'})).toBeVisible()
+    await page.getByRole('button', {name: 'Таблица', exact: true}).click()
+    await expect(page.getByRole('table')).toBeVisible()
+    await expect(footer).toBeInViewport({ratio: 1})
+    expect(await workspace.evaluate(el => el.scrollTop)).toBe(0)
+  })
+}
+
 test('wheel scrolls only the data rows while header and footer stay fixed', async ({ page }) => {
   await page.setViewportSize({width: 1440, height: 800})
   await page.route('**/api/admin/usage/users?**', route => route.fulfill({json: {
@@ -414,6 +477,7 @@ test('wheel scrolls only the data rows while header and footer stay fixed', asyn
   const viewport = page.locator('.usage-data-viewport')
   const footer = page.locator('.usage-results-footer')
   await expect(page.getByRole('table').getByRole('row')).toHaveCount(51)
+  await assertReportLayout(page)
   const footerBefore = await footer.boundingBox()
   const box = await viewport.boundingBox()
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)

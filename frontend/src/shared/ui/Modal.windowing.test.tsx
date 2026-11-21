@@ -29,11 +29,18 @@ describe('Управление окном указателем', () => {
         render(<Modal title="Профиль" onClose={vi.fn()}
             resize={{ ...dimensions, resizable: false }}>Карточка</Modal>)
         const dialog = screen.getByRole('dialog', { name: 'Профиль' })
+        const expectContainedHeight = () => {
+            expect(Number.parseFloat(dialog.style.maxHeight) + Number.parseFloat(dialog.style.top))
+                .toBe(window.innerHeight - 12)
+        }
+        expectContainedHeight()
         expect(dialog.querySelector('[data-modal-drag-handle="true"]')).not.toBeNull()
         expect(dialog.querySelector('[data-modal-resize-handle]')).toBeNull()
         fireEvent.click(screen.getByRole('button', { name: 'Развернуть окно на весь экран' }))
         expect(dialog).toHaveClass('modal-card--maximized')
+        expect(dialog.style.maxHeight).toBe('none')
         fireEvent.click(screen.getByRole('button', { name: 'Восстановить размер окна' }))
+        expectContainedHeight()
         expect(dialog.querySelector('[data-modal-resize-handle]')).toBeNull()
     })
 

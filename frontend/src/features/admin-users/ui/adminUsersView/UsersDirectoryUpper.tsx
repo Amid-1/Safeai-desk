@@ -1,5 +1,5 @@
 // frontend/src/features/admin-users/ui/adminUsersView/UsersDirectoryUpper.tsx
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { User } from '../../../../entities/user/api/userApi'
 import { ErrorState, LoadingState } from '../../../../shared/ui/StateBlock'
 import { FilterButton } from '../AdminUsersUi'
@@ -34,6 +34,8 @@ export function UsersDirectoryUpper({
     onOrganizationChange,
 }: AdminUsersViewProps) {
     const [suggestionsOpen, setSuggestionsOpen] = useState(false)
+    const searchForm = useRef<HTMLFormElement>(null)
+    const outsidePointer = useRef(false)
     const showSuggestions = suggestionsOpen
         && !loading && !loadError
         && searchDraft.trim().length >= 1
@@ -48,6 +50,32 @@ export function UsersDirectoryUpper({
     }
     const suggestions = [...users].sort((a, b) =>
         suggestionRank(a) - suggestionRank(b)).slice(0, 8)
+    useEffect(() => {
+        if (!showSuggestions) return
+        const isOutside = (event: Event) =>
+            event.target instanceof Node && !searchForm.current?.contains(event.target)
+        const onPointerDown = (event: PointerEvent) => {
+            outsidePointer.current = isOutside(event)
+        }
+        const onClick = (event: MouseEvent) => {
+            outsidePointer.current = false
+            if (isOutside(event)) setSuggestionsOpen(false)
+        }
+        const resetPointer = () => { outsidePointer.current = false }
+        // Keep the inline list in place until the outside click has reached
+        // its target. Blur during pointerdown must not move a table row.
+        document.addEventListener('pointerdown', onPointerDown, true)
+        document.addEventListener('click', onClick)
+        document.addEventListener('pointercancel', resetPointer, true)
+        document.addEventListener('keydown', resetPointer, true)
+        return () => {
+            document.removeEventListener('pointerdown', onPointerDown, true)
+            document.removeEventListener('click', onClick)
+            document.removeEventListener('pointercancel', resetPointer, true)
+            document.removeEventListener('keydown', resetPointer, true)
+            resetPointer()
+        }
+    }, [showSuggestions])
     return (
                     <div
                         className={
@@ -187,10 +215,11 @@ export function UsersDirectoryUpper({
                             value={organizationId ?? ''} onChange={onOrganizationChange} disabled={hasPendingMutation} />}
 
                         <form
+                            ref={searchForm}
                             className="users-directory-search"
                             role="search"
                             onBlur={(event) => {
-                                if (!event.currentTarget.contains(event.relatedTarget)) {
+                                if (!outsidePointer.current && !event.currentTarget.contains(event.relatedTarget)) {
                                     setSuggestionsOpen(false)
                                 }
                             }}

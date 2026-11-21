@@ -44,7 +44,6 @@
     font-weight: 400;
 }
 .admin-page-header > * { min-width: 0; }
-.admin-details-dialog .admin-related-link { color: #1947bd; text-decoration: underline; text-underline-offset: 3px; }
 .admin-page-header :is(.organizations-page__eyebrow, .audit-page__eyebrow, .usage-eyebrow) {
     display: none;
 }
@@ -68,16 +67,18 @@
 }
 
 /* One density and typography for the actual table elements, not their data. */
-:is(.users-page, .organizations-page, .audit-page, .usage-page, .models-page)
-    :is(.users-table, .organizations-table, .audit-table, .usage-table, .models-catalog-table) :is(th, td) {
+:is(.users-page, .organizations-page, .audit-page, .usage-page,
+    .models-page) :is(.users-table, .organizations-table, .audit-table,
+    .usage-table, .models-catalog-table) :is(th, td) {
     padding: 8px 10px;
     vertical-align: middle;
     font-size: 14px;
     line-height: 1.4;
     overflow-wrap: anywhere;
 }
-:is(.users-page, .organizations-page, .audit-page, .usage-page, .models-page)
-    :is(.users-table, .organizations-table, .audit-table, .usage-table, .models-catalog-table) thead th {
+:is(.users-page, .organizations-page, .audit-page, .usage-page,
+    .models-page) :is(.users-table, .organizations-table, .audit-table,
+    .usage-table, .models-catalog-table) thead th {
     background: #f1f5fa;
     color: #40536d;
     font-size: 12px;
@@ -85,8 +86,9 @@
     text-transform: none;
     letter-spacing: 0;
 }
-:is(.users-page, .organizations-page, .audit-page, .usage-page)
-    :is(.users-table-card, .organizations-table-card, .audit-table-card, .usage-results-panel) {
+:is(.users-page, .organizations-page, .audit-page,
+    .usage-page) :is(.users-table-card, .organizations-table-card,
+    .audit-table-card, .usage-results-panel) {
     border-color: var(--admin-border);
     border-radius: var(--admin-radius);
     box-shadow: none;
@@ -117,23 +119,20 @@
 .audit-page .audit-filters { padding: 10px 12px; background: white; border-radius: var(--admin-radius); }
 .audit-page .audit-filters h2 { font-size: 17px; }
 .audit-page .audit-filters__subtitle { font-size: 13px; margin: 3px 0 6px; }
-.audit-page .audit-filters .form { gap: 6px 10px; }
 .audit-page .audit-filters label, .audit-page .audit-date-presets__label { font-size: 13px; }
-.audit-page .audit-filters :is(input, select) { min-height: 34px; font-size: 14px; padding-block: 5px; }
 .audit-page .audit-date-presets__actions button,
 .audit-page .audit-filters .filter-actions button { min-height: 34px; font-size: 13px; }
 .audit-page .audit-advanced-filters summary { font-size: 14px; }
 .audit-page .audit-table-card__toolbar { padding: 7px 10px; }
 .audit-page .audit-table-card__toolbar p { font-size: 12px; }
-.audit-page .audit-table tbody td { font-size: 14px; line-height: 1.4; }
 .audit-page .audit-table--global { min-width: 990px; }
 .audit-page .audit-table--tenant { min-width: 780px; }
 .audit-page .audit-actor-avatar, .audit-page .audit-category-icon { width: 30px; height: 30px; flex-basis: 30px; }
 .usage-page .usage-table th, .usage-page .usage-table td { padding: 8px 10px; font-size: 14px; }
 
 /* Shared visual status family. Do not change any meaning or conditions. */
-:is(.users-page, .organizations-page, .audit-page, .admin-details-dialog)
-    :is(.status-chip, .organization-status, .event-type-badge, .role-chip) {
+:is(.users-page, .organizations-page, .audit-page,
+    .admin-details-dialog) :is(.status-chip, .organization-status, .event-type-badge, .role-chip) {
     width: fit-content;
     max-width: 100%;
     min-height: 24px;
@@ -143,14 +142,16 @@
     line-height: 1.25;
     white-space: normal;
 }
-:is(.users-page, .organizations-page, .audit-page, .admin-details-dialog)
-    :is(.status-chip--enabled, .organization-status--enabled, .event-type-badge--success) {
+:is(.users-page, .organizations-page, .audit-page,
+    .admin-details-dialog) :is(.status-chip--enabled, .organization-status--enabled,
+    .event-type-badge--success) {
     background: #eaf8ef;
     color: #166534;
     border-color: #9bdfb3;
 }
-:is(.users-page, .organizations-page, .audit-page, .admin-details-dialog)
-    :is(.status-chip--disabled, .organization-status--disabled, .event-type-badge--danger) {
+:is(.users-page, .organizations-page, .audit-page,
+    .admin-details-dialog) :is(.status-chip--disabled, .organization-status--disabled,
+    .event-type-badge--danger) {
     background: #fff1f2;
     color: #a51d32;
     border-color: #fecdd3;
@@ -185,18 +186,19 @@
     border-radius: var(--admin-radius);
     line-height: 1.5;
 }
-:is(.users-page, .organizations-page, .audit-page, .usage-page, .models-page, .admin-details-dialog)
-    .secondary-button { border-radius: 8px; box-shadow: none; }
+:is(.users-page, .organizations-page, .audit-page, .usage-page,
+    .models-page, .admin-details-dialog) .secondary-button { border-radius: 8px; box-shadow: none; }
 
-:is(.users-page, .organizations-page, .audit-page, .usage-page, .models-page, .admin-details-dialog)
-    :is(button, a, input, select, textarea, summary, [tabindex]):focus-visible {
+:is(.users-page, .organizations-page, .audit-page, .usage-page,
+    .models-page, .admin-details-dialog) :is(button, a, input, select, textarea,
+    summary, [tabindex]):focus-visible {
     outline: 3px solid #2457d6;
     outline-offset: 2px;
 }
 
 /* Links open entities; separate text actions narrow the current report. */
-:is(.users-page, .organizations-page, .audit-page, .usage-page, .models-page, .admin-details-dialog)
-    .admin-related-link {
+:is(.users-page, .organizations-page, .audit-page, .usage-page,
+    .models-page, .admin-details-dialog) .admin-related-link {
     color: #1947bd;
     text-decoration: underline;
     text-underline-offset: 3px;
@@ -209,10 +211,10 @@
     display: inline-block; font-size: 12px; margin-top: 4px;
 }
 .audit-page .audit-actor-related { min-width: 0; flex: 1; }
-.audit-page .audit-table tbody td { padding-block: 6px; }
+.audit-page .audit-table tbody td { font-size: 14px; line-height: 1.4; padding-block: 6px; }
 .users-page .users-table tbody td, .organizations-page .organizations-table tbody td { padding-block: 6px; }
 .audit-page .audit-filters .form { gap: 6px 10px; }
-.audit-page .audit-filters :is(input, select) { min-height: 34px; }
+.audit-page .audit-filters :is(input, select) { min-height: 34px; font-size: 14px; padding-block: 5px; }
 .users-page .organization-searchable-filter { width: min(100%, 540px); margin: 4px 0 8px; }
 :is(.users-page, .audit-page) .usage-filter-combobox__menu {
     position: static; width: 100%; max-height: 180px; margin-top: 4px;
@@ -238,13 +240,6 @@
     .admin-details-dialog .org-management-links { grid-template-columns: minmax(0, 1fr); }
     .admin-details-dialog .modal-header h2 { font-size: 19px; }
 }
-@media (prefers-reduced-motion: reduce) {
-    :is(.users-page, .organizations-page, .audit-page, .usage-page, .models-page, .admin-details-dialog) button {
-        transition: none;
-        animation: none;
-    }
-}
-
 /* Stage 3.1: consistent read-only profile windows and direct table navigation. */
 .organizations-page .organization-name-link {
     appearance: none;
@@ -275,7 +270,6 @@
 .organizations-page .org-actions-compact { flex-wrap: nowrap; }
 .organizations-page .org-actions-compact > .secondary-button { white-space: nowrap; }
 .organizations-page .organization-actions-trigger { min-width: 34px; min-height: 34px; }
-.organization-actions-popup { z-index: 1100; }
 .organization-actions-popup .action-menu__security-start { border-top: 1px solid #e0e7f1; }
 
 .modal-card.admin-profile-window {
@@ -285,7 +279,7 @@
     border-radius: 16px;
     border: 1px solid #d4dfed;
     background: #fff;
-    box-shadow: 0 26px 72px rgb(15 23 42 / 24%);
+    box-shadow: 0 26px 72px rgba(15, 23, 42, 0.24);
 }
 .modal-card.admin-profile-window .modal-header {
     flex: 0 0 auto;
@@ -310,9 +304,13 @@
     background: linear-gradient(115deg, #f4f8ff 0%, #fff 92%);
     min-width: 0;
 }
-.admin-profile-window .admin-profile-icon {
+.admin-profile-window .admin-profile-icon,
+.admin-profile-window .admin-profile-link-icon {
     display: grid;
     place-items: center;
+    font-weight: 800;
+}
+.admin-profile-window .admin-profile-icon {
     flex: 0 0 56px;
     width: 56px;
     height: 56px;
@@ -320,7 +318,6 @@
     color: #2456c5;
     border-radius: 16px;
     font-size: 21px;
-    font-weight: 800;
     letter-spacing: -.035em;
 }
 .admin-profile-icon--admin { background: #fff0db !important; color: #a45705 !important; }
@@ -354,7 +351,7 @@
 }
 .admin-profile-window .org-management-links a:hover { background: #eaf3ff; border-color: #9fbee9; text-decoration: none; }
 .admin-profile-window .org-management-links a:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
-.admin-profile-window .admin-profile-link-icon { display: grid; place-items: center; font-size: 12px; font-weight: 800; color: #225ac5; background: #e4edff; width: 34px; height: 34px; border-radius: 10px; }
+.admin-profile-window .admin-profile-link-icon { font-size: 12px; color: #225ac5; background: #e4edff; width: 34px; height: 34px; border-radius: 10px; }
 .admin-profile-window .org-management-links a small { display: block; font-size: 12px; font-weight: 400; color: #566c89; margin-top: 6px; }
 .admin-profile-window .org-detail-hint { border-left: 3px solid #c4d5f5; padding: 2px 0 2px 12px; font-size: 12px; line-height: 1.5; color: #526682; }
 .admin-profile-window .org-detail-technical { border-radius: 12px; }
@@ -378,6 +375,10 @@
     .admin-profile-window .org-management-links a { min-height: 62px; }
 }
 @media (prefers-reduced-motion: reduce) {
+    :is(.users-page, .organizations-page, .audit-page, .usage-page, .models-page, .admin-details-dialog) button {
+        transition: none;
+        animation: none;
+    }
     .organization-name-link, .admin-profile-window * { transition: none !important; animation: none !important; }
 }
 /* Organization portal menu must have its own styles: Users CSS is lazy-loaded. */
@@ -397,6 +398,7 @@
 .organization-actions-trigger:hover:not(:disabled) { background: #eaf3ff; border-color: #a8c7f2; }
 .organization-actions-trigger:disabled { opacity: .55; cursor: not-allowed; }
 .organization-actions-popup {
+    z-index: 1100;
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -404,7 +406,7 @@
     background: #fff;
     border: 1px solid #d8e1ee;
     border-radius: 11px;
-    box-shadow: 0 14px 34px rgb(14 27 46 / 20%);
+    box-shadow: 0 14px 34px rgba(14, 27, 46, 0.20);
 }
 .organization-actions-popup button {
     display: block;
@@ -443,5 +445,6 @@
 /* Natural height on read-only profiles; limits and dragging still use the shared safe viewport geometry. */
 .modal-card.admin-profile-window.modal-card--content-fit:not(.modal-card--maximized) {
     height: auto !important;
-    max-height: calc(100dvh - 24px) !important;
+    /* The geometry engine provides max-height from the actual fixed top. */
+    max-height: calc(100dvh - 24px);
 }

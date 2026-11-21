@@ -87,6 +87,35 @@ describe('Users directory search UI', () => {
         expect(callbacks.onSelectSearchSuggestion).toHaveBeenCalledWith(row)
     })
 
+    it('preserves inline suggestions until an outside pointer click reaches the row', () => {
+        view([row], 'Иван')
+        const search = screen.getByRole('searchbox')
+        const button = screen.getByRole('button', {
+            name: `Информация о роли пользователя ${row.email}`,
+        })
+        fireEvent.focus(search)
+        fireEvent.pointerDown(button)
+        fireEvent.blur(search, { relatedTarget: button })
+        expect(screen.getByText('Совпадения · выберите пользователя')).toBeInTheDocument()
+        fireEvent.pointerUp(button)
+        fireEvent.click(button)
+        expect(screen.getByRole('dialog', { name: 'Системная роль пользователя' })).toBeInTheDocument()
+        expect(screen.queryByText('Совпадения · выберите пользователя')).not.toBeInTheDocument()
+    })
+
+    it('still closes inline suggestions when keyboard focus leaves the form', () => {
+        view([row], 'Иван')
+        const search = screen.getByRole('searchbox')
+        const button = screen.getByRole('button', {
+            name: `Информация о роли пользователя ${row.email}`,
+        })
+        fireEvent.focus(search)
+        expect(screen.getByText('Совпадения · выберите пользователя')).toBeInTheDocument()
+        fireEvent.keyDown(search, { key: 'Tab' })
+        fireEvent.blur(search, { relatedTarget: button })
+        expect(screen.queryByText('Совпадения · выберите пользователя')).not.toBeInTheDocument()
+    })
+
     it('keeps role read-only for ADMIN, opens the real security explanation and closes it', () => {
         const { callbacks } = view([row], '')
         expect(screen.queryByRole('button', {

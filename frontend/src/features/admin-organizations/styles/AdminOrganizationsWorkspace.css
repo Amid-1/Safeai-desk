@@ -58,8 +58,8 @@
 
 /*
  * На обычном desktop split не создаёт body-scroll.
- * На низком viewport прокручивается только внутренний upper/lower,
- * а не весь документ.
+ * Компактный workspace использует прокрутку страницы и таблицы,
+ * если фиксированный split не может вместить строку и footer.
  */
 .organizations-page .resizable-scroll-region__upper {
     scrollbar-gutter: auto;
@@ -83,4 +83,35 @@
 
 .organizations-page .resizable-scroll-region__upper-boundary-marker {
     flex: 0 0 0;
+}
+
+/* The protected filters can consume almost the entire short viewport.
+   In compact mode the table must retain its natural row height instead
+   of being squeezed between the separator and footer (e.g. 720×450).
+   Keep the desktop split and its saved height unchanged. */
+@media (max-width: 900px), (max-height: 620px) {
+    .content--workspace:not(.content--chat) > .page.organizations-page {
+        overflow-y: auto;
+    }
+    .organizations-page .resizable-scroll-region {
+        height: auto;
+        flex: 0 0 auto;
+        overflow: visible;
+    }
+    .organizations-page .resizable-scroll-region__upper {
+        flex: 0 0 auto;
+        min-height: 0;
+        overflow: visible;
+    }
+    .organizations-page .resizable-scroll-region__lower {
+        height: auto;
+        flex: 0 0 auto;
+    }
+    .organizations-page .resizable-scroll-region__handle {
+        display: none;
+    }
+    .organizations-page .resizable-scroll-region__viewport.organizations-table-scroll {
+        flex: 0 0 auto;
+        max-height: min(60dvh, 560px);
+    }
 }

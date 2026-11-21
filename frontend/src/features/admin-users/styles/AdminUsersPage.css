@@ -1340,6 +1340,29 @@ body.modal-open {
 .users-page .resizable-scroll-region--auto-fit .resizable-scroll-region__upper {flex: 0 0 auto; min-height: 0; overflow: visible;}
 .users-page .resizable-scroll-region--auto-fit .resizable-scroll-region__lower {flex-shrink: 0;}
 
+/* A phone or short landscape viewport cannot guarantee space for both the
+   protected filters and a positive split height. Keep the rows below the
+   filters in page scroll order, with their own bounded table scrollport. */
+@media (max-width: 1024px), (max-height: 620px) {
+    .content--workspace:not(.content--chat) > .page.users-page { overflow-y: auto; }
+    .users-page .resizable-scroll-region { height: auto; flex: 0 0 auto; overflow: visible; }
+    .users-page .resizable-scroll-region__upper { flex: 0 0 auto; min-height: 0; overflow: visible; }
+    .users-page .resizable-scroll-region__lower { height: auto; flex: 0 0 auto; }
+    .users-page .resizable-scroll-region__handle { display: none; }
+    .users-page .resizable-scroll-region__viewport { flex: 0 0 auto; max-height: min(60dvh, 560px); }
+}
+
+/* Preserve the desktop split when the directory is idle. The inline search
+   suggestions temporarily need the extra vertical space on small laptops. */
+@media (min-width: 1025px) and (min-height: 621px) and (max-height: 780px) {
+    .content--workspace:not(.content--chat) > .page.users-page:has(.users-directory-search__suggestions) { overflow-y: auto; }
+    .users-page:has(.users-directory-search__suggestions) .resizable-scroll-region { height: auto; flex: 0 0 auto; overflow: visible; }
+    .users-page:has(.users-directory-search__suggestions) .resizable-scroll-region__upper { flex: 0 0 auto; min-height: 0; overflow: visible; }
+    .users-page:has(.users-directory-search__suggestions) .resizable-scroll-region__lower { height: auto; flex: 0 0 auto; }
+    .users-page:has(.users-directory-search__suggestions) .resizable-scroll-region__handle { display: none; }
+    .users-page:has(.users-directory-search__suggestions) .resizable-scroll-region__viewport { flex: 0 0 auto; max-height: min(60dvh, 560px); }
+}
+
 .users-password-field {display: grid; gap: 7px; font-weight: 700;}
 .users-password-field > label {display: block; font-weight: 700;}
 

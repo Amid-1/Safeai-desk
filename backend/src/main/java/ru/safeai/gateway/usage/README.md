@@ -1,5 +1,26 @@
 # Usage — отчёты по сообщениям и вызовам провайдера
 
+Актуализация: **21.11.2026**, этап 7.5D.4.5 / Fix1, Flyway V1–V99.
+Пакет `ru.safeai.gateway.usage`: **53 production Java-файла**, **42 тестовых класса**
+и **1 общий класс тестовой поддержки** (без учёта межмодульных проверок).
+Документ описывает реализацию, а не подтверждает прохождение финальной приёмки.
+
+**Расположение:** `backend/src/main/java/ru/safeai/gateway/usage/README.md`.
+
+### Навигация
+
+- [Актуальные этапы и функциональность](#75d32--аналитика-провайдеров-и-серверный-csv)
+- [Дерево production-классов](#структура)
+- [Архитектура и потоки](#2-структура-зависимости-и-поток-данных)
+- [REST API](#3-контракты-rest-api)
+- [Каталог всех Java-классов](#4-полный-каталог-java-классов--53-файла)
+- [PostgreSQL и миграции](#5-взаимодействие-с-postgresql-миграции-индексы-ограничения)
+- [Безопасность и multi-tenancy](#8-безопасность-и-multi-tenancy)
+- [Производительность и мониторинг](#9-производительность-расписание-и-конкуренция)
+- [Дерево и каталог тестов](#10-тестирование-структура-покрытие-и-приёмка)
+- [Runbook](#12-runbook-как-проверять-usage-после-инцидента)
+- [Security-приёмка](#13-security-приёмка-75d45-v1v99)
+
 ## 7.5D.3.2 — Аналитика провайдеров и серверный CSV
 
 Вкладка «По провайдерам» учитывает исторический `provider_type` из
@@ -46,11 +67,42 @@ flowchart TD
 - V98 хранит задания и завершённые CSV в PostgreSQL; перезапуск backend не очищает очередь.
   Любая реплика может получить задание и продолжить истёкшую аренду. Миграции V1–V96
   неизменны, Runtime ACL расширен только на новую таблицу, финансовый допуск сохранён.
+- Серверный CSV экспортирует весь допустимый набор строк по полям `UsageExportRequest`, не только текущую страницу.
+  `organizationQuery` и `usedOnly` присутствуют в API сравнения организаций, но отсутствуют в этом DTO экспорта:
+  не обещать перенос этих двух фильтров в CSV; расширение потребует изменения контракта, DB guard и тестов.
+- CSV содержит UTF-8 BOM, разделитель `;`, экранированные ячейки и CRLF. Допускается независимый повтор генерации
+  после истечения lease: одна действующая аренда не гарантирует, что старый worker физически остановил работу.
+  Публикация fenced по токену; отчётный admission по-прежнему ограничивает общий SQL.
 
 Зелёный индикатор «Сверка пройдена» показывает только ненулевую выборку планов
 с доказанным совпадением стоимости без расхождений и непроверяемых планов.
 Красный индикатор выделяет обнаруженные расхождения. Это сверка внутреннего учёта,
 а не подтверждение счета внешнего провайдера.
+
+### Интерфейс и frontend-контракты
+
+Frontend расположен в `frontend/src/features/usage/`. Панели разделяют два источника отчётности:
+сохранённые ответы Chat (детализация, пользователи, модели, UTC-дни, организации) и физические попытки
+(сверка и провайдеры). Стоимости этих контуров не суммируются друг с другом.
+
+| Компонент / пакет | Назначение |
+| --- | --- |
+| `ui/AdminUsageWorkspace.tsx`, `AdminUsageControls.tsx`, `UsageReportView.tsx` | Рабочая область, применённые фильтры, вкладки и таблицы/графики. |
+| `controller/useAdminUsageReport.ts`, `useAdminUsageReportQuery.ts` | Состояние отчёта, фильтры и запроса, серверный export task. |
+| `ui/UsagePhysicalReportPanel.tsx`, `controller/usePhysicalUsageReport.ts`, `api/physicalUsageApi.ts`, `ui/physicalUsageCsv.ts` | Отдельный физический отчёт, no-store, корректное состояние покрытия/сверки, CSV агрегатов. |
+| `ui/UsageProviderPanel.tsx`, `api/usageProviderApi.ts` | Исторические провайдеры, точные строки, scope и фильтры. |
+| `controller/useUsageExport.ts`, `api/usageExportApi.ts` | POST один раз, polling job id, ограниченный retry GET, download после READY; отмена UI-запроса по scopeKey (не удаление серверного задания). |
+| `ui/UsageOrganizationRows.tsx`, `api/platformBudgetApi.ts`, `controller/useUsageBudget.ts` | Сравнение организаций, бюджет из соседнего финансового контура, известная/неизвестная стоимость. |
+| `ui/UsageKpis.tsx`, `UsageBreakdownChart.tsx`, `UsageDailyChart.tsx`, `UsageTableViewport.tsx`, `usageCsv.ts`, `usageMetrics.ts` | KPI, динамика, представление данных, экспорт отображаемой страницы и трактовка полноты; CSV страницы не заменяет серверный export. |
+| `api/`, `lib/` | Wire parsers и validation, подготовка фильтров, presentation/loader helpers; не отменяют проверку scope backend. |
+
+Frontend-тесты: `usageApi.modelFilter.test.ts`, `usageApi.organizationRoutes.test.ts`, `physicalUsageApi.test.ts`,
+`usageProviderApi.test.ts`, `platformBudgetApi.test.ts`, `useAdminUsageReport.test.tsx`, `useUsageExport.test.tsx`,
+`UsagePhysicalReportPanel.test.tsx`, `UsageProviderPanel.test.tsx`, `UsageOrganizationComparison.test.tsx`,
+`UsageTableViewport.test.tsx`, `usageCsv.test.ts`, `usageMetrics.test.ts` и остальные тесты UI/API/helpers.
+Точные денежные значения и большие счётчики не переводить в floating point для экспортируемого доказательства;
+графическое форматирование не является исходными данными. Для нулевой применимой выборки показывать её размер,
+а не интерпретировать пустоту как доказательство полного физического учёта.
 
 ## 7.5D.4 — PostgreSQL, отказоустойчивость и приёмка Usage
 
@@ -187,8 +239,6 @@ usage/
 │   ├── UsagePhysicalReconciliationResponse.java
 │   ├── UsagePhysicalReportResponse.java
 │   ├── UsagePhysicalSpendResponse.java
-│   ├── UsagePhysicalReportResponse.java
-│   ├── UsageProviderRow.java
 │   ├── UsageProblemModelResponse.java
 │   ├── UsageProviderReportResponse.java
 │   ├── UsageProviderRow.java
@@ -220,14 +270,14 @@ usage/
 │   ├── UsagePhysicalSpendService.java
 │   ├── UsageQueryService.java
 │   ├── UsageReportExecutor.java
-│   ├── UsageRollupMonitor.java
 │   ├── UsageRollupDayProcessor.java
 │   ├── UsageRollupMonitor.java
 │   └── UsageRollupScheduler.java
 └── README.md
 ```
 
-[Тесты Usage](../../../../../../test/java/ru/safeai/gateway/usage/README.md).
+Тестовое дерево и назначение классов приведены в [разделе 10](#10-тестирование-структура-покрытие-и-приёмка).
+Если в тестовом пакете ведётся собственная документация: [README тестов Usage](../../../../../../test/java/ru/safeai/gateway/usage/README.md).
 
 ## Источники и границы отчётов
 
@@ -236,6 +286,7 @@ usage/
 | По сообщениям | `chat_messages`, `chat_turns` и UTC-rollup | Время факта, полуоткрытый интервал. |
 | Физические расходы | `model_execution_attempts` и организация плана | `started_at >= from AND started_at < to`. |
 | Сверка | Все попытки выбранного плана и связанное сообщение ASSISTANT | Достаточно одной попытки внутри периода. |
+| По провайдерам | `model_execution_attempts.provider_type`, план и владелец turn | Старт попытки; tenant, логическая модель и userId применяются до группировки. |
 
 Отчёты по сообщениям показывают сохранённые ответы Chat. Физические отчёты учитывают
 каждый вызов отдельно, включая повторы. Сверка сначала выбирает уникальные планы
@@ -315,12 +366,13 @@ Watermark сам по себе не подтверждает актуально�
 
 Все пути ниже относительны к `/api/admin/usage`. ADMIN ограничен собственной
 организацией. SUPER_ADMIN может читать глобальные отчёты и отчёты организации.
-Фильтры SQL передаются параметрами. Списки используют навигацию Slice без общего
-количества элементов. Параметры дат и пагинации валидируются перед запросом.
+Фильтры SQL передаются параметрами. Пагинируемые отчёты используют навигацию Slice без общего
+количества элементов; отчёты по моделям и дням возвращают ограниченные списки.
+Параметры дат и пагинации валидируются перед запросом.
 
 | Метод | Путь | Назначение |
 | --- | --- | --- |
-| GET | `/summary`, `/daily`, `/data-quality` | Итоги, дневные группы и качество данных. |
+| GET | `/summary`, `/daily`, `/data-quality` | Детализация user/model (Slice), дневные группы и качество данных. |
 | GET | `/users`, `/models` | Группировка по пользователям и моделям. |
 | GET | `/by-user/{userId}` | Отчёт по пользователю. |
 | GET | `/by-organization/{organizationId}` | Итоги организации. |
@@ -328,6 +380,11 @@ Watermark сам по себе не подтверждает актуально�
 | GET | `/physical-attempts` | Покрытие и известная стоимость вызовов по интервалу. |
 | GET | `/physical-attempts/reconciliation` | Сверка целых планов. |
 | GET | `/physical-attempts/report` | Покрытие и сверка в одном снимке; точные строки, optional organizationId. |
+| GET | `/physical-attempts/providers` | Аналитика исторических провайдеров; tenant/model/user, точные строки; обе даты обязательны. |
+| GET | `/organizations` | Сравнение организаций с фильтрами, только SUPER_ADMIN. |
+| POST | `/exports` | Асинхронная генерация CSV, 202. |
+| GET | `/exports/{id}` | Текущее состояние только своего задания. |
+| GET | `/exports/{id}/download` | READY, CSV attachment, no-store, nosniff. |
 | POST | `/rebuild` | Запрос пересчёта, только SUPER_ADMIN. Возвращает 202. |
 
 Для физических отчётов `dateFrom` и `dateTo` передаются как ISO-8601 timestamps.
@@ -416,7 +473,13 @@ watermark и возраст dirty dates после восстановления 
   - **Комментарий** — V74 включает текущую UTC-дату в очередь пересчёта.
 - Физические расходы
   - **Статус** — Реализованы
-  - **Комментарий** — Есть покрытие попыток и внутренняя сверка планов.
+  - **Комментарий** — Есть покрытие попыток, единый отчёт, внутренняя сверка целых планов и аналитика провайдеров.
+- Сравнение организаций и экспорт
+  - **Статус** — Реализованы
+  - **Комментарий** — Глобальное сравнение только для SUPER_ADMIN; PostgreSQL-очередь V98/V99, TTL, lease fencing, повторная проверка прав и точный CSV без усечения.
+- Мониторинг и Security Acceptance
+  - **Статус** — Реализация подготовлена; финальная приёмка
+  - **Комментарий** — Micrometer, 11 правил Prometheus, тесты правил, Runtime ACL на clean и upgrade. Production GO требует фактических успешных прогонов и staging.
 
 ### 1.2. Термины
 
@@ -446,13 +509,17 @@ HTTP client
        │    ├─ validate date range, page, model and tenant scope
        │    ├─ UsageRollupStateRepository → completed UTC watermark
        │    ├─ UsageQueryPlan → full-day rollup + exact live edges
-       │    └─ UsageReportExecutor → per-JVM semaphore, metrics
+       │    └─ UsageReportExecutor → per-JVM semaphore, PostgreSQL xact slot, metrics
        │         └─ UsageQueryRepository
        │             └─ JdbcUsageQueryRepository
        │                 ├─ UsageFactQueryBuilder
        │                 ├─ UsageSqlFragments
        │                 ├─ UsageRowMapperSupport
        │                 └─ PostgreSQL
+       ├─ UsagePhysicalSpendController → UsagePhysicalSpendService
+       │    └─ UsageReportExecutor → UsagePhysicalSpendRepository → execution ledger
+       ├─ UsageExportController → UsageExportService → UsageExportJobRepository
+       │    └─ PostgreSQL usage_export_jobs → lease worker → report executor → UsageExportCsv
        └─ UsageForcedRebuildService → usage_dirty_dates
 
 Scheduled every 10 minutes (UTC by default)
@@ -470,7 +537,12 @@ Scheduled every 10 minutes (UTC by default)
                      ├─ rebuildDay(date, false)
                      └─ DELETE dirty marker if revision unchanged
 
-PostgreSQL V71 triggers:
+Scheduled monitor (60 seconds):
+  └─ UsageRollupMonitor → usage_dirty_dates + usage_rollup_state → Micrometer
+Scheduled export poll (2 seconds):
+  └─ UsageExportService → claim / generate / finish → cached queue metrics
+
+PostgreSQL V71/V74 triggers:
   chat_messages / chat_turns mutation → usage_dirty_dates
 ```
 
@@ -481,10 +553,14 @@ PostgreSQL V71 triggers:
 2. `chat_turns` предоставляет данные о логической операции и состоянии `AMBIGUOUS`; эти операции учитываются в
    **quality**, но не как полноценные оплаченные физические attempts.
 3. `model_execution_plans` / `model_execution_attempts` (появились в V50, далее ужесточались V53 и V66) хранят
-   physical-attempt evidence; текущая usage-аналитика напрямую их не агрегирует.
+   physical-attempt evidence; `UsagePhysicalSpendRepository` напрямую агрегирует их для отдельных
+   физических отчётов, провайдеров и сверки. Логические отчёты по сообщениям не смешиваются с ними.
 4. `usage_daily_user_model_rollups`, `usage_daily_org_model_rollups`, `usage_daily_quality_rollups` — производные
    таблицы, которые можно пересчитывать из исходников в рамках поддерживаемой модели.
 5. `usage_rollup_state` хранит непрерывный watermark. `usage_dirty_dates` — ревизионную очередь повторных пересчётов.
+6. `usage_export_jobs` (V98/V99) — ограниченная durable-очередь и временное хранение CSV, не финансовый ledger.
+7. Справочник организаций и финансовые данные соседнего модуля используются для глобального сравнения и фильтра
+   по месячному бюджету; исторический tenant факта не заменяется текущим tenant пользователя.
 
 Важно: **usage-аналитика, финансовое ledger и ограничение квот — разные задачи**. Не нужно подменять one-way
 аналитический `knownCostUsd` доказательством фактического долга клиента.
@@ -543,12 +619,30 @@ PostgreSQL V71 triggers:
 - GET
   - **Endpoint** — `/physical-attempts/reconciliation`
   - **Назначение и контракт** — Сверка всех попыток выбранных планов.
+- GET
+  - **Endpoint** — `/physical-attempts/report`
+  - **Назначение и контракт** — единый снимок покрытия и сверки; `organizationId` optional, no-store.
+- GET
+  - **Endpoint** — `/physical-attempts/providers`
+  - **Назначение и контракт** — физические попытки по историческому провайдеру; `organizationId`, `model`, `userId`, даты; no-store.
+- GET
+  - **Endpoint** — `/organizations`
+  - **Назначение и контракт** — Slice сравнения организаций, только SUPER_ADMIN; `organizationQuery`, `usedOnly`, `budgetStatus`, фильтры периода/модели/пользователя и валидированная пагинация.
+- POST
+  - **Endpoint** — `/exports`
+  - **Назначение и контракт** — `UsageExportRequest`, 202, серверный job UUID, состояние и срок истечения.
+- GET
+  - **Endpoint** — `/exports/{id}` и `/exports/{id}/download`
+  - **Назначение и контракт** — статус и файл владельца; 404 при недоступности, 409 если результат ещё не READY, no-store и attachment/nosniff для CSV.
 
 `dateFrom/dateTo` принимаются в ISO DATE_TIME как `Instant`, отсутствующие границы разрешаются сервисом: конец — текущие
 часы приложения, начало — конец минус `defaultRange`. `UsagePageRequest`: `page` по умолчанию 0, `size` — 50,
 максимум 200.
 Для `models`, `daily` и списка проблемных моделей собственная пагинация отсутствует (у проблемных моделей SQL
-`LIMIT 20`).
+`LIMIT 20`); models ограничен 1 000 группами с проверкой переполнения, daily — диапазоном 366 дней.
+Страничные отчёты допускают только `order=tokens|total|cost|responses|coverage` (DESC), либо серверный порядок по умолчанию;
+OFFSET не выше 50 000. Произвольный SQL от клиента не принимается. Опция сортировки не превращается в произвольный ORDER BY.
+В `UsageExportRequest` даты обязательны; период не более 366 дней, далее действует конфигурация отчётов.
 
 **Авторизация:** наличие HTTP `@PreAuthorize` само по себе недостаточно для защиты от неконтроллерных вызовов;
 правильно,
@@ -557,8 +651,8 @@ PostgreSQL V71 triggers:
 тоже проверяет `SUPER_ADMIN` на сервисе. Для аутентификации используется `SafeAiUserPrincipal`, который не должен
 доверяться
 из параметров запроса, а создаётся Spring Security. Контроллер использует `@AuthenticationPrincipal` без
-`errorOnInvalidType=true`;
-это скорее диагностическое улучшение, чем доказанная брешь.
+`errorOnInvalidType=true` в `UsageController`; физический и экспортный контроллеры используют строгий тип principal.
+Это скорее диагностическое улучшение старого контроллера, чем доказанная брешь.
 
 **Семантика `Slice`:** не предоставляет общего количества страниц или записей. `first`, `last`, `hasNext`,
 `hasPrevious` — навигационные флаги, не `Page` с `totalElements`. Это снижает стоимость запросов, но клиент не должен
@@ -566,7 +660,7 @@ PostgreSQL V71 triggers:
 
 ---
 
-## 4. Полный каталог Java-классов — 42 файла
+## 4. Полный каталог Java-классов — 53 файла
 
 Ниже назначение, ключевые поля, методы, инварианты и точечные замечания по каждому исходнику. Простые getter-аксессоры
 record не описываются по одной строке; анализируются их контракт и вычисляемые поля.
@@ -638,13 +732,13 @@ record не описываются по одной строке; анализи�
   `Duration.toNanos()` у slow-threshold при экстремальном значении может переполниться — не подтверждённый
   эксплуатационный дефект при обычных настройках, но нужна верхняя разумная граница.
 
-### 4.2. `usage.controller` — 3 файла
+### 4.2. `usage.controller` — 4 файла
 
 #### 4.2.1. `UsageController.java`
 
 - Поле `usageQueryService` — один application-service вход для всех отчётов.
 - Методы `summary`, `users`, `models`, `usersByOrganization`, `modelsByOrganization`, `daily`,
-  `dailyByOrganization`, `byUser`, `byOrganization`, `dataQuality`: маппинг конкретных REST endpoints без SQL и
+  `dailyByOrganization`, `byUser`, `byOrganization`, `dataQuality`, `organizations`: маппинг конкретных REST endpoints без SQL и
   бизнес-логики.
 - `@Validated` и `@Valid @ModelAttribute` проверяют фильтры; `@PreAuthorize` ограничивает роли.
   `@AuthenticationPrincipal` передаёт principal в сервис; не принимает organization ID из тела без последующей
@@ -665,11 +759,20 @@ record не описываются по одной строке; анализи�
   HTTP-отображение `IllegalArgumentException` в понятную 400, если оно ещё не централизовано глобальным
   обработчиком.
 
-#### UsagePhysicalSpendController.java
+#### 4.2.3. `UsagePhysicalSpendController.java`
 
-Публикует отчёт по попыткам и сверку. Передаёт principal и границы периода сервису.
+Публикует отчёт по попыткам, сверку, единый `/report` и `/providers`. Передаёт principal,
+границы периода и поддерживаемые фильтры сервису. ADMIN/SUPER_ADMIN, строгий тип principal,
+no-store для единого отчёта и отчёта по провайдерам.
 
-### 4.3. `usage.dto` — 16 файлов
+#### 4.2.4. `UsageExportController.java`
+
+- `start`, `status`, `download` — HTTP-входы PostgreSQL-очереди, не выполняют тяжёлый SQL синхронно в POST.
+- `202 Accepted` означает созданное задание, не готовый файл; статус и файл не кэшируются.
+- CSV: `text/csv; charset=UTF-8`, `Content-Disposition: attachment; filename="safeai-usage.csv"`,
+  `X-Content-Type-Options: nosniff`. Авторизация владельца выполняется сервисом/репозиторием на каждом обращении.
+
+### 4.3. `usage.dto` — 21 файл
 
 #### 4.3.1. `PagedResponse<T>.java`
 
@@ -722,7 +825,7 @@ record не описываются по одной строке; анализи�
 
 #### 4.3.6. `UsageDateModelFilter.java`
 
-- То же, плюс `@Size(max=100) String model`. `normalizedModel()` делает `trim()` и возвращает null для blank.
+- То же, плюс `@Size(max=100) String model` и optional `UUID userId`. `normalizedModel()` делает `trim()` и возвращает null для blank.
 - На уровне сервиса повторная проверка длины нужна для programmatic вызовов. Проверено: она есть.
 - Изменение Unicode-whitespace при `trim` vs `strip` может быть заметно для необычных значений — если модель
   является идентификатором, следует выбрать одну стабильную каноникализацию; без смены контракта автоматически не
@@ -737,7 +840,8 @@ record не описываются по одной строке; анализи�
 
 - `page`: `@Min(0)`; `size`: `@Min(1) @Max(200)`; default 0/50.
 - `toPageable()` вызывает `PageRequest.of`, который откажет при неверном числе даже при обходе Bean Validation.
-  Сервис дополнительно проверяет `properties.maxPageSize()` и запрет сортировки.
+  `Order` — закрытый enum `tokens`, `total`, `cost`, `responses`, `coverage`; при наличии передаётся DESC.
+  Сервис дополнительно проверяет `properties.maxPageSize()`, OFFSET <= 50 000 и запрещает произвольную сортировку.
 - Возможное несоответствие: аннотация верхнего предела захардкожена `200`, а эксплуатационная конфигурация может
   снижать `maxPageSize`; сервис компенсирует, но клиент получит разные сообщения об ошибке в зависимости от
   лимита.
@@ -784,21 +888,56 @@ record не описываются по одной строке; анализи�
   инвариантов.
 - Плюс: не смешивает email как mutable display field с стабильным `userId`.
 
-#### DTO физических отчётов
+#### 4.3.15. `UsagePhysicalSpendResponse.java`
 
-`UsagePhysicalSpendResponse` описывает расходы и признаки полноты по попыткам.
-`UsagePhysicalReconciliationResponse` разделяет планы на совпавшие,
-расходящиеся и непроверяемые.
+Описывает расходы и признаки полноты по попыткам: известная стоимость, известные токены,
+исходы/достоверность и число непроверяемых попыток. Производные флаги проверяются по evidence.
 
-### 4.4. `usage.repository` — 12 файлов
+#### 4.3.16. `UsagePhysicalReconciliationResponse.java`
+
+Разделяет планы на совпавшие, расходящиеся и непроверяемые; проверяет разбиение общего числа.
+Пустая выборка не признаётся сверенной, неполнота не маскируется флагом `fullyReconciled`.
+
+#### 4.3.17. `UsagePhysicalReportResponse.java`
+
+Единый wire-контракт покрытия и сверки с диапазоном/областью; точные десятичные строки,
+основания агрегации и сверки; `from(...)` преобразует обе части одного снимка.
+
+#### 4.3.18. `UsageOrganizationSummaryResponse.java`
+
+Сводка текущей записи справочника организации по историческим фактам её tenant.
+Содержит UUID, имя, счётчики ответов, usage и вложенный `Cost`: точная десятичная строка,
+незнание стоимости отражается `null`, а не придуманным нулём; классификация и полнота сохранены.
+
+#### 4.3.19. `UsageProviderRow.java`
+
+Строка агрегации исторического провайдера: попытки, неопределённые исходы, известные токены,
+известная стоимость, счётчики неизвестных данных. Числа передаются строками без floating-point.
+
+#### 4.3.20. `UsageProviderReportResponse.java`
+
+Оболочка строк провайдеров с интервалом, областью и применёнными model/user фильтрами;
+позволяет клиенту не смешивать разные критерии отчёта.
+
+#### 4.3.21. `UsageExportRequest.java`
+
+Запрос задания: `kind`, `dateFrom`, `dateTo`, `organizationId`, `userId`, `model`, `order`, `budgetStatus`.
+Kind: SUMMARY, USERS, MODELS, DAILY, ORGANIZATIONS, PROVIDERS. Scope и допустимость параметров
+проверяются сервисом; DTO не является самостоятельным разрешением на чтение.
+
+### 4.4. `usage.repository` — 13 файлов
 
 #### 4.4.1. `JdbcUsageQueryRepository.java`
 
 - Реализация `UsageQueryRepository` на `NamedParameterJdbcTemplate`.
-- `findSummary` собирает facts, группирует `user_id + current_user_email + model`, сортирует по `user_id, model`,
+- `findSummary` собирает facts, группирует `user_id + current_user_email + model`, по умолчанию сортирует по `user_id, model`,
   выдаёт Slice.
-- `findUsers`: группирует по пользователю, `ORDER BY user_id`.
-- `findModels`: группирует по модели, `ORDER BY model`. Не пагинируется.
+- `findUsers`: группирует по пользователю, по умолчанию `ORDER BY user_id`.
+- `findModels`: группирует по модели, `ORDER BY model`. Не пагинируется, проверяет предел 1 000 групп.
+- `findOrganizations`: только platform scope; LEFT JOIN исторических facts к справочнику, включая организации без usage;
+  literal escaped search имени (`LIKE ESCAPE`), `usedOnly` по подтверждённым токенам, фильтр реального месячного бюджета
+  через `PlatformBudgetClassification.CTE`. Детерминированный UUID tie-break, при поиске — релевантность.
+- `reportOrder`: только закрытые выражения ORDER BY для разрешённых метрик; пользовательская строка SQL не конкатенируется.
 - `findDaily`: группирует по UTC-дате, `ORDER BY usage_date DESC`. Не пагинируется.
 - `findDataQuality` читает aggregate и проблемные модели в одном снимке транзакции executor.
 - `findProblemModels`: считает partial/missing и unpriced/calculation-failed по моделям, `LIMIT 20`. SQL
@@ -807,8 +946,8 @@ record не описываются по одной строке; анализи�
 - `slice`: по лишней строке вычисляет `hasNext` и возвращает `SliceImpl`.
 - `executeInternallyGeneratedQuery` и `executeRequiredInternallyGeneratedQueryForObject` — централизованные
   JDBC-boundary. Вложенные SQL-куски статичны, user values передаются через `MapSqlParameterSource`.
-- **Риски:** OFFSET на глубокой странице — линейная потеря производительности; `getOffset` long, PostgreSQL умеет
-  большой OFFSET, но запрос способен быть тяжёлым. На будущее keyset/cursor pagination и строгая верхняя глубина.
+- **Риски:** OFFSET на глубокой странице — линейная потеря производительности; сервис уже ограничивает OFFSET 50 000,
+  но запрос может оставаться тяжёлым. На будущее keyset/cursor pagination; существующий предел не увеличивать без замеров.
 - **Security:** `@SuppressWarnings(SqlResolve/SqlNoDataSourceInspection)` снимает подсказки IDEA только для этого
   класса, не является эквивалентом SQL-тестов; динамическая SQL-композиция требует snapshot-тестов, объяснённых
   ниже.
@@ -830,12 +969,13 @@ record не описываются по одной строке; анализи�
 #### 4.4.3. `UsageFactQueryBuilder.java`
 
 - Основной генератор SQL-плана: `userFacts`, `organizationFacts`, `qualityFacts` объединяют rollup-фрагмент и
-  один/два live-фрагмента в `WITH facts AS (...)` с `UNION ALL`.
+  непересекающиеся live-фрагменты в `WITH facts AS (...)` с `UNION ALL`; dirty-дни исключаются из rollup.
 - `baseParameters` регистрирует optional organizationId, userId, model; `appendRollupScope` и `appendLiveScope`
   выстраивают фильтры.
 - `appendUserLiveFragments`: `chat_messages m` JOIN `chat_sessions s` JOIN `users u`, только `m.role='ASSISTANT'`;
   grouping по `s.user_id`, текущему email и модели.
-- `appendOrganizationLiveFragments`: только `chat_messages`, фильтр по организации и UTC grouping для daily.
+- `appendOrganizationLiveFragments`: факты `chat_messages`, исторический tenant и UTC grouping для daily;
+  при заданном userId используются пользовательские факты/rollup и пересечение tenant/user.
 - `qualityFacts`: сводки `usage_daily_quality_rollups`, live counts для ASSISTANT и отдельных `AMBIGUOUS` turns,
   не смешивая «logical ambiguity» с количеством сообщений.
 - `facts(...)` отклоняет пустой план; имена bind-параметров `liveFrom0`, `...1` вычисляются из внутреннего индекса
@@ -859,7 +999,8 @@ record не описываются по одной строке; анализи�
 
 #### 4.4.6. `UsageQueryCriteria.java`
 
-- Обязательные `dateFrom/dateTo`, опциональные `organizationId/userId/model`.
+- Обязательные `dateFrom/dateTo`, опциональные `organizationId/userId/model`, `organizationQuery`, `usedOnly`, `budgetFilter`.
+- `BudgetFilter(Status, start, end)` фиксирует категорию и полуоткрытый UTC-месяц, требует `start < end`.
 - Проверяет порядок дат, trim/nullable model. Нет встроенной проверки роли — она **должна** проходить в
   `UsageQueryService` до вызова репозитория.
 - Обращать внимание: произвольный программный вызов repository в другом сервисе, минуя application authorization,
@@ -868,21 +1009,22 @@ record не описываются по одной строке; анализи�
 
 #### 4.4.7. `UsageQueryPlan.java`
 
-- `(rollupFrom, rollupToExclusive, liveRanges)`; оба rollup-предела обязаны присутствовать совместно; начальная
+- `(rollupFrom, rollupToExclusive, liveRanges, excludedRollupDates)`; оба rollup-предела обязаны присутствовать совместно; начальная
   дата меньше конца.
 - `List.copyOf` и `hasRollupRange()` обеспечивают простой immutable-план.
-- **Не проверяет самостоятельно**, что liveRanges не пересекаются друг с другом или с rollup. Сейчас план строится
-  контролируемым `UsageQueryService`; опасность возникнет при появлении второго конструктора плана. Можно добавить
-  `validateNoOverlap()` для fail-fast.
+- `hybrid`, `validateDisjointCoverage`: fail-fast на пересечение live-интервалов, пересечение clean rollup,
+  повтор dirty-даты, отсутствие полного live-покрытия исключённого дня; rollup внутри запроса, соседние live-части объединяются.
+  Эти инварианты введены в рамках 7.5D.1, их нельзя удалять или ограничивать только проверками caller.
 
 #### 4.4.8. `UsageQueryRepository.java`
 
-- Интерфейс аналитического чтения: `findSummary`, `findUsers`, `findModels`, `findDaily`, `findDataQuality`.
+- Интерфейс аналитического чтения: `findSummary`, `findUsers`, `findModels`, `findDaily`, `findDataQuality`, `findOrganizations`.
 - **Хорошо:** сервис не знает о JDBC, builder не знает о REST, возможны альтернативные query backends без изменения API.
 
 #### 4.4.9. `UsageRollupStateRepository.java`
 
 - `findLastCompletedDate`: читает watermark по константе `JOB_NAME=usage-daily-rollup`.
+- `findDirtyDates(from, toExclusive)` читает закрытые даты для исключения из rollup в том же снимке отчёта.
 - `findEarliestUsageDate`: берёт минимум UTC-даты по `ASSISTANT chat_messages` и завершённым `AMBIGUOUS chat_turns`.
 - `markCompleted`: UPSERT с условием «та же дата/предыдущая дата или следующий непрерывный UTC-день», не допускает
   пропусков внутри уже инициализированного watermark; бросает exception, если `affectedRows != 1`.
@@ -925,12 +1067,24 @@ record не описываются по одной строке; анализи�
 - **Поддерживаемость:** большие повторяющиеся SQL-фрагменты требуют автоматических регрессионных сценариев для
   каждой категории и единой схемы типов `UNION ALL`; вручную менять их опасно.
 
-#### UsagePhysicalSpendRepository.java
+#### 4.4.12. `UsagePhysicalSpendRepository.java`
 
 Агрегирует попытки по `started_at` и ограничивает выборку организацией плана.
 Для сверки сначала выбирает планы, затем читает все их попытки.
+`findProviders` группирует по историческому `provider_type` с bind-параметрами tenant/model/user.
+Запросы не замещают неизвестное значение нулём без соответствующих счётчиков полноты.
 
-### 4.5. `usage.service` — 7 файлов
+#### 4.4.13. `UsageExportJobRepository.java`
+
+- `enqueue`: REQUIRES_NEW, READ COMMITTED, общий advisory xact lock, purge, authoritative authorization, допуск с ограничениями V98/V99.
+- `claim`: сериализует захват, обрабатывает исчерпанные аренды, `FOR UPDATE SKIP LOCKED`, выдаёт новый lease UUID на 2 минуты (не позже TTL).
+- `finish`: CAS по id, действующему lease и срокам; READY только при актуальной авторизации; старый worker не публикует результат.
+- `authorized`, `status`, `download`: проверяют пользователя, организацию, активность, единственную роль, обе версии авторизации; истёкший файл недоступен.
+- `snapshot`: агрегированное состояние очереди без содержимого CSV; `purge` удаляет только истёкшие задания.
+- Вложенные records `Owner`, `Job`, `Claim`, `Snapshot` отделяют идентичность, публичный статус, параметры аренды и мониторинг.
+- Общие SQL-инварианты остаются в V98/V99 и Runtime ACL; нельзя заменять проверку lease простым UPDATE по id.
+
+### 4.5. `usage.service` — 11 файлов
 
 #### 4.5.1. `UsageDirtyDateProcessor.java`
 
@@ -956,7 +1110,8 @@ record не описываются по одной строке; анализи�
 - `@Service` + class-level `@PreAuthorize(ADMIN/SUPER_ADMIN)`.
 - Запросы: `getUsageSummary`, `getUsageByUsers`, `getUsageByModels`, `getUsageDaily`,
   `getUsageByUsersForOrganization`, `getUsageByModelsForOrganization`, `getUsageDailyForOrganization`,
-  `getUsageByUserId`, `getUsageByOrganizationId`, `getDataQuality`.
+  `getUsageByUserId`, `getUsageByOrganizationId`, `getDataQuality`, `getUsageByOrganizations`,
+  пользовательские срезы с model/userId, `exportRows`.
 - Вспомогательные `normalizeRange`, `organizationCriteria`, `requireOrganizationAccess`, `buildPlan`,
   `buildLiveRanges`, `liveOnlyPlan`, `validateLiveFallback`, `ceilUtcDay`, `floorUtcDay`, `min`, `normalizeModel`,
   `requireCurrentUser`, `requirePageable`, `isSuperAdmin`.
@@ -965,13 +1120,16 @@ record не описываются по одной строке; анализи�
   корректно.
 - `normalizeRange`: оба `Instant`, настройка дефолтного диапазона, `maxRange`, reject on invalid order.
 - `buildPlan`: если rollup выключен или watermark отсутствует, только live; иначе вырезает **внутренний закрытый
-  UTC-период**, подтверждённый watermark, а края обрабатывает live. Нет двойного подсчёта границ.
+  UTC-период**, подтверждённый watermark, а края и dirty-дни обрабатывает live. Нет двойного подсчёта границ.
 - `validateLiveFallback`: суммирует длительность live-диапазонов; при превышении `maxLiveRange` возвращает 503,
   вместо внезапного тяжелого scan на год.
-- `requirePageable`: диапазон size, запрет сортировки клиента — стабильные серверные ORDER BY, предотвращение
+- `requirePageable`: диапазон size, OFFSET <= 50 000, закрытый набор сортировок DESC — стабильные серверные ORDER BY, предотвращение
   SQL-конкатенации произвольных колонок.
 - Executor получает локальный permit до транзакции и общий слот внутри неё.
 - Data quality читает итог и проблемные модели в одном снимке `REPEATABLE READ`.
+- Сравнение организаций доступно только SUPER_ADMIN; фильтр месячного бюджета использует UTC-границы месяца.
+- `exportRows` использует тот же executor и тот же план фактов; для Slice запрашивает до 10 000 результатов
+  с детекцией превышения, не выдаёт усечённый CSV. PROVIDERS направляется в физический сервис.
 
 #### 4.5.4. `UsageReportExecutor.java`
 
@@ -1021,9 +1179,42 @@ record не описываются по одной строке; анализи�
 
 ---
 
-#### UsagePhysicalSpendService.java
+#### 4.5.7. `UsagePhysicalSpendService.java`
 
-Проверяет область организации и диапазон. Вызывает repository через общий executor.
+Проверяет роль, область организации и диапазон. `findCoverage`, `reconcile`, `report`, `providers`, `providerReport`
+вызывают repository через общий executor; `report` объединяет покрытие и сверку в одной транзакции.
+Обычный ADMIN не может получить глобальный или чужой отчёт даже при прямом вызове сервиса.
+
+#### 4.5.8. `UsageAccessPolicy.java`
+
+Внутренний helper `requireReader` и `isSuperAdmin`: проверка ADMIN/SUPER_ADMIN независимо от AOP,
+используется сервисами как defense in depth. Определение tenant и проверка явной области остаются в use case.
+
+#### 4.5.9. `UsageExportCsv.java`
+
+Кодирует шесть типов отчётов, метаданные, точные десятичные значения; экранирует кавычки, переносы,
+разделители и опасные формулы. `MAX_ROWS=10_000`, предел 8 МиБ, `LimitExceeded` исключает частичный результат.
+CSV — временный бинарный результат задания, не источник истины ledger.
+
+#### 4.5.10. `UsageExportService.java`
+
+- `start`: проверяет actor, параметры и область, фиксирует Owner с tokenVersion/orgAuthVersion; SQL enqueue или 429.
+- `poll` каждые 2 секунды, локальный `AtomicBoolean busy` и один worker-поток; кластерный предел реализуется БД.
+- `runOnce` захватывает аренду и обновляет кэш мониторинга. `generate` заново проверяет права, создаёт ограниченный
+  Spring Security context, выполняет `exportRows` или `providers`, проверяет права повторно, кодирует CSV.
+- Транзиентная ошибка БД оставляет аренду до истечения (до трёх захватов). Остальные ошибки — безопасные failure codes,
+  `finish` проверяет lease; устаревший worker не публикует READY. SecurityContext очищается в finally.
+- `status`/`download` — только владелец с актуальными правами; 404 для недоступного, 409 для неготового результата.
+- `State`, `Status` — публичное состояние; `@PreDestroy` завершает локальный worker; данные задания остаются в БД.
+- Micrometer: queue gauges, last observation timestamp, duration, bounded result counters. Scrape не запускает SQL.
+
+#### 4.5.11. `UsageRollupMonitor.java`
+
+Условный компонент при включённом rollup. `observe` каждые 60 секунд единым SQL с UTC-границей
+считает закрытые dirty-дни и отставание watermark; -1 означает неизвестный watermark,
+0 — нет отставания. При отсутствии строки или SQL-ошибке публикует NaN, сохраняет timestamp
+последнего успешного наблюдения, увеличивает counter; предупреждение логируется при входе в состояние ошибки.
+Публикация неизменяемого `Observation` отделена от scrape; штатный `fixedDelay` не запускает следующий scheduled вызов до завершения текущего. SQL при чтении gauge нет; при добавлении альтернативных способов вызова необходимо сохранить исключение конкурентных observer-вызовов.
 
 ## 5. Взаимодействие с PostgreSQL: миграции, индексы, ограничения
 
@@ -1061,6 +1252,16 @@ record не описываются по одной строке; анализи�
     и turns.
 - V74
   - **Фактическая роль в usage** — Маркировка текущего UTC-дня и индексы физических отчётов.
+- `V95__chat_quota_physical_attempt_gate.sql` — immutable reservation evidence, запрет повторов при строгой квоте.
+- `V96__chat_quota_admission_fence.sql` — согласование создания/изменения политики с допуском, версии политик,
+  точный календарь и повторная проверка перед dispatch; обе ранее утверждённые байтовые версии заголовка допустимы
+  только при совпадении с соответствующей записью SHA-256.
+- `V97__usage_physical_tenant_index.sql` — обратный по порядку колонок индекс `(execution_plan_id, started_at)`,
+  `CREATE INDEX CONCURRENTLY`; companion `.sql.conf` обязателен, запуск вне транзакции.
+- `V98__usage_export_jobs.sql` — durable queue, индексы TTL/owner, уникальность активного задания владельца и RUNNING,
+  защитные переходы, пределы очереди, аренды и retention.
+- `V99__usage_export_job_guard.sql` — неизменяемость идентичности/фильтров, READ COMMITTED, авторизация при INSERT/READY,
+  строгая проверка смены lease и результата. Не заменяет ограничения V98.
 
 ### 5.1. Непустые инварианты схемы, которые нельзя ослаблять
 
@@ -1070,7 +1271,12 @@ record не описываются по одной строке; анализи�
 3. `usage_daily_*_rollups.total_tokens = input_tokens + output_tokens` и счётчики категорий согласованы с
    количеством assistant messages.
 4. `usage_dirty_dates.revision > 0`, delete-if-revision-current.
-5. Не редактировать Flyway V7–V71 задним числом; исправления — только новой миграцией с preflight и тестами обновления.
+5. Не редактировать применённые Flyway V1–V99 задним числом, включая комментарии и `.sql.conf`;
+   исправления — только новой миграцией с preflight и тестами обновления. `RuntimeAclPolicy.REVIEWED_THROUGH=99`,
+   99 SQL + 7 конфигураций в `reviewed-migrations.sha256`. Не генерировать approval автоматически из текущих файлов,
+   не выполнять Flyway repair для обхода проверки. Runtime ACL применяется только после подтверждения схемы/истории.
+6. В V98/V99 сохранять неизменяемость задания, единственную действительную аренду, TTL и CAS публикации.
+   SQL-права `safeai_app` только необходимые; не давать широких INSERT/UPDATE, DDL, TRUNCATE или TRIGGER.
 
 ### 5.2. Запись на границе UTC-полуночи
 
@@ -1173,10 +1379,11 @@ PRICED/FREE/UNPRICED/FAILED, REFUSED/INCOMPLETE, null model, AMBIGUOUS turns, п
    application слоя. Полезно ограничить их применение package/architecture tests.
 8. Запрос ручного rebuild не должен принимать произвольный SQL, только LocalDate; это условие соблюдено.
 
-**Предлагаемые security-тесты:** `ADMIN` не видит чужие данные через
+**Security-тесты, реализованные в контрактных, сервисных и интеграционных наборах:** `ADMIN` не видит чужие данные через
 summary/users/models/daily/by-user/data-quality; `SUPER_ADMIN` корректно смотрит global и explicit organization;
-plain USER и anonymous отклоняются; сериализация email не протекает в логи ошибок; spoofed organizationId не
-меняет tenant scope.
+plain USER и anonymous отклоняются; spoofed organizationId не меняет tenant scope. Экспорт защищён на каждом этапе —
+enqueue, генерация, publish, status/download, включая смену версии авторизации, TTL и чужие id.
+Отдельно на staging проверять, что email и другие персональные данные не попадают в журналы ошибок.
 
 ---
 
@@ -1208,32 +1415,217 @@ COMMITTED` читатель видит старую завершённую ве�
 - число backfill дней за прогон, retries после SQL failure;
 - Hikari active/idle/pending, DB connection acquisition time, lock waits;
 - data quality: доля PARTIAL/MISSING и UNPRICED/CALCULATION_FAILED;
-- physical attempts reconciliation backlog (это уже соседний модуль и отдельный ledger).
+- physical attempts reconciliation backlog (отдельный evidence ledger, аналитический отчёт Usage; закрытие финансовых обязательств — соседний модуль).
+
+### 9.4. Реализованные метрики и правила Prometheus
+
+| Источник | Micrometer / Prometheus | Интерпретация |
+| --- | --- | --- |
+| Executor | `safeai.usage.report.duration` / `safeai_usage_report_duration_seconds_*` | Длительность по фиксированному `report`; histogram для p95/p99. |
+| Executor | `safeai_usage_reports_available_permits` | Свободные локальные permits; не число глобальных слотов. |
+| Executor | `safeai_usage_reports_{rejected,timeout,error}_total` | Отказы допуска, SQL timeout, ошибки. |
+| Export | `safeai_usage_export_{queued,running,expired_leases,failed}` | Наблюдаемые неистёкшие задания PostgreSQL; кластерные gauges, не суммировать по репликам. |
+| Export | `safeai_usage_export_last_observation_timestamp` | Время последнего успешного снимка очереди, Unix seconds; при отказе может быть старым. |
+| Export | `safeai_usage_export_events_total{result=...}`, `safeai_usage_export_duration_seconds_*` | Bounded outcomes и время генерации; retries/lease loss отдельно. |
+| Rollup | `safeai_usage_rollup_dirty_days`, `safeai_usage_rollup_lag_days` | Закрытые UTC-дни, отставание; -1 неизвестный watermark, NaN ошибка. |
+| Rollup | `safeai_usage_rollup_last_observation_timestamp`, `safeai_usage_rollup_observation_errors_total` | Свежесть последнего успешного наблюдения и ошибки. |
+
+Файл `infra/prometheus/rules/safeai-usage.yml` содержит 11 alert rules:
+
+| Правило | Условие / выдержка |
+| --- | --- |
+| SafeAiUsageExportMonitoringUnavailable | Отсутствует наблюдение, возраст >180с или пропуск метрики реплики / 3m |
+| SafeAiUsageExportQueueSaturated | max queued >=4 / 5m |
+| SafeAiUsageExportLeaseExpired | max expired leases >0 / 3m |
+| SafeAiUsageExportFailures | >=3 failed/storage_error/lease_lost за 5m / 2m |
+| SafeAiUsageReportTimeouts | >=3 timeout за 5m / 2m |
+| SafeAiUsageReportErrors | >=3 error за 5m / 2m |
+| SafeAiUsageReportAdmissionSaturated | >=10 rejected за 5m / 2m |
+| SafeAiUsageRollupLag | max lag >1 или min lag <0 / 30m |
+| SafeAiUsageRollupDirtyDates | max dirty days >0 / 30m |
+| SafeAiUsageRollupMonitoringUnavailable | Нет/старое наблюдение >180с или пропуск серии реплики / 5m |
+| SafeAiUsageRollupObservationErrors | >=3 ошибки за 5m / 2m |
+
+Нет SQL на scrape, нет UUID/email/моделей/CSV в metric labels. Для общих queue/rollup gauges
+используйте `max`/`min` по репликам, проверяйте свежесть каждой, счётчики событий суммируйте по репликам.
+Локальный Actuator: `http://127.0.0.1:9091/actuator/prometheus` (при включённом локальном management port).
+Prometheus UI: `http://localhost:9090/targets`, `/query`, `/alerts`. Target `safeai-backend` должен быть UP.
+Grafana dashboards, Alertmanager с проверенной доставкой, прямые exporters PostgreSQL/Redis/MinIO и долгосрочный
+retention относятся к общей Deployment Readiness; наличие правил не доказывает доставку оповещений.
+Не делать management endpoint публичным.
 
 ---
 
-## 10. Имеющиеся тесты и недостающее покрытие
+## 10. Тестирование: структура, покрытие и приёмка
 
-В репозитории обнаружены следующие тестовые файлы (присутствие тестов не означает, что они выполнялись в рамках
-этого аудита):
+`backend/src/test/java/ru/safeai/gateway/usage/`: 42 тестовых класса и один общий класс поддержки.
+Дерево сверено с обоими скриншотами и исходниками на 21.11.2026. Названия файлов не являются
+доказательством фактического прохождения тестов.
 
-**config:** `UsageJdbcClientsTest`, `UsagePropertiesTest`.
+### 10.0. Структурная схема тестовых пакетов и классов
 
-**controller:** `UsageControllerContractTest`, `UsageControllerSecurityTest`.
+```text
+usage/
+├── config/                                              (2)
+│   ├── UsageJdbcClientsTest.java
+│   └── UsagePropertiesTest.java
+├── controller/                                          (4)
+│   ├── UsageControllerContractTest.java
+│   ├── UsageControllerSecurityTest.java
+│   ├── UsageExportControllerSecurityTest.java
+│   └── UsageOrganizationControllerSecurityTest.java
+├── dto/                                                 (2)
+│   ├── UsagePagingContractTest.java
+│   └── UsageSummaryValueObjectsTest.java
+├── repository/                                          (22)
+│   ├── UsageCoverageIntegrationTest.java
+│   ├── UsageEntityMappingContractTest.java
+│   ├── UsageExplainAnalyzePerformanceIntegrationTest.java
+│   ├── UsageExplainPlanIntegrationTest.java
+│   ├── UsageExportJobRepositoryIntegrationTest.java
+│   ├── UsageMigrationIntegrityIntegrationTest.java
+│   ├── UsageOrganizationComparisonIntegrationTest.java
+│   ├── UsageOrganizationFactsTest.java
+│   ├── UsagePaginationIntegrationTest.java
+│   ├── UsagePerformanceIntegrationTest.java
+│   ├── UsagePhysicalExplainPerformanceIntegrationTest.java
+│   ├── UsagePhysicalReconciliationResponseTest.java
+│   ├── UsagePhysicalSpendRepositoryIntegrationTest.java
+│   ├── UsagePhysicalSpendRepositorySqlTest.java
+│   ├── UsagePhysicalSpendResponseTest.java
+│   ├── UsagePricingCorrectnessIntegrationTest.java
+│   ├── UsageQueryContractTest.java
+│   ├── UsageQueryRepositoryTest.java
+│   ├── UsageRollupAdvisoryLockIntegrationTest.java
+│   ├── UsageRollupReconciliationIntegrationTest.java
+│   ├── UsageTenantIsolationIntegrationTest.java
+│   └── UsageUtcAggregationIntegrationTest.java
+├── service/                                             (12)
+│   ├── UsageExportQueryTest.java
+│   ├── UsageExportServiceTest.java
+│   ├── UsageOrganizationScopeTest.java
+│   ├── UsagePhysicalSpendServiceTest.java
+│   ├── UsageQueryModelFilterTest.java
+│   ├── UsageQueryServiceTest.java
+│   ├── UsageReportExecutorTest.java
+│   ├── UsageReportExecutorTransactionTest.java
+│   ├── UsageRollupDayProcessorTest.java
+│   ├── UsageRollupMonitorPostgresIntegrationTest.java
+│   ├── UsageRollupMonitorTest.java
+│   └── UsageRollupSchedulerTest.java
+└── testsupport/                                         (1 fixture)
+    └── UsagePostgresIntegrationTestSupport.java
+```
 
-**dto:** `UsagePagingContractTest`, `UsageSummaryValueObjectsTest`.
+```mermaid
+flowchart TD
+    T[Usage test suite] --> C[HTTP contract and security]
+    T --> S[Service and DTO invariants]
+    T --> R[PostgreSQL integration]
+    T --> P[Opt-in performance]
+    C --> H[Runtime ACL: real HTTP on clean and upgrade]
+    S --> M[Rollup monitoring and worker tests]
+    R --> F[PostgreSQL fixtures or Flyway schema]
+    P --> E[EXPLAIN ANALYZE and capacity]
+    M --> A[Prometheus rule tests]
+```
 
-**repository:** `UsageCoverageIntegrationTest`, `UsageEntityMappingContractTest`,
-`UsageExplainAnalyzePerformanceIntegrationTest`, `UsageExplainPlanIntegrationTest`,
-`UsageMigrationIntegrityIntegrationTest`, `UsagePaginationIntegrationTest`, `UsagePerformanceIntegrationTest`,
-`UsagePricingCorrectnessIntegrationTest`, `UsageQueryContractTest`, `UsageQueryRepositoryTest`,
-`UsageRollupAdvisoryLockIntegrationTest`, `UsageRollupReconciliationIntegrationTest`,
-`UsageTenantIsolationIntegrationTest`, `UsageUtcAggregationIntegrationTest`.
+### 10.0.1. Назначение каждого тестового класса
 
-**service:** `UsageQueryServiceTest`, `UsageReportExecutorTest`, `UsageRollupDayProcessorTest`,
-`UsageRollupSchedulerTest`.
+#### `config` — конфигурация и границы ресурсов
 
-В существующих unit-тестах подтверждено наличие сценариев: tenant isolation, SUPER_ADMIN global scope, отказ чужой
+| Класс | Что проверяет |
+| --- | --- |
+| `UsageJdbcClientsTest` | Раздельные JDBC timeout и настройки query/rollup, обязательные зависимости. |
+| `UsagePropertiesTest` | Безопасные defaults, ограничения диапазонов, concurrency, fetch/page sizes, таймаутов и rollup. |
+
+#### `controller` — API, валидация, RBAC
+
+| Класс | Что проверяет |
+| --- | --- |
+| `UsageControllerContractTest` | Валидация page/size, корректная передача DTO и недопустимость произвольной клиентской сортировки. |
+| `UsageControllerSecurityTest` | Anonymous/USER отказ, ADMIN/SUPER_ADMIN, canonical paths, фильтры, pagination, точный no-store физический отчёт, ошибки валидации. |
+| `UsageExportControllerSecurityTest` | Защита экспорта и провайдерского API, 202 для разрешённого задания, безопасные headers CSV и точная область отчёта. |
+| `UsageOrganizationControllerSecurityTest` | Только SUPER_ADMIN для глобального сравнения, Slice, фильтры бюджета, отказ чужих ролей, бюджетные DTO с точными строками/null и UTC. |
+
+#### `dto` — value objects и wire-инварианты
+
+| Класс | Что проверяет |
+| --- | --- |
+| `UsagePagingContractTest` | Defaults, Bean Validation, копирование Slice, navigation flags, отказ недопустимых метаданных. |
+| `UsageSummaryValueObjectsTest` | Раздельные usage/pricing категории, known/free/unknown, coverage, overflow, согласованность счётчиков, USD и UTC. |
+
+#### `repository` — SQL, PostgreSQL, финансовая точность, конкуренция
+
+| Класс | Что проверяет |
+| --- | --- |
+| `UsageCoverageIntegrationTest` | AVAILABLE/PARTIAL/MISSING, REFUSED/INCOMPLETE, FAILED, null model и запрет буквального `__unattributed__`. |
+| `UsageEntityMappingContractTest` | Соответствие JPA evidence-схеме: scale 12, длины модели и валюты. |
+| `UsageExplainAnalyzePerformanceIntegrationTest` | Фактические планы global/model/organization/user, `EXPLAIN ANALYZE`, пороги и артефакты. |
+| `UsageExplainPlanIntegrationTest` | Пригодность индексов четырёх query shapes; не подменяет измерение задержки. |
+| `UsageExportJobRepositoryIntegrationTest` | Две реплики, допуск, независимый global limit 8, максимум 4 QUEUED, ровно один claim, третья истёкшая аренда, stale workers, TTL/purge, invalid result, все измерения auth, прямой SQL и V99. |
+| `UsageMigrationIntegrityIntegrationTest` | Flyway schema, analytics tables/columns, scale 12, constraints, индексы, отклонение несогласованных счётчиков и история миграций. |
+| `UsageOrganizationComparisonIntegrationTest` | Реальный месячный ledger, tenant isolation бюджета, сравнение с точной ценой и организациями без usage, глобальный бюджет, отказ сохранения policy без preview. |
+| `UsageOrganizationFactsTest` | Исторический tenant в live и rollup, фильтры до группировки. |
+| `UsagePaginationIntegrationTest` | Стабильный UUID-order при смене email, актуальное display value, size+1 без count. |
+| `UsagePerformanceIntegrationTest` | Rollup 366 дней, SLA, конкурентный допуск и защита connection pool. |
+| `UsagePhysicalExplainPerformanceIntegrationTest` | Реальные SQL coverage/reconciliation/providers, 100k plans/200k attempts, фактический V97 вне транзакции и valid/ready index, точные агрегаты, девять plans в target. |
+| `UsagePhysicalReconciliationResponseTest` | Пустая выборка не сверена, mismatch/unknown запрещают полноту, constructor проверяет классификацию. |
+| `UsagePhysicalSpendRepositoryIntegrationTest` | Полуоткрытый интервал, tenant isolation, сверка всех попыток выбранных планов, неизвестная цена, provider grouping и фильтры. |
+| `UsagePhysicalSpendRepositorySqlTest` | Все комбинации SQL-фильтров и границы, bind-параметры, регрессия склейки `:organizationIdgroup`, некорректный диапазон не достигает JDBC. |
+| `UsagePhysicalSpendResponseTest` | Невозможность подделать cost/usage completeness флагами, отрицательная известная стоимость отклоняется. |
+| `UsagePricingCorrectnessIntegrationTest` | PRICED/FREE/UNPRICED/CALCULATION_FAILED, точные суммы, запреты несовместимых status/cost и валюты. |
+| `UsageQueryContractTest` | Criteria/ranges, непересечение rollup/live, dirty-day exclusion, bind params, tenant intersection. |
+| `UsageQueryRepositoryTest` | Реальная семантика агрегации сообщений, users/models/daily, фильтры, inclusive/exclusive, Slice. |
+| `UsageRollupAdvisoryLockIntegrationTest` | Единственный владелец PostgreSQL advisory lock, освобождение после ошибки. |
+| `UsageRollupReconciliationIntegrationTest` | Один снимок при concurrent commit, late facts до/после rebuild, паритет всех счётчиков, idempotency, hybrid без дублей, monotonic/gap-free watermark. |
+| `UsageTenantIsolationIntegrationTest` | Tenant+user intersection, global scope, запрет чужих фактов и FK/SQL-инварианты сессий, сообщений, rollup. |
+| `UsageUtcAggregationIntegrationTest` | Полуоткрытый диапазон, UTC-полночь и DST-независимость. |
+
+#### `service` — бизнес-правила, транзакции и фоновые задачи
+
+| Класс | Что проверяет |
+| --- | --- |
+| `UsageExportQueryTest` | Каждый вид логического отчёта использует авторизованные criteria и существующий executor, CSV без floating-point. |
+| `UsageExportServiceTest` | Owner/auth versions, запрет чужого scope, пределы CSV и injection, отказ без partial file, revoke и lease lost. |
+| `UsageOrganizationScopeTest` | ADMIN/USER не могут прямо вызывать глобальное сравнение. |
+| `UsagePhysicalSpendServiceTest` | Tenant/default/global scope, прямой USER отказ, диапазон, точные значения и отсутствие смешения tenant/периодов, provider filter. |
+| `UsageQueryModelFilterTest` | Точный model/user filter до пагинации, явная организация и tenant из principal, отсутствие обхода при null model. |
+| `UsageQueryServiceTest` | Role/scope, range/Clock, page/model validation, hybrid, dirty-дни, oversized live fallback → 503. |
+| `UsageReportExecutorTest` | Локальный permit, таймеры, отказ при насыщении, release при исключениях, безопасные report labels и ошибки метрик. |
+| `UsageReportExecutorTransactionTest` | Read-only REPEATABLE READ и глобальный PostgreSQL slot до supplier, отказ при исчерпании слотов. |
+| `UsageRollupDayProcessorTest` | Watermark только после успешных записей, отказ не продвигает дату, lookback не ломает последовательность. |
+| `UsageRollupMonitorPostgresIntegrationTest` | Реальный SQL: UTC-дни, Kiritimati/Adak, null watermark, отсутствующая строка, ошибка и восстановление. |
+| `UsageRollupMonitorTest` | Initial NaN, success → failure → recovery, сохранение timestamp, счётчик ошибок и отсутствие SQL при scrape. |
+| `UsageRollupSchedulerTest` | Ограниченный последовательный backfill, пустая/текущая история, lookback, dirty queue, skip при lock contention. |
+
+#### `testsupport` — общий инфраструктурный класс
+
+`UsagePostgresIntegrationTestSupport` — базовая поддержка PostgreSQL/Testcontainers и подготовка usage fixtures
+для интеграционных тестов. Это не отдельный тестовый сценарий; не добавлять в число запусков JUnit.
+
+### 10.0.2. Межмодульные проверки (не входят в 42 класса)
+
+- `knowledge/integration/RuntimeAclContract`: runtime login `safeai_app`, HTTP cookie/CSRF, настоящий экспорт, ACL, revocation (см. §13).
+- `common/db/RuntimeAclPolicyTest`, `DatabaseMigrationMainTest`: инвентарь утверждённых ресурсов, fail-closed до DDL, история и Runtime ACL.
+- `migration/FlywaySequentialUpgradeIT`: последовательный upgrade и сохранность истории; clean/upgrade runtime rehearsal отдельным скриптом.
+- `ModelGovernanceV59V60V61PostgresIntegrationTest` и Chat quota/execution suites: V95/V96, конкурентный финансовый допуск и физическая попытка.
+- Frontend Usage: `useUsageExport.test.tsx` (poll/retry без повторного POST), тесты API/отображения отчётов и scope; запуск frontend CI.
+- `infra/prometheus/tests/usage.test.yml`: девять сценариев для 11 правил; проверка здорового состояния, пропуска метрики реплики,
+  stalled lease, ошибок, насыщения, dirty-days/lag и stale observation. Общий `check-prometheus-config.sh` включает этот тест.
+
+### 10.0.3. Матрица уровней доказательств
+
+| Уровень | Что подтверждает | Чего не подтверждает |
+| --- | --- | --- |
+| Unit / contract | Бизнес-правила, DTO, обработка ошибок, SQL shape | Реальные индексы, locking, runtime grants |
+| HTTP security | Поведение Spring Security, API/wire | Привилегии реальной PostgreSQL-учётки без отдельного прогона |
+| PostgreSQL integration | Реальные SQL, constraints, tenant, concurrency, lease, UTC | Нагрузку и настройки production |
+| Performance opt-in | Планы actual SQL, тестовые SLA, bounded admission | p95/p99 с production-данными, outage recovery |
+| Runtime ACL clean/upgrade | Фактическая схема, роль приложения, HTTP и SQL запреты | Внешняя банковская/провайдерская сверка, компрометация DB credentials |
+| Promtool / staging | Логика alert rules; на staging — доставка, outage, backup | Promtool сам по себе не проверяет отправку уведомления |
+
+В существующих тестах по исходникам подтверждено наличие сценариев: tenant isolation, SUPER_ADMIN global scope, отказ чужой
 организации, диапазоны и pagination, гибрид whole-day UTC + live edges, запрет oversized live fallback, watermark
 continuity/backfill, lock contention, dirty-date processing, rollup atomicity. В репозитории имеются отдельные
 PostgreSQL integration тесты, в том числе для конкурентного rollup и ценовой корректности.
@@ -1262,7 +1654,39 @@ PostgreSQL integration тесты, в том числе для конкурен�
 ./mvnw clean verify
 ```
 
-Сверяйте число выполненных и пропущенных тестов в `target/surefire-reports`.
+Performance-тесты opt-in, поэтому обычный Maven может корректно их пропускать; отдельный gate требует их выполнения:
+
+```bash
+./mvnw --batch-mode --no-transfer-progress clean test \
+  -Dsafeai.usage.performance=true \
+  -Dtest=UsageExplainAnalyzePerformanceIntegrationTest,UsagePerformanceIntegrationTest,UsagePhysicalExplainPerformanceIntegrationTest
+
+grep -H 'Execution Time:' target/usage-explain/*.txt
+```
+
+Артефакты: `global-no-model.txt`, `global-with-model.txt`, `organization.txt`, `user.txt`, `physical-0.txt`…`physical-8.txt`.
+Отдельные пороги: `safeai.usage.explain-sla-ms=2000`, `safeai.usage.sla-ms=2000`,
+`safeai.usage.physical-explain-sla-ms=5000` по умолчанию. Не увеличивать SLA для маскировки регрессии.
+Синтетический `Execution Time` — не HTTP p95/p99. Приведённые пользователем 13 планов показали 0,309–424,938 мс
+в одном локальном прогоне; это свидетельство именно того прогона, не универсальная гарантия.
+Сверяйте число выполненных и пропущенных тестов в `target/surefire-reports`; в полном performance CI также есть
+межмодульный erasure load test. Сохраняйте отчёты до очередного `clean`.
+
+Из корня репозитория (при установленном Docker):
+
+```bash
+docker run --rm --entrypoint /bin/promtool \
+  -v "$PWD/infra/prometheus:/config:ro" -w /config \
+  prom/prometheus:v3.5.0 check rules rules/safeai-usage.yml
+
+docker run --rm --entrypoint /bin/promtool \
+  -v "$PWD/infra/prometheus:/config:ro" -w /config \
+  prom/prometheus:v3.5.0 test rules tests/usage.test.yml
+```
+
+Финальный пакет 7.5D.4.5 включает `verify-focused.sh`, `verify.sh`, `verify-performance.sh`, `verify-runtime-acl.sh`.
+Сначала завершить установку и все проверки пакета (они привязаны к SHA-256 README), только затем отдельно заменить
+данный README как документационное изменение. Не редактировать manifest установщика для обхода конфликта.
 
 ---
 
@@ -1307,13 +1731,58 @@ PostgreSQL integration тесты, в том числе для конкурен�
    report duration и Hikari pending.
 9. Не редактировать уже применённые Flyway миграции и не чистить dirty queue вручную до выяснения причины
    рассинхронизации.
+10. Для экспорта проверить `queued/running/expired_leases/failed`, timestamp наблюдения и `events_total`;
+    не менять state/lease/owner вручную. При рестарте worker сам возобновляет обработку по lease/TTL.
+11. При 404 файла проверить срок, владельца, роль, tokenVersion и orgAuthVersion (без вывода содержимого CSV в лог).
+    После отзыва прав старый файл не должен выдаваться; нужен новый обоснованный запрос от авторизованного пользователя.
+12. Проверить Prometheus target UP, свежесть наблюдений всех реплик, статус alert rules и отдельно доставку Alertmanager.
+    При отсутствии метрик не считать систему здоровой; не отключать fail-closed и не расширять права runtime.
 
 ---
 
-## 13. Границы проверки
+## 13. Security-приёмка 7.5D.4.5 (V1–V99)
 
-Документ сверён с рабочим деревом проекта; каталог Usage включает 51 Java-файл.
-Проверены исходники, имена тестов и связанные миграции.
-Результаты Maven, PostgreSQL и нагрузочных сценариев требуют отдельного прогона.
+Финальный контракт `RuntimeAclContract` запускается после настоящего Flyway и bootstrap
+на чистой БД и на обновлении V85 → V99. Только изолированные Docker-ресурсы;
+реальный login `safeai_app`, реальные HTTP cookie и CSRF, без мока репозитория CSV.
+Контракт проверяет:
 
-[Тесты Usage](../../../../../../test/java/ru/safeai/gateway/usage/README.md).
+- создание, фоновую генерацию и скачивание фактического CSV с данными своей организации;
+- запрет чужой области и отчёта всех организаций для ADMIN, 404 для чужого задания
+  (даже внутри одной организации), отсутствие данных A в собственном экспорте B;
+- `no-store`, `Content-Disposition: attachment`, `nosniff`;
+- неизменяемость владельца (SQLSTATE 42501), запрет записи READY и досрочного
+  удаления (23514), сохранность исходных байтов;
+- повторную проверку полномочий в PostgreSQL и отказ после смены tokenVersion,
+  включая 401 со старым токеном и 404 при входе с новым действующим токеном;
+- существование метрик и только ограниченные значения labels `report`/`result`,
+  без tenant/user UUID, email, модели, SQL и содержимого отчёта.
+
+Отдельные интеграционные тесты покрывают конкурентный допуск, пределы очереди,
+lease fencing, истечение TTL, смену полномочий, ограничения размера/строк и CSV injection.
+Не удалять старые тесты и не отключать триггеры вне изолированных тестовых фикстур.
+`infra/scripts/check-prometheus-config.sh` проверяет также правила Usage и их unit-тесты.
+
+Доказательства: `backend/target/runtime-acl-reports/{clean,upgrade}/TEST-*.xml`
+(маркер `USAGE SECURITY PASS` и ноль failures/errors/skipped), отчёты Maven/CI,
+`backend/target/usage-explain/` и успешный promtool. Каталог `target` удаляется `mvn clean`;
+сохраняйте результаты отдельных прогонов до следующего clean.
+
+Runtime ACL ограничивает операции приложения, но не является независимой
+tenant-RLS для скомпрометированного DB-пользователя. Границы конфиденциальности
+обеспечивают авторизация API, параметризованные scoped-запросы и изоляция учётных данных.
+Не публиковать порт Actuator/Prometheus наружу. Экспорт содержит финансовые данные
+и идентификаторы пользователей; TTL не равен удалению из WAL и backup.
+Проверка на staging и реальные оповещения остаются обязательными до production GO.
+
+## 14. Границы проверки
+
+Документ сверён с предоставленным README, двумя скриншотами тестового дерева и доступным рабочим
+срезом исходников после 7.5D.4.5. Каталог Usage включает 53 production Java-файла; тестовый пакет —
+42 тестовых класса и 1 базовый fixture-класс, межмодульные проверки считаются отдельно.
+Сохранены исходные архитектурные схемы, требования к финансовой семантике, multi-tenancy,
+неизменяемости миграций и все обязательные условия GO. Не объявлять production readiness по одному
+зелёному unit/performance прогону. Результаты последнего Maven, PostgreSQL Runtime ACL,
+promtool, CI и staging подтверждаются фактическими отчётами на целевой машине.
+
+[К дереву тестов Usage](#10-тестирование-структура-покрытие-и-приёмка).

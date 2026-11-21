@@ -1260,3 +1260,20 @@
         padding: 5px 8px;
     }
 }
+
+/* Keep the actual row actions below the sticky table header when the
+   viewport cannot accommodate a protected upper area and a usable split. */
+@media (max-height: 620px) {
+    .content--workspace:not(.content--chat) > .page.audit-page { overflow-y: auto; }
+    .audit-page .resizable-scroll-region { height: auto; flex: 0 0 auto; overflow: visible; }
+    .audit-page .resizable-scroll-region__upper { flex: 0 0 auto; min-height: 0; overflow: visible; }
+    .audit-page .audit-page__upper { height: auto; overflow: visible; }
+    .audit-page .audit-filters { max-height: none; overflow: visible; }
+    .audit-page .resizable-scroll-region__lower { height: auto; flex: 0 0 auto; }
+    .audit-page .resizable-scroll-region__handle { display: none; }
+    .audit-page .resizable-scroll-region__viewport {
+        flex: 0 0 auto;
+        max-height: min(60dvh, 560px);
+        scroll-padding-top: 64px;
+    }
+}

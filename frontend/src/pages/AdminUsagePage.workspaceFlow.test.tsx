@@ -137,6 +137,31 @@ describe('Usage dashboard', () => {
             visibleHeight.mockRestore()
         }
     })
+    it('reserves the resolved CSS report floor even when the summary is taller than the viewport', () => {
+        const height = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
+            return this.matches('.usage-summary-content') ? 1000 : 0
+        })
+        const clientHeight = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) {
+            return this.matches('.usage-page') ? 800 : 0
+        })
+        try {
+            render(<AdminUsagePage />)
+            const workspace = document.querySelector<HTMLElement>('.usage-page')!
+            const panel = document.querySelector<HTMLElement>('.usage-results-panel')!
+            panel.style.setProperty('--usage-report-floor', '320px')
+            fireEvent(window, new Event('resize'))
+            expect(workspace.style.getPropertyValue('--usage-summary-height')).toBe('480px')
+            panel.style.setProperty('--usage-report-floor', '340px')
+            fireEvent(window, new Event('resize'))
+            expect(workspace.style.getPropertyValue('--usage-summary-height')).toBe('460px')
+            panel.style.removeProperty('--usage-report-floor')
+            fireEvent(window, new Event('resize'))
+            expect(workspace.style.getPropertyValue('--usage-summary-height')).toBe('1000px')
+        } finally {
+            height.mockRestore()
+            clientHeight.mockRestore()
+        }
+    })
     it('drags beyond the normal layout, folds to the footer and restores the report', () => {
         const height = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
             if (this.matches('.usage-page__upper')) return 210
