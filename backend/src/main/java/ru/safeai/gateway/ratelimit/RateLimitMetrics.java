@@ -5,6 +5,8 @@ import io.micrometer.core.instrument.Timer;
 import org.springframework.stereotype.Component;
 
 import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Best-effort telemetry. An observability failure must never grant or deny
@@ -17,14 +19,36 @@ public class RateLimitMetrics {
             System.getLogger(RateLimitMetrics.class.getName());
 
     private static final String UNKNOWN = "unknown";
+    private static final Set<String> TYPES = Set.of("login", "refresh", "ai_message");
+    private static final Set<String> DIMENSIONS = Set.of("email", "ip", "both", "user", "organization", "capacity");
+    private static final Set<String> OPERATIONS = Set.of("check", "login_success_cleanup");
+    private static final Set<String> OUTCOMES = Set.of("success", "error");
 
     private final MeterRegistry meterRegistry;
+    private final AtomicBoolean warningLogged = new AtomicBoolean();
 
     public RateLimitMetrics(MeterRegistry meterRegistry) {
         this.meterRegistry = Objects.requireNonNull(
                 meterRegistry,
                 "meterRegistry не должен быть null"
         );
+        // Zero-valued counters are observable even before the first request.
+        record("initialize", () -> {
+            for (String type : TYPES) {
+                meterRegistry.counter("safeai.rate.limit.allowed", "type", type);
+                meterRegistry.counter("safeai.rate.limit.unavailable", "type", type);
+                meterRegistry.counter("safeai.rate.limit.audit.publish.failed", "type", type);
+                for (String dimension : DIMENSIONS) {
+                    meterRegistry.counter("safeai.rate.limit.rejected", "type", type, "dimension", dimension);
+                }
+                for (String outcome : OUTCOMES) {
+                    timer(type, "check", outcome);
+                }
+            }
+            for (String outcome : OUTCOMES) {
+                timer("login", "login_success_cleanup", outcome);
+            }
+        });
     }
 
     /**
@@ -49,18 +73,20 @@ public class RateLimitMetrics {
             return;
         }
         try {
-            sample.stop(
-                    Timer.builder("safeai.rate.limit.redis.duration")
-                            .description("Redis rate-limit operation duration")
-                            .tag("type", tag(type))
-                            .tag("operation", tag(operation))
-                            .tag("outcome", tag(outcome))
-                            .publishPercentileHistogram()
-                            .register(meterRegistry)
-            );
+            sample.stop(timer(type, operation, outcome));
         } catch (RuntimeException exception) {
             warn("finish", exception);
         }
+    }
+
+    private Timer timer(String type, String operation, String outcome) {
+        return Timer.builder("safeai.rate.limit.redis.duration")
+                .description("Redis rate-limit operation duration")
+                .tag("type", tag(type, TYPES))
+                .tag("operation", tag(operation, OPERATIONS))
+                .tag("outcome", tag(outcome, OUTCOMES))
+                .publishPercentileHistogram()
+                .register(meterRegistry);
     }
 
     public void recordAllowed(String type) {
@@ -68,7 +94,7 @@ public class RateLimitMetrics {
                 "allowed",
                 () -> meterRegistry.counter(
                         "safeai.rate.limit.allowed",
-                        "type", tag(type)
+                        "type", tag(type, TYPES)
                 ).increment()
         );
     }
@@ -78,8 +104,8 @@ public class RateLimitMetrics {
                 "rejected",
                 () -> meterRegistry.counter(
                         "safeai.rate.limit.rejected",
-                        "type", tag(type),
-                        "dimension", tag(dimension)
+                        "type", tag(type, TYPES),
+                        "dimension", tag(dimension, DIMENSIONS)
                 ).increment()
         );
     }
@@ -89,7 +115,7 @@ public class RateLimitMetrics {
                 "unavailable",
                 () -> meterRegistry.counter(
                         "safeai.rate.limit.unavailable",
-                        "type", tag(type)
+                        "type", tag(type, TYPES)
                 ).increment()
         );
     }
@@ -99,7 +125,7 @@ public class RateLimitMetrics {
                 "audit-publish-failed",
                 () -> meterRegistry.counter(
                         "safeai.rate.limit.audit.publish.failed",
-                        "type", tag(type)
+                        "type", tag(type, TYPES)
                 ).increment()
         );
     }
@@ -112,11 +138,12 @@ public class RateLimitMetrics {
         }
     }
 
-    private static String tag(String value) {
-        return value == null || value.isBlank() ? UNKNOWN : value;
+    private static String tag(String value, Set<String> allowed) {
+        return value != null && allowed.contains(value) ? value : UNKNOWN;
     }
 
-    private static void warn(String operation, RuntimeException exception) {
+    private void warn(String operation, RuntimeException exception) {
+        if (!warningLogged.compareAndSet(false, true)) return;
         LOGGER.log(
                 System.Logger.Level.WARNING,
                 "Rate-limit metrics failure: operation={0}, error={1}",

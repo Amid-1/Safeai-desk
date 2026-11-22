@@ -23,6 +23,8 @@ command -v docker >/dev/null 2>&1 || fail 'Docker is required to run promtool fr
 [[ -s "$prometheus_dir/tests/usage.test.yml" ]] || fail 'Missing Usage alert unit tests'
 [[ -s "$prometheus_dir/rules/safeai-model-ai.yml" ]] || fail 'Missing Models/AI alert rules'
 [[ -s "$prometheus_dir/tests/model-ai.test.yml" ]] || fail 'Missing Models/AI alert unit tests'
+[[ -s "$prometheus_dir/rules/safeai-ratelimit.yml" ]] || fail 'Missing RateLimit alert rules'
+[[ -s "$prometheus_dir/tests/ratelimit.test.yml" ]] || fail 'Missing RateLimit alert unit tests'
 [[ "$prometheus_image" != *REPLACE_ME* && "$prometheus_image" != *REPLACE_WITH* ]] || fail 'Prometheus image is a placeholder'
 if [[ "${SAFEAI_REQUIRE_IMMUTABLE_IMAGES:-false}" == true ]]; then
     [[ "$prometheus_image" =~ @sha256:[0-9a-fA-F]{64}$ ]] || fail 'Production Prometheus image must be pinned by digest'
@@ -84,4 +86,13 @@ docker run --rm \
     test rules /etc/prometheus/tests/model-ai.test.yml \
     || fail 'Prometheus Models/AI alert unit tests failed'
 
-printf 'Prometheus configuration, canonical rules and erasure/audit/Usage/Models/AI unit tests verified.\n'
+docker run --rm \
+    --network none --read-only --tmpfs /tmp:rw,nosuid,noexec,size=64m,mode=1777 \
+    --cap-drop ALL --security-opt no-new-privileges \
+    --mount "type=bind,source=$prometheus_dir,target=/etc/prometheus,readonly" \
+    --entrypoint /bin/promtool \
+    "$prometheus_image" \
+    test rules /etc/prometheus/tests/ratelimit.test.yml \
+    || fail 'Prometheus RateLimit alert unit tests failed'
+
+printf 'Prometheus configuration, canonical rules and erasure/audit/Usage/Models/AI/RateLimit unit tests verified.\n'

@@ -1,0 +1,169 @@
+groups:
+  - name: safeai-ratelimit
+    rules:
+      - alert: SafeAiRateLimitScrapeUnavailable
+        expr: |
+          (up{job="safeai-backend"} == 0) or absent(up{job="safeai-backend"})
+        for: 2m
+        labels:
+          severity: critical
+          service: safeai-backend
+        annotations:
+          summary: "RateLimit backend scrape unavailable"
+      - alert: SafeAiRateLimitInstrumentationMissing
+        expr: |
+          (up{job="safeai-backend"} == 1) unless on(job,instance)
+            (safeai_rate_limit_redis_observation_healthy{job="safeai-backend"}
+             and on(job,instance) safeai_rate_limit_redis_last_observation_timestamp{job="safeai-backend"}
+             and on(job,instance) safeai_rate_limit_redis_epoch_required{job="safeai-backend"}
+             and on(job,instance) safeai_rate_limit_redis_epoch_state{job="safeai-backend",state="active"}
+             and on(job,instance) safeai_rate_limit_redis_memory_max_bytes{job="safeai-backend"}
+             and on(job,instance) safeai_rate_limit_redis_memory_accounted_bytes{job="safeai-backend"}
+             and on(job,instance) safeai_rate_limit_redis_noeviction{job="safeai-backend"}
+             and on(job,instance) safeai_rate_limit_redis_primary{job="safeai-backend"}
+             and on(job,instance) safeai_rate_limit_redis_aof_healthy{job="safeai-backend"}
+             and on(job,instance) safeai_rate_limit_redis_evicted_keys{job="safeai-backend"}
+             and on(job,instance) safeai_rate_limit_redis_allocation_active{job="safeai-backend",type="login"}
+             and on(job,instance) safeai_rate_limit_redis_allocation_active{job="safeai-backend",type="refresh"}
+             and on(job,instance) safeai_rate_limit_redis_allocation_limit{job="safeai-backend",type="login"}
+             and on(job,instance) safeai_rate_limit_redis_allocation_limit{job="safeai-backend",type="refresh"}
+             and on(job,instance) safeai_rate_limit_allowed_total{job="safeai-backend",type="login"}
+             and on(job,instance) safeai_rate_limit_allowed_total{job="safeai-backend",type="refresh"}
+             and on(job,instance) safeai_rate_limit_allowed_total{job="safeai-backend",type="ai_message"}
+             and on(job,instance) safeai_rate_limit_rejected_total{job="safeai-backend",type="login",dimension="capacity"}
+             and on(job,instance) safeai_rate_limit_rejected_total{job="safeai-backend",type="refresh",dimension="capacity"}
+             and on(job,instance) safeai_rate_limit_rejected_total{job="safeai-backend",type="ai_message",dimension="organization"}
+             and on(job,instance) safeai_rate_limit_unavailable_total{job="safeai-backend",type="refresh"}
+             and on(job,instance) safeai_rate_limit_unavailable_total{job="safeai-backend",type="ai_message"}
+             and on(job,instance) safeai_rate_limit_unavailable_total{job="safeai-backend",type="login"}
+             and on(job,instance) safeai_rate_limit_audit_publish_failed_total{job="safeai-backend",type="ai_message"}
+             and on(job,instance) safeai_rate_limit_redis_duration_seconds_count{job="safeai-backend",type="login",operation="check",outcome="success"}
+             and on(job,instance) safeai_rate_limit_redis_duration_seconds_count{job="safeai-backend",type="refresh",operation="check",outcome="success"}
+             and on(job,instance) safeai_rate_limit_redis_duration_seconds_count{job="safeai-backend",type="ai_message",operation="check",outcome="success"}
+             and on(job,instance) safeai_rate_limit_audit_publish_failed_total{job="safeai-backend",type="login"})
+        for: 2m
+        labels:
+          severity: critical
+          service: safeai-backend
+        annotations:
+          summary: "RateLimit instrumentation incomplete"
+      - alert: SafeAiRateLimitObservationUnhealthy
+        expr: |
+          (safeai_rate_limit_redis_observation_healthy{job="safeai-backend"} != 1)
+          or (time() - safeai_rate_limit_redis_last_observation_timestamp{job="safeai-backend"} > 120)
+          or (safeai_rate_limit_redis_last_observation_timestamp{job="safeai-backend"} - time() > 30)
+        for: 1m
+        labels:
+          severity: critical
+          service: safeai-backend
+        annotations:
+          summary: "RateLimit Redis observation unavailable or stale"
+      - alert: SafeAiRateLimitEpochUnavailable
+        expr: |
+          (safeai_rate_limit_redis_epoch_required{job="safeai-backend"} == 1)
+          and on(job,instance) (safeai_rate_limit_redis_epoch_state{job="safeai-backend",state="active"} != 1)
+        for: 1m
+        labels:
+          severity: critical
+          service: safeai-backend
+        annotations:
+          summary: "RateLimit epoch not active; admission remains fail closed"
+      - alert: SafeAiRateLimitRedisUnsafe
+        expr: |
+          (safeai_rate_limit_redis_memory_max_bytes{job="safeai-backend"} <= 0)
+          or (safeai_rate_limit_redis_noeviction{job="safeai-backend"} == 0)
+          or (safeai_rate_limit_redis_primary{job="safeai-backend"} == 0)
+          or (safeai_rate_limit_redis_aof_healthy{job="safeai-backend"} == 0)
+        for: 1m
+        labels:
+          severity: critical
+          service: safeai-backend
+        annotations:
+          summary: "Redis memory policy primary or AOF unsafe"
+      - alert: SafeAiRateLimitRedisEvictions
+        expr: |
+          safeai_rate_limit_redis_evicted_keys{job="safeai-backend"} > 0
+        labels:
+          severity: critical
+          service: safeai-backend
+        annotations:
+          summary: "Redis has evicted keys since process start"
+      - alert: SafeAiRateLimitRedisMemoryHigh
+        expr: |
+          (safeai_rate_limit_redis_memory_accounted_bytes{job="safeai-backend"}
+           / safeai_rate_limit_redis_memory_max_bytes{job="safeai-backend"} >= 0.80)
+          and on(job,instance) (safeai_rate_limit_redis_memory_max_bytes{job="safeai-backend"} > 0)
+        for: 5m
+        labels:
+          severity: warning
+          service: safeai-backend
+        annotations:
+          summary: "Redis memory at least 80 percent of configured maximum"
+      - alert: SafeAiRateLimitRedisMemoryCritical
+        expr: |
+          (safeai_rate_limit_redis_memory_accounted_bytes{job="safeai-backend"}
+           / safeai_rate_limit_redis_memory_max_bytes{job="safeai-backend"} >= 0.95)
+          and on(job,instance) (safeai_rate_limit_redis_memory_max_bytes{job="safeai-backend"} > 0)
+        for: 1m
+        labels:
+          severity: critical
+          service: safeai-backend
+        annotations:
+          summary: "Redis memory at least 95 percent of configured maximum"
+      - alert: SafeAiRateLimitAllocationHigh
+        expr: |
+          max by(type) (safeai_rate_limit_redis_allocation_active{job="safeai-backend"}
+           / safeai_rate_limit_redis_allocation_limit{job="safeai-backend"}) >= 0.80
+        for: 2m
+        labels:
+          severity: warning
+          service: safeai-backend
+        annotations:
+          summary: "Anonymous allocation capacity at least 80 percent"
+      - alert: SafeAiRateLimitCapacityRejects
+        expr: |
+          sum by(type) (increase(safeai_rate_limit_rejected_total{job="safeai-backend",dimension="capacity"}[5m])) > 0
+        labels:
+          severity: warning
+          service: safeai-backend
+        annotations:
+          summary: "Anonymous allocation capacity rejected requests"
+      - alert: SafeAiRateLimitUnavailable
+        expr: |
+          sum by(type) (increase(safeai_rate_limit_unavailable_total{job="safeai-backend"}[5m])) > 0
+        labels:
+          severity: critical
+          service: safeai-backend
+        annotations:
+          summary: "RateLimit Redis operation unavailable"
+      - alert: SafeAiRateLimitAuditPublishFailed
+        expr: |
+          sum by(type) (increase(safeai_rate_limit_audit_publish_failed_total{job="safeai-backend"}[5m])) > 0
+        labels:
+          severity: warning
+          service: safeai-backend
+        annotations:
+          summary: "RateLimit audit notification publication failed"
+      - alert: SafeAiRateLimitRejectionRatio
+        expr: |
+          sum by(type) (increase(safeai_rate_limit_rejected_total{job="safeai-backend"}[5m]))
+          / (sum by(type) (increase(safeai_rate_limit_rejected_total{job="safeai-backend"}[5m]))
+           + sum by(type) (increase(safeai_rate_limit_allowed_total{job="safeai-backend"}[5m]))) >= 0.5
+          and on(type) (sum by(type) (increase(safeai_rate_limit_rejected_total{job="safeai-backend"}[5m])) >= 20)
+        for: 3m
+        labels:
+          severity: warning
+          service: safeai-backend
+        annotations:
+          summary: "At least half of RateLimit decisions rejected"
+      - alert: SafeAiRateLimitRedisSlow
+        expr: |
+          histogram_quantile(0.95, sum by(type,le) (
+           rate(safeai_rate_limit_redis_duration_seconds_bucket{job="safeai-backend",operation="check",outcome="success"}[5m]))) > 0.25
+          and on(type) sum by(type) (increase(safeai_rate_limit_redis_duration_seconds_count{job="safeai-backend",operation="check",outcome="success"}[5m])) >= 20
+        for: 3m
+        labels:
+          severity: warning
+          service: safeai-backend
+        annotations:
+          summary: "RateLimit successful check p95 above 250 milliseconds"
