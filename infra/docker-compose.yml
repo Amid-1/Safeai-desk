@@ -315,8 +315,10 @@ services:
       - no-new-privileges:true
 
     cpus: "0.5"
-    mem_limit: 256m
-    mem_reservation: 64m
+    # Redis maxmemory excludes some buffers/RSS and AOF fork/COW overhead.
+    # Keep headroom; verify actual RSS and AOF rewrite peaks in staging.
+    mem_limit: 512m
+    mem_reservation: 256m
     pids_limit: 128
 
     logging: *default-logging

@@ -127,7 +127,9 @@ services:
         exec /usr/local/bin/docker-entrypoint.sh redis-server \
           --requirepass "$${REDIS_PASSWORD}" \
           --save "" \
-          --appendonly no
+          --appendonly no \
+          --maxmemory 192mb \
+          --maxmemory-policy noeviction
 
     environment:
       REDIS_PASSWORD: "${REDIS_PASSWORD:-safeai_redis_password}"
@@ -149,6 +151,9 @@ services:
 
     networks:
       - safeai_local
+
+    mem_limit: 512m
+    mem_reservation: 256m
 
     logging: *default-logging
     restart: unless-stopped
