@@ -1,6 +1,7 @@
 package ru.safeai.gateway.model.repository;
 
 import org.springframework.jdbc.core.ConnectionCallback;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import ru.safeai.gateway.common.budget.PlatformBudgetClassification;
@@ -86,9 +87,16 @@ public class ModelRouteDecisionRepository {
             """;
 
     private final JdbcTemplate jdbc;
+    private final Optional<ModelRouteMetrics> metrics;
 
     public ModelRouteDecisionRepository(JdbcTemplate jdbc) {
+        this(jdbc, Optional.empty());
+    }
+
+    @Autowired
+    public ModelRouteDecisionRepository(JdbcTemplate jdbc, Optional<ModelRouteMetrics> metrics) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc не должен быть null");
+        this.metrics = Objects.requireNonNull(metrics);
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -292,6 +300,7 @@ public class ModelRouteDecisionRepository {
                     "Model route decision insert affected " + updated + " rows"
             );
         }
+        metrics.ifPresent(m -> m.afterInsert(decision));
         return decision;
     }
 

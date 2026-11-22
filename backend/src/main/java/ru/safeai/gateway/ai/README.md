@@ -184,6 +184,7 @@ ai/
 │   ├── AiOrganizationExecutionDeniedException
 │   ├── ExecutionAttemptOutcome
 │   ├── FallbackSafety
+│   ├── ModelAttemptMonitor
 │   ├── ModelExecutionAttemptEntity
 │   ├── ModelExecutionAttemptRepository
 │   ├── ModelExecutionPlanEntity
@@ -227,6 +228,7 @@ ai/
 │   ├── AiProviderDispatchDeadline
 │   ├── AiProviderEndpoint
 │   ├── AiProviderExceptionFactory
+│   ├── AiProviderMetrics
 │   ├── AiProviderProperties
 │   ├── AiProviderRetryExecutor
 │   ├── AiProviderSupport
@@ -1018,6 +1020,7 @@ ai/
 │   ├── AiExecutionPreDispatchGateTest
 │   ├── AiExecutionServiceTest
 │   ├── ExecutionEvidenceContractTest
+│   ├── ModelAttemptMonitorPostgresIntegrationTest
 │   ├── ModelExecutionAttemptEntityTest
 │   └── ProviderFailureCertaintyTest
 ├── input/
@@ -1035,6 +1038,7 @@ ai/
 │   │   └── OpenAiWireGovernanceContractTest
 │   ├── AiContextWindowGovernanceRegressionTest
 │   ├── AiProviderEndpointSecurityTest
+│   ├── AiProviderMetricsTest
 │   ├── AiProviderRetryEvidenceRegressionTest
 │   ├── AiProviderSupportResolvedModelTest
 │   ├── AiProviderTransportHardeningTest

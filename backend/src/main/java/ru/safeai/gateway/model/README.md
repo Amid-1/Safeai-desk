@@ -204,6 +204,7 @@ model/
 │   ├── ModelCatalogRepository
 │   ├── ModelPolicyPreviewConfirmationRepository
 │   ├── ModelRouteDecisionRepository
+│   ├── ModelRouteMetrics
 │   ├── ModelRouteRequestBindingRepository
 │   ├── ModelRouteRequestMutexRepository
 │   └── OrganizationModelPolicyRepository
@@ -1313,6 +1314,7 @@ model/
 │   ├── ModelCommitmentLedgerV101GuardIntegrationTest
 │   ├── ModelCommitmentLedgerV101IntegrationTest
 │   ├── ModelRouteDecisionRepositoryContractTest
+│   ├── ModelRouteMetricsTest
 │   └── ModelRouteRequestMutexRepositoryTest
 ├── service/
 │   ├── DatabaseTimestampNormalizerTest
