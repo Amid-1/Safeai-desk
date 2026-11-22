@@ -24,6 +24,7 @@ import ru.safeai.gateway.ai.provider.AiProviderAttemptContext;
 import ru.safeai.gateway.ai.provider.AiProviderRetryExecutor;
 import ru.safeai.gateway.ai.execution.ProviderExecutionTarget;
 import ru.safeai.gateway.ai.provider.AiProviderSupport;
+import ru.safeai.gateway.ai.provider.ProviderCredentialEvidence;
 import ru.safeai.gateway.ai.provider.AiRestClientFactory;
 import ru.safeai.gateway.ai.provider.AiResponseMetadataService;
 import tools.jackson.databind.JsonNode;
@@ -277,6 +278,11 @@ public class OpenAiProvider implements AiProvider {
                                     JsonNode.class
                             );
 
+            if (ProviderCredentialEvidence.reflected(responseEntity.getBody(),
+                    responseEntity.getHeaders(), properties.apiKey())) {
+                throw parsingFailure(PROVIDER_NAME, properties.model(),
+                        "OpenAI response contains forbidden credential material");
+            }
             String providerRequestId =
                     AiProviderSupport
                             .extractProviderRequestId(
@@ -405,6 +411,10 @@ public class OpenAiProvider implements AiProvider {
                 error.code() != null
                         ? error.code()
                         : error.type();
+        if (ProviderCredentialEvidence.reflected(exception, properties.apiKey())) {
+            requestId = null;
+            errorCode = null;
+        }
 
         if (status == 429) {
             if ((errorCode != null && QUOTA_CODES.contains(errorCode))
@@ -416,7 +426,7 @@ public class OpenAiProvider implements AiProvider {
                         requestId,
                         errorCode,
                         "OpenAI quota or spend limit exhausted",
-                        exception
+                        null
                 );
             }
 
@@ -429,7 +439,7 @@ public class OpenAiProvider implements AiProvider {
                         requestId,
                         errorCode,
                         "OpenAI billing error",
-                        exception
+                        null
                 );
             }
 
@@ -443,7 +453,7 @@ public class OpenAiProvider implements AiProvider {
                     ("rate_limit_exceeded".equals(errorCode) || "rate_limit_error".equals(errorCode))
                             && AiProviderSupport.retryAfterPermitsRetry(exception, retryAfter),
                     "OpenAI API rate limited",
-                    exception
+                    null
             );
         }
 
@@ -455,7 +465,7 @@ public class OpenAiProvider implements AiProvider {
                     requestId,
                     retryAfter,
                     "OpenAI API overloaded",
-                    exception
+                    null
             );
         }
 
@@ -504,7 +514,7 @@ public class OpenAiProvider implements AiProvider {
                 retryAfter,
                 "OpenAI API error: status="
                         + status,
-                exception
+                null
         );
     }
 

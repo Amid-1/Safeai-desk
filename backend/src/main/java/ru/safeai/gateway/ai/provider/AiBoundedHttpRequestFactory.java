@@ -2,8 +2,12 @@ package ru.safeai.gateway.ai.provider;
 
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelOption;
+import io.netty.channel.ChannelOutboundHandlerAdapter;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelPromise;
 import io.netty.handler.timeout.ReadTimeoutException;
 import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatusCode;
@@ -23,6 +27,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InterruptedIOException;
 import java.net.URI;
+import java.net.SocketAddress;
 import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.util.concurrent.ExecutionException;
@@ -39,22 +44,32 @@ final class AiBoundedHttpRequestFactory implements ClientHttpRequestFactory {
     private final HttpClient client;
     private final long attemptNanos;
     private final int maxBytes;
+    private final AiProviderEndpoint endpoint;
 
-    AiBoundedHttpRequestFactory(Duration connectTimeout, Duration readTimeout, int maxBytes) {
+    AiBoundedHttpRequestFactory(AiProviderEndpoint endpoint, Duration connectTimeout,
+                                Duration readTimeout, int maxBytes) {
+        this.endpoint = endpoint;
         int connectMillis = Math.toIntExact(Math.max(1, connectTimeout.toMillis()));
         this.attemptNanos = connectTimeout.plus(readTimeout).toNanos();
         this.maxBytes = maxBytes;
-        this.client = HttpClient.create()
+        // A guarded HTTPS request must never reuse a connection established
+        // by an unrelated client with a different outbound policy.
+        HttpClient configured = (endpoint.https() ? HttpClient.newConnection() : HttpClient.create())
             .protocol(HttpProtocol.HTTP11)
             .disableRetry(true)
             .followRedirect(false)
             .compress(false)
             .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectMillis)
             .responseTimeout(readTimeout);
+        this.client = endpoint.https()
+                ? configured.secure().doOnChannelInit((observer, channel, address) ->
+                    channel.pipeline().addFirst(new PublicConnectGuard()))
+                : configured;
     }
 
     @Override
     public ClientHttpRequest createRequest(URI uri, HttpMethod method) {
+        endpoint.requireRequest(uri);
         return new AbstractBufferingClientHttpRequest() {
             @Override
             public URI getURI() {
@@ -76,6 +91,9 @@ final class AiBoundedHttpRequestFactory implements ClientHttpRequestFactory {
     private ClientHttpResponse exchange(URI uri, HttpMethod method, HttpHeaders headers, byte[] body)
         throws IOException {
         long deadline = System.nanoTime() + attemptNanos;
+        if (headers.containsHeader(HttpHeaders.HOST) || headers.containsHeader("Proxy-Authorization")) {
+            throw new IOException("AI provider request contains forbidden routing headers");
+        }
         if (Thread.currentThread().isInterrupted()) throw interrupted();
         if (AiProviderDispatchDeadline.remaining(deadline) <= 0) throw timeout();
         var sender = client.headers(target -> {
@@ -110,6 +128,19 @@ final class AiBoundedHttpRequestFactory implements ClientHttpRequestFactory {
             // Cancellation propagates to the Netty subscription and closes an
             // unfinished exchange. Any race with transmission remains ambiguous.
             if (!future.isDone()) future.cancel(true);
+        }
+    }
+
+    private static final class PublicConnectGuard extends ChannelOutboundHandlerAdapter {
+        @Override
+        public void connect(ChannelHandlerContext ctx, SocketAddress remoteAddress,
+                            @Nullable SocketAddress localAddress, ChannelPromise promise) throws Exception {
+            if (!AiProviderEndpoint.isPublicAddress(remoteAddress)) {
+                promise.tryFailure(new IOException("AI provider resolved to a prohibited address"));
+                ctx.close();
+                return;
+            }
+            ctx.connect(remoteAddress, localAddress, promise);
         }
     }
 

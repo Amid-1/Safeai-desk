@@ -24,6 +24,9 @@ class AiProviderPropertiesTest {
                 new AiProviderProperties("opneai")
         )
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("opneai");
+                .hasMessageContaining("safeai.ai.provider")
+                .hasMessageContaining("openai")
+                .hasMessageContaining("anthropic")
+                .hasMessageNotContaining("opneai");
     }
 }

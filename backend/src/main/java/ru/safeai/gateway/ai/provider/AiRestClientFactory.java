@@ -26,10 +26,11 @@ public final class AiRestClientFactory {
         if (maxResponseBodyBytes <= 0 || maxResponseBodyBytes > MAX_RESPONSE_BODY_BYTES) {
             throw new IllegalArgumentException("maxResponseBodyBytes вне допустимого диапазона");
         }
+        var endpoint = AiProviderEndpoint.parse(baseUrl);
         return RestClient.builder()
                 .baseUrl(baseUrl)
                 .requestFactory(new AiBoundedHttpRequestFactory(
-                        connectTimeout, readTimeout, Math.toIntExact(maxResponseBodyBytes)))
+                        endpoint, connectTimeout, readTimeout, Math.toIntExact(maxResponseBodyBytes)))
                 .build();
     }
 

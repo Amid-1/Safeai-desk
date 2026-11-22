@@ -29,7 +29,7 @@ public static AiProviderException fromResourceAccess(
                 model,
                 providerDisplayName
                         + " response exceeded configured body limit",
-                exception
+                null
         );
     }
 
@@ -40,7 +40,7 @@ public static AiProviderException fromResourceAccess(
                 false,
                 true,
                 providerDisplayName + " connect failure (execution unverified)",
-                exception
+                null
         );
     }
 
@@ -51,7 +51,7 @@ public static AiProviderException fromResourceAccess(
                 true,
                 providerDisplayName
                         + " read timeout after request submission",
-                exception
+                null
         );
     }
 
@@ -62,7 +62,7 @@ public static AiProviderException fromResourceAccess(
             true,
             providerDisplayName
                     + " network failure with ambiguous outcome",
-            exception
+            null
     );
 }
 
@@ -82,8 +82,9 @@ public static AiProviderException unknownFailure(
             true,
             null,
             providerDisplayName
-                    + " provider request failed after submission",
-            exception
+                    + " provider request failed after submission ("
+                    + exception.getClass().getSimpleName() + ")",
+            null
     );
 }
 

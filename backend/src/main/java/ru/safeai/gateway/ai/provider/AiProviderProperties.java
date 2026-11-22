@@ -19,8 +19,7 @@ public record AiProviderProperties(
 
         if (!ALLOWED_PROVIDERS.contains(provider)) {
             throw new IllegalStateException(
-                    "Недопустимый safeai.ai.provider: " + provider
-                            + ". Допустимые значения: "
+                    "Недопустимый safeai.ai.provider. Допустимые значения: "
                             + ALLOWED_PROVIDERS
             );
         }

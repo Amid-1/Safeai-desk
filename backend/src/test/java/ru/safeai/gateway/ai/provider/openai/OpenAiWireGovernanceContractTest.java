@@ -115,14 +115,30 @@ class OpenAiWireGovernanceContractTest {
     }
     @Test void providerErrorBodyAndCredentialsAreNotCopiedIntoPublicExceptionMessage() throws IOException {
         try (ProviderContractTestServer server = new ProviderContractTestServer()) {
-            server.enqueue(401, "{\"error\":{\"message\":\"" + SECRET + " sensitive body\"}}");
+            server.enqueue(401, Map.of("x-request-id", SECRET),
+                    "{\"error\":{\"code\":\"" + SECRET + "\",\"message\":\"" + SECRET + " sensitive body\"}}");
             assertThatThrownBy(() -> send(provider(server, false), governed()))
                     .isInstanceOf(AiProviderException.class)
                     .satisfies(e -> {
                         AiProviderException error = (AiProviderException)e;
                         assertThat(error.getMessage()).doesNotContain(SECRET, "sensitive body");
                         assertThat(error.getStatusCode()).isEqualTo(401);
+                        assertThat(error.getCause()).isNull();
+                        assertThat(error.getProviderRequestId()).isNull();
+                        assertThat(error.getProviderErrorCode()).isNull();
+                        var trace = new java.io.StringWriter();
+                        try (var writer = new java.io.PrintWriter(trace)) {
+                            error.printStackTrace(writer);
+                        }
+                        assertThat(trace.toString()).doesNotContain(SECRET, "sensitive body");
                     });
+            assertThat(server.requests()).hasSize(1);
+        }
+    }
+    @Test void successfulLookingResponseCannotPublishReflectedCredential() throws IOException {
+        try (ProviderContractTestServer server = new ProviderContractTestServer()) {
+            server.enqueue(200, success().replace("resp-test", SECRET));
+            assertAmbiguous(() -> send(provider(server, true), governed()));
             assertThat(server.requests()).hasSize(1);
         }
     }

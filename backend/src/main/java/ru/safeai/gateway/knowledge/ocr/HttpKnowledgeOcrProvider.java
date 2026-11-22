@@ -9,6 +9,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 import ru.safeai.gateway.ai.provider.AiRestClientFactory;
+import ru.safeai.gateway.ai.provider.ProviderCredentialEvidence;
 import ru.safeai.gateway.ai.provider.ProviderDataAssuranceProperties;
 import ru.safeai.gateway.ai.provider.ProviderDataEvidence;
 import ru.safeai.gateway.knowledge.config.KnowledgeOcrProperties;
@@ -116,6 +117,10 @@ public class HttpKnowledgeOcrProvider
                                     JsonNode.class
                             );
 
+            if (ProviderCredentialEvidence.reflected(body, null, properties.apiKey())) {
+                throw new KnowledgeIngestionException("OCR_PROVIDER_PROTOCOL_ERROR",
+                        "OCR response contains forbidden credential material", false);
+            }
             return parse(
                     body
             );
@@ -134,15 +139,13 @@ public class HttpKnowledgeOcrProvider
                             + status,
                     "OCR provider вернул HTTP "
                             + status,
-                    retryable,
-                    exception
+                    retryable
             );
-        } catch (RestClientException exception) {
+        } catch (RestClientException ignored) {
             throw new KnowledgeIngestionException(
                     "OCR_PROVIDER_UNAVAILABLE",
                     "OCR provider временно недоступен",
-                    true,
-                    exception
+                    true
             );
         }
     }

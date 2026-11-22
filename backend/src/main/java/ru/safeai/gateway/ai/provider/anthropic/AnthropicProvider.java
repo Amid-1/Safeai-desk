@@ -21,6 +21,7 @@ import ru.safeai.gateway.ai.provider.AiProviderAttemptContext;
 import ru.safeai.gateway.ai.provider.AiProviderRetryExecutor;
 import ru.safeai.gateway.ai.execution.ProviderExecutionTarget;
 import ru.safeai.gateway.ai.provider.AiProviderSupport;
+import ru.safeai.gateway.ai.provider.ProviderCredentialEvidence;
 import ru.safeai.gateway.ai.provider.AiResponseMetadataService;
 import tools.jackson.databind.JsonNode;
 
@@ -237,6 +238,11 @@ public final class AnthropicProvider implements AiProvider {
                                     JsonNode.class
                             );
 
+            if (ProviderCredentialEvidence.reflected(responseEntity.getBody(),
+                    responseEntity.getHeaders(), properties.apiKey())) {
+                throw parsingFailure(PROVIDER_NAME, properties.model(),
+                        "Anthropic response contains forbidden credential material");
+            }
             String providerRequestId =
                     AiProviderSupport
                             .extractProviderRequestId(
@@ -645,6 +651,10 @@ public final class AnthropicProvider implements AiProvider {
                         error.type(),
                         error.code()
                 );
+        if (ProviderCredentialEvidence.reflected(exception, properties.apiKey())) {
+            providerRequestId = null;
+            errorCode = null;
+        }
 
         if (status == 402
                 || matchesError(
@@ -658,7 +668,7 @@ public final class AnthropicProvider implements AiProvider {
                     providerRequestId,
                     errorCode,
                     "Anthropic billing error",
-                    exception
+                    null
             );
         }
 
@@ -677,7 +687,7 @@ public final class AnthropicProvider implements AiProvider {
                     status == 429 && "rate_limit_error".equals(errorCode)
                             && AiProviderSupport.retryAfterPermitsRetry(exception, retryAfter),
                     "Anthropic API rate limited",
-                    exception
+                    null
             );
         }
 
@@ -693,7 +703,7 @@ public final class AnthropicProvider implements AiProvider {
                     providerRequestId,
                     retryAfter,
                     "Anthropic API overloaded",
-                    exception
+                    null
             );
         }
 
@@ -710,7 +720,7 @@ public final class AnthropicProvider implements AiProvider {
                     providerRequestId,
                     true,
                     "Anthropic API timed out after request submission",
-                    exception
+                    null
             );
         }
 
@@ -735,7 +745,7 @@ public final class AnthropicProvider implements AiProvider {
                 retryAfter,
                 "Anthropic API error: status="
                         + status,
-                exception
+                null
         );
     }
 

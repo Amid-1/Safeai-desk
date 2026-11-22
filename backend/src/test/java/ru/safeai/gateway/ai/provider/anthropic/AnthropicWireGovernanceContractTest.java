@@ -98,14 +98,30 @@ class AnthropicWireGovernanceContractTest {
     }
     @Test void secretsAndRawProviderBodyNeverAppearInExceptionMessage() throws IOException {
         try (ProviderContractTestServer server = new ProviderContractTestServer()) {
-            server.enqueue(401, "{\"type\":\"error\",\"error\":{\"message\":\"" + SECRET + " private text\"}}");
+            server.enqueue(401, Map.of("request-id", SECRET),
+                    "{\"type\":\"error\",\"error\":{\"type\":\"" + SECRET + "\",\"message\":\"" + SECRET + " private text\"}}");
             assertThatThrownBy(() -> send(provider(server, false), governed()))
                     .isInstanceOf(AiProviderException.class)
                     .satisfies(e -> {
                         AiProviderException error = (AiProviderException) e;
                         assertThat(error.getMessage()).doesNotContain(SECRET, "private text");
                         assertThat(error.getStatusCode()).isEqualTo(401);
+                        assertThat(error.getCause()).isNull();
+                        assertThat(error.getProviderRequestId()).isNull();
+                        assertThat(error.getProviderErrorCode()).isNull();
+                        var trace = new java.io.StringWriter();
+                        try (var writer = new java.io.PrintWriter(trace)) {
+                            error.printStackTrace(writer);
+                        }
+                        assertThat(trace.toString()).doesNotContain(SECRET, "private text");
                     });
+            assertThat(server.requests()).hasSize(1);
+        }
+    }
+    @Test void successfulLookingResponseCannotPublishReflectedCredential() throws IOException {
+        try (ProviderContractTestServer server = new ProviderContractTestServer()) {
+            server.enqueue(200, success().replace("msg-test", SECRET));
+            assertAmbiguous(() -> send(provider(server, true), governed()));
             assertThat(server.requests()).hasSize(1);
         }
     }

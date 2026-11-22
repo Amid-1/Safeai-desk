@@ -49,6 +49,12 @@ management:
           - prometheus
 
   endpoint:
+    env:
+      access: none
+      show-values: never
+    configprops:
+      access: none
+      show-values: never
     health:
       probes:
         enabled: true
@@ -68,6 +74,8 @@ logging:
     org.hibernate.SQL: WARN
     org.hibernate.orm.jdbc.bind: "OFF"
     org.springframework.web.filter.CommonsRequestLoggingFilter: "OFF"
+    org.springframework.web.client: WARN
+    reactor.netty.http.client: WARN
 
 # RSA key-ring material is intentionally not declared here.
 # Production supplies it through deployment secret configuration.

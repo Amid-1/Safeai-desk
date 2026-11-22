@@ -148,7 +148,9 @@ ai/
 │   ├── AiProductionConfigurationValidator
 │   ├── AiRetryTimeoutBudgetValidator
 │   ├── AnthropicProviderConfiguration
-│   └── OpenAiProviderConfiguration
+│   ├── OpenAiProviderConfiguration
+│   ├── ProviderSecretConfigurationValidator 
+│   └── ProviderSecretFile
 ├── dto/
 │   ├── AiChatRequest
 │   ├── AiChatResponse
@@ -223,6 +225,7 @@ ai/
 │   ├── AiProvider
 │   ├── AiProviderAttemptContext
 │   ├── AiProviderDispatchDeadline
+│   ├── AiProviderEndpoint
 │   ├── AiProviderExceptionFactory
 │   ├── AiProviderProperties
 │   ├── AiProviderRetryExecutor
@@ -231,6 +234,7 @@ ai/
 │   ├── AiResponseTooLargeIOException
 │   ├── AiRestClientFactory
 │   ├── AiRetryProperties
+│   ├── ProviderCredentialEvidence
 │   ├── ProviderDataAssuranceProperties
 │   ├── ProviderDataEvidence
 │   ├── ProviderEvidenceText
@@ -1001,7 +1005,8 @@ fixture/server класса и одна отдельная self-check прогр
 ```text
 ai/
 ├── config/
-│   └── AiProductionConfigurationValidatorTest
+│   ├── AiProductionConfigurationValidatorTest
+│   └── ProviderSecretConfigurationValidatorTest
 ├── dto/
 │   ├── AiChatRequestTransformationTest
 │   └── AiChatResponseSpecializedEvidenceTest
@@ -1029,6 +1034,7 @@ ai/
 │   │   ├── OpenAiResolvedModelProvenanceContractTest
 │   │   └── OpenAiWireGovernanceContractTest
 │   ├── AiContextWindowGovernanceRegressionTest
+│   ├── AiProviderEndpointSecurityTest
 │   ├── AiProviderRetryEvidenceRegressionTest
 │   ├── AiProviderSupportResolvedModelTest
 │   ├── AiProviderTransportHardeningTest
@@ -1366,3 +1372,45 @@ README описывает покрываемые области, но не за�
 
 Приёмка: JUnit recorder/scope, PostgreSQL V100, последовательный
 Flyway upgrade, реальные права safeai_app и полный Maven verify.
+
+## 7.5E.5 — Конфигурации и секреты провайдеров
+
+- `ProviderSecretConfigurationValidator` проверяет production binding
+  выбранного Chat-провайдера. Ключи из переменных окружения, JVM properties
+  и аргументов командной строки запрещены.
+- `ProviderSecretFile` требует ровно один bounded ASCII token из
+  фиксированного файла `/run/secrets/`, root-owned, mode 0640,
+  без symlink, placeholder или управляющих символов. Значение
+  должно совпадать с фактическим binding Spring Boot.
+- `KnowledgeProviderSecretConfigurationValidator` применяет тот же
+  контракт к активным Embedding/OCR без обратной зависимости AI от Knowledge.
+- `AiProviderEndpoint` проверяет исходные URI и каждую конечную цель HTTP:
+  одинаковые scheme, host, port и API path, без user-info, fragment,
+  query, encoded path или traversal. Запрещены Host overrides.
+- `AiBoundedHttpRequestFactory` проверяет фактический IP в outbound
+  connect, до TCP. HTTPS использует стандартную TLS-проверку цепочки
+  сертификатов и hostname; соединения не разделяются между клиентами.
+  HTTP допустим только для loopback test fixtures, не для production
+  provider properties. SSRF-защиту следует дублировать egress firewall.
+- `ProviderCredentialEvidence` блокирует успешный ответ, отражающий
+  API key, и удаляет такие error/request identifiers. Исключения
+  адаптеров не сохраняют исходные HTTP error body и transport causes.
+- `infra/scripts/rotate-provider-secret.py` проверяет формат,
+  ownership, mode и атомарно заменяет файл под exclusive lock.
+  После ротации необходимо пересоздать backend — простой restart
+  не гарантирует обновление bind mount. Ключ OpenAI общий для Chat
+  и Embeddings в текущей Compose-топологии.
+
+Локальный `.env` и миграции не изменяются. В production
+используются текущие file-backed Compose secrets; Actuator
+env/configprops отключены. Нельзя включать wire logging или
+публиковать heap dumps: приложение неизбежно держит рабочий ключ
+в памяти для авторизации HTTPS.
+
+Приёмка: `ProviderSecretConfigurationValidatorTest`,
+`AiProviderEndpointSecurityTest`, wire governance contracts,
+`test-provider-secret-rotation.py` и полный Maven verify.
+Отдельно на staging проверить TLS, egress firewall, выдачу
+нового ключа, контролируемое пересоздание backend и только затем
+отзыв старого ключа. Стоимость новых TLS handshakes следует
+измерить на этапе 7.5E.6.

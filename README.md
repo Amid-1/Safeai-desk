@@ -5804,7 +5804,9 @@ ai/
 │   ├── AiProductionConfigurationValidator
 │   ├── AiRetryTimeoutBudgetValidator
 │   ├── AnthropicProviderConfiguration
-│   └── OpenAiProviderConfiguration
+│   ├── OpenAiProviderConfiguration
+│   ├── ProviderSecretConfigurationValidator 
+│   └── ProviderSecretFile
 ├── dto/
 │   ├── AiChatRequest
 │   ├── AiChatResponse
@@ -5873,13 +5875,14 @@ ai/
 │   ├── openai/
 │   │   ├── OpenAiProperties
 │   │   └── OpenAiProvider
-│   ├── AiBoundedHttpRequestFactory
+   ├── AiBoundedHttpRequestFactory
 │   ├── AiContextWindowProperties
 │   ├── AiContextWindowService
 │   ├── AiJsonNodeSupport
 │   ├── AiProvider
 │   ├── AiProviderAttemptContext
 │   ├── AiProviderDispatchDeadline
+│   ├── AiProviderEndpoint
 │   ├── AiProviderExceptionFactory
 │   ├── AiProviderProperties
 │   ├── AiProviderRetryExecutor
@@ -5888,6 +5891,7 @@ ai/
 │   ├── AiResponseTooLargeIOException
 │   ├── AiRestClientFactory
 │   ├── AiRetryProperties
+│   ├── ProviderCredentialEvidence
 │   ├── ProviderDataAssuranceProperties
 │   ├── ProviderDataEvidence
 │   ├── ProviderEvidenceText
@@ -6183,6 +6187,7 @@ knowledge/
 │   ├── KnowledgeOcrProperties
 │   ├── KnowledgeProcessingConfiguration
 │   ├── KnowledgeProviderDataGuard
+│   ├── KnowledgeProviderSecretConfigurationValidator
 │   ├── KnowledgeRagProperties
 │   └── KnowledgeRetrievalProperties
 ├── controller/

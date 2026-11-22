@@ -10,7 +10,7 @@ compose_file="$infra_dir/docker-compose.yml"
 
 fail() { printf 'Production preflight failed: %s\n' "$*" >&2; exit 1; }
 
-for cmd in docker grep stat sort awk; do
+for cmd in docker grep stat sort awk python3; do
     command -v "$cmd" >/dev/null 2>&1 || fail "Missing command: $cmd"
 done
 
@@ -28,6 +28,14 @@ set -a
 # shellcheck disable=SC1090
 source "$env_file"
 set +a
+
+# Even empty credential variables are forbidden: they override configtree.
+for name in OPENAI_API_KEY ANTHROPIC_API_KEY OPENAI_EMBEDDING_API_KEY KNOWLEDGE_OCR_API_KEY \
+    SAFEAI_AI_OPENAI_APIKEY SAFEAI_AI_ANTHROPIC_APIKEY SAFEAI_AI_OPENAI_API_KEY SAFEAI_AI_ANTHROPIC_API_KEY \
+    SAFEAI_KNOWLEDGE_EMBEDDING_APIKEY SAFEAI_KNOWLEDGE_OCR_APIKEY \
+    SAFEAI_KNOWLEDGE_EMBEDDING_API_KEY SAFEAI_KNOWLEDGE_OCR_API_KEY; do
+    [[ -z "${!name+x}" ]] || fail "Provider credential must be file-backed: $name"
+done
 
 env_file="$(cd -- "$(dirname -- "$env_file")" && pwd)/$(basename -- "$env_file")"
 export SAFEAI_RUNTIME_ENV_FILE="$env_file"
@@ -110,15 +118,23 @@ case "$SAFEAI_AI_PROVIDER" in
     *) fail "Production provider must be openai or anthropic" ;;
 esac
 [[ -n "$selected_model" && -s "$provider_secret" ]] || fail "Selected provider model or secret missing"
+python3 "$script_dir/rotate-provider-secret.py" "$SAFEAI_AI_PROVIDER" \
+    --secrets-dir "$SAFEAI_SECRETS_DIR" --check || fail "Selected provider secret invalid"
 # Catalog pricing is validated by the runtime against the immutable route.
 # Fresh databases must remain bootstrappable before an administrator sets a tariff.
 
 case "${SAFEAI_KNOWLEDGE_EMBEDDING_PROVIDER:-}" in
     openai)
         [[ -s "$SAFEAI_SECRETS_DIR/openai_api_key" ]] || fail "OpenAI embedding credentials required"
+        python3 "$script_dir/rotate-provider-secret.py" openai \
+            --secrets-dir "$SAFEAI_SECRETS_DIR" --check || fail "OpenAI embedding secret invalid"
         ;;
     *) fail "Production knowledge embedding provider must be openai in this deployment" ;;
 esac
+if [[ "${SAFEAI_KNOWLEDGE_OCR_PROVIDER:-disabled}" == http ]]; then
+    python3 "$script_dir/rotate-provider-secret.py" ocr \
+        --secrets-dir "$SAFEAI_SECRETS_DIR" --check || fail "OCR secret invalid"
+fi
 
 # Validate the deployed Compose topology and EVERY mounted Prometheus rule.
 # A missing or invalid rule MUST fail production preflight.
