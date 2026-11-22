@@ -99,22 +99,25 @@ public class AiProviderRetryExecutor {
                             maxAttempts
                     );
 
+            boolean enteredAdapter = false;
             try {
                 attemptScope.started(context);
 
                 // Контекст и долговечный lease уже созданы; проверяем отзыв
                 // непосредственно перед входом в адаптер физического I/O.
                 attemptScope.beforeNetworkDispatch(context);
+                enteredAdapter = true;
                 AiChatResponse response = action.apply(context);
 
                 attemptScope.succeeded(context, response);
                 return response;
             } catch (AiProviderException exception) {
-                if (attemptScope.hasActiveAttempt(context)) {
-                    attemptScope.failed(context, exception);
-                }
+                // Neither a rejected STARTED/dispatch gate nor post-success
+                // governance rejection is a retryable provider response.
+                if (!attemptScope.hasActiveAttempt(context)) throw exception;
+                attemptScope.failed(context, exception);
 
-                if (!shouldRetry(exception, attempt, maxAttempts)) {
+                if (!enteredAdapter || !shouldRetry(exception, attempt, maxAttempts)) {
                     throw exception;
                 }
 

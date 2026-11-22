@@ -167,6 +167,7 @@ ai/
 │   └── AiProviderUnavailableException
 ├── execution/
 │   ├── AiDataAssurancePort
+│   ├── AiDispatchAbortedException
 │   ├── AiExecutionAttemptAuthorization
 │   ├── AiExecutionAttemptObserver
 │   ├── AiExecutionAttemptRecorder
@@ -286,6 +287,8 @@ Provider quota и billing не равнозначны внутренним кв�
 - `AiExecutionService` — входная точка governed execution.
   Авторизует физическую отправку, сверяет target, создаёт plan,
   открывает scope, подключает observer и вызывает адаптер.
+  Передаёт в scope настроенный `safeai.ai.retry.max-attempts`,
+  а для ограниченной финансовой политики — строго одну попытку.
 - `AiExecutionRequest` (record) — запрос, связанный с identity,
   target и контекстом Knowledge-исполнения.
 - `AiExecutionResult` (record) — результат выполнения.
@@ -307,8 +310,12 @@ Provider quota и billing не равнозначны внутренним кв�
 - `ModelExecutionPlanRepository` — доступ к сохранённым планам.
 - `AiExecutionAttemptScope` — граница операции в текущем потоке,
   контроль активной попытки и lifecycle callbacks.
+  Самостоятельно проверяет предел, последовательность и уникальность ID,
+  неизменность объявленного максимума, однократный допуск dispatch
+  и соответствие возвращённого ответа подтверждённому success evidence.
 - `AiExecutionAttemptObserver` — контракт событий started,
   before dispatch, succeeded, failed и ambiguous.
+  Проверка before dispatch обязательна для каждой реализации observer.
 - `AiExecutionAttemptAuthorization` — permit/lease на конкретную
   физическую попытку, проверка отзыва и завершение lease.
 - `AiExecutionAttemptRecorder` — запись STARTED и terminal evidence
@@ -781,6 +788,15 @@ flowchart TD
   не помещаются в retry deadline.
 - Политика может требовать строго одну физическую попытку,
   даже если retry включён.
+- Scope проверяет предел ещё до записи STARTED; адаптер не может
+  самостоятельно расширить его или повторно использовать ID попытки.
+- После отказа STARTED/dispatch, неоднозначного либо неподтверждённого
+  terminal outcome новые попытки запрещены в текущей операции.
+- Успех возможен только после однократного успешного dispatch gate.
+  Из scope возвращается только тот экземпляр ответа, для которого
+  observer подтвердил success; после FAILED вернуть ответ нельзя.
+- Retry executor не повторяет ошибки admission/dispatch и отказ
+  governance после записи физического успеха, даже при retry hint.
 - Recorder допускает следующую попытку только после FAILED
   с доказанным отказом/неисполнением и допустимостью same-target retry.
 - Общий HTTP connect failure сам по себе не доказывает,
@@ -1061,6 +1077,9 @@ ai/
   последовательность и безопасность записи попыток.
 - `AiExecutionAttemptScopeTest` — активная операция и попытка,
   lifecycle callbacks, защита от использования вне scope.
+  Прямые негативные сценарии обхода retry executor: превышение cap,
+  повторный dispatch, подмена ответа, повторный ID, потеря ACK,
+  запрет продолжения после неопределённого результата.
 - `AiExecutionPlanServiceTest` — durable plan, совпадение
   идентичности при повторном обращении.
 - `AiExecutionPreDispatchGateTest` — дополнительное разрешение
@@ -1305,3 +1324,42 @@ README описывает покрываемые области, но не за�
 Неопределённость допуска, результата или цены не даёт права
 обойти защиту или подменить фактические доказательства.
 
+## 7.5E.3 — Независимый физический допуск (V100)
+
+- `AiExecutionAttemptScope` сохраняет одноразовый callback,
+  последовательность попыток и запрет retry при неизвестном исходе.
+- `AiExecutionAttemptRecorder.started` сохраняет STARTED; SQL
+  V100 повторно проверяет текущую версию model policy, epoch и lease.
+- `beforeNetworkDispatch` вызывает `consume_model_dispatch_v100`
+  в REQUIRES_NEW. Только подтверждённый commit разрешает продолжить
+  адаптеру; отказ или неопределённость commit не разрешают сетевой I/O.
+- `model_physical_dispatch_receipts_v100` — неизменяемая запись
+  одноразового допуска с PK/FK на физическую попытку. Повторная
+  выдача разрешения невозможна даже с другого backend-инстанса.
+- V96 Chat quota и V85 RAG-барьеры сохраняются. При HARD бюджете
+  V100 проверяет фактические и зарезервированные расходы по V62,
+  неизвестные обязательства и текущий UTC-месяц.
+- Перед выдачей receipt PostgreSQL независимо проверяет V64 RAG
+  binding, актуальный permit, источники и lease конкретной попытки
+  V85. Проверка повторяется на границе допуска после ожидания locks.
+- При отказе до HTTP recorder фиксирует `DISPATCH_ABORTED` только
+  для нового protocol marker V100 и только при отсутствии receipt.
+  Исход KNOWN_NOT_EXECUTED запрещает retry; Chat завершает его
+  штатным unambiguous failure. Исторические строки остаются NULL.
+- Terminal persistence использует отдельные READ COMMITTED
+  транзакции, tenant lock до блокировки attempt и до трёх попыток
+  записи при временной ошибке БД. Повтор идентичного terminal evidence
+  не меняет исходную запись; противоречие требует сверки.
+
+Запись допуска не является доказательством доставки или выполнения
+запроса провайдером. При потере подтверждения PostgreSQL либо аварии
+между commit и HTTP исход сохраняется консервативно; повторное
+использование записи запрещено. V100 не откатывает уже отправленный
+запрос и не защищает от произвольного обхода адаптера сторонним кодом.
+Исторические попытки не получают искусственных записей допуска.
+Полная потеря процесса до записи ответа или длительная недоступность
+БД сохраняет консервативное обязательство и требует reconciliation.
+Повтор HTTP не является способом восстановления terminal evidence.
+
+Приёмка: JUnit recorder/scope, PostgreSQL V100, последовательный
+Flyway upgrade, реальные права safeai_app и полный Maven verify.

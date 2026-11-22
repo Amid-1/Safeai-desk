@@ -14,6 +14,8 @@ import ru.safeai.gateway.ai.metadata.UsageStatus;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -385,6 +387,41 @@ public class ModelExecutionAttemptEntity {
                 requireFailureType(failure);
 
         this.finishedAt = finishedAt;
+    }
+
+    /** Only V100 may accept this terminal evidence (no durable receipt under row lock). */
+    void abortedBeforeDispatch(Instant now) {
+        requireStarted();
+        finishedAt = requireFinishTime(now);
+        outcome = ExecutionAttemptOutcome.FAILED;
+        outcomeCertainty = OutcomeCertainty.KNOWN_NOT_EXECUTED;
+        retrySafety = RetrySafety.SAME_TARGET_RETRY_FORBIDDEN;
+        fallbackSafety = FallbackSafety.FALLBACK_FORBIDDEN;
+        failureType = "DISPATCH_ABORTED";
+    }
+
+    /** Reconstruct an evidence candidate without mutating an already terminal entity. */
+    ModelExecutionAttemptEntity settlementCandidate() {
+        ModelExecutionAttemptEntity candidate = new ModelExecutionAttemptEntity();
+        candidate.startedAt = startedAt;
+        candidate.outcome = ExecutionAttemptOutcome.STARTED;
+        return candidate;
+    }
+
+    /** Compare every mutable terminal evidence field, not only the outcome or cost. */
+    boolean sameTerminalEvidence(ModelExecutionAttemptEntity expected) {
+        return finishedAt != null && terminalEvidence().equals(expected.terminalEvidence());
+    }
+
+    private List<Object> terminalEvidence() {
+        // Nullable evidence is intentional. PostgreSQL NUMERIC adds scale on read.
+        // finishedAt is first-writer evidence and is not replaced during replay.
+        return Arrays.asList(outcome, outcomeCertainty, retrySafety, fallbackSafety,
+                resolvedPhysicalModel, providerRequestId, providerMessageId, failureType,
+                responseObserved, responseValidationStatus, providerHttpStatus, protocolFailureCode,
+                usageStatus, inputTokens, cachedInputTokens, cacheWriteInputTokens, outputTokens,
+                specializedDimensionsPresent, specializedDimensionsValid, pricingStatus,
+                costUsd == null ? null : costUsd.stripTrailingZeros(), currency, priceBookVersion);
     }
 
     private Instant requireFinishTime(

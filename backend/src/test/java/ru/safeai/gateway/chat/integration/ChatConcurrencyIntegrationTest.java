@@ -24,6 +24,7 @@ import ru.safeai.gateway.model.domain.BudgetEnforcement;
 import ru.safeai.gateway.model.domain.OrganizationModelPolicy;
 import ru.safeai.gateway.model.repository.OrganizationModelPolicyRepository;
 
+import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
@@ -430,21 +431,78 @@ class ChatConcurrencyIntegrationTest
                 )
         );
 
-        assertRaceOutcomes(
-                outcomes,
-                ChatQuotaExceededException.class
-        );
+        // V100 can reject admission before the quota is read, while another
+        // transaction owns the tenant budget fence. Do not mistake contention
+        // for quota exhaustion: the losing request must still prove the actual
+        // quota limit in a new transaction after both race participants finish.
+        assertThat(outcomes).hasSize(2);
+        assertThat(outcomes.stream().filter(RaceSuccess.class::isInstance).count())
+                .as("Exactly one committed reservation: %s", describeOutcomes(outcomes))
+                .isEqualTo(1L);
 
-        assertThat(countRows(Table.CHAT_TURNS))
-                .isEqualTo(1);
+        boolean firstWon = outcomes.getFirst() instanceof RaceSuccess;
+        RaceSuccess winner = (RaceSuccess) outcomes.get(firstWon ? 0 : 1);
+        RaceFailure loser = (RaceFailure) outcomes.get(firstWon ? 1 : 0);
+        UUID winnerChat = firstWon ? CHAT_ID : secondChatId;
+        UUID winnerRequest = firstWon ? firstClientRequestId : secondClientRequestId;
+        UUID loserChat = firstWon ? secondChatId : CHAT_ID;
+        UUID loserRequest = firstWon ? secondClientRequestId : firstClientRequestId;
+        String loserContent = firstWon ? "Second" : "First";
 
-        assertThat(countRows(Table.CHAT_MESSAGES))
-                .isEqualTo(1);
+        if (!(loser.cause() instanceof ChatQuotaExceededException)) {
+            assertThat(isV100AdmissionContention(loser.cause()))
+                    .as("Unexpected admission failure: %s", describeOutcomes(outcomes))
+                    .isTrue();
+        }
+        assertThat(winner.context().chatId()).isEqualTo(winnerChat);
+        assertThat(winner.context().clientRequestId()).isEqualTo(winnerRequest);
+        assertThat(winner.context().replay()).isFalse();
+        assertSingleQuotaReservation(winner.context(), loserChat, loserRequest);
 
-        assertThat(countRows(Table.CHAT_QUOTA_RESERVATIONS))
-                .isEqualTo(1);
+        // This is an explicit test replay of the losing logical request, never
+        // an automatic retry of physical I/O or a retry inside a failed transaction.
+        assertThatThrownBy(() -> reserve(loserChat, loserRequest, loserContent))
+                .isInstanceOf(ChatQuotaExceededException.class);
+        assertSingleQuotaReservation(winner.context(), loserChat, loserRequest);
+    }
 
+    private static boolean isV100AdmissionContention(Throwable failure) {
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            if (cause instanceof SQLException sql
+                    && "55P03".equals(sql.getSQLState())
+                    && sql.getMessage() != null
+                    && sql.getMessage().contains("V100 model admission contention")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void assertSingleQuotaReservation(
+            ChatProcessingContext winner, UUID loserChat, UUID loserRequest
+    ) {
+        assertThat(countRows(Table.CHAT_TURNS)).isEqualTo(1);
+        assertThat(countRows(Table.CHAT_MESSAGES)).isEqualTo(1);
+        assertThat(countRows(Table.CHAT_QUOTA_RESERVATIONS)).isEqualTo(1);
         assertSingleAllowedRouteBoundToMockCatalog();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from public.chat_quota_reservations q
+                join public.chat_turns t on t.id = q.turn_id
+                where q.state = 'RESERVED' and t.state = 'PROCESSING'
+                  and q.organization_id = ? and t.id = ?
+                  and t.client_request_id = ? and t.session_id = ?
+                """, Long.class, ORGANIZATION_ID, winner.turnId(),
+                winner.clientRequestId(), winner.chatId())).isEqualTo(1L);
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from public.model_route_decisions
+                where chat_id = ? and client_request_id = ? and outcome = 'ALLOWED'
+                """, Long.class, loserChat, loserRequest)).isZero();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from public.model_execution_attempts
+                """, Long.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from public.model_physical_dispatch_receipts_v100
+                """, Long.class)).isZero();
     }
 
     private ChatProcessingContext reserve(

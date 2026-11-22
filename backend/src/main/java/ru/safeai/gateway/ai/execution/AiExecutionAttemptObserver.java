@@ -8,9 +8,16 @@ public interface AiExecutionAttemptObserver {
     void started(AiProviderAttemptContext attempt);
     /**
      * Последняя проверка доступа перед физическим вызовом провайдера.
-     * Реализации без Knowledge-контекста могут использовать метод по умолчанию.
+     * Обязательна для каждого наблюдателя, независимо от Knowledge-контекста.
      */
-    default void beforeNetworkDispatch(AiProviderAttemptContext attempt) { }
+    void beforeNetworkDispatch(AiProviderAttemptContext attempt);
+
+    /** No adapter invocation by this caller; durable receipt absence must still be proven. */
+    default boolean abortedBeforeDispatch(AiProviderAttemptContext attempt, RuntimeException reason) {
+        // Legacy observers must retain uncertainty, not invent a non-executed result.
+        ambiguous(attempt, reason);
+        return false;
+    }
 
     void succeeded(AiProviderAttemptContext attempt, AiChatResponse response);
     void failed(AiProviderAttemptContext attempt, AiProviderException exception);

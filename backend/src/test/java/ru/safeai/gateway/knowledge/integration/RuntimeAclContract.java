@@ -155,6 +155,29 @@ class RuntimeAclContract {
                   AND t.correlation_id=? AND d.correlation_id=?
                   AND EXISTS (SELECT 1 FROM public.model_execution_attempts a WHERE a.execution_plan_id=p.id)
                 """, Long.class, a.org(), request, correlation, correlation));
+        UUID physicalAttempt = jdbc.queryForObject("""
+                SELECT a.id FROM public.model_execution_attempts a
+                JOIN public.model_execution_plans p ON p.id=a.execution_plan_id
+                JOIN public.chat_turns t ON t.id=p.chat_turn_id
+                JOIN public.model_physical_dispatch_receipts_v100 r ON r.attempt_id=a.id
+                WHERE t.organization_id=? AND t.client_request_id=? AND r.authorized_at IS NOT NULL
+                """, UUID.class, a.org(), request);
+        assertNotNull(physicalAttempt);
+        assertEquals(Boolean.TRUE, jdbc.queryForObject("""
+                SELECT has_column_privilege(current_user,'public.model_physical_dispatch_receipts_v100',
+                                            'attempt_id','INSERT')
+                   AND NOT has_column_privilege(current_user,'public.model_physical_dispatch_receipts_v100',
+                                                'authorized_at','INSERT')
+                   AND NOT has_table_privilege(current_user,'public.model_physical_dispatch_receipts_v100','INSERT')
+                   AND NOT has_table_privilege(current_user,'public.model_physical_dispatch_receipts_v100','UPDATE')
+                   AND NOT has_table_privilege(current_user,'public.model_physical_dispatch_receipts_v100','DELETE')
+                   AND NOT has_table_privilege(current_user,'public.model_physical_dispatch_receipts_v100','TRUNCATE')
+                """, Boolean.class));
+        assertRejectedUpdate("UPDATE public.model_physical_dispatch_receipts_v100 "
+                + "SET authorized_at=clock_timestamp() WHERE attempt_id=?", physicalAttempt, "42501", null);
+        assertRejectedUpdate("DELETE FROM public.model_physical_dispatch_receipts_v100 "
+                + "WHERE attempt_id=?", physicalAttempt, "42501", null);
+        System.out.println("MODEL PHYSICAL DISPATCH SECURITY PASS: receipt and restricted runtime ACL");
         mvc.perform(json(post("/api/chats/{id}/messages", chat), sa, message))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.replay").value(true));
         mvc.perform(post("/api/chats/{id}/archive", chat).cookie(sa.access()).with(realCsrf()))

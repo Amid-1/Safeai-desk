@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
  *
  * <p>V0 is an intentional test-only role bootstrap. It must run before V1,
  * not be hidden or excluded to make the migration count look convenient.
- * Production migrations begin at V1 and currently extend through V99.</p>
+ * Production migrations begin at V1 and currently extend through V100.</p>
  */
 @Tag("integration")
 @Testcontainers
@@ -67,10 +67,10 @@ class FlywaySequentialUpgradeIT {
                 .toList();
 
         // Validate the complete catalog, not just the migration that failed.
-        assertThat(versions).as("Expected test V0 and production versions through V99")
-                .hasSizeGreaterThanOrEqualTo(100)
+        assertThat(versions).as("Expected test V0 and production versions through V100")
+                .hasSizeGreaterThanOrEqualTo(101)
                 .startsWith("0", "1")
-                .contains("92", "93", "94", "95", "96", "97", "98", "99");
+                .contains("92", "93", "94", "95", "96", "97", "98", "99", "100");
 
         UUID existingOrganization = UUID.randomUUID();
         UUID existingActor = UUID.randomUUID();
@@ -227,6 +227,13 @@ class FlywaySequentialUpgradeIT {
                         SELECT NOT prosecdef AND provolatile = 'v' AND proconfig IS NOT NULL
                         FROM pg_proc WHERE oid = 'public.guard_usage_export_job_v98()'::regprocedure
                         """, Boolean.class)).isTrue();
+                assertThat(legacyEvidence(jdbc, existingOrganization, auditId, outboxId, true))
+                        .containsExactlyElementsOf(evidenceBeforeV94);
+            }
+            if (index == 100) {
+                assertThat(jdbc.queryForObject(
+                        "SELECT count(*) FROM public.model_physical_dispatch_receipts_v100",
+                        Long.class)).isZero();
                 assertThat(legacyEvidence(jdbc, existingOrganization, auditId, outboxId, true))
                         .containsExactlyElementsOf(evidenceBeforeV94);
             }

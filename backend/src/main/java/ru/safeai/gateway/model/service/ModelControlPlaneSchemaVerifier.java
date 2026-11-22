@@ -38,7 +38,9 @@ public final class ModelControlPlaneSchemaVerifier implements SmartInitializingS
                         ('model_route_budget_commitments_v64',
                          to_regclass('public.model_route_budget_commitments_v64') is not null),
                         ('knowledge_rag_context_receipts_v64',
-                         to_regclass('public.knowledge_rag_context_receipts_v64') is not null)
+                         to_regclass('public.knowledge_rag_context_receipts_v64') is not null),
+                        ('model_physical_dispatch_receipts_v100',
+                         to_regclass('public.model_physical_dispatch_receipts_v100') is not null)
                 )
                 select name from required where not present order by name
                 """,
@@ -129,7 +131,12 @@ public final class ModelControlPlaneSchemaVerifier implements SmartInitializingS
                     ('model_route_budget_commitments_v64',
                      'trg_model_route_budget_commitments_immutable_v64'),
                     ('knowledge_rag_context_receipts_v64',
-                     'trg_knowledge_rag_context_receipt_immutable_v64')
+                     'trg_knowledge_rag_context_receipt_immutable_v64'),
+                    ('organization_model_policies', 'trg_model_policy_admission_v100'),
+                    ('model_route_decisions', 'trg_model_route_admission_v100'),
+                    ('model_execution_attempts', 'trg_zzz_model_physical_start_v100'),
+                    ('model_execution_attempts', 'trg_zzz_model_settlement_v100'),
+                    ('model_physical_dispatch_receipts_v100', 'trg_model_dispatch_receipt_v100')
                 )
                 select expected.trigger_name
                 from expected
@@ -161,6 +168,8 @@ public final class ModelControlPlaneSchemaVerifier implements SmartInitializingS
                      'chk_model_route_prepared_current_binding_v65', false),
                     ('model_execution_attempts',
                      'chk_model_execution_attempt_lifecycle_v66', true),
+                    ('model_execution_attempts',
+                     'chk_model_dispatch_protocol_v100', true),
                     ('model_route_budget_commitments_v64',
                      'chk_model_route_budget_commitments_state_shape_v64', true)
                 )
@@ -198,6 +207,35 @@ public final class ModelControlPlaneSchemaVerifier implements SmartInitializingS
             throw new IllegalStateException(
                     "Model catalog pricing_scheme is missing or nullable"
             );
+        }
+        Boolean dispatchFence = jdbc.queryForObject("""
+                select
+                    exists (select 1 from pg_constraint c
+                        join pg_attribute a on a.attrelid = c.conrelid
+                        where c.conrelid = to_regclass('public.model_physical_dispatch_receipts_v100')
+                          and c.contype = 'p' and c.convalidated
+                          and a.attname = 'attempt_id' and c.conkey = array[a.attnum])
+                    and exists (select 1 from pg_constraint c
+                        join pg_attribute a on a.attrelid = c.conrelid
+                        join pg_attribute b on b.attrelid = c.confrelid
+                        where c.conrelid = to_regclass('public.model_physical_dispatch_receipts_v100')
+                          and c.confrelid = to_regclass('public.model_execution_attempts')
+                          and c.contype = 'f' and c.convalidated and c.confdeltype = 'r'
+                          and a.attname = 'attempt_id' and b.attname = 'id'
+                          and c.conkey = array[a.attnum] and c.confkey = array[b.attnum])
+                    and exists (select 1 from pg_proc p
+                        where p.oid = to_regprocedure('public.consume_model_dispatch_v100(uuid,uuid)')
+                          and not p.prosecdef and p.provolatile = 'v'
+                          and 'search_path=pg_catalog, pg_temp' = any(p.proconfig))
+                    and exists (select 1 from pg_proc p
+                        where p.oid = to_regprocedure('public.lock_model_settlement_v100(uuid)')
+                          and not p.prosecdef and p.provolatile = 'v')
+                    and exists (select 1 from pg_proc p
+                        where p.oid = to_regprocedure('public.assert_model_knowledge_dispatch_v100(uuid)')
+                          and not p.prosecdef and p.provolatile = 'v')
+                """, Boolean.class);
+        if (!Boolean.TRUE.equals(dispatchFence)) {
+            throw new IllegalStateException("V100 durable dispatch fence is missing or invalid");
         }
     }
 }

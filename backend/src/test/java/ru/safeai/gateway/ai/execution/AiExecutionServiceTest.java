@@ -70,7 +70,7 @@ class AiExecutionServiceTest {
         scope = new AiExecutionAttemptScope();
         service = new AiExecutionService(
             provider, new AiProviderProperties("openai"), plans, recorder, scope, binding,
-            AiExecutionAttemptAuthorization.noOp(), dataAssurance);
+            AiExecutionAttemptAuthorization.noOp(), dataAssurance, retryProperties(3));
         target = ProviderExecutionTarget.staticTarget("openai", "gpt-5");
         AiChatRequest base = new AiChatRequest(USER, ORG, CHAT, OPERATION,
             null, null, "question", List.of(), 4_096L, 512);
@@ -89,6 +89,7 @@ class AiExecutionServiceTest {
         when(plans.createOrRead(request)).thenReturn(plan);
         when(provider.sendMessage(request.aiRequest())).thenAnswer(inv -> {
             scope.started(attempt);
+            scope.beforeNetworkDispatch(attempt);
             scope.succeeded(attempt, response);
             return response;
         });
@@ -102,6 +103,7 @@ class AiExecutionServiceTest {
         order.verify(plans).createOrRead(request);
         order.verify(provider).sendMessage(request.aiRequest());
         order.verify(recorder).started(plan.getId(), target, attempt);
+        order.verify(recorder).beforeNetworkDispatch(plan.getId(), attempt.attemptId());
         order.verify(recorder).succeeded(attempt.attemptId(), response);
     }
 
@@ -163,6 +165,7 @@ class AiExecutionServiceTest {
         when(plans.createOrRead(request)).thenReturn(plan);
         when(provider.sendMessage(request.aiRequest())).thenAnswer(inv -> {
             scope.started(attempt);
+            scope.beforeNetworkDispatch(attempt);
             scope.succeeded(attempt, response);
             return response;
         });
@@ -170,6 +173,7 @@ class AiExecutionServiceTest {
             .isInstanceOf(ResolvedModelMismatchException.class);
         InOrder order = inOrder(recorder);
         order.verify(recorder).started(plan.getId(), target, attempt);
+        order.verify(recorder).beforeNetworkDispatch(plan.getId(), attempt.attemptId());
         order.verify(recorder).succeeded(attempt.attemptId(), response);
         verify(recorder, never()).failed(any(), any());
         verify(recorder, never()).ambiguous(any(), any());
@@ -185,6 +189,7 @@ class AiExecutionServiceTest {
             .when(recorder).succeeded(attempt.attemptId(), response);
         when(provider.sendMessage(request.aiRequest())).thenAnswer(inv -> {
             scope.started(attempt);
+            scope.beforeNetworkDispatch(attempt);
             scope.succeeded(attempt, response);
             return response;
         });
@@ -274,16 +279,15 @@ class AiExecutionServiceTest {
             eq(plan.getId()), eq(target), started.capture()
         );
         order.verify(dataAssurance).require(request, true);
-        order.verify(recorder).failed(
-            eq(started.getValue().attemptId()), same(denied)
-        );
+        order.verify(recorder).abortedBeforeDispatch(started.getValue().attemptId());
 
         verify(dataAssurance, times(1)).require(request, false);
         verify(dataAssurance, times(1)).require(request, true);
         verify(recorder, times(1)).started(
             eq(plan.getId()), eq(target), any()
         );
-        verify(recorder, times(1)).failed(any(), same(denied));
+        verify(recorder, times(1)).abortedBeforeDispatch(any());
+        verify(recorder, never()).failed(any(), any());
         verify(recorder, never()).succeeded(any(), any());
         verify(recorder, never()).ambiguous(any(), any());
         verify(provider, times(1)).sendMessage(request.aiRequest());
@@ -302,10 +306,17 @@ class AiExecutionServiceTest {
                     networkCalls.incrementAndGet();
                     return response("gpt-5");
                 }));
-        assertThatThrownBy(() -> service.execute(request)).isSameAs(revoked);
+        assertThatThrownBy(() -> service.execute(request))
+                .isInstanceOfSatisfying(ru.safeai.gateway.ai.exception.AiProviderException.class, failure -> {
+                    assertThat(failure.isOutcomeAmbiguous()).isFalse();
+                    assertThat(failure.isRetryable()).isFalse();
+                    assertThat(failure.getProviderErrorCode()).isEqualTo("DISPATCH_ABORTED");
+                    assertThat(failure.getCause()).hasCause(revoked);
+                });
         assertThat(networkCalls).hasValue(0);
         verify(recorder, never()).succeeded(any(), any());
-        verify(recorder).ambiguous(any(), same(revoked));
+        verify(recorder).abortedBeforeDispatch(any());
+        verify(recorder, never()).ambiguous(any(), any());
     }
 
     @Test
@@ -329,10 +340,31 @@ class AiExecutionServiceTest {
         verify(recorder, never()).succeeded(any(), any());
     }
 
+    @Test
+    void configuredLimitAppliesEvenToSoftPolicyAndAdapterBypassingRetryExecutor() {
+        var single = new AiExecutionService(
+                provider, new AiProviderProperties("openai"), plans, recorder, scope, binding,
+                AiExecutionAttemptAuthorization.noOp(), dataAssurance, retryProperties(1));
+        when(provider.recordsPhysicalAttempts()).thenReturn(true);
+        when(plans.createOrRead(request)).thenReturn(plan);
+        var inflated = new AiProviderAttemptContext(OPERATION, UUID.randomUUID(), 1, 3);
+        when(provider.sendMessage(request.aiRequest())).thenAnswer(inv -> {
+            scope.started(inflated);
+            return response("gpt-5");
+        });
+        assertThatThrownBy(() -> single.execute(request))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("cap exceeded");
+        verifyNoInteractions(recorder, dataAssurance);
+    }
+
     private AiProviderRetryExecutor retry(int max) {
-        return new AiProviderRetryExecutor(new AiRetryProperties(true, max,
+        return new AiProviderRetryExecutor(retryProperties(max), scope);
+    }
+
+    private static AiRetryProperties retryProperties(int max) {
+        return new AiRetryProperties(true, max,
             Duration.ofMillis(10), Duration.ofMillis(10),
-            Duration.ofSeconds(1), Duration.ofSeconds(2)), scope);
+            Duration.ofSeconds(1), Duration.ofSeconds(2));
     }
 
     private static AiProviderRateLimitedException rateLimited() {

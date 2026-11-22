@@ -25,7 +25,8 @@ class AiExecutionAttemptOrganizationGateTest {
         UUID planId = UUID.randomUUID();
         when(repository.organizationEpochCurrent(planId)).thenReturn(false);
         AiExecutionAttemptRecorder recorder = new AiExecutionAttemptRecorder(
-                repository, Clock.fixed(Instant.parse("2026-10-10T00:00:00Z"), ZoneOffset.UTC));
+                repository, Clock.fixed(Instant.parse("2026-10-10T00:00:00Z"), ZoneOffset.UTC),
+                mock(org.springframework.transaction.PlatformTransactionManager.class));
         AiProviderAttemptContext attempt = new AiProviderAttemptContext(
                 UUID.randomUUID(), UUID.randomUUID(), 1, 1);
 

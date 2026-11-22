@@ -4,9 +4,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import ru.safeai.gateway.ai.dto.AiChatRequest;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
+import ru.safeai.gateway.ai.exception.AiProviderErrorType;
+import ru.safeai.gateway.ai.exception.AiProviderException;
 import ru.safeai.gateway.ai.provider.AiProvider;
 import ru.safeai.gateway.ai.provider.AiProviderProperties;
 import ru.safeai.gateway.ai.provider.AiProviderAttemptContext;
+import ru.safeai.gateway.ai.provider.AiRetryProperties;
 
 import java.util.Objects;
 import java.util.UUID;
@@ -24,6 +27,7 @@ public class AiExecutionService {
     private final AiModelExecutionPort bindingService;
     private final AiExecutionAttemptAuthorization attemptAuthorization;
     private final AiDataAssurancePort dataAssurance;
+    private final AiRetryProperties retryProperties;
 
     @Autowired
     public AiExecutionService(
@@ -34,7 +38,8 @@ public class AiExecutionService {
             AiExecutionAttemptScope scope,
             AiModelExecutionPort bindingService,
             AiExecutionAttemptAuthorization attemptAuthorization,
-            AiDataAssurancePort dataAssurance
+            AiDataAssurancePort dataAssurance,
+            AiRetryProperties retryProperties
     ) {
         this.provider = Objects.requireNonNull(provider, "provider");
         this.properties = Objects.requireNonNull(properties, "properties");
@@ -44,6 +49,7 @@ public class AiExecutionService {
         this.bindingService = Objects.requireNonNull(bindingService, "bindingService");
         this.attemptAuthorization = Objects.requireNonNull(attemptAuthorization, "attemptAuthorization");
         this.dataAssurance = Objects.requireNonNull(dataAssurance, "dataAssurance");
+        this.retryProperties = Objects.requireNonNull(retryProperties, "retryProperties");
     }
 
     public AiExecutionResult execute(AiExecutionRequest request) {
@@ -79,12 +85,26 @@ public class AiExecutionService {
             throw new IllegalStateException("Knowledge route is missing its durable execution permit");
         }
         ModelExecutionPlanEntity plan = planService.createOrRead(request);
-        AiChatResponse response = scope.execute(
-                request.aiRequest().providerOperationId(),
-                new Observer(plan, activeTarget, request),
-                oneAttemptOnly ? 1 : Integer.MAX_VALUE,
-                () -> provider.sendMessage(request.aiRequest())
-        );
+        AiChatResponse response;
+        try {
+            response = scope.execute(
+                    request.aiRequest().providerOperationId(),
+                    new Observer(plan, activeTarget, request),
+                    oneAttemptOnly ? 1 : retryProperties.effectiveMaxAttempts(),
+                    () -> provider.sendMessage(request.aiRequest())
+            );
+        } catch (AiDispatchAbortedException denied) {
+            if (denied.getCause() instanceof AiProviderException known
+                    && !known.isOutcomeAmbiguous() && !known.isRetryable()) {
+                throw known;
+            }
+            // Chat's existing unambiguous finalization releases its reservation.
+            // No provider status or request ID is fabricated.
+            throw new AiProviderException(activeTarget.providerType(),
+                    activeTarget.requestedPhysicalModel(), null, null,
+                    "DISPATCH_ABORTED", AiProviderErrorType.PERMISSION_DENIED,
+                    false, false, null, "Physical dispatch denied", denied);
+        }
         return new AiExecutionResult(plan.getId(), response);
     }
 
@@ -173,6 +193,13 @@ public class AiExecutionService {
             attemptAuthorization.beforeNetworkDispatch(request, attempt, leaseId);
             dataAssurance.require(request, true);
             recorder.beforeNetworkDispatch(plan.getId(), attempt.attemptId());
+        }
+
+        @Override
+        public boolean abortedBeforeDispatch(AiProviderAttemptContext attempt, RuntimeException reason) {
+            recorder.abortedBeforeDispatch(attempt.attemptId());
+            releaseLease(attempt, AiExecutionAttemptAuthorization.Outcome.ABORTED);
+            return true;
         }
 
         @Override

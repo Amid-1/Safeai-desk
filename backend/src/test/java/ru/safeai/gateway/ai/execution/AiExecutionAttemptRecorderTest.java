@@ -6,6 +6,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 import ru.safeai.gateway.ai.provider.AiProviderAttemptContext;
 
 import java.time.Clock;
@@ -43,6 +45,63 @@ class AiExecutionAttemptRecorderTest {
 
     @Mock
     private ModelExecutionAttemptRepository repository;
+
+    @Test
+    void dispatchRequiresDurableOneShotAuthorization() {
+        UUID attemptId = UUID.randomUUID();
+        when(repository.consumeDispatchAuthorization(PLAN, attemptId)).thenReturn(true, false);
+        recorder().beforeNetworkDispatch(PLAN, attemptId);
+        assertThatThrownBy(() -> recorder().beforeNetworkDispatch(PLAN, attemptId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Financial admission");
+        verify(repository, org.mockito.Mockito.times(2)).consumeDispatchAuthorization(PLAN, attemptId);
+        verify(repository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void dispatchAcknowledgementFailurePropagatesWithoutRetry() {
+        UUID attemptId = UUID.randomUUID();
+        var failure = new org.springframework.dao.DataAccessResourceFailureException("lost acknowledgement");
+        when(repository.consumeDispatchAuthorization(PLAN, attemptId)).thenThrow(failure);
+        assertThatThrownBy(() -> recorder().beforeNetworkDispatch(PLAN, attemptId)).isSameAs(failure);
+        verify(repository).consumeDispatchAuthorization(PLAN, attemptId);
+        verify(repository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void lostSettlementCommitAcknowledgementReadsExactTerminalEvidenceWithoutRewriting() {
+        var manager = mock(PlatformTransactionManager.class);
+        var tx = new SimpleTransactionStatus();
+        when(manager.getTransaction(any())).thenReturn(tx, new SimpleTransactionStatus());
+        org.mockito.Mockito.doThrow(new org.springframework.transaction.TransactionSystemException("lost commit ack"))
+                .doNothing().when(manager).commit(any());
+        var context = attempt(1);
+        var row = ModelExecutionAttemptEntity.started(PLAN, context.attemptId(), 1, TARGET, NOW);
+        var response = ru.safeai.gateway.ai.testsupport.AiTestFixtures.freeResponse();
+        when(repository.lockSettlement(context.attemptId())).thenReturn(true);
+        when(repository.findForSettlement(context.attemptId())).thenReturn(Optional.of(row));
+        var recorder = new AiExecutionAttemptRecorder(repository, Clock.fixed(NOW.plusSeconds(1), ZoneOffset.UTC), manager);
+        recorder.succeeded(context.attemptId(), response);
+        verify(repository, org.mockito.Mockito.times(2)).lockSettlement(context.attemptId());
+        verify(repository, org.mockito.Mockito.times(1)).saveAndFlush(row);
+        assertThat(row.getOutcome()).isEqualTo(ExecutionAttemptOutcome.SUCCEEDED);
+    }
+
+    @Test
+    void conflictingTerminalEvidenceNeverOverwritesStoredResult() {
+        var manager = mock(PlatformTransactionManager.class);
+        when(manager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
+        var context = attempt(1);
+        var row = ModelExecutionAttemptEntity.started(PLAN, context.attemptId(), 1, TARGET, NOW);
+        row.abortedBeforeDispatch(NOW.plusSeconds(1));
+        when(repository.lockSettlement(context.attemptId())).thenReturn(true);
+        when(repository.findForSettlement(context.attemptId())).thenReturn(Optional.of(row));
+        var recorder = new AiExecutionAttemptRecorder(repository, Clock.fixed(NOW.plusSeconds(2), ZoneOffset.UTC), manager);
+        assertThatThrownBy(() -> recorder.ambiguous(context.attemptId(), new IllegalStateException("unknown")))
+                .hasMessageContaining("Conflicting terminal evidence");
+        verify(repository, never()).saveAndFlush(any());
+        assertThat(row.getOutcomeCertainty()).isEqualTo(OutcomeCertainty.KNOWN_NOT_EXECUTED);
+    }
 
     @Test
     void firstAttemptMustBeNumberOneAndPersistsStartedEvidence() {
@@ -342,7 +401,7 @@ class AiExecutionAttemptRecorderTest {
     private AiExecutionAttemptRecorder recorder() {
         return new AiExecutionAttemptRecorder(
                 repository,
-                Clock.fixed(NOW, ZoneOffset.UTC)
+                Clock.fixed(NOW, ZoneOffset.UTC), mock(PlatformTransactionManager.class)
         );
     }
 

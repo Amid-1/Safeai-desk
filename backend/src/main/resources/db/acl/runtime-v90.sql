@@ -51,6 +51,7 @@ INSERT INTO acl_matrix VALUES
 ('model_cost_commitment_ledger_v62','S','',''),
 ('model_execution_attempts','SIU','',''),
 ('model_execution_plans','SI','','id'),
+('model_physical_dispatch_receipts_v100','S','attempt_id',''),
 ('model_policy_preview_confirmations','SD','organization_id,actor_id,token_hash,draft_hash,context_hash,lockout,expires_at','token_hash,draft_hash,context_hash,lockout,expires_at,result_policy_id'),
 ('model_execution_reconciliation_queue_v54','-','',''),
 ('model_route_budget_commitments_v64','SI','',''),
@@ -83,7 +84,7 @@ BEGIN
                    WHERE n.nspname='public' AND c.relkind='S') THEN
         RAISE EXCEPTION 'Unsafe default ACL, runtime capability or inventory';
     END IF;
-    IF (SELECT count(*) FROM acl_matrix) <> 65 OR EXISTS (
+    IF (SELECT count(*) FROM acl_matrix) <> 66 OR EXISTS (
         SELECT name FROM acl_matrix EXCEPT
         SELECT c.relname::text FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
         WHERE n.nspname='public' AND c.relkind IN ('r','p','v','m','f')
@@ -147,7 +148,7 @@ BEGIN
 END;
 $fn$;
 
--- All application-owned invoker routines are reviewed in the immutable V1–V99
+-- All application-owned invoker routines are reviewed in the immutable V1–V100
 -- history; extension functions are granted separately by bootstrap.
 -- SECURITY DEFINER functions retain only their migration-specific grants.
 DO $routines$
