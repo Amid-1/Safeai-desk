@@ -1,4 +1,4 @@
-// frontend/src/features/chat/controller/controller/useKnowledgeDeletionController.test.tsx
+// frontend/src/features/knowledge/controller/useKnowledgeDeletionController.test.tsx
 import {act, renderHook, waitFor} from '@testing-library/react'
 import {beforeEach, describe, expect, it, vi} from 'vitest'
 
@@ -6,23 +6,23 @@ import {
     acceptDocumentDeletion,
     deletionCapability,
     listDocumentDeletions,
-} from '../../../../entities/knowledge/api/knowledgeDocumentDeletionApi'
-import type {KnowledgeDocument} from '../../../../entities/knowledge/api/knowledgeDocumentApi'
-import type {KnowledgeDocumentDeletion} from '../../../../entities/knowledge/api/knowledgeDocumentDeletionApi'
+} from '../../../entities/knowledge/api/knowledgeDocumentDeletionApi'
+import type {KnowledgeDocument} from '../../../entities/knowledge/api/knowledgeDocumentApi'
+import type {KnowledgeDocumentDeletion} from '../../../entities/knowledge/api/knowledgeDocumentDeletionApi'
 import {
     clearKnowledgeDeletionRequestKey,
     getKnowledgeDeletionRequestKey,
-} from '../../../knowledge/lib/knowledgeDeletionRequestKey'
-import {deferred, flushMicrotasks} from '../../../knowledge/test/knowledgeDeletionTestUtils'
+} from '../lib/knowledgeDeletionRequestKey'
+import {deferred, flushMicrotasks} from '../test/knowledgeDeletionTestUtils'
 import {useKnowledgeDeletionController} from './useKnowledgeDeletionController'
 
-vi.mock('../../../../entities/knowledge/api/knowledgeDocumentDeletionApi', () => ({
+vi.mock('../../../entities/knowledge/api/knowledgeDocumentDeletionApi', () => ({
     acceptDocumentDeletion: vi.fn(),
     deletionCapability: vi.fn(),
     listDocumentDeletions: vi.fn(),
 }))
 
-vi.mock('../../../knowledge/lib/knowledgeDeletionRequestKey', () => ({
+vi.mock('../lib/knowledgeDeletionRequestKey', () => ({
     getKnowledgeDeletionRequestKey: vi.fn(),
     clearKnowledgeDeletionRequestKey: vi.fn(),
 }))

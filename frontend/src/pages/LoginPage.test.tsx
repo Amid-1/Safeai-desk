@@ -41,6 +41,22 @@ describe('LoginPage', () => {
         authMock.authError = null
     })
 
+    it('показывает пароль только по запросу и скрывает при отправке', async () => {
+        const user = userEvent.setup()
+        authMock.loginUser.mockResolvedValue(undefined)
+        render(<LoginPage />)
+        const password = screen.getByLabelText('Пароль')
+        expect(password).toHaveAttribute('type', 'password')
+        await user.type(screen.getByLabelText('Email'), 'user@safeai.test')
+        await user.type(password, 'secret')
+        await user.click(screen.getByRole('button', { name: 'Показать пароль' }))
+        expect(password).toHaveAttribute('type', 'text')
+        expect(authMock.loginUser).not.toHaveBeenCalled()
+        await user.click(screen.getByRole('button', { name: 'Войти' }))
+        expect(password).toHaveAttribute('type', 'password')
+        expect(authMock.loginUser).toHaveBeenCalledOnce()
+    })
+
     it('отправляется с клавиатуры и не trim-ит password', async () => {
         const user = userEvent.setup()
 

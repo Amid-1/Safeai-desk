@@ -57,9 +57,9 @@ export function MessageView({
                 {message.role === 'ASSISTANT' && mockModel && (
                     <span
                         className="message__demo-badge"
-                        title="Тестовый mock-провайдер, не внешняя языковая модель"
+                        title="Демонстрационный режим, не внешний AI"
                     >
-                        Тестовый ответ · mock
+                        Тестовый ответ
                     </span>
                 )}
             </div>
@@ -105,12 +105,9 @@ export function MessageView({
                             <div>
                                 <dt>Модель AI</dt>
                                 <dd>{getModelDisplayName(message.model)}</dd>
-                                {message.model && (
-                                    <code>{message.model}</code>
-                                )}
                                 <small>
                                     {mockModel
-                                        ? 'Тестовый провайдер для демонстрации интерфейса. Это не ответ внешней LLM.'
+                                        ? 'Демонстрационный ответ. Это не ответ внешней AI-модели.'
                                         : 'Модель, которая фактически сформировала этот ответ.'}
                                 </small>
                             </div>
@@ -133,34 +130,32 @@ export function MessageView({
                     {answerPassport && (
                         <details className="answer-passport">
                             <summary>
-                                Паспорт ответа · источников: {answerPassport.citations.length}
+                                Источники ответа ({answerPassport.citations.length})
                             </summary>
                             <p>
                                 Режим: {getKnowledgeModeLabel(answerPassport.knowledgeMode)}
                                 {' · '}Ссылки: {answerPassport.citationsValid ? 'проверены' : 'требуют проверки'}
-                                {' · '}Доказательств: {answerPassport.evidenceSufficient ? 'достаточно' : 'недостаточно'}
+                                {' · '}Источников: {answerPassport.evidenceSufficient ? 'достаточно' : 'недостаточно'}
                             </p>
                             <ul>
                                 {answerPassport.citations.map((citation) => (
                                     <li key={citation.chunkId}>
                                         <strong>[{citation.label}]</strong>
                                         {' '}{citation.documentName}
-                                        {' · v'}{citation.versionNumber}
+                                        {' · версия '}{citation.versionNumber}
                                         {citation.pageFrom != null
                                             ? ` · стр. ${citation.pageFrom}`
                                             : ''}
-                                        {' · chunk '}{citation.chunkOrdinal}
                                     </li>
                                 ))}
                             </ul>
-                            <small>
-                                Идентификатор поиска: {answerPassport.retrievalRunId}
-                            </small>
-                            {answerPassport.modelRouteDecisionId && (
-                                <small>
-                                    {' · '}Route decision: {answerPassport.modelRouteDecisionId}
-                                </small>
-                            )}
+                            <details className="answer-passport__technical">
+                                <summary>Сведения для поддержки</summary>
+                                <p>Номер поиска: <code>{answerPassport.retrievalRunId}</code></p>
+                                {answerPassport.modelRouteDecisionId && (
+                                    <p>Номер решения: <code>{answerPassport.modelRouteDecisionId}</code></p>
+                                )}
+                            </details>
                         </details>
                     )}
                 </>

@@ -1,4 +1,4 @@
-// frontend/src/features/chat/controller/controller/useKnowledgeVersionsController.ts
+// frontend/src/features/knowledge/controller/useKnowledgeVersionsController.ts
 import {
     useEffect,
     useRef,
@@ -7,18 +7,18 @@ import {
 import {
     fetchKnowledgeDocumentVersionBlob,
     getKnowledgeDocumentVersions,
-} from '../../../../entities/knowledge/api/knowledgeDocumentApi'
+} from '../../../entities/knowledge/api/knowledgeDocumentApi'
 import type {
     KnowledgeDocument,
     KnowledgeDocumentVersion,
-} from '../../../../entities/knowledge/api/knowledgeDocumentApi'
+} from '../../../entities/knowledge/api/knowledgeDocumentApi'
 import {
     getApiErrorMessage,
-} from '../../../../shared/api/http'
-import { downloadKnowledgeBlob, previewOrDownloadKnowledgeBlob } from '../../../knowledge/lib/knowledgeFileTransfer'
+} from '../../../shared/api/http'
+import { downloadKnowledgeBlob, previewOrDownloadKnowledgeBlob } from '../lib/knowledgeFileTransfer'
 import type {
     PageResponse,
-} from '../../../../shared/lib/page'
+} from '../../../shared/lib/page'
 import {
     KNOWLEDGE_DOCUMENT_PAGE_SIZE,
 } from './useKnowledgeDetailsData'

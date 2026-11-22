@@ -19,6 +19,8 @@ export function createTurnSubmission(deps: Pick<ChatControllerDependencies,
     | 'activeChat'
     | 'knowledgeMode'
     | 'knowledgeBaseId'
+    | 'knowledgeBases'
+    | 'knowledgeBasesStatus'
     | 'drafts'
     | 'clock'
     | 'pendingTurnsRef'
@@ -38,7 +40,8 @@ export function createTurnSubmission(deps: Pick<ChatControllerDependencies,
     | 'reconciliationControllersRef'
 >) {
     const {
-        capabilities, knowledgeMode, knowledgeBaseId, drafts, pendingTurnsRef, activeChatRef,
+        capabilities, knowledgeMode, knowledgeBaseId, knowledgeBases, knowledgeBasesStatus,
+        drafts, pendingTurnsRef, activeChatRef,
         scrollIntentRef, setSendError, activePendingTurn, activeChatHasPending, refreshChatTitle,
         ensureAutomaticChatTitle, handleSendFailure, applySendSuccess, finishPendingTurn,
         setDraft, putPendingTurn, sendInFlightRef, reconciliationControllersRef,
@@ -84,8 +87,10 @@ export function createTurnSubmission(deps: Pick<ChatControllerDependencies,
             return
         }
 
-        if (knowledgeMode !== 'GENERAL' && !knowledgeBaseId) {
-            setSendError('Выберите базу знаний для RAG-режима.')
+        if (knowledgeMode !== 'GENERAL' && (knowledgeBasesStatus !== 'ready'
+            || !knowledgeBases.some(base => base.id === knowledgeBaseId && base.enabled
+                && base.lifecycleState !== 'DELETING'))) {
+            setSendError('Выберите доступную базу знаний. Сообщение не отправлено.')
             return
         }
 

@@ -14,6 +14,8 @@ export default function ChatMessageComposer({ controller }: Props) {
         capabilities,
         knowledgeMode,
         knowledgeBaseId,
+        knowledgeBases,
+        knowledgeBasesStatus,
         setDraft,
         handleTextareaKeyDown,
         handleSendMessage,
@@ -21,10 +23,12 @@ export default function ChatMessageComposer({ controller }: Props) {
 
     if (!activeChat) return null
 
-    const canSend = !activeChatHasPending
+    const canSend = !activeChatHasPending && !activeChatBusy
         && hasMeaningfulContent(activeDraft)
         && activeDraft.length <= capabilities.maxMessageChars
-        && (knowledgeMode === 'GENERAL' || Boolean(knowledgeBaseId))
+        && (knowledgeMode === 'GENERAL' || (knowledgeBasesStatus === 'ready'
+            && knowledgeBases.some(base => base.id === knowledgeBaseId && base.enabled
+                && base.lifecycleState !== 'DELETING')))
 
     return (
         <div className="message-form">

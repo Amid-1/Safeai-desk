@@ -1,6 +1,7 @@
 // frontend/src/features/chat/controller/ChatKnowledgeModeSelector.tsx
 import type { ChatPageController } from './useChatPageController'
 import type { KnowledgeMode } from '../api/chatApi'
+import './ChatKnowledgeModeSelector.css'
 
 type Props = { controller: ChatPageController }
 
@@ -9,6 +10,9 @@ export default function ChatKnowledgeModeSelector({ controller }: Props) {
         knowledgeMode,
         knowledgeBaseId,
         knowledgeBases,
+        knowledgeBasesStatus,
+        knowledgeBasesHasMore,
+        loadKnowledgeBasesPage,
         activeChatBusy,
         activeChatHasPending,
         setKnowledgeMode,
@@ -40,8 +44,9 @@ export default function ChatKnowledgeModeSelector({ controller }: Props) {
                     <label htmlFor="knowledge-base">База знаний</label>
                     <select
                         id="knowledge-base"
-                        value={knowledgeBaseId}
-                        disabled={disabled}
+                        value={knowledgeBases.some(base => base.id === knowledgeBaseId) ? knowledgeBaseId : ''}
+                        disabled={disabled || knowledgeBasesStatus !== 'ready'}
+                        aria-describedby="chat-knowledge-status"
                         onChange={(event) => setKnowledgeBaseId(event.target.value)}
                     >
                         <option value="">Выберите базу знаний</option>
@@ -49,6 +54,23 @@ export default function ChatKnowledgeModeSelector({ controller }: Props) {
                             <option key={base.id} value={base.id}>{base.name}</option>
                         ))}
                     </select>
+                    <div id="chat-knowledge-status" className="chat-knowledge-status" role="status">
+                        {knowledgeBasesStatus === 'loading' && 'Загружаем доступные базы…'}
+                        {knowledgeBasesStatus === 'error' && 'Не удалось загрузить базы знаний.'}
+                        {knowledgeBasesStatus === 'ready' && knowledgeBases.length === 0
+                            && !knowledgeBasesHasMore && 'Доступных активных баз нет.'}
+                        {knowledgeBasesStatus === 'ready' && knowledgeBases.length > 0
+                            && !knowledgeBases.some(base => base.id === knowledgeBaseId)
+                            && 'Выберите базу, чтобы отправить сообщение.'}
+                        {knowledgeBasesStatus === 'error' && (
+                            <button type="button" className="secondary-button" disabled={disabled}
+                                onClick={loadKnowledgeBasesPage}>Повторить загрузку</button>
+                        )}
+                        {knowledgeBasesStatus === 'ready' && knowledgeBasesHasMore && (
+                            <button type="button" className="secondary-button" disabled={disabled}
+                                onClick={loadKnowledgeBasesPage}>Показать ещё базы</button>
+                        )}
+                    </div>
                 </>
             )}
         </div>

@@ -1,4 +1,4 @@
-// frontend/src/features/chat/controller/controller/useKnowledgeDocumentActions.ts
+// frontend/src/features/knowledge/controller/useKnowledgeDocumentActions.ts
 import {
     useRef,
     useState,
@@ -7,14 +7,14 @@ import {
     fetchKnowledgeDocumentBlob,
     reindexKnowledgeDocument,
     updateKnowledgeDocument,
-} from '../../../../entities/knowledge/api/knowledgeDocumentApi'
+} from '../../../entities/knowledge/api/knowledgeDocumentApi'
 import type {
     KnowledgeDocument,
-} from '../../../../entities/knowledge/api/knowledgeDocumentApi'
+} from '../../../entities/knowledge/api/knowledgeDocumentApi'
 import {
     getApiErrorMessage,
-} from '../../../../shared/api/http'
-import { downloadKnowledgeBlob, previewOrDownloadKnowledgeBlob } from '../../../knowledge/lib/knowledgeFileTransfer'
+} from '../../../shared/api/http'
+import { downloadKnowledgeBlob, previewOrDownloadKnowledgeBlob } from '../lib/knowledgeFileTransfer'
 
 type UseKnowledgeDocumentActionsOptions = {
     knowledgeBaseId: string

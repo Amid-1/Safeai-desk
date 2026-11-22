@@ -9,7 +9,7 @@ import { KnowledgeUploadDialog } from './details/KnowledgeUploadDialog'
 import { KnowledgeVersionsDialog } from './details/KnowledgeVersionsDialog'
 import { KnowledgeDeleteDialog } from './details/KnowledgeDeleteDialog'
 import { KnowledgeErasureDialog } from './KnowledgeErasureDialog'
-import { useKnowledgeDetailsPageController } from '../../chat/controller/controller/useKnowledgeDetailsPageController'
+import { useKnowledgeDetailsPageController } from '../controller/useKnowledgeDetailsPageController'
 
 export function KnowledgeDetailsWorkspace() {
     const navigate = useNavigate()
@@ -29,6 +29,12 @@ export function KnowledgeDetailsWorkspace() {
                     data.error
                     || 'База знаний не найдена.'
                 }
+                action={<>
+                    <button type="button" onClick={() => void data.retryOverview()}>Повторить</button>
+                    <button type="button" className="secondary-button" onClick={() => navigate('/knowledge')}>
+                        К базам знаний
+                    </button>
+                </>}
             />
         )
     }

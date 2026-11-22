@@ -41,11 +41,11 @@ const completed: DisplayMessage = {
 describe('mock-provider response badge', () => {
     it('labels the known mock model explicitly', () => {
         render(<MessageView message={completed} />)
-        expect(screen.getByText('Тестовый ответ · mock')).toBeInTheDocument()
+        expect(screen.getByText('Тестовый ответ')).toBeInTheDocument()
     })
 
     it('does not label a non-mock response as a test response', () => {
         render(<MessageView message={{ ...completed, model: 'gpt-example' }} />)
-        expect(screen.queryByText('Тестовый ответ · mock')).not.toBeInTheDocument()
+        expect(screen.queryByText('Тестовый ответ')).not.toBeInTheDocument()
     })
 })

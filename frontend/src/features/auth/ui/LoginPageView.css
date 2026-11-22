@@ -1,0 +1,26 @@
+/* frontend/src/features/auth/ui/LoginPageView.css */
+.login-page__hint {
+    margin: 0;
+    color: var(--safeai-muted);
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.login-page__password {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 8px;
+    min-width: 0;
+}
+
+.login-page__password > input {
+    flex: 1 1 160px;
+    min-width: 0;
+}
+
+.login-page__password > button {
+    flex: 0 0 auto;
+    min-height: var(--safeai-control-height);
+    font-size: 13px;
+}

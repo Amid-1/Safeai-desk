@@ -16,6 +16,7 @@ import {
     sendMessage,
 } from '../api/chatApi'
 import { getKnowledgeBases } from '../../../entities/knowledge/api/knowledgeApi'
+import type { KnowledgeBase } from '../../../entities/knowledge/api/knowledgeApi'
 import {
     assistantMessage, capabilities, chat, IDS, passport,
     slice, succeeded, turn, userMessage,
@@ -48,6 +49,12 @@ const getKnowledgeBasesMock = vi.mocked(getKnowledgeBases)
 const sendMock = vi.mocked(sendMessage)
 const getPassportMock = vi.mocked(getAnswerPassport)
 const getTurnStatusMock = vi.mocked(getChatTurnStatus)
+const base: KnowledgeBase = {
+    id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', organizationId: IDS.chat,
+    name: 'Инструкции', description: null, visibility: 'ORGANIZATION', enabled: true,
+    lifecycleState: 'AVAILABLE', createdByUserId: IDS.chat, version: 1,
+    createdAt: '2026-11-22T00:00:00Z', updatedAt: '2026-11-22T00:00:00Z',
+}
 
 beforeEach(() => {
     vi.clearAllMocks()
@@ -175,6 +182,43 @@ describe('useChatPageController — жизненный цикл', () => {
         await waitFor(() => expect(result.current.activeChat?.id).toBe(IDS.chat))
         expect(result.current.knowledgeBases).toEqual([])
         expect(result.current.knowledgeMode).toBe('GENERAL')
+        await waitFor(() => expect(result.current.knowledgeBasesStatus).toBe('error'))
+        getKnowledgeBasesMock.mockResolvedValue({
+            content: [base], page: 0, size: 100, totalElements: 1, totalPages: 1,
+        })
+        act(() => result.current.loadKnowledgeBasesPage())
+        await waitFor(() => expect(result.current.knowledgeBasesStatus).toBe('ready'))
+        expect(result.current.knowledgeBases).toEqual([base])
+    })
+
+    it('загружает следующие страницы и исключает базы в процессе удаления', async () => {
+        const second = { ...base, id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' }
+        getKnowledgeBasesMock.mockResolvedValueOnce({
+            content: [base], page: 0, size: 100, totalElements: 101, totalPages: 2,
+        }).mockResolvedValueOnce({
+            content: [second, { ...base, lifecycleState: 'DELETING' }],
+            page: 1, size: 100, totalElements: 101, totalPages: 2,
+        })
+        const { result } = renderHook(() => useChatPageController())
+        await waitFor(() => expect(result.current.knowledgeBasesHasMore).toBe(true))
+        act(() => result.current.loadKnowledgeBasesPage())
+        await waitFor(() => expect(result.current.knowledgeBases).toEqual([second]))
+        expect(result.current.knowledgeBasesHasMore).toBe(false)
+        expect(getKnowledgeBasesMock).toHaveBeenLastCalledWith(1, 100, expect.any(Object))
+    })
+
+    it('не отправляет запрос в недоступную базу и сохраняет черновик', async () => {
+        const { result } = renderHook(() => useChatPageController())
+        await waitFor(() => expect(result.current.activeChat?.id).toBe(IDS.chat))
+        act(() => {
+            result.current.setKnowledgeMode('KNOWLEDGE_ONLY')
+            result.current.setKnowledgeBaseId(base.id)
+            result.current.setDraft(IDS.chat, 'Вопрос')
+        })
+        await act(async () => { await result.current.handleSendMessage() })
+        expect(sendMock).not.toHaveBeenCalled()
+        expect(result.current.activeDraft).toBe('Вопрос')
+        expect(result.current.knowledgeMode).toBe('KNOWLEDGE_ONLY')
     })
 
     it('прерывает незавершённые GET при размонтировании компонента', async () => {

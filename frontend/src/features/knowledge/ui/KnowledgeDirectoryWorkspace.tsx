@@ -6,7 +6,7 @@ import KnowledgeMembersModal from './KnowledgeMembersModal'
 import KnowledgePagination from './KnowledgePagination'
 import { BaseDeletionHistory } from './BaseDeletionHistory'
 import { EmptyState, ErrorState, LoadingState } from '../../../shared/ui/StateBlock'
-import { useKnowledgeDirectoryController } from '../../chat/controller/controller/useKnowledgeDirectoryController'
+import { useKnowledgeDirectoryController } from '../controller/useKnowledgeDirectoryController'
 import type { ActivityFilter, VisibilityFilter } from '../model/knowledgeDirectoryTypes'
 
 export function KnowledgeDirectoryWorkspace() {
@@ -21,7 +21,7 @@ export function KnowledgeDirectoryWorkspace() {
                 <div>
                     <h1>Базы знаний</h1>
                     <p className="muted">
-                        Корпоративные базы знаний текущей организации.
+                        Документы и инструкции, которые AI может использовать в ответах.
                     </p>
                 </div>
                 {canManage && (
@@ -49,7 +49,7 @@ export function KnowledgeDirectoryWorkspace() {
                     />
                 </label>
                 <label className="knowledge-page__filter">
-                    <span>Активность</span>
+                    <span>Статус</span>
                     <select
                         value={activity}
                         onChange={(event) => {
@@ -63,7 +63,7 @@ export function KnowledgeDirectoryWorkspace() {
                     </select>
                 </label>
                 <label className="knowledge-page__filter">
-                    <span>Доступность</span>
+                    <span>Кому доступна</span>
                     <select
                         value={visibility}
                         onChange={(event) => {
@@ -124,7 +124,9 @@ export function KnowledgeDirectoryWorkspace() {
                                     Сбросить фильтры
                                 </button>
                             )
-                            : undefined}
+                            : canManage
+                                ? <button type="button" onClick={() => setCreateOpen(true)}>Создать первую базу</button>
+                                : undefined}
                     />
                 )}
 

@@ -177,7 +177,7 @@ export function KnowledgeDetailsContent({
                                     {access && !access.canEditDocuments && (
                                         <span
                                             className="knowledge-details__base-state"
-                                            title={`Уровень доступа: ${access.accessLevel}`}
+                                            title="Можно просматривать документы, но нельзя изменять их"
                                         >
                                             Только чтение
                                         </span>
@@ -222,16 +222,21 @@ export function KnowledgeDetailsContent({
                                 <div>
                                     <span className="knowledge-health__eyebrow">Готовность базы к поиску</span>
                                     <strong>{healthStateLabel(health.state)}</strong>
-                                    <small>
-                                        {embeddingModelLabel(health.activeEmbeddingModel)}
-                                        {' · '}
-                                        <code>{health.activeEmbeddingModel}</code>
-                                    </small>
+                                    {health.activeEmbeddingModel === 'safeai-feature-hash-v1' && (
+                                        <small>Демонстрационный поиск</small>
+                                    )}
                                     <p>{healthStateDescription(health.state)}</p>
+                                    {access?.canEditDocuments && (
+                                        <details className="knowledge-health__technical">
+                                            <summary>Технические сведения</summary>
+                                            <p>Модель поиска: <code>{health.activeEmbeddingModel}</code></p>
+                                            <p>Фрагменты для AI: {health.activeChunks}</p>
+                                            <p>Последняя проверка: {formatDateTime(health.checkedAt)}</p>
+                                        </details>
+                                    )}
                                 </div>
                                 <dl>
                                     <HealthMetric label="Готовы к поиску" value={`${health.searchableDocuments} из ${health.enabledDocuments}`} hint="документов" />
-                                    <HealthMetric label="Фрагменты для AI" value={health.activeChunks} hint="частей документов" />
                                     <HealthMetric label="Обрабатываются" value={health.pendingDocuments + health.processingDocuments} hint="документов" />
                                     <HealthMetric label="Ошибки обработки" value={health.failedDocuments + health.staleEmbeddingDocuments} hint="нужна проверка" />
                                 </dl>
@@ -494,7 +499,7 @@ export function KnowledgeDetailsContent({
                                                             {access?.canEditDocuments
                                                                 ? ' Проверьте файл и запустите повторную обработку.'
                                                                 : ' Обратитесь к администратору базы.'}
-                                                            {' '}Точная причина не передаётся этим API.
+                                                            {' '}Если ошибка повторяется, обратитесь в поддержку.
                                                         </small>
                                                     )}
                                                     {status !== 'READY' && (
@@ -637,18 +642,12 @@ function healthStateDescription(state: KnowledgeHealth['state']): string {
 
 function healthStateLabel(state: KnowledgeHealth['state']): string {
     switch (state) {
-        case 'HEALTHY': return 'База готова к ответам'
+        case 'HEALTHY': return 'Документы готовы к поиску'
         case 'INDEXING': return 'Документы подготавливаются'
         case 'DEGRADED': return 'Некоторые документы требуют внимания'
         case 'DISABLED': return 'База отключена'
         default: return 'Документов пока нет'
     }
-}
-
-function embeddingModelLabel(model: string): string {
-    return model === 'safeai-feature-hash-v1'
-        ? 'Демонстрационная векторизация'
-        : 'Модель смыслового поиска'
 }
 
 function HealthMetric({

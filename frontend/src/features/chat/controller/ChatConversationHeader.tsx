@@ -32,7 +32,7 @@ export default function ChatConversationHeader({ controller }: Props) {
                             : 'chat-panel__model-badge'}
                         title={`Модель последнего ответа: ${lastAssistantModel}`}
                     >
-                        {modelIsMock ? 'Тестовый ответ · mock' : 'Ответ AI-модели'}
+                        {modelIsMock ? 'Тестовый ответ' : 'Ответ AI-модели'}
                     </span>
                 )}
                 <button

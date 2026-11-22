@@ -1,4 +1,4 @@
-// frontend/src/features/chat/controller/controller/useKnowledgeDetailsPageController.ts
+// frontend/src/features/knowledge/controller/useKnowledgeDetailsPageController.ts
 // Композитор хуков данных, документов, версий и загрузки; порядок хуков сохранён.
 import { useRef } from 'react'
 import { useParams } from 'react-router-dom'

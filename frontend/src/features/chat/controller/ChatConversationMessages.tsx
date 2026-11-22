@@ -38,7 +38,7 @@ export default function ChatConversationMessages({ controller }: Props) {
                 aria-busy={activeChatBusy}
             >
                 {displayMessages.length === 0 && !activeChatBusy && (
-                    <p>Сообщений пока нет.</p>
+                    <p>Напишите сообщение, чтобы начать разговор.</p>
                 )}
                 {displayMessages.map((item) => (
                     <MessageView
@@ -49,7 +49,7 @@ export default function ChatConversationMessages({ controller }: Props) {
                 ))}
                 {isAwaitingAnswer && (
                     <div className="message assistant pending" role="status" aria-live="polite">
-                        <strong>ASSISTANT</strong>
+                        <strong>SafeAI</strong>
                         <p>{activePendingTurn?.status === 'SENDING'
                             ? 'Запрос отправляется...'
                             : 'Формируется ответ...'}</p>

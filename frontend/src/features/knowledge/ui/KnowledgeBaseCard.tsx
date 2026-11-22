@@ -27,11 +27,13 @@ function KnowledgeBaseCard({
     onEdit,
     onMembers,
 }: KnowledgeBaseCardProps) {
-    const [stats, setStats] = useState<{
-        total: number
-        ready: number
-        processing: number
+    const [observation, setObservation] = useState<{
+        key: string
+        stats: { total: number; ready: number; processing: number } | null
     } | null>(null)
+    const observationKey = `${knowledgeBase.id}:${knowledgeBase.version}`
+    const current = observation?.key === observationKey ? observation : null
+    const stats = current?.stats
 
     useEffect(() => {
         const controller = new AbortController()
@@ -40,19 +42,21 @@ function KnowledgeBaseCard({
             knowledgeBase.id,
             controller.signal,
         ).then((health) => {
-            setStats({
-                total: health.totalDocuments,
-                ready: health.searchableDocuments,
-                processing:
-                    health.pendingDocuments
-                    + health.processingDocuments,
+            if (controller.signal.aborted) return
+            setObservation({
+                key: observationKey,
+                stats: {
+                    total: health.totalDocuments,
+                    ready: health.searchableDocuments,
+                    processing: health.pendingDocuments + health.processingDocuments,
+                },
             })
         }).catch(() => {
-            if (!controller.signal.aborted) setStats(null)
+            if (!controller.signal.aborted) setObservation({ key: observationKey, stats: null })
         })
 
         return () => controller.abort()
-    }, [knowledgeBase.id])
+    }, [knowledgeBase.id, observationKey])
     return (
         <article
             className={
@@ -144,6 +148,9 @@ function KnowledgeBaseCard({
                 <div><dt>Готовы к поиску</dt><dd>{stats?.ready ?? '—'}</dd></div>
                 <div><dt>Обрабатываются</dt><dd>{stats?.processing ?? '—'}</dd></div>
             </dl>
+            {!stats && <p className="muted">
+                {current ? 'Сведения о документах пока недоступны.' : 'Загружаем сведения о документах…'}
+            </p>}
 
             {canManage && (
                 <div className="knowledge-card__actions">

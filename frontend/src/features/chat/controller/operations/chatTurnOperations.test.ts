@@ -78,13 +78,16 @@ function harness() {
         putPendingTurn: updates.putPendingTurn,
     })
     const makeSubmission = (overrides: Partial<Pick<ChatControllerDependencies,
-        'knowledgeMode' | 'knowledgeBaseId' | 'capabilities' | 'activePendingTurn'
+        'knowledgeMode' | 'knowledgeBaseId' | 'knowledgeBases' | 'knowledgeBasesStatus'
+        | 'capabilities' | 'activePendingTurn'
     >> = {}) => createTurnSubmission({
         capabilities: { maxMessageChars: 16_000, maxChatPageSize: 100,
             maxMessagePageSize: 100, detailsMessageLimit: 50 },
         activeChat: currentChat,
         knowledgeMode: 'GENERAL',
         knowledgeBaseId: '',
+        knowledgeBases: [],
+        knowledgeBasesStatus: 'ready',
         drafts,
         clock: Date.now(),
         pendingTurnsRef,
@@ -150,7 +153,8 @@ describe('Контракт отправки и idempotency', () => {
         const h = harness()
         await h.makeSubmission({ knowledgeMode: 'KNOWLEDGE_ONLY' }).handleSendMessage()
         expect(sendMock).not.toHaveBeenCalled()
-        expect(h.sendError).toContain('Выберите базу знаний')
+        expect(h.sendError).toContain('Выберите доступную базу знаний')
+        expect(h.drafts[IDS.chat]).toBe('hello')
     })
 
     it('отклоняет сообщения за пределом maxMessageChars', async () => {

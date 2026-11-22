@@ -570,8 +570,21 @@ describe(
             renderPage()
             expect(await screen.findByText(/Предыдущая поисковая версия сохранена/))
                 .toBeInTheDocument()
-            expect(screen.getByText(/Точная причина не передаётся этим API/))
+            expect(screen.getByText(/Если ошибка повторяется, обратитесь в поддержку/))
                 .toBeInTheDocument()
+        })
+
+        it('после отказа повторной проверки доступа скрывает документы и управление', async () => {
+            renderPage()
+            await screen.findByRole('button', { name: 'Загрузить документ' })
+            getKnowledgeBaseAccessMock.mockRejectedValueOnce(new ApiError('private', {}, 403))
+            fireEvent.click(screen.getByRole('button', { name: 'Обновить статусы' }))
+            await waitFor(() => expect(screen.queryByRole('button', { name: 'Загрузить документ' }))
+                .not.toBeInTheDocument())
+            expect(screen.queryByRole('table')).not.toBeInTheDocument()
+            const retry = screen.getByRole('button', { name: 'Повторить' })
+            fireEvent.click(retry)
+            expect(await screen.findByRole('button', { name: 'Загрузить документ' })).toBeVisible()
         })
 
         it(
@@ -703,17 +716,17 @@ describe(
                 renderPage()
 
                 expect(
-                    await screen.findByText('База готова к ответам'),
+                    await screen.findByText('Документы готовы к поиску'),
                 ).toBeInTheDocument()
-                expect(
-                    screen.getByText('Фрагменты для AI'),
-                ).toBeInTheDocument()
+                const technical = screen.getByText('Технические сведения')
+                expect(screen.getByText('Фрагменты для AI: 12')).not.toBeVisible()
+                fireEvent.click(technical)
+                expect(screen.getByText('Фрагменты для AI: 12')).toBeVisible()
                 expect(
                     screen.getByRole('heading', {
                         name: 'Загруженные документы',
                     }),
                 ).toBeInTheDocument()
-                expect(screen.getByText('12')).toBeInTheDocument()
 
                 fireEvent.click(screen.getByText('Другие действия'))
                 fireEvent.click(screen.getByRole('button', {

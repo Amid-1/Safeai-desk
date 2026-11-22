@@ -407,6 +407,28 @@ test('live portrait, landscape and desktop reflow preserves chat draft and navig
   await noPageOverflow(page)
 })
 
+test('knowledge catalog failure does not send chat in another mode', async ({page}) => {
+  await fixture(page, 'USER')
+  let catalogAvailable = false
+  await page.route('**/api/knowledge-bases?*', async route => {
+    if (!catalogAvailable) await route.fulfill({status: 503, json: {message: 'Unavailable'}})
+    else await route.fallback()
+  })
+  await page.goto('/chat')
+  await page.getByRole('button', {name: 'Открыть чат «Тестовый чат»'}).click()
+  const composer = page.getByPlaceholder('Введите сообщение. Ctrl+Enter — отправить')
+  await composer.fill('Черновик вопроса')
+  await page.getByLabel('Режим ответа').selectOption('KNOWLEDGE_ONLY')
+  await expect(page.getByText('Не удалось загрузить базы знаний.')).toBeVisible()
+  const send = page.getByRole('button', {name: 'Отправить', exact: true})
+  await expect(send).toBeDisabled()
+  catalogAvailable = true
+  await page.getByRole('button', {name: 'Повторить загрузку'}).click()
+  await page.getByLabel('База знаний', {exact: true}).selectOption({label: base.name})
+  await expect(send).toBeEnabled()
+  await expect(composer).toHaveValue('Черновик вопроса')
+})
+
 test('mobile shell keyboard navigation and visual evidence', async ({page}, testInfo) => {
   await fixture(page, 'SUPER_ADMIN')
   await page.setViewportSize({width: 320, height: 640})

@@ -171,10 +171,10 @@ describe('KnowledgePage', () => {
         displayPage()
         await screen.findByText('Баз знаний пока нет')
 
-        fireEvent.change(screen.getByRole('combobox', { name: 'Активность' }), {
+        fireEvent.change(screen.getByRole('combobox', { name: 'Статус' }), {
             target: { value: 'disabled' },
         })
-        fireEvent.change(screen.getByRole('combobox', { name: 'Доступность' }), {
+        fireEvent.change(screen.getByRole('combobox', { name: 'Кому доступна' }), {
             target: { value: 'MEMBERS' },
         })
         await waitFor(() => {

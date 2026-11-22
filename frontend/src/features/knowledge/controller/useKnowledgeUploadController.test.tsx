@@ -1,12 +1,14 @@
-// frontend/src/features/chat/controller/controller/useKnowledgeUploadController.test.tsx
+// frontend/src/features/knowledge/controller/useKnowledgeUploadController.test.tsx
 // Двойная отправка, версия документа и безопасный сброс состояния загрузки.
 import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { uploadKnowledgeDocument, uploadKnowledgeDocumentVersion } from '../../../../entities/knowledge/api/knowledgeDocumentApi'
-import { ApiError } from '../../../../shared/api/http'
+import {
+    uploadKnowledgeDocument, uploadKnowledgeDocumentVersion,
+} from '../../../entities/knowledge/api/knowledgeDocumentApi'
+import { ApiError } from '../../../shared/api/http'
 import { useKnowledgeUploadController } from './useKnowledgeUploadController'
 
-vi.mock('../../../../entities/knowledge/api/knowledgeDocumentApi', () => ({
+vi.mock('../../../entities/knowledge/api/knowledgeDocumentApi', () => ({
     uploadKnowledgeDocument: vi.fn(), uploadKnowledgeDocumentVersion: vi.fn(),
 }))
 const upload = vi.mocked(uploadKnowledgeDocument)
