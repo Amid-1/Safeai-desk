@@ -7,6 +7,7 @@ import {
     screen,
     fireEvent,
 } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import {
     MemoryRouter,
 } from 'react-router-dom'
@@ -46,6 +47,11 @@ const authMock = vi.hoisted(() => ({
         logoutUser: vi.fn(),
         reloadCurrentUser: vi.fn(),
     },
+}))
+
+// Route tests own the auth state; the real provider is tested separately.
+vi.mock('../features/auth/state/AuthContext', () => ({
+    AuthProvider: ({ children }: { children: ReactNode }) => children,
 }))
 
 vi.mock('../features/auth/state/useAuth', () => ({
@@ -224,6 +230,34 @@ describe(
                 null,
                 'unauthenticated',
             )
+        })
+
+        it('закрывает меню при выборе раздела и переносит фокус к содержимому', async () => {
+            setAuth(ADMIN, 'authenticated')
+            renderAt('/chat')
+            await screen.findByTestId('chat-page')
+            const menu = screen.getByRole('button', { name: 'Меню' })
+            expect(menu).toHaveAttribute('aria-expanded', 'false')
+            fireEvent.click(menu)
+            expect(menu).toHaveAttribute('aria-expanded', 'true')
+            fireEvent.click(screen.getByRole('link', { name: 'Базы знаний' }))
+            await screen.findByTestId('knowledge-page')
+            expect(menu).toHaveAttribute('aria-expanded', 'false')
+            expect(screen.getByRole('main')).toHaveFocus()
+        })
+
+        it('Escape закрывает мобильное меню, а ссылка пропуска переводит фокус в main', async () => {
+            setAuth(ADMIN, 'authenticated')
+            renderAt('/chat')
+            await screen.findByTestId('chat-page')
+            const menu = screen.getByRole('button', { name: 'Меню' })
+            vi.spyOn(menu, 'getClientRects').mockReturnValue({ length: 1 } as DOMRectList)
+            fireEvent.click(menu)
+            fireEvent.keyDown(window, { key: 'Escape' })
+            expect(menu).toHaveAttribute('aria-expanded', 'false')
+            expect(menu).toHaveFocus()
+            fireEvent.click(screen.getByRole('link', { name: 'Перейти к содержимому' }))
+            expect(screen.getByRole('main')).toHaveFocus()
         })
 
         it('не сохраняет страницу при смене организации текущего администратора', async () => {

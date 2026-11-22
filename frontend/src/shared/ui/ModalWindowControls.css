@@ -20,11 +20,11 @@
     min-height: var(--modal-resize-control-height, 38px);
     padding: 0;
     place-items: center;
-    border: 1px solid #cbd7e8;
+    border: 1px solid var(--safeai-line, #d9e2ef);
     border-radius: calc(10px * var(--modal-resize-scale, 1));
-    background: #fff;
+    background: var(--safeai-surface, #fff);
     box-shadow: none;
-    color: #1f2a3b;
+    color: var(--safeai-ink, #17243b);
     font-size: calc(20px * var(--modal-resize-scale, 1));
     font-weight: 700;
     line-height: 1;
@@ -38,7 +38,7 @@
 }
 
 .modal-card > .modal-header > .modal-window-actions > button:focus-visible {
-    outline: 3px solid #2457d6;
+    outline: 3px solid var(--safeai-focus, #2457d6);
     outline-offset: 2px;
 }
 

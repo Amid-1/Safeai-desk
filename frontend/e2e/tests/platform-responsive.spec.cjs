@@ -2,7 +2,7 @@
 const { test, expect } = require('@playwright/test')
 const { URL } = require('node:url')
 
-const sizes = [[360,800], [390,844], [430,932], [768,1024], [1024,768],
+const sizes = [[320,640], [360,800], [390,844], [430,932], [768,1024], [1024,768],
   [1280,720], [1366,768], [1440,900], [1920,1080], [2560,1440], [3840,2160],
   [960,540], [720,450]] // last two: CSS reflow at effective 200% zoom, not browser zoom
 const org = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -128,6 +128,18 @@ async function reachable(control) {
   // Playwright checks stability, pointer hit target and overlays, without force.
   await control.click({trial: true})
   await expect(control).toBeInViewport({ratio: 0.9})
+}
+
+async function openNavigation(page) {
+  await expect(page.locator('.topbar')).toBeVisible()
+  const menu = page.getByRole('button', {name: 'Меню', exact: true})
+  if (await menu.isVisible() && await menu.getAttribute('aria-expanded') !== 'true') await menu.click()
+  return page.getByRole('navigation', {name: 'Основная навигация'})
+}
+
+async function closeNavigation(page) {
+  const menu = page.getByRole('button', {name: 'Меню', exact: true})
+  if (await menu.isVisible() && await menu.getAttribute('aria-expanded') === 'true') await menu.click()
 }
 
 async function tableEdges(table) {
@@ -327,10 +339,11 @@ for (const [width, height] of sizes) {
       test(`${role} ${entry.path} usable without page overflow`, async ({page}) => {
         await fixture(page, role)
         await page.goto(entry.path)
-        const nav = page.getByRole('navigation', {name: 'Основная навигация'})
+        const nav = await openNavigation(page)
         const link = nav.getByRole('link', {name: entry.link, exact: true})
         await expect(link).toHaveAttribute('aria-current', 'page')
         await reachable(link)
+        await closeNavigation(page)
         await entry.exercise(page, role, width, height)
         await noPageOverflow(page)
       })
@@ -358,12 +371,14 @@ for (const [width, height] of sizes) {
         for (const entry of routes.filter(item => !item.roles.includes(role))) {
           await page.goto(entry.path)
           await expect(page.getByRole('alert')).toContainText('Недостаточно прав')
-          await expect(page.getByRole('navigation', {name: 'Основная навигация'}).getByRole('link', {name: entry.link, exact: true})).toHaveCount(0)
+          const nav = await openNavigation(page)
+          await expect(nav.getByRole('link', {name: entry.link, exact: true})).toHaveCount(0)
           await noPageOverflow(page)
         }
         expect(requests.filter(path => !path.startsWith('/api/auth/'))).toEqual([])
         const allowed = routes.find(item => item.roles.includes(role))
-        await page.getByRole('navigation', {name: 'Основная навигация'}).getByRole('link', {name: allowed.link, exact: true}).click()
+        const nav = await openNavigation(page)
+        await nav.getByRole('link', {name: allowed.link, exact: true}).click()
         await expect(page).toHaveURL(new RegExp(`${allowed.path}$`))
         await noPageOverflow(page)
       })
@@ -386,7 +401,65 @@ test('live portrait, landscape and desktop reflow preserves chat draft and navig
     await expect(composer).toHaveValue('Несохранённый черновик')
     await noPageOverflow(page)
   }
-  await page.getByRole('navigation', {name: 'Основная навигация'}).getByRole('link', {name: 'Базы знаний'}).click()
+  const nav = await openNavigation(page)
+  await nav.getByRole('link', {name: 'Базы знаний'}).click()
   await expect(page.getByRole('link', {name: base.name})).toBeVisible()
   await noPageOverflow(page)
+})
+
+test('mobile shell keyboard navigation and visual evidence', async ({page}, testInfo) => {
+  await fixture(page, 'SUPER_ADMIN')
+  await page.setViewportSize({width: 320, height: 640})
+  await page.goto('/admin/organizations')
+  const menu = page.getByRole('button', {name: 'Меню', exact: true})
+  await expect(menu).toHaveAttribute('aria-expanded', 'false')
+  const nav = page.locator('#main-navigation')
+  await expect(nav).toBeHidden()
+  const skip = page.getByRole('link', {name: 'Перейти к содержимому'})
+  await skip.focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('main')).toBeFocused()
+  await menu.focus()
+  await page.keyboard.press('Enter')
+  await expect(nav).toBeVisible()
+  await expect(nav.getByRole('link', {name: 'Организации'})).toHaveAttribute('aria-current', 'page')
+  await noPageOverflow(page)
+  await testInfo.attach('shell-mobile', {body: await page.screenshot(), contentType: 'image/png'})
+  await page.keyboard.press('Escape')
+  await expect(nav).toBeHidden()
+  await expect(menu).toBeFocused()
+  await page.keyboard.press('Enter')
+  await nav.getByRole('link', {name: 'Пользователи'}).click()
+  await expect(page).toHaveURL(/\/admin\/users$/)
+  await expect(nav).toBeHidden()
+  await expect(page.getByRole('main')).toBeFocused()
+  await page.setViewportSize({width: 1440, height: 900})
+  await expect(nav).toBeVisible()
+  await noPageOverflow(page)
+  await testInfo.attach('shell-desktop', {body: await page.screenshot(), contentType: 'image/png'})
+})
+
+test('shared organization dialog geometry is independent of visiting users', async ({page}) => {
+  await fixture(page, 'SUPER_ADMIN')
+  await page.setViewportSize({width: 1440, height: 900})
+  await page.goto('/admin/organizations')
+  async function measure() {
+    const row = page.getByRole('row').filter({hasText: company.name})
+    await row.getByRole('button', {name: 'Подробнее'}).click()
+    const dialog = page.getByRole('dialog', {name: 'Карточка организации'})
+    await expect(dialog).toContainText(company.name)
+    const style = await dialog.evaluate(el => {
+      const card = el.ownerDocument.defaultView.getComputedStyle(el)
+      const body = el.ownerDocument.defaultView.getComputedStyle(el.querySelector('.modal-body'))
+      return [card.display, card.borderRadius, card.padding, body.padding, body.overflowY]
+    })
+    await closeModal(page, dialog)
+    return style
+  }
+  const initial = await measure()
+  const nav = await openNavigation(page)
+  await nav.getByRole('link', {name: 'Пользователи'}).click()
+  await expect(page.getByRole('searchbox')).toBeVisible()
+  await nav.getByRole('link', {name: 'Организации'}).click()
+  expect(await measure()).toEqual(initial)
 })

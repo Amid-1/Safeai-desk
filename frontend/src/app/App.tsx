@@ -6,7 +6,10 @@ import {
     Fragment,
     lazy,
     Suspense,
+    useEffect,
+    useRef,
     useState,
+    type MouseEvent,
     type ReactNode,
 } from 'react'
 import {
@@ -269,6 +272,30 @@ function AppLayout() {
         authStatus,
     } = useAuth()
     const [logoutPending, setLogoutPending] = useState(false)
+    const [menuLocation, setMenuLocation] = useState<string | null>(null)
+    const menuButtonRef = useRef<HTMLButtonElement>(null)
+    const mainRef = useRef<HTMLElement>(null)
+    const menuOpen = menuLocation === location.key
+
+    useEffect(() => {
+        if (!menuOpen) return
+        function handleEscape(event: KeyboardEvent) {
+            if (event.key !== 'Escape' || event.defaultPrevented) return
+            if (!menuButtonRef.current?.getClientRects().length) return
+            setMenuLocation(null)
+            menuButtonRef.current.focus()
+        }
+        window.addEventListener('keydown', handleEscape)
+        return () => window.removeEventListener('keydown', handleEscape)
+    }, [menuOpen])
+
+    function closeMenuOnNavigate(event: MouseEvent<HTMLAnchorElement>) {
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+        if (menuOpen) {
+            setMenuLocation(null)
+            mainRef.current?.focus()
+        }
+    }
 
     const isAuthenticated = authStatus === 'authenticated' && currentUser?.enabled === true
     const canAccessChat = hasAnyRole(
@@ -328,8 +355,19 @@ function AppLayout() {
 
     return (
         <div className={appClassName}>
+            <a
+                className="skip-link"
+                href="#main-content"
+                onClick={event => {
+                    event.preventDefault()
+                    setMenuLocation(null)
+                    mainRef.current?.focus()
+                }}
+            >
+                Перейти к содержимому
+            </a>
             {isAuthenticated && (
-                <header className="topbar">
+                <header className="topbar" data-menu-open={menuOpen}>
                     <NavLink
                         to={currentUser
                             ? getDefaultAuthenticatedRoute(currentUser)
@@ -337,16 +375,30 @@ function AppLayout() {
                         className="logo"
                         aria-label="SafeAI Desk — на главную"
                         title="На главную"
+                        onClick={closeMenuOnNavigate}
                     >
                         <span className="logo__mark" aria-hidden="true">S</span>
                         <span>SafeAI Desk</span>
                     </NavLink>
 
-                    <nav aria-label="Основная навигация">
+                    <button
+                        ref={menuButtonRef}
+                        className="topbar-menu-toggle"
+                        type="button"
+                        aria-expanded={menuOpen}
+                        aria-controls="main-navigation account-controls"
+                        onClick={() => setMenuLocation(menuOpen ? null : location.key)}
+                    >
+                        <span aria-hidden="true" className="topbar-menu-toggle__icon" />
+                        Меню
+                    </button>
+
+                    <nav id="main-navigation" aria-label="Основная навигация">
                         {canAccessChat && (
                             <NavLink
                                 to="/chat"
                                 className={getNavLinkClass}
+                                onClick={closeMenuOnNavigate}
                             >
                                 Чат
                             </NavLink>
@@ -356,6 +408,7 @@ function AppLayout() {
                             <NavLink
                                 to="/knowledge"
                                 className={getNavLinkClass}
+                                onClick={closeMenuOnNavigate}
                             >
                                 Базы знаний
                             </NavLink>
@@ -363,10 +416,19 @@ function AppLayout() {
 
                         {canAccessAdmin && (
                             <>
-                                {canAccessOrganizations && <NavLink to="/admin/dashboard" className={getNavLinkClass}>Обзор</NavLink>}
+                                {canAccessOrganizations && (
+                                    <NavLink
+                                        to="/admin/dashboard"
+                                        className={getNavLinkClass}
+                                        onClick={closeMenuOnNavigate}
+                                    >
+                                        Обзор
+                                    </NavLink>
+                                )}
                                 <NavLink
                                     to="/admin/users"
                                     className={getNavLinkClass}
+                                    onClick={closeMenuOnNavigate}
                                 >
                                     Пользователи
                                 </NavLink>
@@ -375,6 +437,7 @@ function AppLayout() {
                                     <NavLink
                                         to="/admin/organizations"
                                         className={getNavLinkClass}
+                                        onClick={closeMenuOnNavigate}
                                     >
                                         Организации
                                     </NavLink>
@@ -383,6 +446,7 @@ function AppLayout() {
                                 <NavLink
                                     to="/admin/audit"
                                     className={getNavLinkClass}
+                                    onClick={closeMenuOnNavigate}
                                 >
                                     Аудит
                                 </NavLink>
@@ -390,6 +454,7 @@ function AppLayout() {
                                 <NavLink
                                     to="/admin/usage"
                                     className={getNavLinkClass}
+                                    onClick={closeMenuOnNavigate}
                                 >
                                     Использование
                                 </NavLink>
@@ -397,6 +462,7 @@ function AppLayout() {
                                 <NavLink
                                     to="/admin/models"
                                     className={getNavLinkClass}
+                                    onClick={closeMenuOnNavigate}
                                 >
                                     Модели
                                 </NavLink>
@@ -404,7 +470,7 @@ function AppLayout() {
                         )}
                     </nav>
 
-                    <div className="topbar-user">
+                    <div className="topbar-user" id="account-controls">
                         {currentUser && displayRole && (
                             <div className="current-user">
                                 <span>{currentUser.email}</span>
@@ -436,7 +502,7 @@ function AppLayout() {
                 </header>
             )}
 
-            <main className={contentClassName}>
+            <main id="main-content" ref={mainRef} tabIndex={-1} className={contentClassName}>
                 <Suspense fallback={<RouteLoadingState />}>
                     <Routes>
                         <Route

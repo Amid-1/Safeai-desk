@@ -24,9 +24,9 @@
     min-width: 0;
     min-height: 42px;
     overflow: hidden;
-    border: 1px solid #cbd7e8;
-    border-radius: 10px;
-    background: #ffffff;
+    border: 1px solid var(--safeai-field-border, #9aaac0);
+    border-radius: var(--safeai-radius-control, 8px);
+    background: var(--safeai-surface, #fff);
     transition:
         border-color 140ms ease,
         box-shadow 140ms ease,
@@ -35,6 +35,11 @@
 
 .usage-filter-combobox__control:hover {
     border-color: #9fb4d1;
+}
+
+.usage-filter-combobox__control:focus-within {
+    outline: 3px solid var(--safeai-focus, #2457d6);
+    outline-offset: 2px;
 }
 
 .usage-filter-combobox--open .usage-filter-combobox__control {

@@ -5,6 +5,7 @@
 import type {
     ReactNode,
 } from 'react'
+import './StateBlock.css'
 
 type StateBlockVariant =
     | 'card'
@@ -99,11 +100,6 @@ function StateBlock({
             ? 'alert'
             : 'status'
 
-    const ariaLive =
-        kind === 'error'
-            ? 'assertive'
-            : 'polite'
-
     const className = [
         'state-block',
         `state-block--${kind}`,
@@ -119,28 +115,27 @@ function StateBlock({
         <section
             className={className}
             role={role}
-            aria-live={ariaLive}
-            aria-busy={
-                kind === 'loading'
-                    ? true
-                    : undefined
-            }
         >
-            {title && (
-                <h2 className="state-block__title">
-                    {title}
-                </h2>
-            )}
+            <span className="state-block__icon" aria-hidden="true">
+                {kind === 'error' ? '!' : kind === 'empty' ? '—' : ''}
+            </span>
+            <div className="state-block__content">
+                {title && (
+                    <h2 className="state-block__title">
+                        {title}
+                    </h2>
+                )}
 
-            <p className="state-block__message">
-                {message}
-            </p>
+                <p className="state-block__message">
+                    {message}
+                </p>
 
-            {action && (
-                <div className="state-block__action">
-                    {action}
-                </div>
-            )}
+                {action && (
+                    <div className="state-block__action">
+                        {action}
+                    </div>
+                )}
+            </div>
         </section>
     )
 }

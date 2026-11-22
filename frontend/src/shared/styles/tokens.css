@@ -1,0 +1,38 @@
+/* frontend/src/shared/styles/tokens.css */
+/* Общие семантические токены. Цвет статуса не заменяет его текст. */
+:root {
+    --safeai-font: Arial, sans-serif;
+    --safeai-blue: #2457d6;
+    --safeai-blue-hover: #1947bd;
+    --safeai-indigo: #4f46e5;
+    --safeai-violet: #7c3aed;
+    --safeai-ink: #17243b;
+    --safeai-muted: #52647e;
+    --safeai-line: #d9e2ef;
+    --safeai-field-border: #9aaac0;
+    --safeai-surface: #fff;
+    --safeai-surface-subtle: #f5f7fb;
+    --safeai-focus: #2457d6;
+    --safeai-danger: #a51d32;
+    --safeai-danger-fill: #fff1f2;
+    --safeai-danger-line: #fecdd3;
+    --safeai-success: #166534;
+    --safeai-success-fill: #eaf8ef;
+    --safeai-success-line: #9bdfb3;
+    --safeai-warning: #805000;
+    --safeai-warning-fill: #fff6df;
+    --safeai-warning-line: #f5d38b;
+    --safeai-space-1: 4px;
+    --safeai-space-2: 8px;
+    --safeai-space-3: 12px;
+    --safeai-space-4: 16px;
+    --safeai-space-5: 20px;
+    --safeai-space-6: 24px;
+    --safeai-radius-control: 8px;
+    --safeai-radius-panel: 12px;
+    --safeai-radius-dialog: 16px;
+    --safeai-control-height: 40px;
+    --safeai-shadow-panel: 0 2px 12px rgb(15 23 42 / 5%);
+    --safeai-shadow-dialog: 0 24px 80px rgb(15 23 42 / 25%);
+    --safeai-workspace-max: 1560px;
+}

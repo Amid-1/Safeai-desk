@@ -1,0 +1,104 @@
+/* frontend/src/shared/ui/StateBlock.css */
+/* Единое состояние страницы или области, без скрытия текста и действий. */
+.state-block {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--safeai-space-3, 12px);
+    min-width: 0;
+    max-width: 100%;
+    padding: var(--safeai-space-4, 16px);
+    border: 1px solid var(--safeai-line, #d9e2ef);
+    border-radius: var(--safeai-radius-panel, 12px);
+    background: var(--safeai-surface, #fff);
+    color: var(--safeai-ink, #17243b);
+    text-align: left;
+    box-shadow: none;
+}
+
+.state-block--inline {
+    padding: var(--safeai-space-3, 12px);
+    background: var(--safeai-surface-subtle, #f5f7fb);
+}
+
+.state-block__content {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow-wrap: anywhere;
+}
+
+.state-block__title {
+    margin: 0 0 4px;
+    font-size: 16px;
+    line-height: 1.4;
+    font-weight: 700;
+}
+
+.state-block__message {
+    margin: 0;
+    color: var(--safeai-muted, #52647e);
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.state-block__action {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--safeai-space-2, 8px);
+    margin-top: var(--safeai-space-3, 12px);
+}
+
+.state-block__action > :is(button, a) {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.state-block__icon {
+    flex: 0 0 28px;
+    display: grid;
+    width: 28px;
+    height: 28px;
+    place-items: center;
+    border-radius: 50%;
+    background: #e8effb;
+    color: var(--safeai-blue-hover, #1947bd);
+    font-weight: 700;
+    line-height: 1;
+}
+
+.state-block--loading .state-block__icon::after {
+    width: 14px;
+    height: 14px;
+    border: 2px solid currentcolor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    content: '';
+    animation: state-block-spin .8s linear infinite;
+}
+
+.state-block--error {
+    border-color: var(--safeai-danger-line, #fecdd3);
+    background: var(--safeai-danger-fill, #fff1f2);
+}
+
+.state-block--error .state-block__icon {
+    background: var(--safeai-danger-line, #fecdd3);
+    color: var(--safeai-danger, #a51d32);
+}
+
+.state-block--error .state-block__title {
+    color: var(--safeai-danger, #a51d32);
+}
+
+.state-block--empty .state-block__icon {
+    background: var(--safeai-surface-subtle, #f5f7fb);
+    color: var(--safeai-muted, #52647e);
+}
+
+@keyframes state-block-spin {
+    to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .state-block--loading .state-block__icon::after { animation: none; }
+}

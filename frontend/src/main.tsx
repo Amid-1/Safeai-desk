@@ -8,6 +8,7 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './app/App'
 import ErrorBoundary from './shared/ui/ErrorBoundary'
 import './shared/styles/index.css'
+import './shared/styles/shell.css'
 
 const rootElement = document.getElementById('root')
 

@@ -3,12 +3,12 @@
    Feature styles still own layout, state semantics and scroll boundaries. */
 :is(.users-page, .organizations-page, .audit-page, .usage-page, .models-page, .platform-dashboard),
 .admin-details-dialog, .audit-event-modal {
-    --admin-ink: #17243b;
-    --admin-muted: #52647e;
-    --admin-border: #d9e2ef;
-    --admin-surface: #fff;
-    --admin-primary: #2457d6;
-    --admin-radius: 12px;
+    --admin-ink: var(--safeai-ink);
+    --admin-muted: var(--safeai-muted);
+    --admin-border: var(--safeai-line);
+    --admin-surface: var(--safeai-surface);
+    --admin-primary: var(--safeai-blue);
+    --admin-radius: var(--safeai-radius-panel);
 }
 
 :is(.users-page, .organizations-page, .audit-page, .usage-page, .models-page, .platform-dashboard) header.admin-page-header.admin-page-header {
@@ -62,7 +62,7 @@
     box-shadow: none;
 }
 .admin-page-header :is(.users-create-button, .organizations-header-actions > button):hover:not(:disabled) {
-    background: #1947bd;
+    background: var(--safeai-blue-hover);
     transform: none;
 }
 
@@ -145,18 +145,22 @@
 :is(.users-page, .organizations-page, .audit-page,
     .admin-details-dialog) :is(.status-chip--enabled, .organization-status--enabled,
     .event-type-badge--success) {
-    background: #eaf8ef;
-    color: #166534;
-    border-color: #9bdfb3;
+    background: var(--safeai-success-fill);
+    color: var(--safeai-success);
+    border-color: var(--safeai-success-line);
 }
 :is(.users-page, .organizations-page, .audit-page,
     .admin-details-dialog) :is(.status-chip--disabled, .organization-status--disabled,
     .event-type-badge--danger) {
-    background: #fff1f2;
-    color: #a51d32;
-    border-color: #fecdd3;
+    background: var(--safeai-danger-fill);
+    color: var(--safeai-danger);
+    border-color: var(--safeai-danger-line);
 }
-.audit-page .event-type-badge--warning { background: #fff6df; color: #805000; border-color: #f5d38b; }
+.audit-page .event-type-badge--warning {
+    background: var(--safeai-warning-fill);
+    color: var(--safeai-warning);
+    border-color: var(--safeai-warning-line);
+}
 
 .admin-details-dialog > .modal-header, .audit-event-modal > .modal-header {
     background: white;
@@ -192,7 +196,7 @@
 :is(.users-page, .organizations-page, .audit-page, .usage-page,
     .models-page, .admin-details-dialog) :is(button, a, input, select, textarea,
     summary, [tabindex]):focus-visible {
-    outline: 3px solid #2457d6;
+    outline: 3px solid var(--safeai-focus);
     outline-offset: 2px;
 }
 
