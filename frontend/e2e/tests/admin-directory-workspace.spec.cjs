@@ -165,7 +165,8 @@ for (const [width, height] of [[1440, 900], [390, 844]]) {
       for (const button of [maximize, close]) {
         await expect(button).toHaveCSS('background-color', 'rgb(255, 255, 255)')
         await expect(button).toHaveCSS('border-top-style', 'solid')
-        await expect(button).toHaveCSS('color', 'rgb(31, 42, 59)')
+        // 7.5G.2: shared modal controls use --safeai-ink (#17243b).
+        await expect(button).toHaveCSS('color', 'rgb(23, 36, 59)')
       }
       const first = await maximize.boundingBox()
       const second = await close.boundingBox()

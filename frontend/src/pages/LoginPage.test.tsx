@@ -1,6 +1,8 @@
 // frontend/src/pages/LoginPage.test.tsx
 // Регрессионные тесты аутентификации: ввод, блокировки, ошибки и состояния сессии.
 import {
+    act,
+    fireEvent,
     render,
     screen,
 } from '@testing-library/react'
@@ -316,6 +318,51 @@ describe('LoginPage', () => {
         expect(screen.queryByRole('button', { name: 'Войти' })).not.toBeInTheDocument()
         await user.click(screen.getByRole('button', { name: 'Повторить выход' }))
         expect(authMock.logoutUser).toHaveBeenCalledTimes(1)
+    })
+
+    it('неподтверждённый выход без подробностей показывает безопасное пояснение', async () => {
+        authMock.authStatus = 'logout-unconfirmed'
+        authMock.logoutUser.mockRejectedValueOnce(new Error('private details'))
+        const user = userEvent.setup()
+        render(<LoginPage />)
+        expect(screen.getByText('Локальные данные скрыты, но сервер не подтвердил выход.')).toBeVisible()
+        await user.click(screen.getByRole('button', { name: 'Повторить выход' }))
+        expect(authMock.logoutUser).toHaveBeenCalledOnce()
+        expect(screen.queryByRole('button', { name: 'Войти' })).not.toBeInTheDocument()
+        expect(screen.queryByText('private details')).not.toBeInTheDocument()
+    })
+
+    it('после Retry-After разрешает повторный вход, до окончания блокирует submit и клавиатуру', async () => {
+        vi.useFakeTimers()
+        try {
+            authMock.loginUser.mockRejectedValueOnce(new ApiError('Limited', { retryAfterSeconds: 2 }, 429))
+                .mockResolvedValueOnce(undefined)
+            render(<LoginPage />)
+            fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'user@safeai.test' } })
+            fireEvent.change(screen.getByLabelText('Пароль'), { target: { value: 'secret' } })
+            const submit = screen.getByRole('button', { name: 'Войти' })
+            const form = submit.closest('form')
+            if (!form) throw new Error('Форма входа не найдена')
+
+            await act(async () => { fireEvent.submit(form) })
+            expect(screen.getByRole('alert')).toHaveTextContent('Повторите через 2 сек.')
+            expect(submit).toBeDisabled()
+            expect(fireEvent.keyDown(submit, { key: 'Enter' })).toBe(false)
+            expect(fireEvent.keyDown(submit, { key: ' ' })).toBe(false)
+            await act(async () => { fireEvent.submit(form) })
+            expect(authMock.loginUser).toHaveBeenCalledTimes(1)
+
+            await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
+            expect(screen.getByRole('alert')).toHaveTextContent('Повторите через 1 сек.')
+            expect(submit).toBeDisabled()
+            await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
+            expect(submit).toBeEnabled()
+            await act(async () => { fireEvent.submit(form) })
+            expect(authMock.loginUser).toHaveBeenCalledTimes(2)
+            expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+        } finally {
+            vi.useRealTimers()
+        }
     })
 
     it('не отправляет пустой пароль и переводит фокус на него', async () => {
