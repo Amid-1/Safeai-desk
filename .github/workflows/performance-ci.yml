@@ -52,6 +52,15 @@ jobs:
           docker run --rm --entrypoint /bin/promtool -v "$PWD/infra/prometheus:/config:ro" \
             -w /config prom/prometheus:v3.5.0 test rules tests/usage.test.yml
 
+      - name: Проверка правил оповещения Models и AI
+        run: |
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --entrypoint /bin/promtool -v "$PWD/infra/prometheus:/config:ro" \
+            -w /config prom/prometheus:v3.5.0 check rules rules/safeai-model-ai.yml
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --entrypoint /bin/promtool -v "$PWD/infra/prometheus:/config:ro" \
+            -w /config prom/prometheus:v3.5.0 test rules tests/model-ai.test.yml
+
       - name: Отчёты Surefire и планы EXPLAIN ANALYZE
         if: always()
         uses: actions/upload-artifact@v4
