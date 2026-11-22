@@ -61,6 +61,12 @@ jobs:
         working-directory: .
         run: python3 .github/scripts/check-maven-reports.py standard
 
+      - name: Обязательная локальная Security-приёмка RateLimit
+        working-directory: .
+        run: |
+          python3 -m unittest discover -s .github/scripts -p 'test_ratelimit_acceptance.py' -v
+          python3 .github/scripts/check-ratelimit-acceptance.py backend/target/surefire-reports
+
       - name: Контроль всех локальных IT и инвентаризация модулей
         working-directory: .
         run: python3 .github/scripts/check-backend-test-discovery.py

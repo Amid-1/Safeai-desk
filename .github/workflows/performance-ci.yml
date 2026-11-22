@@ -80,3 +80,37 @@ jobs:
             backend/target/usage-explain/*.txt
           if-no-files-found: warn
           retention-days: 14
+
+  ratelimit:
+    name: Redis RateLimit / security and concurrency
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Получение исходного кода
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Установка Java 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+
+      - name: Локальная Security-приёмка Redis
+        run: bash infra/scripts/verify-ratelimit-acceptance.sh
+
+      - name: Изолированная проверка HTTP edge и границы trusted proxy
+        run: bash infra/scripts/test-ratelimit-nginx.sh
+
+      - name: Отчёты RateLimit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ratelimit-acceptance-${{ github.sha }}-${{ github.run_attempt }}
+          path: backend/target/surefire-reports/TEST-*.xml
+          if-no-files-found: warn
+          retention-days: 14
