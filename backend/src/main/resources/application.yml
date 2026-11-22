@@ -138,6 +138,8 @@ safeai:
       key-prefix: ${SAFEAI_RATE_LIMIT_REDIS_KEY_PREFIX:safeai:local}
       hmac-secret: ${SAFEAI_RATE_LIMIT_REDIS_HMAC_SECRET}
       key-version: ${SAFEAI_RATE_LIMIT_REDIS_KEY_VERSION:v1}
+      # Mandatory in production regardless of this local/test opt-in.
+      epoch-fence-enabled: ${SAFEAI_RATE_LIMIT_REDIS_EPOCH_FENCE_ENABLED:false}
 
     login:
       enabled: ${SAFEAI_RATE_LIMIT_LOGIN_ENABLED:true}

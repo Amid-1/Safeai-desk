@@ -266,7 +266,9 @@ services:
         cat > /tmp/redis.conf <<EOF_REDIS
         requirepass $$REDIS_PASSWORD
         appendonly yes
-        appendfsync everysec
+        appendfsync always
+        no-appendfsync-on-rewrite no
+        aof-load-truncated no
         maxmemory 192mb
         maxmemory-policy noeviction
         EOF_REDIS

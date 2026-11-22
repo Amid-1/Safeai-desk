@@ -1,6 +1,7 @@
 package ru.safeai.gateway.ratelimit.external;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -8,8 +9,14 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import org.springframework.data.redis.connection.RedisPassword;
 import org.springframework.data.redis.connection.RedisSentinelConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
+import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.mock.env.MockEnvironment;
 import ru.safeai.gateway.ratelimit.DualRateLimitResult;
+import ru.safeai.gateway.ratelimit.RateLimitKeyFactory;
+import ru.safeai.gateway.ratelimit.RateLimitRedisKeyProperties;
 import ru.safeai.gateway.ratelimit.RedisFixedWindowRateLimiter;
 
 import java.io.BufferedReader;
@@ -21,8 +28,10 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 @EnabledIfEnvironmentVariable(
@@ -57,6 +66,7 @@ class RedisSentinelFailoverIT {
             5_000;
 
     @Test
+    @Timeout(120)
     void rateLimiterRecoversAfterSentinelFailover()
             throws Exception {
         List<HostPort> sentinels = Arrays.stream(
@@ -98,7 +108,8 @@ class RedisSentinelFailoverIT {
 
         LettuceConnectionFactory factory =
                 new LettuceConnectionFactory(
-                        configuration
+                        configuration, LettuceClientConfiguration.builder()
+                        .commandTimeout(Duration.ofSeconds(3)).build()
                 );
 
         factory.afterPropertiesSet();
@@ -110,22 +121,28 @@ class RedisSentinelFailoverIT {
 
             template.afterPropertiesSet();
 
-            RedisFixedWindowRateLimiter limiter =
-                    new RedisFixedWindowRateLimiter(
-                            template
-                    );
-
-            assertThat(
-                    attempt(
-                            limiter,
-                            "before"
-                    ).allowed()
-            )
-                    .as(
-                            "Initial rate-limit operation "
-                                    + "must succeed before failover"
-                    )
-                    .isTrue();
+            // Destructive failover is only for a fresh, dedicated test topology.
+            // Never overwrite an existing epoch or delete someone else's keys.
+            assertThat(template.keys("*")).as("Dedicated empty Sentinel test database").isEmpty();
+            var keys = new RateLimitKeyFactory(new RateLimitRedisKeyProperties("sentinel-test",
+                    "test-only-sentinel-epoch-secret-0123456789", "v1"));
+            var environment = new MockEnvironment().withProperty("safeai.rate-limit.redis.epoch-fence-enabled", "true");
+            var limiter = new RedisFixedWindowRateLimiter(template, keys, environment);
+            var admin = new DefaultRedisScript<>(new ClassPathResource("ratelimit/epoch-admin.lua")
+                    .getContentAsString(StandardCharsets.UTF_8), String.class);
+            String fence = "safeai:rate-limit:guard:{login}:epoch";
+            List<String> fenceKeys = List.of(fence);
+            String fingerprint = keys.epochFingerprint();
+            assertThat(template.execute(admin, fenceKeys, "initialize-empty", fingerprint, fingerprint)).isEqualTo("ACTIVE");
+            assertThat(attempt(limiter, "before").allowed()).isTrue();
+            assertThat(attempt(limiter, "before").allowed()).isFalse();
+            String email = "sentinel:{login}:email:before";
+            String ip = "sentinel:{login}:ip:before";
+            String refresh = keys.refreshIp("192.0.2.10");
+            assertThat(limiter.incrementRefreshAndGet(refresh, RATE_LIMIT_WINDOW).count()).isEqualTo(1);
+            var priorKeys = Objects.requireNonNull(template.keys("*"));
+            String priorFence = template.opsForValue().get(fence);
+            long priorTtl = Objects.requireNonNull(template.getExpire(email));
 
             requestFailover(
                     sentinels.getFirst(),
@@ -144,21 +161,26 @@ class RedisSentinelFailoverIT {
                             FAILOVER_POLL_INTERVAL
                     )
                     .ignoreExceptions()
-                    .untilAsserted(() ->
-                            assertThat(
-                                    attempt(
-                                            limiter,
-                                            "after-"
-                                                    + System.nanoTime()
-                                    ).allowed()
-                            )
-                                    .as(
-                                            "Rate limiter operation "
-                                                    + "must succeed through "
-                                                    + "the promoted Redis primary"
-                                    )
-                                    .isTrue()
-                    );
+                    .untilAsserted(() -> assertThat(template.execute(admin, fenceKeys, "status", "", ""))
+                            .isEqualTo("PRIMARY_CHANGED"));
+
+            // No writes or retries may be hidden by the recovery polling.
+            assertThatThrownBy(() -> attempt(limiter, "after"))
+                    .hasStackTraceContaining("RATE_LIMIT_EPOCH_UNAVAILABLE");
+            assertThat(template.keys("*")).isEqualTo(priorKeys);
+            assertThat(template.opsForValue().get(fence)).isEqualTo(priorFence);
+            assertThat(template.opsForValue().get(email)).isEqualTo("2");
+            assertThat(template.opsForValue().get(ip)).isEqualTo("2");
+            assertThat(template.opsForValue().get(refresh)).isEqualTo("1");
+            assertThat(template.getExpire(email)).isPositive().isLessThanOrEqualTo(priorTtl);
+            assertThat(template.getExpire(ip)).isPositive();
+            assertThat(template.getExpire(refresh)).isPositive();
+            // Dedicated planned failover, no other backend writes; exact old
+            // key set and counter values have now been verified on the new primary.
+            assertThat(template.execute(admin, fenceKeys, "rebind-preserved", fingerprint, fingerprint)).isEqualTo("ACTIVE");
+            assertThat(attempt(limiter, "before").allowed()).isFalse();
+            assertThat(limiter.incrementRefreshAndGet(refresh, RATE_LIMIT_WINDOW).count()).isEqualTo(2);
+            assertThat(attempt(limiter, "after").allowed()).isTrue();
         } finally {
             factory.destroy();
         }
@@ -179,10 +201,10 @@ class RedisSentinelFailoverIT {
         return limiter.incrementBothAndCheck(
                 email,
                 email + ":exceeded",
-                10,
+                1,
                 ip,
                 ip + ":exceeded",
-                100,
+                1,
                 RATE_LIMIT_WINDOW
         );
     }

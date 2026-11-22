@@ -127,12 +127,18 @@ services:
         exec /usr/local/bin/docker-entrypoint.sh redis-server \
           --requirepass "$${REDIS_PASSWORD}" \
           --save "" \
-          --appendonly no \
+          --appendonly yes \
+          --appendfsync always \
+          --no-appendfsync-on-rewrite no \
+          --aof-load-truncated no \
           --maxmemory 192mb \
           --maxmemory-policy noeviction
 
     environment:
       REDIS_PASSWORD: "${REDIS_PASSWORD:-safeai_redis_password}"
+
+    volumes:
+      - safeai_redis_local_data:/data
 
     ports:
       - target: 6379
@@ -247,6 +253,8 @@ services:
     restart: unless-stopped
 
 volumes:
+  safeai_redis_local_data:
+    name: safeai_redis_local_data
   safeai_postgres_local_data:
     name: safeai_postgres_local_data
   safeai_minio_local_data:

@@ -4238,10 +4238,13 @@ ratelimit/
 │   ├── RateLimitUnavailableException
 │   └── RateLimitUnavailableLogger
 ├── AiMessageRateLimitProperties
+├── AnonymousCapacityExceededException
 ├── DualRateLimitResult
 ├── LoginRateLimitProperties
+├── LoginRateLimitExceededEvent
 ├── LoginRateLimitService
 ├── RateLimitDecision
+├── RateLimitEpochFence
 ├── RateLimitExceededEvent
 ├── RateLimitKeyFactory
 ├── RateLimitMetrics
@@ -4249,6 +4252,7 @@ ratelimit/
 ├── RateLimitProductionProperties
 ├── RateLimitRedisKeyProperties
 ├── RateLimitResult
+├── README.md
 ├── RedisFixedWindowRateLimiter
 ├── RedisRateLimitService
 ├── RefreshRateLimitProperties

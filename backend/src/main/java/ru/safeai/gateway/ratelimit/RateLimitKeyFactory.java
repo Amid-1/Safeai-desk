@@ -172,6 +172,11 @@ public class RateLimitKeyFactory {
         );
     }
 
+    /** Non-PII verifier of the complete physical counter namespace. */
+    public String epochFingerprint() {
+        return hmac("rate-limit-epoch-v1:", properties.keyPrefix() + "\n" + properties.keyVersion());
+    }
+
     private String aiOrganizationHashTag(
             UUID organizationId
     ) {
