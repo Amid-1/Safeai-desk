@@ -13,6 +13,17 @@ class RedisClusterSlotContractTest {
             "0123456789abcdef0123456789abcdef";
 
     @Test
+    void allocationGuardIsSharedAcrossHmacSecretsVersionsAndPrefixes() {
+        var first = new RateLimitKeyFactory(new RateLimitRedisKeyProperties("safeai:test", SECRET, "v1"));
+        var second = new RateLimitKeyFactory(new RateLimitRedisKeyProperties("safeai:other", SECRET + "2", "v2"));
+        String key = first.loginEmail("admin@example.com");
+        String rotated = second.loginEmail("admin@example.com");
+        assertThat(key).isNotEqualTo(rotated);
+        assertThat(RedisFixedWindowRateLimiter.loginAllocationKey(key))
+                .isEqualTo(RedisFixedWindowRateLimiter.loginAllocationKey(rotated));
+    }
+
+    @Test
     void allKeysOfEachLuaInvocationShareRedisClusterSlot() {
         RateLimitKeyFactory factory =
                 new RateLimitKeyFactory(
@@ -35,6 +46,7 @@ class RedisClusterSlotContractTest {
 
         assertThat(slot(email))
                 .isEqualTo(slot(ip))
+                .isEqualTo(slot(RedisFixedWindowRateLimiter.loginAllocationKey(email)))
                 .isEqualTo(slot(RedisFixedWindowRateLimiter.generationKey(email)))
                 .isEqualTo(slot(RedisFixedWindowRateLimiter.generationKey(ip)))
                 .isEqualTo(slot(RedisFixedWindowRateLimiter.receiptKey(email, UUID.randomUUID())))

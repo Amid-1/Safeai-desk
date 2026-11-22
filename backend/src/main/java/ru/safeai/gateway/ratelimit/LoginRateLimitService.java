@@ -90,6 +90,10 @@ public class LoginRateLimitService {
                     CHECK_OPERATION,
                     SUCCESS_OUTCOME
             );
+        } catch (AnonymousCapacityExceededException capacity) {
+            finishRedisOperation(sample, CHECK_OPERATION, SUCCESS_OUTCOME);
+            metrics.recordRejected(RATE_LIMIT_TYPE, "capacity");
+            throw new RateLimitExceededException(PUBLIC_LIMIT_MESSAGE, capacity.retryAfter());
         } catch (RuntimeException exception) {
             finishRedisOperation(
                     sample,

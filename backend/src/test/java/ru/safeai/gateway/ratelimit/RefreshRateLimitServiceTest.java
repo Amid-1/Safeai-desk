@@ -56,6 +56,22 @@ class RefreshRateLimitServiceTest {
     }
 
     @Test
+    void globalCapacityReturns429AndDoesNotReportRedisOutage() {
+        when(keyFactory.refreshIp(IP)).thenReturn(KEY);
+        when(metrics.startRedisOperation()).thenReturn(timerSample);
+        when(rateLimiter.incrementRefreshAndGet(KEY, WINDOW))
+                .thenThrow(new AnonymousCapacityExceededException(Duration.ofMillis(1501)));
+
+        assertThatThrownBy(() -> service.checkAllowed(IP))
+                .isInstanceOfSatisfying(RateLimitExceededException.class,
+                        error -> assertThat(error.getRetryAfterSeconds()).isEqualTo(2));
+        verify(metrics).finishRedisOperation(timerSample, "refresh", "check", "success");
+        verify(metrics).recordRejected("refresh", "capacity");
+        verify(metrics, never()).recordAllowed("refresh");
+        verify(metrics, never()).recordUnavailable("refresh");
+    }
+
+    @Test
     void disabledLimiterDoesNotTouchRedisOrMetrics() {
         RefreshRateLimitService disabledService =
                 new RefreshRateLimitService(
@@ -88,7 +104,7 @@ class RefreshRateLimitServiceTest {
         when(metrics.startRedisOperation())
                 .thenReturn(timerSample);
 
-        when(rateLimiter.incrementAndGet(
+        when(rateLimiter.incrementRefreshAndGet(
                 KEY,
                 WINDOW
         )).thenReturn(
@@ -108,7 +124,7 @@ class RefreshRateLimitServiceTest {
                 .refreshIp(IP);
 
         verify(rateLimiter)
-                .incrementAndGet(
+                .incrementRefreshAndGet(
                         KEY,
                         WINDOW
                 );
@@ -146,7 +162,7 @@ class RefreshRateLimitServiceTest {
         when(metrics.startRedisOperation())
                 .thenReturn(timerSample);
 
-        when(rateLimiter.incrementAndGet(
+        when(rateLimiter.incrementRefreshAndGet(
                 KEY,
                 WINDOW
         )).thenReturn(
@@ -210,7 +226,7 @@ class RefreshRateLimitServiceTest {
         when(metrics.startRedisOperation())
                 .thenReturn(timerSample);
 
-        when(rateLimiter.incrementAndGet(
+        when(rateLimiter.incrementRefreshAndGet(
                 KEY,
                 WINDOW
         )).thenThrow(
@@ -262,7 +278,7 @@ class RefreshRateLimitServiceTest {
         when(metrics.startRedisOperation())
                 .thenReturn(timerSample);
 
-        when(rateLimiter.incrementAndGet(
+        when(rateLimiter.incrementRefreshAndGet(
                 KEY,
                 WINDOW
         )).thenReturn(
@@ -286,7 +302,7 @@ class RefreshRateLimitServiceTest {
         when(metrics.startRedisOperation())
                 .thenReturn(timerSample);
 
-        when(rateLimiter.incrementAndGet(
+        when(rateLimiter.incrementRefreshAndGet(
                 KEY,
                 WINDOW
         )).thenReturn(

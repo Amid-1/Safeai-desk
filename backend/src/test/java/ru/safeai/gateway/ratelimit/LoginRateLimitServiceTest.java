@@ -82,6 +82,24 @@ class LoginRateLimitServiceTest {
     }
 
     @Test
+    void globalCapacityReturns429WithoutIdentityNotificationOrUnavailable() {
+        stubTimer();
+        stubKeys();
+        when(rateLimiter.incrementBothAndCheck(
+                EMAIL_KEY, EMAIL_MARKER, 10, IP_KEY, IP_MARKER, 30, WINDOW))
+                .thenThrow(new AnonymousCapacityExceededException(Duration.ofMillis(1501)));
+
+        assertThatThrownBy(() -> service.checkAllowed(EMAIL, IP))
+                .isInstanceOfSatisfying(RateLimitExceededException.class,
+                        error -> assertThat(error.getRetryAfterSeconds()).isEqualTo(2));
+        verify(metrics).finishRedisOperation(timerSample, "login", "check", "success");
+        verify(metrics).recordRejected("login", "capacity");
+        verify(metrics, never()).recordAllowed("login");
+        verify(metrics, never()).recordUnavailable("login");
+        verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
     void withinLimitsUsesOneAtomicDualIncrement() {
         stubTimer();
         stubKeys();

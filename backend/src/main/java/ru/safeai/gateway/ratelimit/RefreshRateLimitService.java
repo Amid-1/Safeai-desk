@@ -92,7 +92,7 @@ public final class RefreshRateLimitService {
         RateLimitResult result;
 
         try {
-            result = rateLimiter.incrementAndGet(
+            result = rateLimiter.incrementRefreshAndGet(
                     key,
                     properties.effectiveWindow()
             );
@@ -103,6 +103,10 @@ public final class RefreshRateLimitService {
                     CHECK_OPERATION,
                     SUCCESS_OUTCOME
             );
+        } catch (AnonymousCapacityExceededException capacity) {
+            metrics.finishRedisOperation(sample, RATE_LIMIT_TYPE, CHECK_OPERATION, SUCCESS_OUTCOME);
+            metrics.recordRejected(RATE_LIMIT_TYPE, "capacity");
+            throw new RateLimitExceededException(PUBLIC_LIMIT_MESSAGE, capacity.retryAfter());
         } catch (RuntimeException exception) {
             metrics.finishRedisOperation(
                     sample,

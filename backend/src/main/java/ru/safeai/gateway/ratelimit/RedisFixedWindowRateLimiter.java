@@ -17,6 +17,39 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class RedisFixedWindowRateLimiter {
 
+    // Shared by all application instances, prefixes and HMAC versions on this Redis.
+    // A reservation is retained until every key it can allocate must have expired.
+    static final int LOGIN_ALLOCATION_LIMIT = 4096;
+    static final int REFRESH_ALLOCATION_LIMIT = 8192;
+    static final String REFRESH_ALLOCATION_KEY = "safeai:rate-limit:guard:{refresh}:allocations";
+    private static final long REFRESH_DISPATCH_MARGIN_MS = 10_000;
+
+    private static final String ALLOCATION_FUNCTION = """
+            local function now_ms()
+                local t = redis.call('TIME')
+                return tonumber(t[1]) * 1000 + math.floor(tonumber(t[2]) / 1000)
+            end
+            local function reserve(key, limit, lifetime, id)
+                local now = now_ms()
+                redis.call('ZREMRANGEBYSCORE', key, '-inf', now)
+                if redis.call('ZCARD', key) >= limit then
+                    local oldest = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
+                    return 'CAPACITY:' .. string.format('%.0f', math.max(1, tonumber(oldest[2]) - now))
+                end
+                local expires = now + lifetime
+                if redis.call('ZADD', key, 'NX', expires, id) ~= 1 then
+                    return redis.error_reply('DUPLICATE_RATE_LIMIT_ALLOCATION')
+                end
+                -- Do not expire or refund the reservation separately from its possible keys.
+                return 'RESERVED:' .. string.format('%.0f', expires)
+            end
+            """;
+
+    private static final DefaultRedisScript<String> REFRESH_ALLOCATION_SCRIPT = script(
+            ALLOCATION_FUNCTION + """
+            return reserve(KEYS[1], tonumber(ARGV[1]), tonumber(ARGV[2]), ARGV[3])
+            """);
+
     private static final DefaultRedisScript<String>
             INCREMENT_ONE_SCRIPT = script("""
             local ttlMs = tonumber(ARGV[1])
@@ -39,10 +72,23 @@ public class RedisFixedWindowRateLimiter {
             local currentValue = counter(KEYS[1])
             if type(currentValue) == 'table' then return currentValue end
 
-            local current = redis.call(
-                'INCR',
-                KEYS[1]
-            )
+            -- A refresh reservation may be consumed on a different cluster slot.
+            -- Never allocate after the reservation can no longer cover a full window.
+            if ARGV[2] then
+                local t = redis.call('TIME')
+                local now = tonumber(t[1]) * 1000 + math.floor(tonumber(t[2]) / 1000)
+                if tonumber(ARGV[2]) - now < ttlMs then
+                    return redis.error_reply('EXPIRED_REFRESH_ALLOCATION')
+                end
+            end
+
+            local current
+            if redis.call('EXISTS', KEYS[1]) == 0 then
+                redis.call('SET', KEYS[1], '1', 'PX', ttlMs)
+                current = 1
+            else
+                current = redis.call('INCR', KEYS[1])
+            end
 
             local ttl = redis.call(
                 'PTTL',
@@ -237,7 +283,7 @@ public class RedisFixedWindowRateLimiter {
             """);
 
     private static final DefaultRedisScript<String>
-            INCREMENT_BOTH_AND_CHECK_SCRIPT = script("""
+            INCREMENT_BOTH_AND_CHECK_SCRIPT = script(ALLOCATION_FUNCTION + """
             local ttlMs = tonumber(ARGV[1])
             local firstLimit = tonumber(ARGV[2])
             local secondLimit = tonumber(ARGV[3])
@@ -265,35 +311,45 @@ public class RedisFixedWindowRateLimiter {
 
             local firstMissing = redis.call('EXISTS', KEYS[1]) == 0
             local secondMissing = redis.call('EXISTS', KEYS[2]) == 0
+            -- Already denied by one dimension: never materialize a fresh identity
+            -- in the other dimension. Existing counters continue counting failures.
+            local skipFirst = firstMissing and secondCurrent >= secondLimit
+            local skipSecond = secondMissing and firstCurrent >= firstLimit
+            local firstTtl = redis.call('PTTL', KEYS[1])
+            local secondTtl = redis.call('PTTL', KEYS[2])
+            local firstExceeded = not skipFirst and firstCurrent >= firstLimit
+            local secondExceeded = not skipSecond and secondCurrent >= secondLimit
+            local allowed = not firstExceeded and not secondExceeded
+            local mayAllocate = allowed
+                or (firstMissing and not skipFirst)
+                or (secondMissing and not skipSecond)
+                or (firstExceeded and redis.call('EXISTS', KEYS[3]) == 0)
+                or (secondExceeded and redis.call('EXISTS', KEYS[4]) == 0)
+            if mayAllocate then
+                local reservation = reserve(KEYS[8], tonumber(ARGV[5]),
+                    math.max(ttlMs, firstTtl, secondTtl), ARGV[4])
+                if type(reservation) == 'table' then return reservation end
+                if string.sub(reservation, 1, 9) == 'CAPACITY:' then return reservation end
+            end
             -- A deleted or evicted counter starts a new generation even if its sidecar survived.
-            if firstMissing then redis.call('DEL', KEYS[5]) end
-            if secondMissing then redis.call('DEL', KEYS[6]) end
+            if firstMissing and not skipFirst then redis.call('DEL', KEYS[5]) end
+            if secondMissing and not skipSecond then redis.call('DEL', KEYS[6]) end
 
-            local newFirst =
-                redis.call(
-                    'INCR',
-                    KEYS[1]
-                )
+            local function increment(key, missing, skip)
+                if skip then return 0 end
+                if missing then
+                    redis.call('SET', key, '1', 'PX', ttlMs)
+                    return 1
+                end
+                return redis.call('INCR', key)
+            end
+            local newFirst = increment(KEYS[1], firstMissing, skipFirst)
+            local newSecond = increment(KEYS[2], secondMissing, skipSecond)
 
-            local newSecond =
-                redis.call(
-                    'INCR',
-                    KEYS[2]
-                )
+            firstTtl = redis.call('PTTL', KEYS[1])
+            secondTtl = redis.call('PTTL', KEYS[2])
 
-            local firstTtl =
-                redis.call(
-                    'PTTL',
-                    KEYS[1]
-                )
-
-            local secondTtl =
-                redis.call(
-                    'PTTL',
-                    KEYS[2]
-                )
-
-            if firstTtl < 0 then
+            if firstTtl < 0 and not skipFirst then
                 redis.call(
                     'PEXPIRE',
                     KEYS[1],
@@ -303,7 +359,7 @@ public class RedisFixedWindowRateLimiter {
                 firstTtl = ttlMs
             end
 
-            if secondTtl < 0 then
+            if secondTtl < 0 and not skipSecond then
                 redis.call(
                     'PEXPIRE',
                     KEYS[2],
@@ -313,11 +369,8 @@ public class RedisFixedWindowRateLimiter {
                 secondTtl = ttlMs
             end
 
-            local firstExceeded =
-                newFirst > firstLimit
-
-            local secondExceeded =
-                newSecond > secondLimit
+            firstExceeded = newFirst > firstLimit
+            secondExceeded = newSecond > secondLimit
 
             local firstNotification = 0
             local secondNotification = 0
@@ -382,8 +435,8 @@ public class RedisFixedWindowRateLimiter {
             return decision
                 .. ':' .. tostring(newFirst)
                 .. ':' .. tostring(newSecond)
-                .. ':' .. tostring(math.max(1, firstTtl))
-                .. ':' .. tostring(math.max(1, secondTtl))
+                .. ':' .. tostring(skipFirst and ttlMs or math.max(1, firstTtl))
+                .. ':' .. tostring(skipSecond and ttlMs or math.max(1, secondTtl))
                 .. ':' .. tostring(firstNotification)
                 .. ':' .. tostring(secondNotification)
             """);
@@ -445,11 +498,33 @@ public class RedisFixedWindowRateLimiter {
         long ttlMillis =
                 requireTtlMillis(ttl);
 
+        return incrementOne(validatedKey, ttlMillis, null);
+    }
+
+    public RateLimitResult incrementRefreshAndGet(String key, Duration ttl) {
+        String validatedKey = requireKey(key);
+        long ttlMillis = requireTtlMillis(ttl);
+        String result = redisTemplate.execute(REFRESH_ALLOCATION_SCRIPT,
+                List.of(REFRESH_ALLOCATION_KEY), Integer.toString(REFRESH_ALLOCATION_LIMIT),
+                Long.toString(Math.addExact(ttlMillis, REFRESH_DISPATCH_MARGIN_MS)),
+                UUID.randomUUID().toString());
+        rejectCapacity(result);
+        if (result == null || !result.startsWith("RESERVED:")) {
+            throw new IllegalStateException("Redis refresh allocation returned invalid result");
+        }
+        long deadline = parsePositiveTtlMillis(result.substring("RESERVED:".length()), result);
+        return incrementOne(validatedKey, ttlMillis, Long.toString(deadline));
+    }
+
+    private RateLimitResult incrementOne(String validatedKey, long ttlMillis, String deadline) {
+        Object[] args = deadline == null
+                ? new Object[]{Long.toString(ttlMillis)}
+                : new Object[]{Long.toString(ttlMillis), deadline};
         String result =
                 redisTemplate.execute(
                         INCREMENT_ONE_SCRIPT,
                         List.of(validatedKey),
-                        Long.toString(ttlMillis)
+                        args
                 );
 
         if (result == null
@@ -639,14 +714,18 @@ public class RedisFixedWindowRateLimiter {
             keys.add(generationKey(firstKey));
             keys.add(generationKey(secondKey));
             keys.add(receiptKey(firstKey, operationId));
+            keys.add(loginAllocationKey(firstKey));
             validateDistinctKeys(keys.toArray(String[]::new));
         }
 
-        String result = redisTemplate.execute(
-                script, keys, Long.toString(ttlMillis), Integer.toString(firstLimit),
-                Integer.toString(secondLimit), operationId.toString()
-        );
+        List<String> args = new ArrayList<>(List.of(Long.toString(ttlMillis), Integer.toString(firstLimit),
+                Integer.toString(secondLimit), operationId.toString()));
+        if (script == INCREMENT_BOTH_AND_CHECK_SCRIPT) {
+            args.add(Integer.toString(LOGIN_ALLOCATION_LIMIT));
+        }
+        String result = redisTemplate.execute(script, keys, args.toArray());
 
+        rejectCapacity(result);
         if (result == null
                 || result.isBlank()) {
 
@@ -708,6 +787,22 @@ public class RedisFixedWindowRateLimiter {
         );
     }
 
+    static String loginAllocationKey(String counterKey) {
+        int open = counterKey.indexOf('{');
+        int close = counterKey.indexOf('}', open + 1);
+        if (open < 0 || close <= open + 1) {
+            throw new IllegalArgumentException("Login counter requires a Redis hash tag");
+        }
+        return "safeai:rate-limit:guard:" + counterKey.substring(open, close + 1) + ":allocations";
+    }
+
+    private void rejectCapacity(String result) {
+        if (result != null && result.startsWith("CAPACITY:")) {
+            throw new AnonymousCapacityExceededException(Duration.ofMillis(
+                    parsePositiveTtlMillis(result.substring("CAPACITY:".length()), result)));
+        }
+    }
+
     private static DefaultRedisScript<String> script(
             String text
     ) {
@@ -719,7 +814,11 @@ public class RedisFixedWindowRateLimiter {
         );
 
         script.setScriptText(
-                text
+                // Redis 7+ checks maxmemory before starting a shebang script.
+                // Legacy EVAL can write after a non-allocating first write
+                // (e.g. ZREMRANGEBYSCORE or DEL), even when already over limit.
+                // Never use allow-oom for admission scripts.
+                "#!lua\n" + text
         );
 
         return script;
