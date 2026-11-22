@@ -5,10 +5,11 @@
 
 > **Пакет:** `ru.safeai.gateway.ai`  
 > **Проект:** SafeAI-Desk / backend  
-> **Актуальность:** 17.11.2026, схема Flyway V1–V92  
-> **Стек:** Java, Spring Boot, Spring MVC, RestClient, Spring Data JPA, PostgreSQL  
-> **Production-код:** 80 Java-файлов  
-> **Тестовый пакет:** 47 Java-файлов, включая fixtures и self-check  
+> **Актуальность:** 22.11.2026, схема Flyway V1–V101\
+> **Стек:** Java 21, Spring Boot, Spring MVC, RestClient, Reactor Netty,
+> Spring Data JPA, PostgreSQL, Micrometer, Prometheus\
+> **Production-код:** 89 Java-файлов\
+> **Тестовый пакет:** 52 Java-файлов (47 Test; остальные — support/self-check)\
 > Документ описывает реализованный runtime, а не подтверждает состояние
 > развернутого production или успешность последнего полного CI.
 
@@ -28,6 +29,7 @@
 - [Хранение и миграции](#хранение-и-миграции)
 - [Тестирование](#тестирование)
 - [Эксплуатация](#эксплуатация)
+- [Финальный security-контур](#финальный-security-контур-75e8)
 
 ## Назначение
 
@@ -149,7 +151,7 @@ ai/
 │   ├── AiRetryTimeoutBudgetValidator
 │   ├── AnthropicProviderConfiguration
 │   ├── OpenAiProviderConfiguration
-│   ├── ProviderSecretConfigurationValidator 
+│   ├── ProviderSecretConfigurationValidator
 │   └── ProviderSecretFile
 ├── dto/
 │   ├── AiChatRequest
@@ -547,8 +549,9 @@ mock не является запасным production provider.
 
 `AiRestClientFactory` обеспечивает:
 
-- ограничение connect/read timeout;
-- запрет автоматических HTTP redirects;
+- ограничение connect/read timeout и абсолютный общий deadline;
+- HTTP/1.1 без автоматических retry, redirects и decompression;
+- привязку конечного URI к исходному endpoint и проверку IP перед TCP;
 - ограничение размера фактически прочитанного response body;
 - проверку допустимых настроек endpoint и размеров.
 
@@ -985,7 +988,7 @@ V92 добавляет ограничения, не изменяя checksum V91 
 
 Правила эксплуатации:
 
-- Flyway последовательно применяет V1–V92; не редактировать применённые
+- Flyway последовательно применяет V1–V101; не редактировать применённые
   versioned migrations.
 - Не отключать integrity triggers для прохождения fixtures.
 - Сохранить разделение bootstrap/migrator/runtime ролей:
@@ -1000,8 +1003,8 @@ V92 добавляет ограничения, не изменяя checksum V91 
 
 Путь: `backend/src/test/java/ru/safeai/gateway/ai/`.
 
-47 Java-файлов: 42 класса с суффиксом Test, четыре вспомогательных
-fixture/server класса и одна отдельная self-check программа.
+52 Java-файлов: 47 с суффиксом Test, остальные —
+вспомогательные fixtures/server и self-check.
 Ниже дерево соответствует текущему состоянию исходников и IDE.
 
 ```text
@@ -1195,7 +1198,7 @@ Mock:
 ### Смежные тесты
 
 Полноценный контроль AI требует также тестов за пределами пакета.
-Не следует считать 47 файлов исчерпывающим количеством тестов проекта:
+Не следует считать 52 файлов исчерпывающим количеством тестов проекта:
 это только структура `src/test/java/ru/safeai/gateway/ai`.
 
 В соседних пакетах проверяются:
@@ -1418,3 +1421,116 @@ env/configprops отключены. Нельзя включать wire logging �
 нового ключа, контролируемое пересоздание backend и только затем
 отзыв старого ключа. Стоимость новых TLS handshakes следует
 измерить на этапе 7.5E.6.
+
+## Финальный security-контур 7.5E.8
+
+### Уточнение реализации E.1–E.7
+
+- `AiExecutionAttemptScope` — одноразовая локальная привязка attempt
+  к исходному разрешению; последовательность без повторного использования
+  ID, без расширения лимита и без смены target при retry.
+- `AiExecutionAttemptRecorder` — отдельные транзакции STARTED,
+  dispatch receipt и terminal evidence. Потеря подтверждения commit
+  не разрешает отправку или повтор HTTP.
+- `AiBoundedHttpRequestFactory` — Reactor Netty, только HTTP/1.1,
+  ограниченные success/error bodies, запрет redirect, hidden replay
+  и compressed response. Отмена transport subscription при истечении
+  абсолютного срока не является доказательством отсутствия исполнения.
+- `AiProviderDispatchDeadline` — наследуемый монотонный deadline,
+  включая connect, headers, body и retry; медленный поток байтов
+  не продлевает общий бюджет времени.
+- `AiProviderEndpoint`, `ProviderCredentialEvidence` —
+  безопасная цель подключения и защита от отражения credential.
+- `ProviderSecretFile`, `ProviderSecretConfigurationValidator` —
+  обязательная проверка file-backed binding в production.
+- `AiProviderMetrics` — счётчики входа в adapter, результата,
+  retry, отказов gate и записи terminal outcome; гистограмма времени.
+  Фиксированные provider/result labels, неизвестные provider — other.
+- `ModelAttemptMonitor` — read-only наблюдение за 24 часами;
+  до 100 000 строк, проверка переполнения через 100 001-ю,
+  JDBC query timeout 3 s, опрос каждую минуту.
+  AtomicReference хранит целостный snapshot, observe сериализован.
+  При сбое gauges получают NaN, healthy = 0, время последнего
+  успешного наблюдения сохраняется. SQL не запускается при scrape.
+
+### Независимые барьеры
+
+```text
+Immutable route + policy + budget
+             |
+             v
+       STARTED (DB)
+             |
+             v
+       V100 receipt (commit)
+             |
+             v
+   Endpoint / IP / TLS / deadline
+             |
+             v
+       HTTP adapter (one exchange)
+             |
+             v
+       Terminal evidence (DB)
+```
+
+Между durable receipt и сетевым I/O нет распределённой транзакции.
+Receipt означает право на одну отправку, а не факт исполнения.
+Если результат после отправки неизвестен, применяется AMBIGUOUS,
+а не гарантированный нулевой расход. Ни Prometheus, ни метрики
+адаптера не являются финансовым журналом или механизмом допуска.
+
+### Дополнительные тесты
+
+| Класс | Назначение |
+| --- | --- |
+| `ProviderSecretConfigurationValidatorTest` | Файл, ownership, mode, binding, shadowing |
+| `AiProviderEndpointSecurityTest` | URI, traversal, Host, IP до TCP |
+| `AiProviderTransportHardeningTest` | Redirect, gzip, replay, deadline, неполное тело |
+| `AiProviderMetricsTest` | Ограниченные labels, gate, сохранение результата |
+| `ModelAttemptMonitorPostgresIntegrationTest` | PostgreSQL, overflow, failure/recovery, concurrency |
+
+### Prometheus
+
+На локальном backend: `127.0.0.1:9091/actuator/prometheus`.
+Prometheus опрашивает только разрешённый management endpoint.
+Основные запросы PromQL:
+
+```promql
+up{job="safeai-backend"}
+safeai_ai_attempt_observation_healthy
+safeai_ai_attempt_stalled
+safeai_ai_attempt_ambiguous
+safeai_ai_attempt_unknown_cost
+```
+
+```promql
+sum by (provider, result) (
+  rate(safeai_ai_provider_attempts_total[5m])
+)
+```
+
+Не суммировать одинаковые DB gauges от нескольких backend replicas:
+они наблюдают одну БД; для общей выборки используйте max.
+NaN / отсутствующая серия не равны нулю. Старые STARTED за пределами
+24h требуют отдельной reconciliation; монитор не доказывает отсутствие
+всех незавершённых попыток. Правила и тесты находятся в
+`infra/prometheus/rules/safeai-model-ai.yml` и
+`infra/prometheus/tests/model-ai.test.yml`.
+
+### Приёмка и оставшиеся границы
+
+- Обязательные тесты проходят проверку в
+  `.github/scripts/check-model-ai-security-acceptance.py`.
+- Полная приёмка включает clean Maven verify, Testcontainers,
+  сравнение V62/V101, runtime ACL clean + upgrade и promtool.
+- На staging проверить фактический TLS, deny egress к внутренним
+  адресам, ротацию с пересозданием backend, отозванный ключ,
+  отказ БД и потерю подтверждения HTTP/commit.
+- RPM, TPM, distributed concurrency для физических вызовов,
+  embeddings и recovery лимитов — самостоятельный этап 7.5F.
+- Grafana dashboards, Alertmanager delivery, exporters, HA
+  и эксплуатационная проверка — Deployment Readiness.
+
+Наличие кода или XML отчётов без запуска на нужном commit
+не подтверждает Production Ready.

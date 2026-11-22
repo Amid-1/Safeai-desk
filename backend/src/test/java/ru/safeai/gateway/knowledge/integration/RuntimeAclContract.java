@@ -1,6 +1,7 @@
 package ru.safeai.gateway.knowledge.integration;
 
 import com.jayway.jsonpath.JsonPath;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -27,13 +28,18 @@ import ru.safeai.gateway.knowledge.ingestion.KnowledgeIngestionProcessor;
 import ru.safeai.gateway.knowledge.ingestion.KnowledgeIngestionQueueRepository;
 import ru.safeai.gateway.model.repository.ModelPolicyPreviewConfirmationRepository;
 import ru.safeai.gateway.testsupport.SafeAiJacksonJsonPathExtension;
+import ru.safeai.gateway.usage.repository.UsageExportJobRepository;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.sql.Timestamp;
 import java.sql.SQLException;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -92,6 +98,8 @@ class RuntimeAclContract {
     @Autowired KnowledgeIngestionProcessor ingestion;
     @Autowired AuditOutboxProcessor audit;
     @Autowired ModelPolicyPreviewConfirmationRepository confirmations;
+    @Autowired UsageExportJobRepository exportJobs;
+    @Autowired MeterRegistry meters;
 
     record Actor(UUID id, UUID org, String email, String password) {}
     record Session(Cookie access, Cookie refresh) {}
@@ -172,14 +180,32 @@ class RuntimeAclContract {
                    AND NOT has_table_privilege(current_user,'public.model_physical_dispatch_receipts_v100','UPDATE')
                    AND NOT has_table_privilege(current_user,'public.model_physical_dispatch_receipts_v100','DELETE')
                    AND NOT has_table_privilege(current_user,'public.model_physical_dispatch_receipts_v100','TRUNCATE')
+                   AND has_table_privilege(current_user,'public.model_cost_commitment_ledger_v62','SELECT')
+                   AND NOT has_table_privilege(current_user,'public.model_cost_commitment_ledger_v62','UPDATE')
+                   AND NOT has_table_privilege(current_user,'public.model_cost_commitment_ledger_v62','INSERT')
+                   AND NOT has_table_privilege(current_user,'public.model_cost_commitment_ledger_v62','DELETE')
                 """, Boolean.class));
         assertRejectedUpdate("UPDATE public.model_physical_dispatch_receipts_v100 "
                 + "SET authorized_at=clock_timestamp() WHERE attempt_id=?", physicalAttempt, "42501", null);
         assertRejectedUpdate("DELETE FROM public.model_physical_dispatch_receipts_v100 "
                 + "WHERE attempt_id=?", physicalAttempt, "42501", null);
-        System.out.println("MODEL PHYSICAL DISPATCH SECURITY PASS: receipt and restricted runtime ACL");
         mvc.perform(json(post("/api/chats/{id}/messages", chat), sa, message))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.replay").value(true));
+        assertEquals(1L, jdbc.queryForObject("""
+                SELECT count(*) FROM public.model_physical_dispatch_receipts_v100 r
+                JOIN public.model_execution_attempts a ON a.id=r.attempt_id
+                JOIN public.model_execution_plans p ON p.id=a.execution_plan_id
+                JOIN public.chat_turns t ON t.id=p.chat_turn_id
+                WHERE t.organization_id=? AND t.client_request_id=?
+                """, Long.class, a.org(), request));
+        System.out.println("MODEL PHYSICAL DISPATCH SECURITY PASS: receipt and restricted runtime ACL");
+        mvc.perform(get("/api/admin/models/policies/{id}/budget-status", a.org()).cookie(sa.access()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.organizationId").value(a.org().toString()));
+        mvc.perform(get("/api/admin/models/policies/{id}/budget-status", b.org()).cookie(sa.access()))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/admin/models/policies/budget-summary").cookie(sa.access()))
+                .andExpect(status().isForbidden());
+        System.out.println("MODEL BUDGET SECURITY PASS: HTTP tenant boundary, restricted ledger ACL");
         mvc.perform(post("/api/chats/{id}/archive", chat).cookie(sa.access()).with(realCsrf()))
                 .andExpect(status().isNoContent());
         mvc.perform(post("/api/chats/{id}/restore", chat).cookie(sa.access()).with(realCsrf()))
@@ -254,10 +280,146 @@ class RuntimeAclContract {
                         .cookie(sa.access())).andExpect(status().isBadRequest());
         System.out.println("V94 CORRELATION PASS: HTTP, route, quota, provider, audit, ingestion and tenant isolation");
         mvc.perform(get("/api/admin/audit-events").cookie(sa.access())).andExpect(status().isOk());
+        verifyUsageExportSecurity(a, b, sa, sb);
         mvc.perform(post("/api/auth/logout").cookie(sa.refresh(), sa.access()).with(realCsrf()))
                 .andExpect(status().isNoContent());
         System.out.println("STAGE5 AUDIT/USAGE PASS: real read and delivery");
         System.out.println("STAGE5 BACKEND RUNTIME PASS");
+    }
+
+    private void verifyUsageExportSecurity(Actor a, Actor b, Session sa, Session sb) throws Exception {
+        String base = "/api/admin/usage/exports";
+        Actor owner = fixture(a.org(), false);
+        Session session = login(owner);
+        Instant now = Instant.now();
+        String request = """
+                {"kind":"SUMMARY","dateFrom":"%s","dateTo":"%s"}
+                """.formatted(now.minusSeconds(3600), now.plusSeconds(60));
+        String foreign = """
+                {"kind":"SUMMARY","dateFrom":"%s","dateTo":"%s","organizationId":"%s"}
+                """.formatted(now.minusSeconds(3600), now.plusSeconds(60), b.org());
+        mvc.perform(json(post(base), session, foreign)).andExpect(status().isForbidden());
+        mvc.perform(json(post(base), session, request.replace("SUMMARY", "ORGANIZATIONS")))
+                .andExpect(status().isForbidden());
+        assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM public.usage_export_jobs WHERE owner_id=?",
+                Long.class, owner.id()));
+
+        UUID jobId = enqueueUsageExport(base, request, session);
+        String jobPath = base + "/" + jobId;
+        awaitUsageExport(jobPath, session);
+        MvcResult downloaded = mvc.perform(get(jobPath + "/download").cookie(session.access()))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(header().string("X-Content-Type-Options", "nosniff"))
+                .andExpect(header().string("Content-Disposition", "attachment; filename=\"safeai-usage.csv\""))
+                .andReturn();
+        byte[] contents = downloaded.getResponse().getContentAsByteArray();
+        String csv = new String(contents, StandardCharsets.UTF_8);
+        assertTrue(csv.contains(a.id().toString()), "Expected actual usage of the tenant fixture");
+        assertTrue(csv.contains(a.org().toString()), "Export scope must be explicit");
+        assertFalse(csv.contains(b.id().toString()));
+        assertFalse(csv.contains(b.org().toString()));
+        for (Session other : new Session[]{sa, sb}) {
+            mvc.perform(get(jobPath).cookie(other.access())).andExpect(status().isNotFound());
+            mvc.perform(get(jobPath + "/download").cookie(other.access())).andExpect(status().isNotFound());
+        }
+        // B must not receive the known, persisted Usage rows of A even in its own export.
+        UUID foreignJobId = enqueueUsageExport(base, request, sb);
+        String foreignJobPath = base + "/" + foreignJobId;
+        awaitUsageExport(foreignJobPath, sb);
+        byte[] foreignContents = mvc.perform(get(foreignJobPath + "/download").cookie(sb.access()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
+        String foreignCsv = new String(foreignContents, StandardCharsets.UTF_8);
+        assertTrue(foreignCsv.contains(b.org().toString()));
+        assertFalse(foreignCsv.contains(a.id().toString()));
+        assertFalse(foreignCsv.contains(a.org().toString()));
+
+        // Check the real runtime login, not a table owner or a simulated JDBC fixture.
+        assertEquals(Boolean.TRUE, jdbc.queryForObject("""
+                SELECT has_table_privilege(current_user,'public.usage_export_jobs','SELECT')
+                   AND has_table_privilege(current_user,'public.usage_export_jobs','DELETE')
+                   AND NOT has_table_privilege(current_user,'public.usage_export_jobs','UPDATE')
+                   AND NOT has_table_privilege(current_user,'public.usage_export_jobs','INSERT')
+                   AND NOT has_table_privilege(current_user,'public.usage_export_jobs','TRUNCATE')
+                   AND NOT has_table_privilege(current_user,'public.usage_export_jobs','TRIGGER')
+                   AND NOT has_column_privilege(current_user,'public.usage_export_jobs','owner_id','UPDATE')
+                   AND NOT has_column_privilege(current_user,'public.usage_export_jobs','organization_id','UPDATE')
+                   AND has_column_privilege(current_user,'public.usage_export_jobs','csv','UPDATE')
+                """, Boolean.class));
+        assertRejectedUpdate("UPDATE public.usage_export_jobs SET owner_id=owner_id WHERE id=?",
+                jobId, "42501", null);
+        assertRejectedUpdate("UPDATE public.usage_export_jobs SET csv=csv WHERE id=?",
+                jobId, "23514", "V98 export is terminal or expired");
+        assertRejectedUpdate("DELETE FROM public.usage_export_jobs WHERE id=?",
+                jobId, "23514", "V98 export retention");
+        assertArrayEquals(contents, jdbc.queryForObject("SELECT csv FROM public.usage_export_jobs WHERE id=?",
+                byte[].class, jobId));
+
+        var recordedOwner = jdbc.queryForObject("""
+                SELECT owner_id,owner_org,token_version,org_version,owner_role
+                FROM public.usage_export_jobs WHERE id=?
+                """, (rs, row) -> new UsageExportJobRepository.Owner(rs.getObject(1, UUID.class),
+                rs.getObject(2, UUID.class), rs.getLong(3), rs.getLong(4), rs.getString(5)), jobId);
+        assertNotNull(recordedOwner);
+        assertEquals(owner.id(), recordedOwner.id());
+        assertEquals(1, jdbc.update("UPDATE public.users SET token_version=token_version+1 WHERE id=?", owner.id()));
+        assertFalse(exportJobs.authorized(recordedOwner));
+        assertTrue(exportJobs.status(jobId, recordedOwner).isEmpty());
+        assertTrue(exportJobs.download(jobId, recordedOwner).isEmpty());
+        mvc.perform(get(jobPath + "/download").cookie(session.access())).andExpect(status().isUnauthorized());
+        Session renewed = login(owner);
+        mvc.perform(get(jobPath).cookie(renewed.access())).andExpect(status().isNotFound());
+        mvc.perform(get(jobPath + "/download").cookie(renewed.access())).andExpect(status().isNotFound());
+        verifyUsageMetricLabels();
+        System.out.println("USAGE SECURITY PASS: real HTTP export, owner and tenant isolation, ACL, immutable CSV, revocation");
+    }
+
+    private void verifyUsageMetricLabels() {
+        Set<String> reports = Set.of("summary", "organizations", "users", "models", "daily", "organization-users",
+                "organization-models", "organization-daily", "by-user", "by-organization", "data-quality", "export",
+                "physical-attempts", "physical-reconciliation", "physical-report", "physical-providers");
+        Set<String> results = Set.of("rejected", "accepted", "storage_error", "retry_deferred", "failed", "ready", "lease_lost");
+        assertNotNull(meters.find("safeai.usage.export.queued").gauge());
+        assertNotNull(meters.find("safeai.usage.report.duration").tag("report", "export").timer());
+        meters.getMeters().stream().map(meter -> meter.getId())
+                .filter(metric -> metric.getName().startsWith("safeai.usage."))
+                .forEach(metric -> metric.getTags().forEach(tag -> {
+                    boolean bounded = switch (tag.getKey()) {
+                        case "report" -> reports.contains(tag.getValue());
+                        case "result" -> results.contains(tag.getValue());
+                        default -> false;
+                    };
+                    assertTrue(bounded, "Unexpected Usage metric label key: " + tag.getKey());
+                }));
+    }
+
+    private UUID enqueueUsageExport(String base, String request, Session session) {
+        return await().alias("Usage export admission").pollInSameThread()
+                .pollDelay(Duration.ZERO).pollInterval(Duration.ofMillis(250))
+                .atMost(Duration.ofSeconds(15)).until(() -> {
+            MvcResult response = mvc.perform(json(post(base), session, request)).andReturn();
+            if (response.getResponse().getStatus() == 202) {
+                assertEquals("no-store", response.getResponse().getHeader("Cache-Control"));
+                return id(response);
+            }
+            // The worker can momentarily own the advisory admission lock.
+            assertEquals(429, response.getResponse().getStatus());
+            return null;
+        }, Objects::nonNull);
+    }
+
+    private void awaitUsageExport(String path, Session session) {
+        await().alias("Usage export worker").pollInSameThread()
+                .pollDelay(Duration.ZERO).pollInterval(Duration.ofMillis(250))
+                .atMost(Duration.ofSeconds(60)).until(() -> {
+            MvcResult response = mvc.perform(get(path).cookie(session.access()))
+                    .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
+                    .andReturn();
+            String state = JsonPath.read(response.getResponse().getContentAsString(), "$.state");
+            if ("READY".equals(state)) return true;
+            assertTrue("QUEUED".equals(state) || "RUNNING".equals(state), "Unexpected export state: " + state);
+            return false;
+        });
     }
 
     private UUID verifyPendingCorrelationAcl(Actor actor, UUID correlation) {
@@ -405,14 +567,20 @@ class RuntimeAclContract {
     }
 
     private Actor fixture() {
-        UUID id = UUID.randomUUID(), org = UUID.randomUUID();
+        return fixture(UUID.randomUUID(), true);
+    }
+
+    private Actor fixture(UUID org, boolean createOrganization) {
+        UUID id = UUID.randomUUID();
         Actor actor = new Actor(id, org, "stage5-" + id + "@example.invalid", "Stage5-" + UUID.randomUUID() + "!");
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
             String name = "Stage5 " + org;
-            assertEquals(1, jdbc.update("""
-                    INSERT INTO public.organizations(id,name,normalized_name,enabled,created_at,updated_at,version)
-                    VALUES (?,?,public.normalize_organization_name(?),true,clock_timestamp(),clock_timestamp(),0)
-                    """, org, name, name));
+            if (createOrganization) {
+                assertEquals(1, jdbc.update("""
+                        INSERT INTO public.organizations(id,name,normalized_name,enabled,created_at,updated_at,version)
+                        VALUES (?,?,public.normalize_organization_name(?),true,clock_timestamp(),clock_timestamp(),0)
+                        """, org, name, name));
+            }
             assertEquals(1, jdbc.update("""
                     INSERT INTO public.users(id,organization_id,email,password_hash,full_name,enabled,
                       disabled_at,created_at,updated_at,token_version,version)

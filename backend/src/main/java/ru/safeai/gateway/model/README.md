@@ -5,12 +5,12 @@
 
 > **Пакет:** `ru.safeai.gateway.model`  
 > **Проект:** SafeAI-Desk / backend  
-> **Актуальность:** 17.11.2026, Flyway V1–V92  
+> **Актуальность:** 22.11.2026, Flyway V1–V101\
 > **Стек:** Java 21, Spring Boot 4.1.1, Spring MVC, JDBC, PostgreSQL  
-> **Production-код:** 87 Java-файлов  
-> **Тестовый пакет:** 60 Java-файлов (56 Test, 4 support/fixtures)  
+> **Production-код:** 96 Java-файлов\
+> **Тестовый пакет:** 68 Java-файлов (63 Test; остальные — support/fixtures)\
 > Документ отражает исходники модуля, а не подтверждает развёртывание
-> V92 в production или успешность последнего полного CI.
+> V101 в production или успешность последнего полного CI.
 
 ## Содержание
 
@@ -31,6 +31,7 @@
 - [Конфигурация](#конфигурация)
 - [Тестирование](#тестирование)
 - [Эксплуатация и границы](#эксплуатация-и-границы)
+- [Финальная приёмка](#финальная-приёмка-75e8)
 
 ## Назначение
 
@@ -154,6 +155,7 @@ model/
 │   ├── ModelPolicyPreviewController
 │   ├── ModelRouteDecisionController
 │   ├── ModelRuntimeController
+│   ├── OrganizationBudgetStatusController
 │   ├── OrganizationModelPolicyController
 │   └── RubBudgetRateController
 ├── domain/
@@ -185,6 +187,7 @@ model/
 │   ├── ModelPolicyPreviewItemResponse
 │   ├── ModelPolicyPreviewResponse
 │   ├── ModelRouteDecisionResponse
+│   ├── OrganizationBudgetStatusResponse
 │   ├── OrganizationModelPolicyResponse
 │   ├── PlatformBudgetSummaryResponse
 │   ├── RubBudgetInput
@@ -192,6 +195,7 @@ model/
 │   ├── RuntimeModelProbeResponse
 │   ├── RuntimeModelStatusResponse
 │   ├── RuntimeModelStatusWireResponse
+│   ├── StrictPolicyLockoutAcknowledgmentDeserializer
 │   └── StrictPolicyTokenLimitDeserializer
 ├── exception/
 │   ├── ModelRouteDeniedException
@@ -237,6 +241,7 @@ model/
 │   ├── ModelRoutingSelectionPolicy
 │   ├── ModelRoutingService
 │   ├── OpenAiRuntimeModelHealthProbe
+│   ├── OrganizationBudgetStatusService
 │   ├── OrganizationModelPolicyAuditDetailsFactory
 │   ├── OrganizationModelPolicyRules
 │   ├── OrganizationModelPolicyService
@@ -1225,7 +1230,7 @@ V92 добавляет два validated CHECK без UPDATE историческ
 
 `ModelControlPlaneSchemaVerifier` на старте проверяет ключевые
 таблицы, constraints/triggers и pricing_scheme. Он не заменяет
-полную проверку V1–V92 и production privileges.
+полную проверку V1–V101 и production privileges.
 
 ### Ownership и роли БД
 
@@ -1345,6 +1350,7 @@ model/
 │   ├── ModelRoutingReplayV54Test
 │   ├── ModelRoutingSelectionPolicyTest
 │   ├── ModelRoutingServiceTest
+│   ├── OrganizationBudgetStatusSecurityTest
 │   ├── OrganizationBudgetStatusServiceTest
 │   ├── OrganizationModelPolicyRulesTest
 │   ├── OrganizationModelPolicyServiceTest
@@ -1360,7 +1366,7 @@ model/
 
 ### Назначение тестовых классов
 
-56 файлов с суффиксом Test и 4 вспомогательных файла.
+63 файлов с суффиксом Test и 5 вспомогательных файлов.
 Количество файлов не равно числу JUnit-сценариев.
 
 #### controller — REST и RBAC
@@ -1653,3 +1659,109 @@ V1–V99 и их контрольные суммы не меняются. V100 �
 reviewed ACL и последовательную миграционную приёмку.
 Полная production-приёмка требует успешного запуска тестов,
 а не только наличия SQL и Java.
+
+## Финальная приёмка 7.5E.8
+
+### Дополнительные компоненты control plane
+
+| Компонент | Назначение |
+| --- | --- |
+| `OrganizationBudgetStatusController` | HTTP read-only бюджет организации и платформы |
+| `OrganizationBudgetStatusService` | Проверка роли и tenant до чтения ledger; UTC snapshot |
+| `OrganizationBudgetStatusResponse` | Точные USD-строки, неизвестные обязательства, nullable остаток |
+| `PlatformBudgetSummaryResponse` | Взаимоисключающие категории по организациям |
+| `StrictPolicyLockoutAcknowledgmentDeserializer` | Только JSON boolean, без coercion |
+| `ModelRouteMetrics` | Метрики вставленных решений после commit |
+
+Budget status API (под общим префиксом `/api/admin/models/policies`):
+
+| GET | Доступ |
+| --- | --- |
+| `/{organizationId}/budget-status` | ADMIN — свой tenant; SUPER_ADMIN — допустимый tenant |
+| `/budget-summary` | Только SUPER_ADMIN |
+
+Обе операции read-only REPEATABLE_READ. Это согласованный снимок
+для отображения, не транзакция admission. При UNKNOWN или
+EXCEEDED_LOWER_BOUND остаток null, а не ноль и не доступный бюджет.
+HARD admission использует отдельный READ COMMITTED fence и актуальную
+политику. DTO не выдаёт разрешение на provider call.
+
+### Миграции после V92
+
+| Миграция | Назначение |
+| --- | --- |
+| V93 | Подтверждение preview политики, immutable история |
+| V94 | Diagnostic correlation_id; не ключ авторизации |
+| V95 | Неизменяемое резервирование Chat, single physical attempt |
+| V96 | Chat quota admission fence перед физическим исполнением |
+| V97 | Online-index plan_id / started_at для physical usage |
+| V98 | Ограниченная очередь CSV Usage export |
+| V99 | Immutable export identity, lease и current authorization |
+| V100 | Независимый финансовый dispatch fence + durable receipt |
+| V101 | Оптимизация поиска latest attempt в V62 ledger |
+
+V101 заменяет только access path на LATERAL ORDER BY attempt_number
+DESC LIMIT 1. Уникальное ограничение V50 обеспечивает детерминизм.
+Проверяются тип VIEW, контракт колонок, reloptions, non-null key,
+уникальный валидный B-tree, состояние каталога и блокировки.
+Новый индекс, изменение исторических rows, DROP CASCADE и изменение
+ранее применённых миграций не используются. Точная эквивалентность
+всех девяти полей V62 и V101 проверяется через EXCEPT ALL в обе стороны.
+
+Runtime ACL review boundary — V101; 110 утверждённых SQL/CONF.
+Новые или изменённые миграции не проходят review автоматически.
+Не заменять утверждённый manifest хэшами произвольного локального дерева.
+
+### Расширенная тестовая структура
+
+| Класс | Назначение |
+| --- | --- |
+| `OrganizationBudgetStatusSecurityTest` | Отказ до доступа к ledger; roles; UNKNOWN |
+| `ModelCommitmentLedgerFixture` | Изолированная SQL-фикстура V62/V101 |
+| `ModelCommitmentLedgerV101IntegrationTest` | Полная эквивалентность ledger и месячных сумм |
+| `ModelCommitmentLedgerV101GuardIntegrationTest` | Drift, lock timeout, rollback, concurrency |
+| `ModelCommitmentLedgerExplainPerformanceIntegrationTest` | EXPLAIN ANALYZE BUFFERS до/после |
+| `ModelRouteMetricsTest` | Commit-only счётчики без replay/rollback |
+
+Изолированная фикстура не заменяет последовательный upgrade
+реальной схемы: `FlywaySequentialUpgradeIT`, `RuntimeAclPolicyTest`,
+`DatabaseMigrationMainTest` и runtime ACL clean/upgrade обязательны.
+Общий `RuntimeAclContract` в knowledge.integration одновременно
+проверяет старую Usage export security, V100 receipt и replay,
+SELECT-only V101 ledger и реальные HTTP-denials Budget Status.
+Нагрузочный профиль включает 1 млн физических попыток, dense active
+plans, skewed tenant, глобальный и tenant-selective запросы;
+сохраняются три JSON EXPLAIN samples и сравнительный CSV.
+
+### Prometheus и эксплуатация
+
+```promql
+sum by (outcome, reason) (
+  rate(safeai_model_route_decisions_total[5m])
+)
+sum by (outcome) (
+  increase(safeai_model_route_budget_exceeded_total[5m])
+)
+```
+
+Метрики агрегированы, не содержат tenant/user/decision IDs.
+Они не являются полным ledger: счётчики могут сброситься
+при restart, наблюдение может быть недоступно. Правила E.7
+обнаруживают missing instrumentation, budget denials,
+unverifiable commitment, ошибки и задержки AI.
+
+### Release gate
+
+1. Неизменность V1–V101 и reviewed runtime ACL.
+2. Focused security matrix: роли, tenant, финансы, receipt,
+   retry, TLS/SSRF, секреты, наблюдение и V101 guard.
+3. Clean Maven verify; обязательные XML cases без skip.
+4. Performance evidence V62/V101; отсутствие ухудшения
+   за пределами утверждённых тестовых порогов.
+5. Runtime ACL clean + upgrade с реальными ролями и образом.
+6. Promtool rules + alert tests, затем staging scrape и доставка.
+
+Проверка обязательных XML: `.github/scripts/check-model-ai-security-acceptance.py`.
+Глобальная Grafana, Alertmanager и distributed provider limits
+не входят в завершённые E.1–E.7. Не считать production принятым
+до прохождения всех пунктов, включая staging.
