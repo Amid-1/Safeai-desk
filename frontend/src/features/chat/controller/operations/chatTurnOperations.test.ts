@@ -78,7 +78,7 @@ function harness() {
         putPendingTurn: updates.putPendingTurn,
     })
     const makeSubmission = (overrides: Partial<Pick<ChatControllerDependencies,
-        'knowledgeMode' | 'knowledgeBaseId' | 'capabilities'
+        'knowledgeMode' | 'knowledgeBaseId' | 'capabilities' | 'activePendingTurn'
     >> = {}) => createTurnSubmission({
         capabilities: { maxMessageChars: 16_000, maxChatPageSize: 100,
             maxMessagePageSize: 100, detailsMessageLimit: 50 },
@@ -101,6 +101,7 @@ function harness() {
         setDraft: updates.setDraft,
         putPendingTurn: updates.putPendingTurn,
         sendInFlightRef,
+        reconciliationControllersRef,
         ...overrides,
     })
     return {
@@ -251,5 +252,45 @@ describe('Классификация ошибок отправки', () => {
         }))
         expect(h.reconcilePendingTurn).not.toHaveBeenCalled()
         expect(sendMock).not.toHaveBeenCalled()
+    })
+
+    it('при требовании сверки выполняет только GET исходного запроса', async () => {
+        const h = harness()
+        await h.failure.handleSendFailure(pending(), new ApiError(
+            'internal attempt details', { code: 'AI_EXECUTION_RECONCILIATION_REQUIRED' }, 409,
+        ))
+        const current = h.pendingTurnsRef.current[IDS.chat]
+        expect(current.status).toBe('RECONCILIATION_REQUIRED')
+        expect(current.clientRequestId).toBe(IDS.request)
+        expect(current.error).not.toContain('internal')
+        expect(h.reconcilePendingTurn).toHaveBeenCalledWith(current)
+        const actions = h.makeSubmission({ activePendingTurn: current })
+        await actions.retryPendingTurn()
+        actions.prepareNewRequestFromPending()
+        actions.dismissUnsafePending()
+        expect(sendMock).not.toHaveBeenCalled()
+        expect(h.pendingTurnsRef.current[IDS.chat]).toEqual(current)
+    })
+
+    it('не доверяет старому обработчику кнопки после изменения состояния', async () => {
+        const h = harness()
+        const previous = { ...pending(), status: 'SEND_UNKNOWN' as const }
+        h.updates.putPendingTurn(previous)
+        const actions = h.makeSubmission({ activePendingTurn: previous })
+        h.updates.putPendingTurn({ ...previous, status: 'RECONCILIATION_REQUIRED' })
+        await actions.retryPendingTurn()
+        expect(sendMock).not.toHaveBeenCalled()
+    })
+
+    it('429 без Retry-After запрещает ранний повтор и новый идентификатор', async () => {
+        const h = harness()
+        await h.failure.handleSendFailure(pending(), new ApiError('private', {}, 429))
+        const current = h.pendingTurnsRef.current[IDS.chat]
+        expect(current.retryAfterUntil).toBeGreaterThan(Date.now() + 28_000)
+        const actions = h.makeSubmission({ activePendingTurn: current })
+        await actions.retryPendingTurn()
+        actions.prepareNewRequestFromPending()
+        expect(sendMock).not.toHaveBeenCalled()
+        expect(h.pendingTurnsRef.current[IDS.chat]).toEqual(current)
     })
 })

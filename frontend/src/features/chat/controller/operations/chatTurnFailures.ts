@@ -1,6 +1,6 @@
 // frontend/src/features/chat/controller/operations/chatTurnFailures.ts
 import type { PendingTurn, PendingTurnStatus } from '../../lib/chatPage.helpers'
-import { ApiError, getApiErrorMessage } from '../../../../shared/api/http'
+import { ApiError, getApiErrorMessage, rateLimitRetrySeconds } from '../../../../shared/api/http'
 import type { ChatControllerDependencies } from './chatControllerTypes'
 import { withPendingState } from './chatPendingState'
 import { parsePublicModelRouteDenial } from '../../../../shared/lib/modelRouteDenial'
@@ -32,14 +32,21 @@ function resolveFailure(error: ApiError, now: number): FailureDecision | null {
         return { status: 'FAILED', pendingMessage: message, visibleMessage: message }
     }
     if (QUOTA_CODES.has(code)) {
-        const message = error.message || 'Квота AI исчерпана.'
+        const message = 'Лимит использования AI исчерпан. Обратитесь к администратору.'
         return { status: 'QUOTA_BLOCKED', pendingMessage: message, visibleMessage: message }
+    }
+    if (code === 'AI_EXECUTION_RECONCILIATION_REQUIRED') {
+        return {
+            status: 'RECONCILIATION_REQUIRED',
+            pendingMessage: 'Не удалось подтвердить результат. Проверьте состояние отправленного запроса.',
+            reconcile: true,
+        }
     }
     if (AMBIGUOUS_CODES.has(code)) {
         return {
             status: 'AMBIGUOUS',
-            pendingMessage: 'Результат AI-вызова неоднозначен. Повтор с новым clientRequestId запрещён.',
-            visibleMessage: 'Проверьте состояние исходной операции. Новый запрос автоматически не создаётся.',
+            pendingMessage: 'Не удалось подтвердить результат отправленного запроса.',
+            visibleMessage: 'Проверьте состояние запроса перед новой отправкой.',
         }
     }
     if (code === 'CHAT_ACCESS_REVOKED_DURING_PROCESSING') {
@@ -52,8 +59,8 @@ function resolveFailure(error: ApiError, now: number): FailureDecision | null {
     if (code === 'IDEMPOTENCY_KEY_REUSED') {
         return {
             status: 'IDEMPOTENCY_CONFLICT',
-            pendingMessage: 'Этот clientRequestId уже связан с другим содержимым. Повторять запрос автоматически нельзя.',
-            visibleMessage: 'Обнаружен конфликт идемпотентности.',
+            pendingMessage: 'Не удалось повторить отправку: запрос связан с другим сообщением.',
+            visibleMessage: 'Скопируйте текст или закройте предупреждение без повторной отправки.',
         }
     }
     if (IN_PROGRESS_CODES.has(code)) {
@@ -68,9 +75,10 @@ function resolveFailure(error: ApiError, now: number): FailureDecision | null {
     if (error.status === 429) {
         return {
             status: 'RATE_LIMITED',
-            pendingMessage: 'Лимит запросов временно исчерпан.',
-            visibleMessage: 'После Retry-After будет выполнен только повтор с тем же clientRequestId.',
-            retryAfterUntil: now + (error.retryAfterSeconds ?? 1) * 1_000,
+            pendingMessage: code === 'AI_PROVIDER_RATE_LIMITED'
+                ? 'AI временно перегружен.'
+                : 'Слишком много запросов.',
+            retryAfterUntil: now + rateLimitRetrySeconds(error) * 1_000,
         }
     }
     return null
@@ -83,13 +91,18 @@ export function createTurnFailureHandler(deps: FailureDeps) {
         const now = Date.now()
         const decision = error instanceof ApiError ? resolveFailure(error, now) : null
         if (decision) {
-            putPendingTurn(withPendingState(
+            const updated = withPendingState(
                 pending, decision.status, decision.pendingMessage,
                 decision.retryAfterUntil ?? null,
-            ))
+            )
+            putPendingTurn(updated)
             if (decision.visibleMessage) setSendError(decision.visibleMessage)
             if (decision.status === 'RATE_LIMITED') setClock(now)
-            if (decision.reconcile) await reconcilePendingTurn(pending)
+            if (decision.reconcile) {
+                await reconcilePendingTurn(
+                    decision.status === 'RECONCILIATION_REQUIRED' ? updated : pending,
+                )
+            }
             return
         }
 

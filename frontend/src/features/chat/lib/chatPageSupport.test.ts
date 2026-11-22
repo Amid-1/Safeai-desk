@@ -33,11 +33,12 @@ describe('chatPageSupport', () => {
         ['PROCESSING', 'Запрос ещё обрабатывается.', 'обработка'],
         ['SEND_UNKNOWN', 'Сервер не подтвердил отправку.', 'статус неизвестен'],
         ['FAILED', 'AI-запрос завершился ошибкой.', 'ошибка'],
-        ['AMBIGUOUS', 'Результат AI-вызова неоднозначен. Автоматический повтор запрещён.', 'неоднозначно'],
-        ['RATE_LIMITED', 'Повтор разрешён с тем же clientRequestId.', 'лимит'],
+        ['AMBIGUOUS', 'Не удалось подтвердить результат запроса.', 'результат неизвестен'],
+        ['RECONCILIATION_REQUIRED', 'Необходимо проверить состояние запроса.', 'нужна проверка'],
+        ['RATE_LIMITED', 'Можно повторить попытку отправки.', 'лимит'],
         ['QUOTA_BLOCKED', 'Квота AI не позволяет выполнить запрос.', 'квота'],
         ['ACCESS_REVOKED', 'Доступ к чату был отозван.', 'доступ отозван'],
-        ['IDEMPOTENCY_CONFLICT', 'Обнаружен конфликт ключа идемпотентности.', 'конфликт ID'],
+        ['IDEMPOTENCY_CONFLICT', 'Не удалось повторить отправку.', 'ошибка повтора'],
     ] as const)('maps %s to consistent labels', (status, full, short) => {
         expect(getPendingLabel(pending(status), 1_000)).toBe(full)
         expect(getPendingShortLabel(pending(status))).toBe(short)
@@ -48,14 +49,14 @@ describe('chatPageSupport', () => {
         expect(getRetryAfterSeconds(item, 1_000)).toBe(2)
         expect(getPendingLabel(item, 1_000)).toBe('Повтор доступен через 2 сек.')
         expect(getRetryAfterSeconds(item, 4_000)).toBe(0)
-        expect(getPendingLabel(item, 4_000)).toBe('Повтор разрешён с тем же clientRequestId.')
+        expect(getPendingLabel(item, 4_000)).toBe('Можно повторить попытку отправки.')
     })
 
     it('keeps errors explicit instead of silently treating them as success', () => {
         expect(failureMessage({ failureCode: 'MODEL_DENIED' } as ChatTurnStatus))
-            .toBe('AI-запрос завершился ошибкой (MODEL_DENIED).')
+            .toBe('Модель недоступна по правилам вашей организации.')
         expect(failureMessage({ failureCode: null } as ChatTurnStatus))
-            .toBe('AI-запрос завершился ошибкой.')
+            .toBe('Не удалось получить ответ AI.')
         expect(isRequestAborted(new Error('REQUEST_ABORTED'))).toBe(false)
         expect(isRequestAborted(
             new ApiError('Отменён', { code: 'REQUEST_ABORTED' }, 0),

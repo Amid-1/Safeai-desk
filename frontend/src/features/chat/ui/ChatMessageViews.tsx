@@ -11,6 +11,7 @@ import {
     getVisibleMessageContent,
     isMockModel,
     isSafeToPrepareNewRequest,
+    canRetryPendingStatus,
 } from '../lib/chatPage.helpers'
 import { getPendingLabel, getPendingShortLabel } from '../lib/chatPageSupport'
 
@@ -200,20 +201,18 @@ export function PendingTurnState({
     onCopy,
     onDismissUnsafe,
 }: PendingTurnStateProps) {
-    const canRetrySameId =
-        pending.status === 'SEND_UNKNOWN'
-        || pending.status === 'RATE_LIMITED'
+    const canRetrySameId = canRetryPendingStatus(pending.status)
 
     const canCheck =
         pending.status === 'PROCESSING'
         || pending.status === 'SEND_UNKNOWN'
         || pending.status === 'AMBIGUOUS'
+        || pending.status === 'RECONCILIATION_REQUIRED'
 
     const canPrepareNew =
         isSafeToPrepareNewRequest(
             pending.status,
         )
-        && pending.status !== 'RATE_LIMITED'
 
     const unsafeTerminal =
         pending.status === 'AMBIGUOUS'
@@ -225,6 +224,7 @@ export function PendingTurnState({
             role={
                 pending.status === 'FAILED'
                 || pending.status === 'AMBIGUOUS'
+                || pending.status === 'RECONCILIATION_REQUIRED'
                 || pending.status === 'ACCESS_REVOKED'
                 || pending.status === 'IDEMPOTENCY_CONFLICT'
                     ? 'alert'
@@ -255,7 +255,7 @@ export function PendingTurnState({
                         disabled={retryAfterSeconds > 0}
                         onClick={onRetry}
                     >
-                        Повторить с тем же ID
+                        Повторить отправку
                     </button>
                 )}
 
@@ -279,7 +279,7 @@ export function PendingTurnState({
                     </button>
                 )}
 
-                {unsafeTerminal && (
+                {(unsafeTerminal || pending.status === 'RECONCILIATION_REQUIRED') && (
                     <>
                         <button
                             type="button"
@@ -288,13 +288,13 @@ export function PendingTurnState({
                         >
                             Скопировать текст
                         </button>
-                        <button
+                        {unsafeTerminal && <button
                             type="button"
                             className="secondary-button"
                             onClick={onDismissUnsafe}
                         >
                             Закрыть без повтора
-                        </button>
+                        </button>}
                     </>
                 )}
             </div>

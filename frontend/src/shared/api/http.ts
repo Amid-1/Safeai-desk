@@ -5,6 +5,7 @@
 // ============================================================
 
 export { ApiError, getApiErrorMessage, getApiErrorPresentation, parseRetryAfter } from './httpErrors'
+export { rateLimitRetrySeconds } from './httpErrors'
 export type { ApiErrorBody, ApiErrorPresentation } from './httpErrors'
 export type { ApiResponseType, ApiRequestOptions } from './http/httpClient'
 export type { UnauthorizedReason } from './http/httpAuthFlow'

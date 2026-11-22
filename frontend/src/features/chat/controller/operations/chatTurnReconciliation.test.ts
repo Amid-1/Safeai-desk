@@ -102,7 +102,7 @@ describe('Reconciliation состояния AI-turn', () => {
         expect(h.applyTurnMessages).not.toHaveBeenCalled()
         expect(h.applyTurnSuccess).not.toHaveBeenCalled()
         expect(h.putPendingTurn).toHaveBeenCalledWith(expect.objectContaining({
-            status: 'AMBIGUOUS', clientRequestId: IDS.request,
+            status: 'RECONCILIATION_REQUIRED', clientRequestId: IDS.request,
         }))
     })
 
@@ -113,6 +113,15 @@ describe('Reconciliation состояния AI-turn', () => {
         expect(h.putPendingTurn).toHaveBeenCalledWith(expect.objectContaining({
             status: 'SEND_UNKNOWN', clientRequestId: IDS.request,
             error: 'Сервис временно недоступен.',
+        }))
+    })
+
+    it('404 не снимает обязательную сверку исходного запроса', async () => {
+        getTurnMock.mockRejectedValue(new ApiError('Не найден', { code: 'NOT_FOUND' }, 404))
+        const h = mount()
+        await h.reconcilePendingTurn({ ...pending, status: 'RECONCILIATION_REQUIRED' })
+        expect(h.putPendingTurn).toHaveBeenCalledWith(expect.objectContaining({
+            status: 'RECONCILIATION_REQUIRED', clientRequestId: IDS.request,
         }))
     })
 

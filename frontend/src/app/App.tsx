@@ -3,6 +3,7 @@
 // frontend/src/app/App.tsx
 // ============================================================
 import {
+    Fragment,
     lazy,
     Suspense,
     useState,
@@ -170,19 +171,20 @@ function ProtectedRoute({
         return <AuthUnavailableState />
     }
 
-    if (!currentUser) {
+    if (authStatus !== 'authenticated' || !currentUser) {
         return <Navigate to="/login" replace />
     }
 
-    if (!hasRequiredRole(currentUser, roles)) {
+    if (!currentUser.enabled || !hasRequiredRole(currentUser, roles)) {
         return <AccessDeniedState />
     }
 
-    if (typeof children === 'function') {
-        return <>{children(currentUser)}</>
-    }
-
-    return <>{children}</>
+    const scope = JSON.stringify([currentUser.id, currentUser.organizationId, [...currentUser.roles].sort()])
+    return (
+        <Fragment key={scope}>
+            {typeof children === 'function' ? children(currentUser) : children}
+        </Fragment>
+    )
 }
 
 function RootRedirect() {
@@ -202,7 +204,7 @@ function RootRedirect() {
     return (
         <Navigate
             to={
-                currentUser
+                authStatus === 'authenticated' && currentUser
                     ? getDefaultAuthenticatedRoute(currentUser)
                     : '/login'
             }
@@ -225,7 +227,7 @@ function LoginRoute() {
         return <AuthUnavailableState />
     }
 
-    if (currentUser) {
+    if (authStatus === 'authenticated' && currentUser) {
         return (
             <Navigate
                 to={getDefaultAuthenticatedRoute(currentUser)}
@@ -264,10 +266,11 @@ function AppLayout() {
     const {
         currentUser,
         logoutUser,
+        authStatus,
     } = useAuth()
     const [logoutPending, setLogoutPending] = useState(false)
 
-    const isAuthenticated = currentUser !== null
+    const isAuthenticated = authStatus === 'authenticated' && currentUser?.enabled === true
     const canAccessChat = hasAnyRole(
         currentUser,
         ['ADMIN', 'USER'],

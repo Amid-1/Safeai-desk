@@ -12,6 +12,7 @@ export type PendingTurnStatus =
     | 'SEND_UNKNOWN'
     | 'FAILED'
     | 'AMBIGUOUS'
+    | 'RECONCILIATION_REQUIRED'
     | 'RATE_LIMITED'
     | 'QUOTA_BLOCKED'
     | 'ACCESS_REVOKED'
@@ -411,7 +412,10 @@ export function isSafeToPrepareNewRequest(
 ): boolean {
     return status === 'FAILED'
         || status === 'QUOTA_BLOCKED'
-        || status === 'RATE_LIMITED'
+}
+
+export function canRetryPendingStatus(status: PendingTurnStatus): boolean {
+    return status === 'SEND_UNKNOWN' || status === 'RATE_LIMITED'
 }
 
 export function isProcessingPendingStatus(
@@ -420,6 +424,7 @@ export function isProcessingPendingStatus(
     return status === 'SENDING'
         || status === 'PROCESSING'
         || status === 'SEND_UNKNOWN'
+        || status === 'RECONCILIATION_REQUIRED'
 }
 
 function formatMoney(

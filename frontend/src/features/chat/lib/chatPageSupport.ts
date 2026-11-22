@@ -11,15 +11,16 @@ const PENDING_LABELS = {
     SEND_UNKNOWN: ['Сервер не подтвердил отправку.', 'статус неизвестен'],
     FAILED: ['AI-запрос завершился ошибкой.', 'ошибка'],
     AMBIGUOUS: [
-        'Результат AI-вызова неоднозначен. Автоматический повтор запрещён.',
-        'неоднозначно',
+        'Не удалось подтвердить результат запроса.',
+        'результат неизвестен',
     ],
-    RATE_LIMITED: ['Повтор разрешён с тем же clientRequestId.', 'лимит'],
+    RECONCILIATION_REQUIRED: ['Необходимо проверить состояние запроса.', 'нужна проверка'],
+    RATE_LIMITED: ['Можно повторить попытку отправки.', 'лимит'],
     QUOTA_BLOCKED: ['Квота AI не позволяет выполнить запрос.', 'квота'],
     ACCESS_REVOKED: ['Доступ к чату был отозван.', 'доступ отозван'],
     IDEMPOTENCY_CONFLICT: [
-        'Обнаружен конфликт ключа идемпотентности.',
-        'конфликт ID',
+        'Не удалось повторить отправку.',
+        'ошибка повтора',
     ],
 } as const satisfies Record<PendingTurnStatus, readonly [string, string]>
 
@@ -43,9 +44,15 @@ export function getRetryAfterSeconds(pending: PendingTurn, now: number): number 
 }
 
 export function failureMessage(turn: ChatTurnStatus): string {
-    return turn.failureCode
-        ? `AI-запрос завершился ошибкой (${turn.failureCode}).`
-        : 'AI-запрос завершился ошибкой.'
+    const messages: Readonly<Record<string, string>> = {
+        MODEL_DENIED: 'Модель недоступна по правилам вашей организации.',
+        AI_PROVIDER_RATE_LIMITED: 'AI временно перегружен.',
+        RATE_LIMIT_EXCEEDED: 'Лимит запросов временно исчерпан.',
+        RATE_LIMIT_UNAVAILABLE: 'Сервис временно недоступен.',
+    }
+    return turn.failureCode && Object.hasOwn(messages, turn.failureCode)
+        ? messages[turn.failureCode]
+        : 'Не удалось получить ответ AI.'
 }
 
 export function isRequestAborted(error: unknown): boolean {

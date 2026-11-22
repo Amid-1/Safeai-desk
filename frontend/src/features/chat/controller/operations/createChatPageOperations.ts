@@ -10,6 +10,7 @@ import { createHistoryActions } from './chatHistoryActions'
 import type { ChatControllerState } from '../useChatControllerState'
 import type { ChatControllerView } from '../useChatControllerView'
 import type { useChatSessionLifecycle } from './useChatSessionLifecycle'
+import type { PendingTurn } from '../../lib/chatPage.helpers'
 
 type ChatOperationContext = ChatControllerState
     & ChatControllerView
@@ -38,7 +39,14 @@ export function createChatPageOperations(context: ChatOperationContext) {
         handleArchiveChat: directory.handleArchiveChat,
         handleSendMessage: submission.handleSendMessage,
         retryPendingTurn: submission.retryPendingTurn,
-        reconcilePendingTurn: reconciliation.reconcilePendingTurn,
+        reconcilePendingTurn: async (pending: PendingTurn) => {
+            const current = context.pendingTurnsRef.current[pending.chatId]
+            if (!current || current.clientRequestId !== pending.clientRequestId
+                || context.activeChatRef.current?.id !== pending.chatId
+                || context.sendInFlightRef.current.has(pending.chatId)
+                || context.reconciliationControllersRef.current.has(pending.chatId)) return
+            return reconciliation.reconcilePendingTurn(current)
+        },
         loadEarlierHistory: history.loadEarlierHistory,
         prepareNewRequestFromPending: submission.prepareNewRequestFromPending,
         dismissUnsafePending: submission.dismissUnsafePending,

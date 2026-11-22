@@ -201,6 +201,19 @@ describe('LoginPage', () => {
         ).toBeDisabled()
     })
 
+    it('429 без Retry-After также блокирует повторный вход', async () => {
+        const user = userEvent.setup()
+        authMock.loginUser.mockRejectedValue(new ApiError('private details', {}, 429))
+        render(<LoginPage />)
+        await user.type(screen.getByLabelText('Email'), 'user@safeai.test')
+        await user.type(screen.getByLabelText('Пароль'), 'secret')
+        const submit = screen.getByRole('button', { name: 'Войти' })
+        await user.click(submit)
+        expect(await screen.findByRole('alert')).not.toHaveTextContent('private details')
+        expect(submit).toBeDisabled()
+        expect(authMock.loginUser).toHaveBeenCalledTimes(1)
+    })
+
     it('503 не показывается как invalid credentials', async () => {
         const user = userEvent.setup()
 

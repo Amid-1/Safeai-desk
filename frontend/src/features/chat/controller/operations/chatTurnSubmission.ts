@@ -6,7 +6,10 @@
 import type { KeyboardEvent } from 'react'
 import { sendMessage } from '../../api/chatApi'
 import type { PendingTurn } from '../../lib/chatPage.helpers'
-import { createPendingTurn, hasMeaningfulContent, isSafeToPrepareNewRequest, normalizeMessageContent } from '../../lib/chatPage.helpers'
+import {
+    canRetryPendingStatus, createPendingTurn, hasMeaningfulContent,
+    isSafeToPrepareNewRequest, normalizeMessageContent,
+} from '../../lib/chatPage.helpers'
 import { createSecureUuid } from '../../../../shared/lib/secureUuid'
 import { getRetryAfterSeconds } from '../../lib/chatPageSupport'
 import type { ChatControllerDependencies } from './chatControllerTypes'
@@ -32,8 +35,24 @@ export function createTurnSubmission(deps: Pick<ChatControllerDependencies,
     | 'setDraft'
     | 'putPendingTurn'
     | 'sendInFlightRef'
+    | 'reconciliationControllersRef'
 >) {
-    const { capabilities, activeChat, knowledgeMode, knowledgeBaseId, drafts, clock, pendingTurnsRef, activeChatRef, scrollIntentRef, setSendError, activePendingTurn, activeChatHasPending, refreshChatTitle, ensureAutomaticChatTitle, handleSendFailure, applySendSuccess, finishPendingTurn, setDraft, putPendingTurn, sendInFlightRef } = deps
+    const {
+        capabilities, knowledgeMode, knowledgeBaseId, drafts, pendingTurnsRef, activeChatRef,
+        scrollIntentRef, setSendError, activePendingTurn, activeChatHasPending, refreshChatTitle,
+        ensureAutomaticChatTitle, handleSendFailure, applySendSuccess, finishPendingTurn,
+        setDraft, putPendingTurn, sendInFlightRef, reconciliationControllersRef,
+    } = deps
+
+    function getCurrentPending(): PendingTurn | undefined {
+        const chatId = activeChatRef.current?.id
+        if (!chatId || activePendingTurn?.chatId !== chatId) return undefined
+        const current = pendingTurnsRef.current[chatId]
+        if (current?.clientRequestId !== activePendingTurn.clientRequestId
+            || sendInFlightRef.current.has(chatId)
+            || reconciliationControllersRef.current.has(chatId)) return undefined
+        return current
+    }
 
     async function handleSendMessage() {
         const chat = activeChatRef.current
@@ -98,17 +117,18 @@ export function createTurnSubmission(deps: Pick<ChatControllerDependencies,
     }
 
     async function retryPendingTurn() {
-        if (!activePendingTurn) {
+        const current = getCurrentPending()
+        if (!current || !canRetryPendingStatus(current.status)) {
             return
         }
 
         const remaining = getRetryAfterSeconds(
-            activePendingTurn,
-            clock,
+            current,
+            Date.now(),
         )
 
         if (
-            activePendingTurn.status
+            current.status
                 === 'RATE_LIMITED'
             && remaining > 0
         ) {
@@ -116,7 +136,7 @@ export function createTurnSubmission(deps: Pick<ChatControllerDependencies,
         }
 
         await executePendingTurn({
-            ...activePendingTurn,
+            ...current,
             status: 'SENDING',
             error: null,
             retryAfterUntil: null,
@@ -169,37 +189,35 @@ export function createTurnSubmission(deps: Pick<ChatControllerDependencies,
     }
 
     function prepareNewRequestFromPending() {
+        const current = getCurrentPending()
         if (
-            !activeChat
-            || !activePendingTurn
-            || !isSafeToPrepareNewRequest(
-                activePendingTurn.status,
-            )
+            !current || !isSafeToPrepareNewRequest(current.status)
         ) {
             return
         }
 
         setDraft(
-            activeChat.id,
-            activePendingTurn.content,
+            current.chatId,
+            current.content,
         )
-        finishPendingTurn(activeChat.id)
+        finishPendingTurn(current.chatId)
         setSendError('')
     }
 
     function dismissUnsafePending() {
-        if (!activeChat || !activePendingTurn) {
+        const current = getCurrentPending()
+        if (!current) {
             return
         }
 
         if (
-            activePendingTurn.status !== 'AMBIGUOUS'
-            && activePendingTurn.status !== 'IDEMPOTENCY_CONFLICT'
+            current.status !== 'AMBIGUOUS'
+            && current.status !== 'IDEMPOTENCY_CONFLICT'
         ) {
             return
         }
 
-        finishPendingTurn(activeChat.id)
+        finishPendingTurn(current.chatId)
         setSendError('')
     }
 

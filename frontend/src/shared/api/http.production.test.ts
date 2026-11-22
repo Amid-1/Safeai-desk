@@ -18,11 +18,13 @@ describe('http — контракт ошибок и конфиденциальн
     it('не показывает внутренние детали 500 пользователю, сохраняя Request ID',()=>{
         const err=new ApiError('stack trace /secret',{code:'INTERNAL_ERROR',requestId:'rid-42'},500)
         expect(getApiErrorPresentation(err,'Внутренняя ошибка')).toEqual({message:'Внутренняя ошибка',requestId:'rid-42'})
-        expect(getApiErrorMessage(err,'Внутренняя ошибка')).toBe('Внутренняя ошибка Request ID: rid-42')
+        expect(getApiErrorMessage(err, 'Внутренняя ошибка')).toBe('Внутренняя ошибка Номер обращения: rid-42')
     })
     it('не раскрывает Request ID для ожидаемых 4xx',()=>{
         const err=new ApiError('Ограничение',{error:'RATE_LIMIT_EXCEEDED',requestId:'rid'},429)
-        expect(getApiErrorPresentation(err,'Fallback')).toEqual({message:'Ограничение',requestId:undefined})
+        expect(getApiErrorPresentation(err, 'Fallback')).toEqual({
+            message: 'Слишком много запросов. Повторите попытку позже.', requestId: undefined,
+        })
     })
     it('обрабатывает Retry-After HTTP-date и числа без отрицательных задержек',()=>{
         vi.useFakeTimers(); vi.setSystemTime(new Date('2026-08-10T12:00:00Z'))

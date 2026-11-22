@@ -40,7 +40,7 @@ export class ApiError extends Error {
         this.path = body.path
         this.requestId = body.requestId
         this.fieldErrors = body.fieldErrors
-        this.retryAfterSeconds = body.retryAfterSeconds
+        this.retryAfterSeconds = normalizeRetryAfterSeconds(body.retryAfterSeconds)
     }
 }
 
@@ -49,22 +49,53 @@ const PUBLIC_MESSAGE_ERROR_CODES = new Set([
     'VALIDATION_ERROR',
     'CONSTRAINT_VIOLATION',
     'BAD_REQUEST',
-    'RATE_LIMIT_EXCEEDED',
-    'TOO_MANY_REQUESTS',
     'QUOTA_EXCEEDED',
     'CHAT_QUOTA_EXCEEDED',
     'AI_QUOTA_EXCEEDED',
-    'CHAT_BUSY',
-    'CHAT_TURN_IN_PROGRESS',
-    'IDEMPOTENCY_KEY_REUSED',
-    'AI_OUTCOME_AMBIGUOUS',
-    'CHAT_ACCESS_REVOKED_DURING_PROCESSING',
-    'CHAT_LEASE_UNAVAILABLE',
-    'CHAT_PROCESSOR_FENCED',
     'RESOURCE_CONFLICT',
     'CONFLICT',
 ])
 
+// Точные коды backend и HTTP-статусы. Текст не зависит от ответа провайдера.
+const PUBLIC_CODE_MESSAGES: Readonly<Record<string, readonly [number, string]>> = {
+    RATE_LIMIT_EXCEEDED: [429, 'Слишком много запросов. Повторите попытку позже.'],
+    AI_PROVIDER_RATE_LIMITED: [429, 'AI временно перегружен. Повторите попытку позже.'],
+    RATE_LIMIT_UNAVAILABLE: [503, 'Сервис временно недоступен. Повторите попытку позже.'],
+    AUTH_SERVICE_UNAVAILABLE: [503, 'Вход временно недоступен. Повторите попытку позже.'],
+    BUDGET_RATE_UNAVAILABLE: [503, 'Не удалось подтвердить стоимость. Повторите попытку позже.'],
+    AI_EXECUTION_RECONCILIATION_REQUIRED: [409, 'Проверьте состояние отправленного запроса.'],
+    AI_OUTCOME_AMBIGUOUS: [409, 'Не удалось подтвердить результат запроса.'],
+    CHAT_PROCESSOR_FENCED: [409, 'Не удалось подтвердить результат запроса.'],
+    IDEMPOTENCY_KEY_REUSED: [409, 'Не удалось повторить отправку. Проверьте исходный запрос.'],
+    CHAT_TURN_IN_PROGRESS: [409, 'Запрос ещё обрабатывается.'],
+    CHAT_BUSY: [409, 'Запрос ещё обрабатывается.'],
+    CHAT_LEASE_UNAVAILABLE: [503, 'Сервис временно недоступен. Проверьте состояние запроса.'],
+    CHAT_LOCK_UNAVAILABLE: [503, 'Сервис временно недоступен. Проверьте состояние запроса.'],
+    CHAT_ACCESS_REVOKED_DURING_PROCESSING: [403, 'Доступ к чату был отозван.'],
+    USER_VERSION_CONFLICT: [409, 'Данные пользователя изменились. Обновите карточку.'],
+    ORGANIZATION_VERSION_CONFLICT: [409, 'Данные организации изменились. Обновите карточку.'],
+    AI_PROVIDER_TIMEOUT: [504, 'AI не ответил вовремя. Проверьте состояние запроса.'],
+    AI_PROVIDER_OVERLOADED: [503, 'AI временно перегружен. Проверьте состояние запроса.'],
+    AI_PROVIDER_UNAVAILABLE: [503, 'AI временно недоступен. Проверьте состояние запроса.'],
+    AI_PROVIDER_ERROR: [502, 'Не удалось получить ответ AI. Проверьте состояние запроса.'],
+}
+
+export const DEFAULT_RETRY_AFTER_SECONDS = 30
+
+// Безопасное сложение миллисекунд с любым актуальным временем браузера.
+const MAX_RETRY_SECONDS = Math.floor(Number.MAX_SAFE_INTEGER / 2_000)
+
+export function normalizeRetryAfterSeconds(value: unknown): number | undefined {
+    if (typeof value !== 'number' || !Number.isFinite(value)
+        || value < 0 || value > MAX_RETRY_SECONDS) {
+        return undefined
+    }
+    return Math.max(1, Math.ceil(value))
+}
+
+export function rateLimitRetrySeconds(error: ApiError): number {
+    return error.retryAfterSeconds ?? DEFAULT_RETRY_AFTER_SECONDS
+}
 
 export type ApiErrorPresentation = {
     message: string
@@ -82,11 +113,13 @@ export function getApiErrorPresentation(
         }
     }
 
-    const fieldErrorText = formatFieldErrors(
-        error.fieldErrors,
-    )
-
-    const publicMessage = error.errorCode
+    const clientError = error.status >= 400 && error.status < 500
+    const fieldErrorText = error.status === 400 || error.status === 422
+        ? formatFieldErrors(error.fieldErrors) : ''
+    const known = error.errorCode && Object.hasOwn(PUBLIC_CODE_MESSAGES, error.errorCode)
+        ? PUBLIC_CODE_MESSAGES[error.errorCode] : undefined
+    const fixedMessage = known?.[0] === error.status ? known[1] : undefined
+    const publicMessage = clientError && error.errorCode
         && PUBLIC_MESSAGE_ERROR_CODES.has(error.errorCode)
         ? error.message
         : ''
@@ -98,7 +131,9 @@ export function getApiErrorPresentation(
 
     return {
         message:
-            fieldErrorText
+            fixedMessage
+            || fieldErrorText
+            || (error.status === 429 ? 'Слишком много запросов. Повторите попытку позже.' : '')
             || publicMessage
             || fallback,
         requestId,
@@ -118,7 +153,7 @@ export function getApiErrorMessage(
 
     const requestIdPart =
         presentation.requestId
-            ? ` Request ID: ${presentation.requestId}`
+            ? ` Номер обращения: ${presentation.requestId}`
             : ''
 
     return `${
@@ -130,7 +165,7 @@ export function getApiErrorMessage(
 function shouldShowRequestId(
     error: ApiError,
 ): boolean {
-    if (!error.requestId) {
+    if (!error.requestId || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(error.requestId)) {
         return false
     }
 
@@ -154,28 +189,26 @@ function shouldShowRequestId(
 export function parseRetryAfter(
     value: string | null,
 ): number | undefined {
-    if (!value) {
+    if (!value?.trim()) {
         return undefined
     }
 
-    const seconds = Number(value)
-
-    if (Number.isFinite(seconds)) {
-        return seconds >= 0
-            ? Math.max(1, Math.ceil(seconds))
-            : undefined
+    const trimmed = value.trim()
+    if (/^\d+(?:\.\d+)?$/.test(trimmed)) {
+        return normalizeRetryAfterSeconds(Number(trimmed))
     }
 
-    const timestamp = Date.parse(value)
+    // Не интерпретировать произвольные числа или свободный текст как дату.
+    if (!/^[A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(trimmed)) {
+        return undefined
+    }
+    const timestamp = Date.parse(trimmed)
 
     if (!Number.isFinite(timestamp)) {
         return undefined
     }
 
-    return Math.max(
-        1,
-        Math.ceil((timestamp - Date.now()) / 1000),
-    )
+    return normalizeRetryAfterSeconds(Math.max(0, (timestamp - Date.now()) / 1_000))
 }
 
 

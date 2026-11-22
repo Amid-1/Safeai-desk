@@ -226,6 +226,22 @@ describe(
             )
         })
 
+        it('не сохраняет страницу при смене организации текущего администратора', async () => {
+            setAuth(ADMIN, 'authenticated')
+            const view = renderAt('/admin/models')
+            const first = await screen.findByTestId('admin-models-page')
+            setAuth({ ...ADMIN, organizationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }, 'authenticated')
+            view.rerender(<MemoryRouter initialEntries={['/admin/models']}><App /></MemoryRouter>)
+            expect(await screen.findByTestId('admin-models-page')).not.toBe(first)
+        })
+
+        it('не показывает закрытые страницы при отключённом пользователе', async () => {
+            setAuth({ ...ADMIN, enabled: false } as unknown as AuthUser, 'authenticated')
+            renderAt('/admin/models')
+            expect(await screen.findByText('Недостаточно прав')).toBeInTheDocument()
+            expect(screen.queryByTestId('admin-models-page')).not.toBeInTheDocument()
+        })
+
         it(
             'перенаправляет неавторизованного с /chat на /login',
             async () => {
