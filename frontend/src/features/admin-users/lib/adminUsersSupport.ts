@@ -62,7 +62,7 @@ export function getUnmanageableReason(
         return 'Текущий пользователь'
     }
 
-    return 'Недоступно для ADMIN'
+    return 'Недостаточно прав для изменения'
 }
 
 export function normalizeEmail(

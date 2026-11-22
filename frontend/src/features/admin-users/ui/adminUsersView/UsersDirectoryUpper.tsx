@@ -10,6 +10,8 @@ import { AdminPageHeader } from '../../../../shared/ui/AdminPageHeader'
 export function UsersDirectoryUpper({
     users,
     statistics,
+    statisticsAvailable = true,
+    linkedDetailsError,
     loadError,
     mutationError,
     success,
@@ -159,7 +161,7 @@ export function UsersDirectoryUpper({
                                 }
                                 label="Все"
                                 count={
-                                    loading || loadError ? '—' : statistics.total
+                                    loading || loadError || !statisticsAvailable ? '—' : statistics.total
                                 }
                                 disabled={
                                     hasPendingMutation
@@ -172,7 +174,9 @@ export function UsersDirectoryUpper({
                             />
 
                             {currentUserIsSuperAdmin && <FilterButton active={filter === 'SUPER_ADMIN'}
-                                label="Суперадминистраторы" count={loading || loadError ? '—' : statistics.superAdministrators ?? '—'}
+                                label="Суперадминистраторы"
+                                count={loading || loadError || !statisticsAvailable
+                                    ? '—' : statistics.superAdministrators ?? '—'}
                                 disabled={hasPendingMutation} onClick={() => onFilterChange('SUPER_ADMIN')} />}
                             <FilterButton
                                 active={
@@ -180,7 +184,7 @@ export function UsersDirectoryUpper({
                                 }
                                 label="Администраторы"
                                 count={
-                                    loading || loadError ? '—' : statistics.administrators
+                                    loading || loadError || !statisticsAvailable ? '—' : statistics.administrators
                                 }
                                 disabled={
                                     hasPendingMutation
@@ -198,7 +202,7 @@ export function UsersDirectoryUpper({
                                 }
                                 label="Пользователи"
                                 count={
-                                    loading || loadError ? '—' : statistics.users
+                                    loading || loadError || !statisticsAvailable ? '—' : statistics.users
                                 }
                                 disabled={
                                     hasPendingMutation
@@ -306,7 +310,8 @@ export function UsersDirectoryUpper({
                             )}
                             <span className="users-directory-search__summary" role="status">
                                 Найдено по фильтрам: {loading || loadError ? '—' : totalMatched}
-                                {' · Всего пользователей: '}{loading || loadError ? '—' : statistics.total}
+                                {' · Всего пользователей: '}
+                                {loading || loadError || !statisticsAvailable ? '—' : statistics.total}
                                 {searchDraft.trim() !== appliedSearch && (
                                     <> · Обновляем результаты поиска…</>
                                 )}
@@ -322,6 +327,14 @@ export function UsersDirectoryUpper({
                             aria-hidden="true"
                         />
 
+                        {linkedDetailsError && <p role="alert" className="error">{linkedDetailsError}</p>}
+                        {!loading && !loadError && !statisticsAvailable && (
+                            <p role="status">Не удалось получить общие итоги. Список доступен.{' '}
+                                <button type="button" className="secondary-button" onClick={onReload}>
+                                    Обновить итоги
+                                </button>
+                            </p>
+                        )}
                         {loading && (
                             <LoadingState
                                 message={

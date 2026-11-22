@@ -5,19 +5,24 @@
     "github_workflow_run_id": 42668287147,
     "github_artifact_id": 13697048461,
     "github_ci_checkout_sha": "1c73f33e13624d1452c2bc6303badc968cac9ba0",
-    "coverage_summary_sha256": "27cd5221baf6ee77b1d885ca1f5c0990ceba2e2be395688c33e93ff513140729"
+    "coverage_summary_sha256": "27cd5221baf6ee77b1d885ca1f5c0990ceba2e2be395688c33e93ff513140729",
+    "admin_first_measurement": {
+      "stage": "7.5G.3-Fix3",
+      "source": "local full Vitest run, 1668 passed; existing measurable baselines unchanged",
+      "coverage_summary_sha256": "f334bd79d95948a6169dc5200ebd307ec2b9afe3c7a41eb934f22e9a9c7429c7"
+    }
   },
   "modules": {
     "admin": {
-      "line": null,
+      "line": 0.8913043478260869,
       "line_counts": [
-        0,
-        0
+        41,
+        5
       ],
-      "branch": null,
+      "branch": 0.8113207547169812,
       "branch_counts": [
-        0,
-        0
+        43,
+        10
       ]
     },
     "admin-organizations": {

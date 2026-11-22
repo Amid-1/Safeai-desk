@@ -1,6 +1,7 @@
 // frontend/src/features/chat/controller/ChatConversationMessages.tsx
 import type { ChatPageController } from './useChatPageController'
 import { MessageView } from '../ui/ChatMessageViews'
+import ChatConversationNotifications from './ChatConversationNotifications'
 
 type Props = { controller: ChatPageController }
 
@@ -13,12 +14,8 @@ export default function ChatConversationMessages({ controller }: Props) {
         activeChatBusy,
         displayMessages,
         answerPassports,
-        activePendingTurn,
         messagesEndRef,
     } = controller
-
-    const isAwaitingAnswer = activePendingTurn?.status === 'SENDING'
-        || activePendingTurn?.status === 'PROCESSING'
 
     return (
         <>
@@ -47,14 +44,7 @@ export default function ChatConversationMessages({ controller }: Props) {
                         answerPassport={answerPassports[item.id]}
                     />
                 ))}
-                {isAwaitingAnswer && (
-                    <div className="message assistant pending" role="status" aria-live="polite">
-                        <strong>SafeAI</strong>
-                        <p>{activePendingTurn?.status === 'SENDING'
-                            ? 'Запрос отправляется...'
-                            : 'Формируется ответ...'}</p>
-                    </div>
-                )}
+                <ChatConversationNotifications key={controller.activeChat?.id} controller={controller} />
                 <div ref={messagesEndRef} />
             </div>
         </>

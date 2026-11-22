@@ -11,13 +11,7 @@ export default function ChatHero({ onSelectTrustItem }: ChatHeroProps) {
     return (
         <header className="chat-hero">
             <div>
-                <span className="chat-hero__eyebrow">
-                    Защищённое рабочее пространство
-                </span>
                 <h1>Корпоративный AI</h1>
-                <p>
-                    Задавайте вопросы и используйте доступные корпоративные документы.
-                </p>
             </div>
             <div className="chat-hero__trust" aria-label="Как SafeAI защищает работу с AI">
                 {CHAT_TRUST_ITEMS.map((item) => (

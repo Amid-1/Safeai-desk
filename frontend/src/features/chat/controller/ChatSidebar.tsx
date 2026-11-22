@@ -2,6 +2,9 @@
 import {useCallback, useId, useRef, useState} from 'react'
 import type {SubmitEvent} from 'react'
 import Modal from '../../../shared/ui/Modal'
+import ConfirmDialog from '../../../shared/ui/ConfirmDialog'
+import {useAuth} from '../../auth/state/useAuth'
+import type {Chat} from '../api/chatApi'
 import ChatArchiveModal from './ChatArchiveModal'
 import ChatHistoryRow from '../ui/ChatHistoryRow'
 import type {ChatPageController} from './useChatPageController'
@@ -19,6 +22,7 @@ type ChatSidebarProps = {
         | 'moreChatsLoading'
         | 'clock'
         | 'handleCreateChat'
+        | 'handleArchiveChat'
         | 'setChatToRename'
         | 'setChatToArchive'
         | 'openChat'
@@ -40,6 +44,7 @@ export default function ChatSidebar({controller}: ChatSidebarProps) {
         moreChatsLoading,
         clock,
         handleCreateChat,
+        handleArchiveChat,
         setChatToRename,
         setChatToArchive,
         openChat,
@@ -49,6 +54,10 @@ export default function ChatSidebar({controller}: ChatSidebarProps) {
 
     const [creating, setCreating] = useState(false)
     const [archiveOpen, setArchiveOpen] = useState(false)
+    const [eraseTarget, setEraseTarget] = useState<Chat | null>(null)
+    const [archiveSelection, setArchiveSelection] = useState<string | undefined>()
+    const {currentUser} = useAuth()
+    const canErase = currentUser?.roles.includes('ADMIN') ?? false
     const [title, setTitle] = useState('')
     const [error, setError] = useState('')
     const titleId = useId()
@@ -127,11 +136,32 @@ export default function ChatSidebar({controller}: ChatSidebarProps) {
             )}
 
             <button type="button" className="secondary-button"
-                    onClick={() => setArchiveOpen(true)}>Архив чатов
+                    onClick={() => {
+                        setArchiveSelection(undefined)
+                        setArchiveOpen(true)
+                    }}>Архив чатов
             </button>
+            {eraseTarget && canErase && <ConfirmDialog
+                title="Перейти к удалению содержимого?"
+                message={`Чат «${eraseTarget.title}» сначала будет архивирован. `
+                    + 'Несохранённые черновики будут удалены. '
+                    + 'Удаление содержимого требует отдельной проверки сервера и подтверждения.'}
+                confirmText="Архивировать и продолжить"
+                loading={archivingChatId === eraseTarget.id}
+                onCancel={() => setEraseTarget(null)}
+                onConfirm={async () => {
+                    if (!await handleArchiveChat(eraseTarget)) {
+                        throw new Error('Дождитесь завершения запроса.')
+                    }
+                    setArchiveSelection(eraseTarget.id)
+                    setEraseTarget(null)
+                    setArchiveOpen(true)
+                }}
+            />}
             {archiveOpen && <ChatArchiveModal
                 onClose={() => setArchiveOpen(false)}
                 onChanged={archiveChanged}
+                initialChatId={archiveSelection}
             />}
             <div className="chat-sidebar__heading">
                 <div>
@@ -166,6 +196,7 @@ export default function ChatSidebar({controller}: ChatSidebarProps) {
                         onOpen={(chatId) => void openChat(chatId)}
                         onRename={setChatToRename}
                         onArchive={setChatToArchive}
+                        onErase={canErase ? setEraseTarget : undefined}
                     />
                 ))}
 

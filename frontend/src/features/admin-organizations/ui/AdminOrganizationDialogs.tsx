@@ -14,6 +14,7 @@ import {
 type AdminOrganizationDialogsProps = {
     detailsOrganization: Organization | null
     detailsError: string
+    mutationError?: string
     renameOrganization: Organization | null
     renameValue: string
     renameError: string
@@ -36,13 +37,14 @@ type AdminOrganizationDialogsProps = {
 }
 
 export function AdminOrganizationDialogs({
-    detailsOrganization, detailsError, renameOrganization, renameValue, renameError,
+    detailsOrganization, detailsError, mutationError, renameOrganization, renameValue, renameError,
     disableDialog, enableOrganizationTarget, hasPendingAction, impactLoadingId,
     onCloseDetails, onCloseRename, onRenameValueChange, onSubmitRename,
     onCloseDisable, onDisableConfirmationChange, onConfirmDisable,
     onCloseEnable, onConfirmEnable, onDisable, onEnable, onRename,
 }: AdminOrganizationDialogsProps) {
-    const mutable = detailsOrganization ? canMutateOrganization(detailsOrganization) : false
+    const mutable = detailsOrganization && !detailsError
+        ? canMutateOrganization(detailsOrganization) : false
 
     function changeStatus(organization: Organization) {
         // Only one modal may own focus. Existing confirmation performs the mutation.
@@ -174,6 +176,7 @@ export function AdminOrganizationDialogs({
                 AI-провайдеру запросы не всегда возможно отменить.
                 Итоговое решение принимает сервер повторно при подтверждении.
             </div>
+            {mutationError && <p className="error" role="alert">{mutationError}</p>}
             <form className="form organization-disable-form" onSubmit={event => {
                 event.preventDefault()
                 void onConfirmDisable()
@@ -204,6 +207,7 @@ export function AdminOrganizationDialogs({
             onClose={onCloseEnable} closeDisabled={hasPendingAction} size="sm">
             <p className="organization-dialog-lead">Включить организацию{' '}
                 <strong>{enableOrganizationTarget.name}</strong>?</p>
+            {mutationError && <p className="error" role="alert">{mutationError}</p>}
             <p className="org-dialog-help">На уровне организации снова будет разрешён вход в SafeAI Desk.
                 Отключённые пользователи не включатся автоматически.
                 Доступ к моделям и функциям по-прежнему будет зависеть от ролей и правил.

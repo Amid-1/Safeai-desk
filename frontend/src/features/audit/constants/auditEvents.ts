@@ -68,6 +68,7 @@ export const AUDIT_EVENT_TYPES = [
     'MODEL_ROUTE_DECIDED',
     'MODEL_ROUTE_DENIED',
     'AUDIT_OUTBOX_DEAD_LETTER_RECOVERED',
+    'RETENTION_POLICY_CHANGED',
 ] as const
 
 export type AuditEventType =
@@ -213,6 +214,7 @@ const AUDIT_EVENT_TYPE_LABELS:
 
     MODEL_ROUTE_DENIED:
         'Маршрут модели отклонён',
+    RETENTION_POLICY_CHANGED: 'Изменена политика хранения и удаления',
     AUDIT_OUTBOX_DEAD_LETTER_RECOVERED:
         'Восстановлено событие аудита из очереди ошибок',
 }

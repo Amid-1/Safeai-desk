@@ -229,7 +229,41 @@ describe('Users directory: server-side search and reset', () => {
         vi.mocked(getUserDetails).mockResolvedValueOnce(details)
         window.history.replaceState({}, '', `/admin/users?userId=${details.id}`)
         const {result} = renderHook(() => useAdminUsersDirectory(currentUser, false))
-        await waitFor(() => expect(result.current.loadError).toContain('Карточка пользователя недоступна'))
+        await waitFor(() => expect(result.current.linkedDetailsError)
+            .toContain('Карточка пользователя недоступна'))
         expect(result.current.detailsUser).toBeNull()
+        expect(result.current.loadError).toBe('')
+    })
+
+    it('сохраняет список при отказе статистики и восстанавливает итоги', async () => {
+        vi.mocked(getUserStatistics).mockRejectedValueOnce(new Error('unavailable'))
+        const {result} = renderHook(() => useAdminUsersDirectory(currentUser, false))
+        await waitFor(() => expect(result.current.loading).toBe(false))
+        expect(result.current.users).toHaveLength(10)
+        expect(result.current.statisticsAvailable).toBe(false)
+        expect(result.current.loadError).toBe('')
+        act(() => result.current.requestReloadFromFirstPage())
+        await waitFor(() => expect(result.current.statisticsAvailable).toBe(true))
+        expect(result.current.statistics.total).toBe(10)
+    })
+
+    it('не подменяет карточку строкой списка после отказа сервера', async () => {
+        vi.mocked(getUserDetails).mockRejectedValueOnce(new Error('unavailable'))
+        const {result} = renderHook(() => useAdminUsersDirectory(currentUser, false))
+        await waitFor(() => expect(result.current.users).toHaveLength(10))
+        await act(async () => result.current.openDetailsModal(users[0]!))
+        expect(result.current.detailsUser).toBeNull()
+        expect(result.current.linkedDetailsError).not.toBe('')
+        expect(result.current.loadError).toBe('')
+    })
+
+    it('отклоняет несовпадающий идентификатор при открытии строки', async () => {
+        vi.mocked(getUserDetails).mockResolvedValueOnce({
+            ...users[1]!, organizationName: 'Компания',
+        })
+        const {result} = renderHook(() => useAdminUsersDirectory(currentUser, false))
+        await act(async () => result.current.openDetailsModal(users[0]!))
+        expect(result.current.detailsUser).toBeNull()
+        expect(result.current.linkedDetailsError).toContain('недоступна')
     })
 })

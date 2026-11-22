@@ -61,6 +61,7 @@ INSERT INTO acl_matrix VALUES
 ('organization_ai_quotas','S','','updated_at'),
 ('organization_model_policies','SI','',''),
 ('organizations','SIU','',''),
+('platform_erasure_policy_v102','S','','chat_allowed,knowledge_allowed,version'),
 ('refresh_tokens','SIUD','',''),
 ('roles','S','',''),
 ('usage_daily_org_model_rollups','SID','',''),
@@ -84,7 +85,7 @@ BEGIN
                    WHERE n.nspname='public' AND c.relkind='S') THEN
         RAISE EXCEPTION 'Unsafe default ACL, runtime capability or inventory';
     END IF;
-    IF (SELECT count(*) FROM acl_matrix) <> 66 OR EXISTS (
+    IF (SELECT count(*) FROM acl_matrix) <> 67 OR EXISTS (
         SELECT name FROM acl_matrix EXCEPT
         SELECT c.relname::text FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
         WHERE n.nspname='public' AND c.relkind IN ('r','p','v','m','f')

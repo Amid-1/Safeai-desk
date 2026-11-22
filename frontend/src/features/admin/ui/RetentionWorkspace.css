@@ -1,0 +1,25 @@
+/* frontend/src/features/admin/ui/RetentionWorkspace.css */
+.retention-page { display: grid; gap: 16px; align-content: start; }
+.retention-panel {
+    padding: clamp(16px, 2vw, 28px);
+    border: 1px solid var(--safeai-line);
+    border-radius: var(--safeai-radius-panel);
+    background: var(--safeai-surface);
+    min-width: 0;
+}
+.retention-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.retention-panel h1, .retention-panel h2, .retention-item h3 { margin: 0 0 8px; }
+.retention-panel p { line-height: 1.5; margin: 8px 0 14px; }
+.retention-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); gap: 12px; }
+.retention-item {
+    display: flex; flex-direction: column; align-items: flex-start;
+    min-width: 0; padding: 16px; border-radius: var(--safeai-radius-panel);
+    border: 1px solid var(--safeai-line); background: var(--safeai-surface-subtle);
+}
+.retention-item button, .retention-item a { margin-top: auto; max-width: 100%; white-space: normal; }
+.retention-status { display: inline-block; padding: 4px 9px; border-radius: 12px; font-size: .85rem; background: #e7ecf4; }
+.retention-status--warning { color: var(--safeai-warning); background: var(--safeai-warning-fill); }
+.retention-status--ready { color: var(--safeai-success); background: var(--safeai-success-fill); }
+.retention-gates { display: grid; gap: 6px; }
+.retention-gates > div { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.retention-panel details { margin-top: 16px; }

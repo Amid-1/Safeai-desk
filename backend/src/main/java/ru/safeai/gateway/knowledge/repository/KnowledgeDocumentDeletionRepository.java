@@ -3,6 +3,7 @@ package ru.safeai.gateway.knowledge.repository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import ru.safeai.gateway.knowledge.dto.KnowledgeDocumentDeletionResponse;
+import ru.safeai.gateway.retention.ErasureAdmissionPolicy;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -53,6 +54,7 @@ public class KnowledgeDocumentDeletionRepository {
     /** Zero rows means a competing request has won one of the two UNIQUE constraints. */
     public boolean insertIfAbsent(UUID id, UUID orgId, UUID baseId, UUID documentId,
                                   UUID actorId, String key, long expectedVersion) {
+        ErasureAdmissionPolicy.requireAllowed(jdbc, ErasureAdmissionPolicy.Scope.KNOWLEDGE);
         return jdbc.update("""
                 INSERT INTO public.knowledge_document_deletions_v78 (
                     id, organization_id, knowledge_base_id, document_id,

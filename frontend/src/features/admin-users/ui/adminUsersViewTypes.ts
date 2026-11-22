@@ -12,6 +12,8 @@ export type AdminUsersFilter =
 export type AdminUsersViewProps = {
     users: User[]
     statistics: UserStatistics
+    statisticsAvailable?: boolean
+    linkedDetailsError?: string
     organizations: OrganizationDirectoryItem[]
     organizationId?: string
     onOrganizationChange?: (id: string) => void

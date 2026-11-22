@@ -1062,24 +1062,25 @@ Hibernate использует ddl-auto=validate; создание схемы ч
 Особенности последних миграций:
 
 | Версия | Усиление |
-| --- | --- |
-| V85 | Durable RAG execution permits и physical lease |
-| V86 | Архив и восстановление, отдельное стирание чата |
-| V87 | Индекс архива с CREATE INDEX CONCURRENTLY вне транзакции |
-| V88 | Валидация CHECK и готовности индекса |
-| V89 | Erasure worker, WORM-квитанция, dual-control recovery |
-| V90 | Закрытие прямого DELETE chunks, узкая GC-функция |
-| V91 | Неизменяемый валютный снимок правила |
-| V92 | Запрет NaN и бесконечных дат/времени |
-| V93 | Хеши receipt и привязка администратора/организации |
-| V94 | UUID, частичные индексы и guard изменения корреляции |
-| V95 | Snapshot строгой квоты, route evidence и границы периода |
-| V96 | Shared/exclusive admission fence; точный период |
-| V97 | Индекс (execution_plan_id, started_at) CONCURRENTLY |
-| V98 | Ограниченная очередь, TTL, lease и состояния CSV |
-| V99 | READ COMMITTED, immutable identity, актуальный owner |
-| V100 | Повторный финансовый и Knowledge gate до физического I/O |
-| V101 | LATERAL lookup, сохранение контракта ledger и ACL |
+|--------| --- |
+| V85    | Durable RAG execution permits и physical lease |
+| V86    | Архив и восстановление, отдельное стирание чата |
+| V87    | Индекс архива с CREATE INDEX CONCURRENTLY вне транзакции |
+| V88    | Валидация CHECK и готовности индекса |
+| V89    | Erasure worker, WORM-квитанция, dual-control recovery |
+| V90    | Закрытие прямого DELETE chunks, узкая GC-функция |
+| V91    | Неизменяемый валютный снимок правила |
+| V92    | Запрет NaN и бесконечных дат/времени |
+| V93    | Хеши receipt и привязка администратора/организации |
+| V94    | UUID, частичные индексы и guard изменения корреляции |
+| V95    | Snapshot строгой квоты, route evidence и границы периода |
+| V96    | Shared/exclusive admission fence; точный период |
+| V97    | Индекс (execution_plan_id, started_at) CONCURRENTLY |
+| V98    | Ограниченная очередь, TTL, lease и состояния CSV |
+| V99    | READ COMMITTED, immutable identity, актуальный owner |
+| V100   | Повторный финансовый и Knowledge gate до физического I/O |
+| V101   | LATERAL lookup, сохранение контракта ledger и ACL |
+| V102   |  |
 
 V94 транзакционна: `SET LOCAL lock_timeout = '5s'`,
 `SET LOCAL statement_timeout = '120s'`. Индексы создаются обычным CREATE INDEX.
@@ -1823,6 +1824,7 @@ evidence,
   durable receipt без backfill, совместный lock финансов и публикации.
 - **V101:** эквивалентная оптимизация V62 ledger через LATERAL lookup;
   fail-closed проверки view, её колонок, параметров и индекса V50.
+- **V102:** 
 
 **Models & AI (7.5E.1–7.5E.8, 21–22.11.2026):**
 
@@ -2135,6 +2137,7 @@ Playwright ограничен запуском Chromium в среде прове
 | V99    | Immutable export identity, lease bounds, актуальный owner. |
 | V100   | Independent financial gate, one-shot dispatch receipt, settlement. |
 | V101   | V62 ledger lookup, schema guards, прежние owner и ACL. |
+| V102   | |
 
 **Frontend:** функции удаления Knowledge и чатов зависят от соответствующих backend
 capability/status API. UI
@@ -2630,6 +2633,7 @@ backend/
 │   │   │               ├── model/
 │   │   │               ├── organization/
 │   │   │               ├── ratelimit/
+│   │   │               ├── retention/
 │   │   │               ├── usage/
 │   │   │               ├── user/
 │   │   │               └── SafeaiBackendApplication
@@ -2750,7 +2754,7 @@ backend/
 │   │       │       ├── V100__model_physical_dispatch_admission.sql.conf
 │   │       │       ├── V101__model_commitment_ledger_lookup.sql
 │   │       │       ├── V101__model_commitment_ledger_lookup.sql.conf
-│   │       │       ├── 
+│   │       │       ├── V102__platform_erasure_admission_policy.sql
 │   │       │       ├── 
 │   │       │       ├── 
 │   │       │       ├── 
@@ -7354,6 +7358,7 @@ executor
 - **V101**. SQL: `V101__model_commitment_ledger_lookup.sql`; Назначение:
   эквивалентная оптимизация ledger V62 без переписывания истории, с проверкой
   view identity, reloptions, колонок и валидного уникального B-tree V50.
+- **V102**. SQL: `V102__platform_erasure_admission_policy.sql`; Назначение:
 
   V94–V101 — общие системные миграции; не расширяют destructive Knowledge
   permissions. V94/V95/V96/V98/V99/V100/V101 имеют transactional .sql.conf,
@@ -8220,6 +8225,8 @@ paths и
     выбор последней попытки через LEFT JOIN LATERAL, ORDER BY attempt_number
     DESC LIMIT 1 по уникальному индексу V50. Сохраняет девять колонок,
     финансовые формулы, grants, owner и историю; новых индексов нет.
+- **`V102`**
+  - **Назначение:**
 
 ### V85–V101: порядок применения и эксплуатационные зависимости
 
@@ -8274,6 +8281,7 @@ SQL ради совпадения checksums.
     отсутствие reloptions и индекс V50. Проверить rollback при lock_timeout,
     повтор после освобождения lock, EXCEPT ALL в обе стороны и performance.
     Не использовать DROP VIEW CASCADE или Flyway repair для обхода drift.
+18. **V102** —
 
 
 
@@ -8348,6 +8356,7 @@ SQL ради совпадения checksums.
 - **V101**. DB: совместимый V62 financial ledger и lookup последней попытки;
   Java: тот же repository contract, точный monthly commitment. Приёмка:
   двусторонняя эквивалентность, schema drift, блокировки и EXPLAIN ANALYZE.
+- **V102**.
 
 
 V78–V81 образуют document-erasure фундамент, V82 добавляет удаление всей базы, V83 — контролируемое
@@ -8492,6 +8501,7 @@ V1–V72 → V73 Organization → V74 Usage → V75 Audit → V76 Retrieval priv
        → V99 Export job guard
        → V100 One-shot model dispatch admission
        → V101 V62 commitment ledger lookup
+       → V102 
 ```
 
 Это последовательность **номеров Flyway**, а не инструкция вручную запускать каждый SQL на

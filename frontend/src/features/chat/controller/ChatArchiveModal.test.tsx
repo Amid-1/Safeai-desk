@@ -52,7 +52,7 @@ async function open() {
 }
 
 async function inspect() {
-    fireEvent.click(screen.getByRole('button', { name: /Стереть содержимое/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Удалить содержимое чата/ }))
 }
 
 async function confirm() {
@@ -86,7 +86,7 @@ describe('ChatArchiveModal', () => {
         await open()
         expect(screen.getByText('hello')).toBeInTheDocument()
         expect(screen.getByText('answer')).toBeInTheDocument()
-        expect(screen.queryByRole('button', { name: /Стереть содержимое/ })).not.toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: /Удалить содержимое чата/ })).not.toBeInTheDocument()
         expect(listChatErasureOperations).not.toHaveBeenCalled()
         vi.mocked(getArchivedChats).mockResolvedValue(page([]))
         fireEvent.click(screen.getByRole('button', { name: 'Восстановить чат' }))
@@ -125,7 +125,8 @@ describe('ChatArchiveModal', () => {
         mount()
         await open()
         await inspect()
-        expect(await screen.findByRole('alert')).toHaveTextContent('Удаление недоступно: RETENTION.')
+        expect(await screen.findByRole('alert')).toHaveTextContent('Удаление недоступно.')
+        expect(screen.getByRole('alert')).not.toHaveTextContent('RETENTION')
         expect(screen.queryByLabelText('Введите точное название чата')).not.toBeInTheDocument()
         expect(requestChatContentErasure).not.toHaveBeenCalled()
     })
@@ -140,13 +141,16 @@ describe('ChatArchiveModal', () => {
         expect(requestChatContentErasure).not.toHaveBeenCalled()
     })
 
-    it.each(['ERASING', 'NEEDS_REVIEW', 'BLOCKED_BY_RETENTION', 'ERASED'] as const)(
-        'reconciles an existing %s operation without creating a new erasure', async state => {
+    it.each([
+        ['ERASING', 'Удаление выполняется'], ['NEEDS_REVIEW', 'Требуется проверка'],
+        ['BLOCKED_BY_RETENTION', 'Заблокировано политикой хранения'], ['ERASED', 'Содержимое удалено'],
+    ] as const)(
+        'reconciles an existing %s operation without creating a new erasure', async (state, label) => {
             vi.mocked(getChatErasureOperation).mockResolvedValue({ ...operation, state })
             mount()
             await open()
             await inspect()
-            expect(await screen.findByRole('status')).toHaveTextContent(`Состояние стирания: ${state}`)
+            expect(await screen.findByRole('status')).toHaveTextContent(label)
             expect(screen.queryByText('hello')).not.toBeInTheDocument()
             expect(getChatErasureCapability).not.toHaveBeenCalled()
             expect(requestChatContentErasure).not.toHaveBeenCalled()
@@ -183,7 +187,8 @@ describe('ChatArchiveModal', () => {
         await open()
         await inspect()
         await confirm()
-        expect(await screen.findByRole('status')).toHaveTextContent('ERASING')
+        expect(await screen.findByRole('status')).toHaveTextContent('Удаление выполняется')
+        expect(screen.getByRole('heading', { name: 'Содержимое недоступно' })).toBeInTheDocument()
         expect(requestChatContentErasure).toHaveBeenCalledExactlyOnceWith(archived.id, archived.title, 5, IDS.request)
         expect(screen.queryByText('hello')).not.toBeInTheDocument()
         expect(screen.queryByRole('button', { name: 'Восстановить чат' })).not.toBeInTheDocument()
@@ -198,9 +203,16 @@ describe('ChatArchiveModal', () => {
         await open()
         await inspect()
         await confirm()
-        expect(await screen.findByRole('status')).toHaveTextContent('ERASED')
+        expect(await screen.findByRole('status')).toHaveTextContent('Содержимое удалено')
         expect(requestChatContentErasure).toHaveBeenCalledTimes(1)
         expect(getChatErasureOperation).toHaveBeenCalledTimes(2)
         expect(screen.queryByText('hello')).not.toBeInTheDocument()
+    })
+
+    it('opens the explicitly archived chat directly, without submitting deletion', async () => {
+        render(<ChatArchiveModal onClose={vi.fn()} onChanged={vi.fn()} initialChatId={archived.id}/>)
+        await screen.findByRole('heading', { name: archived.title })
+        expect(screen.getByRole('button', { name: archived.title })).toHaveAttribute('aria-pressed', 'true')
+        expect(requestChatContentErasure).not.toHaveBeenCalled()
     })
 })

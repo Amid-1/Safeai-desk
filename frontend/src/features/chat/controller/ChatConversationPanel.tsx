@@ -2,10 +2,8 @@
 import type { ChatPageController } from './useChatPageController'
 import { EmptyState, LoadingState } from '../../../shared/ui/StateBlock'
 import ChatConversationHeader from './ChatConversationHeader'
-import ChatConversationNotifications from './ChatConversationNotifications'
 import ChatConversationMessages from './ChatConversationMessages'
 import ChatMessageComposer from './ChatMessageComposer'
-import { getPendingLabel } from '../lib/chatPageSupport'
 
 type ChatConversationPanelProps = {
     controller: ChatPageController
@@ -24,14 +22,8 @@ export default function ChatConversationPanel({ controller }: ChatConversationPa
             {activeChat && (
                 <>
                     <ChatConversationHeader controller={controller} />
-                    <ChatConversationNotifications controller={controller} />
                     <ChatConversationMessages controller={controller} />
                     <ChatMessageComposer controller={controller} />
-                    <div className="sr-only" role="status" aria-live="polite">
-                        {controller.activePendingTurn
-                            ? getPendingLabel(controller.activePendingTurn, controller.clock)
-                            : ''}
-                    </div>
                 </>
             )}
         </section>

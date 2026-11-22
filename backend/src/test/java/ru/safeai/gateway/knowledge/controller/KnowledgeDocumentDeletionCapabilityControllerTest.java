@@ -1,6 +1,7 @@
 package ru.safeai.gateway.knowledge.controller;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
@@ -15,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 class KnowledgeDocumentDeletionCapabilityControllerTest {
+    private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
 
     private static final UUID BASE = UUID.randomUUID();
     private static final UUID ORG = UUID.randomUUID();
@@ -25,7 +27,7 @@ class KnowledgeDocumentDeletionCapabilityControllerTest {
     @Test
     void bothFlagsOffReturnsSafeFalseAndStillChecksOwner() {
         var access = mock(KnowledgeAccessService.class);
-        var controller = new KnowledgeDocumentDeletionCapabilityController(access, false, false);
+        var controller = new KnowledgeDocumentDeletionCapabilityController(access, false, false, false, jdbc);
         assertThat(controller.capability(BASE, USER))
                 .isEqualTo(new KnowledgeDocumentDeletionCapabilityController.CapabilityResponse(
                         false, "FEATURE_DISABLED"));
@@ -35,16 +37,17 @@ class KnowledgeDocumentDeletionCapabilityControllerTest {
     @Test
     void oneFlagIsNotEnough() {
         var access = mock(KnowledgeAccessService.class);
-        assertThat(new KnowledgeDocumentDeletionCapabilityController(access, true, false)
+        assertThat(new KnowledgeDocumentDeletionCapabilityController(access, true, false, true, jdbc)
                 .capability(BASE, USER).allowed()).isFalse();
-        assertThat(new KnowledgeDocumentDeletionCapabilityController(access, false, true)
+        assertThat(new KnowledgeDocumentDeletionCapabilityController(access, false, true, true, jdbc)
                 .capability(BASE, USER).allowed()).isFalse();
     }
 
     @Test
     void bothFlagsOnAndOwnerCanDelete() {
         var access = mock(KnowledgeAccessService.class);
-        var response = new KnowledgeDocumentDeletionCapabilityController(access, true, true)
+        when(jdbc.queryForObject(anyString(), eq(Boolean.class))).thenReturn(true);
+        var response = new KnowledgeDocumentDeletionCapabilityController(access, true, true, true, jdbc)
                 .capability(BASE, USER);
         assertThat(response.allowed()).isTrue();
         assertThat(response.reason()).isEqualTo("ENABLED");
@@ -56,8 +59,18 @@ class KnowledgeDocumentDeletionCapabilityControllerTest {
         var access = mock(KnowledgeAccessService.class);
         when(access.requireAccess(BASE, USER, KnowledgeBaseAccessLevel.OWNER))
                 .thenThrow(new ForbiddenOperationException("Недостаточно прав."));
-        var controller = new KnowledgeDocumentDeletionCapabilityController(access, false, false);
+        var controller = new KnowledgeDocumentDeletionCapabilityController(access, false, false, false, jdbc);
         assertThatThrownBy(() -> controller.capability(BASE, USER))
                 .isInstanceOf(ForbiddenOperationException.class);
+    }
+
+    @Test
+    void policyPausedOrMissingJournalDisallowsNewRequests() {
+        var access = mock(KnowledgeAccessService.class);
+        when(jdbc.queryForObject(anyString(), eq(Boolean.class))).thenReturn(false);
+        assertThat(new KnowledgeDocumentDeletionCapabilityController(access, true, true, true, jdbc)
+                .capability(BASE, USER).reason()).isEqualTo("POLICY_PAUSED");
+        assertThat(new KnowledgeDocumentDeletionCapabilityController(access, true, true, false, jdbc)
+                .capability(BASE, USER).reason()).isEqualTo("FEATURE_DISABLED");
     }
 }

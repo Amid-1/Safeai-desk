@@ -6,7 +6,7 @@
 import { archiveChat, assignAutomaticChatTitle, createChat, getChatById, getChats, updateChatTitle } from '../../api/chatApi'
 import type { Chat } from '../../api/chatApi'
 import { getApiErrorMessage } from '../../../../shared/api/http'
-import { mergeChats } from '../../lib/chatPage.helpers'
+import { isSafeToPrepareNewRequest, mergeChats } from '../../lib/chatPage.helpers'
 import type { ChatControllerDependencies } from './chatControllerTypes'
 
 export function createDirectoryActions(deps: Pick<ChatControllerDependencies,
@@ -31,6 +31,8 @@ export function createDirectoryActions(deps: Pick<ChatControllerDependencies,
     | 'setActiveChat'
     | 'setDrafts'
     | 'setListError'
+    | 'setChatError'
+    | 'setSendError'
     | 'setMoreChatsLoading'
     | 'setChatCreating'
     | 'setChatToArchive'
@@ -44,6 +46,9 @@ export function createDirectoryActions(deps: Pick<ChatControllerDependencies,
     | 'setHistoryHasNext'
     | 'chatPageSize'
     | 'openChat'
+    | 'finishPendingTurn'
+    | 'sendInFlightRef'
+    | 'reconciliationControllersRef'
 >) {
     const { chats, activeChat, pendingTurns, moreChatsLoading, chatToRename, renamingChatId, archivingChatId, chatPage, chatHasNext, openRequestSequenceRef, historyRequestSequenceRef, openControllerRef, historyControllerRef, createInFlightRef, pendingTurnsRef, activeChatRef, scrollIntentRef, setChats, setActiveChat, setDrafts, setListError, setMoreChatsLoading, setChatCreating, setChatToArchive, setRenamingChatId, setArchivingChatId, setOpeningChatId, setHistoryLoading, setChatPage, setChatHasNext, setHistoryPage, setHistoryHasNext, chatPageSize, openChat } = deps
 
@@ -177,6 +182,8 @@ export function createDirectoryActions(deps: Pick<ChatControllerDependencies,
 
         try {
             const chat = title ? await createChat(title) : await createChat()
+            deps.setChatError('')
+            deps.setSendError('')
 
             setChats((current) => [
                 chat,
@@ -205,8 +212,12 @@ export function createDirectoryActions(deps: Pick<ChatControllerDependencies,
     }
 
     async function handleArchiveChat(chat: Chat) {
-        if (archivingChatId || pendingTurnsRef.current[chat.id]) {
-            return
+        const pending = pendingTurnsRef.current[chat.id]
+        if (archivingChatId || deps.sendInFlightRef.current.has(chat.id)
+            || deps.reconciliationControllersRef.current.has(chat.id)
+            || (pending && !isSafeToPrepareNewRequest(pending.status))) {
+            setListError('Архивирование недоступно, пока не определён результат запроса.')
+            return false
         }
 
         setArchivingChatId(chat.id)
@@ -214,6 +225,7 @@ export function createDirectoryActions(deps: Pick<ChatControllerDependencies,
 
         try {
             await archiveChat(chat.id)
+            if (pending) deps.finishPendingTurn(chat.id)
 
             const remainingChats = chats.filter(
                 (item) => item.id !== chat.id,
@@ -228,12 +240,15 @@ export function createDirectoryActions(deps: Pick<ChatControllerDependencies,
             setChatToArchive(null)
 
             if (activeChatRef.current?.id === chat.id) {
+                deps.setChatError('')
+                deps.setSendError('')
                 setActiveChat(null)
                 const nextChat = remainingChats[0]
                 if (nextChat) {
                     await openChat(nextChat.id)
                 }
             }
+            return true
         } catch (error) {
             setListError(
                 getApiErrorMessage(

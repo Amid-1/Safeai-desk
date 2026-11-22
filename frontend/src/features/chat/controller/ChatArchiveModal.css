@@ -22,8 +22,21 @@
 }
 
 .chat-archive__list button {
+    display: grid;
+    gap: .25rem;
     text-align: left;
     overflow-wrap: anywhere
+}
+
+.chat-archive__list button[aria-pressed="true"] {
+    border-color: #3157dc;
+    background: #e8efff;
+    color: #153baf;
+}
+
+.chat-archive__list small {
+    font-weight: 400;
+    font-size: .75rem;
 }
 
 .chat-archive__details {
@@ -69,6 +82,16 @@
 .chat-archive__erase input {
     min-width: 0;
     width: 100%
+}
+
+.chat-delete-action {
+    color: #a81b23;
+    border-color: #efb4b8;
+}
+
+.chat-delete-action:not(:disabled):hover {
+    color: #95151d;
+    background: #fff0f1;
 }
 
 @media (max-width: 650px) {

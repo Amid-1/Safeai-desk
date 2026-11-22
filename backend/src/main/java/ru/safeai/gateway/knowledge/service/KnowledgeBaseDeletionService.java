@@ -13,6 +13,7 @@ import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.knowledge.dto.KnowledgeBaseDeletionResponse;
+import ru.safeai.gateway.retention.ErasureAdmissionPolicy;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -71,7 +72,7 @@ public class KnowledgeBaseDeletionService {
                               WHERE id=? AND organization_id=?)
                 """, Boolean.class, baseId, actor.getOrganizationId()));
         if (!exists) throw new ResourceNotFoundException("База знаний не найдена.");
-        return enabled();
+        return enabled() && ErasureAdmissionPolicy.allowed(jdbc, ErasureAdmissionPolicy.Scope.KNOWLEDGE);
     }
 
     @Transactional
@@ -125,6 +126,7 @@ public class KnowledgeBaseDeletionService {
             throw new ConflictException("База изменена. Обновите данные и повторите действие.");
         }
 
+        ErasureAdmissionPolicy.requireAllowed(jdbc, ErasureAdmissionPolicy.Scope.KNOWLEDGE);
         UUID operationId = UUID.randomUUID();
         int inserted = jdbc.update("""
                 INSERT INTO public.knowledge_base_deletions_v82

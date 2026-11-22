@@ -1,6 +1,7 @@
 package ru.safeai.gateway.knowledge.controller;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.knowledge.model.KnowledgeBaseAccessLevel;
 import ru.safeai.gateway.knowledge.service.KnowledgeAccessService;
+import ru.safeai.gateway.retention.ErasureAdmissionPolicy;
 
 import java.util.UUID;
 
@@ -27,14 +29,20 @@ public class KnowledgeDocumentDeletionCapabilityController {
     private final KnowledgeAccessService access;
     private final boolean acceptEnabled;
     private final boolean executorEnabled;
+    private final boolean journalEnabled;
+    private final JdbcTemplate jdbc;
 
     public KnowledgeDocumentDeletionCapabilityController(
             KnowledgeAccessService access,
             @Value("${safeai.knowledge.deletion.accept-enabled:false}") boolean acceptEnabled,
-            @Value("${safeai.knowledge.deletion.executor-enabled:false}") boolean executorEnabled) {
+            @Value("${safeai.knowledge.deletion.executor-enabled:false}") boolean executorEnabled,
+            @Value("${safeai.knowledge.erasure-journal.enabled:false}") boolean journalEnabled,
+            JdbcTemplate jdbc) {
         this.access = access;
         this.acceptEnabled = acceptEnabled;
         this.executorEnabled = executorEnabled;
+        this.journalEnabled = journalEnabled;
+        this.jdbc = jdbc;
     }
 
     @GetMapping("/document-deletions/capability")
@@ -44,8 +52,11 @@ public class KnowledgeDocumentDeletionCapabilityController {
             @AuthenticationPrincipal(errorOnInvalidType = true) SafeAiUserPrincipal user) {
         // Server-side tenant and OWNER checks apply even if the feature is disabled.
         access.requireAccess(knowledgeBaseId, user, KnowledgeBaseAccessLevel.OWNER);
-        boolean enabled = acceptEnabled && executorEnabled;
-        return new CapabilityResponse(enabled, enabled ? "ENABLED" : "FEATURE_DISABLED");
+        if (!acceptEnabled || !executorEnabled || !journalEnabled) {
+            return new CapabilityResponse(false, "FEATURE_DISABLED");
+        }
+        boolean allowed = ErasureAdmissionPolicy.allowed(jdbc, ErasureAdmissionPolicy.Scope.KNOWLEDGE);
+        return new CapabilityResponse(allowed, allowed ? "ENABLED" : "POLICY_PAUSED");
     }
 
     public record CapabilityResponse(boolean allowed, String reason) { }

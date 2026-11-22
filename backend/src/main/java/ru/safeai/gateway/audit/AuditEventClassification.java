@@ -46,7 +46,7 @@ public final class AuditEventClassification {
                     KNOWLEDGE_INGESTION_READY, KNOWLEDGE_INGESTION_FAILED,
                     KNOWLEDGE_RETRIEVAL_COMPLETED, KNOWLEDGE_EVALUATION_COMPLETED,
                     KNOWLEDGE_ANSWER_GENERATED -> Category.KNOWLEDGE;
-            case AUDIT_OUTBOX_DEAD_LETTER_RECOVERED -> Category.SYSTEM;
+            case AUDIT_OUTBOX_DEAD_LETTER_RECOVERED, RETENTION_POLICY_CHANGED -> Category.SYSTEM;
         };
     }
 

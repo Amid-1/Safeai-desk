@@ -86,6 +86,18 @@ describe('AdminUsersView — границы представления и пра
         expect(callbacks.onReload).toHaveBeenCalledOnce()
     })
 
+    it('не скрывает таблицу и не выдаёт недоступные итоги за нули', () => {
+        const {callbacks} = mount({
+            statisticsAvailable: false,
+            linkedDetailsError: 'Карточка пользователя недоступна.',
+        })
+        expect(screen.getByRole('table')).toBeInTheDocument()
+        expect(screen.getByText(/Всего пользователей: /)).toHaveTextContent('Всего пользователей: —')
+        expect(screen.getByText('Карточка пользователя недоступна.')).toBeVisible()
+        fireEvent.click(screen.getByRole('button', {name: 'Обновить итоги'}))
+        expect(callbacks.onReload).toHaveBeenCalledOnce()
+    })
+
     it('передаёт на следующую страницу, но не выполняет локальную подмену данных', () => {
         const { callbacks } = mount()
         fireEvent.click(screen.getByRole('button', { name: 'Вперёд' }))

@@ -15,6 +15,7 @@ import type {
     Chat,
 } from '../api/chatApi'
 import ChatHistoryRow from './ChatHistoryRow'
+import {createPendingTurn} from '../lib/chatPage.helpers'
 
 const chat: Chat = {
     id: 'cb145d98-55be-4ee1-a38a-1bded69520c1',
@@ -89,4 +90,21 @@ describe('ChatHistoryRow', () => {
         expect(onRename).not.toHaveBeenCalled()
         expect(onArchive).not.toHaveBeenCalled()
     })
+
+    it.each([['FAILED', false], ['AMBIGUOUS', true], ['PROCESSING', true]] as const)(
+        'сохраняет ограничения архивации для %s', (status, disabled) => {
+            const onErase = vi.fn()
+            render(<ChatHistoryRow chat={chat} active now={Date.now()} opening={false} archiving={false}
+                pending={{...createPendingTurn(chat.id, 'text', 'request'), status}}
+                onOpen={vi.fn()} onRename={vi.fn()} onArchive={vi.fn()} onErase={onErase}/>)
+            fireEvent.click(screen.getByRole('button', {name: `Действия с чатом «${chat.title}»`}))
+            const erase = screen.getByRole('button', {name: 'Удалить содержимое…'})
+            expect(erase).toHaveProperty('disabled', disabled)
+            expect(screen.getByRole('button', {name: 'Архивировать'})).toHaveProperty('disabled', disabled)
+            if (!disabled) {
+                fireEvent.click(erase)
+                expect(onErase).toHaveBeenCalledWith(chat)
+            } else expect(onErase).not.toHaveBeenCalled()
+        },
+    )
 })

@@ -39,6 +39,7 @@ function ColumnHelpButton({ column, label, onOpen }: {
 type AdminOrganizationsViewProps = {
     organizations: Organization[]
     loadError: string
+    detailsError?: string
     mutationError: string
     createError: string
     success: string
@@ -68,7 +69,7 @@ type AdminOrganizationsViewProps = {
 
 /** Keep the protected PLATFORM row read-only; all mutations use existing confirmations. */
 export function AdminOrganizationsView({
-    organizations, loadError, mutationError, createError, success,
+    organizations, loadError, detailsError, mutationError, createError, success,
     loading, creating, hasPendingAction, page, totalPages, totalOrganizations, name,
     detailsLoadingId, impactLoadingId, onNameChange, onCreate,
     onReload, onDetails, onRename, onDisable, onEnable, onPageChange,
@@ -105,7 +106,6 @@ export function AdminOrganizationsView({
         <div className="organizations-page__upper">
             <AdminPageHeader className="organizations-page__header">
                 <div>
-                    <span className="organizations-page__eyebrow">УПРАВЛЕНИЕ ОРГАНИЗАЦИЯМИ</span>
                     <h1>Организации</h1>
                     <p>Управление клиентами и их доступом к SafeAI Desk.</p>
                 </div>
@@ -121,6 +121,14 @@ export function AdminOrganizationsView({
 
             {mutationError && <div className="error" role="alert" aria-live="assertive">{mutationError}</div>}
             {success && <div className="success" role="status" aria-live="polite">{success}</div>}
+            {detailsError && <p className="error" role="alert">{detailsError}</p>}
+            {!loading && !loadError && totalOrganizations === null && (
+                <p role="status">Общее количество недоступно. Результаты поиска сохранены.{' '}
+                    <button type="button" className="secondary-button" onClick={onReload}>
+                        Обновить итоги
+                    </button>
+                </p>
+            )}
 
             {onFiltersChange && <form className="organization-directory-filter" role="search"
                 onSubmit={event => {event.preventDefault(); applyFilters(searchDraft, type, status)}}>

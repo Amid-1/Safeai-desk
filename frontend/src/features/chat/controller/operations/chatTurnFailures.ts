@@ -6,7 +6,7 @@ import { withPendingState } from './chatPendingState'
 import { parsePublicModelRouteDenial } from '../../../../shared/lib/modelRouteDenial'
 
 type FailureDeps = Pick<ChatControllerDependencies,
-    'setSendError' | 'setClock' | 'reconcilePendingTurn' | 'putPendingTurn'
+    'setSendError' | 'setClock' | 'reconcilePendingTurn' | 'putPendingTurn' | 'activeChatRef'
 >
 
 type FailureDecision = {
@@ -96,7 +96,9 @@ export function createTurnFailureHandler(deps: FailureDeps) {
                 decision.retryAfterUntil ?? null,
             )
             putPendingTurn(updated)
-            if (decision.visibleMessage) setSendError(decision.visibleMessage)
+            if (decision.visibleMessage && deps.activeChatRef.current?.id === pending.chatId) {
+                setSendError(decision.visibleMessage)
+            }
             if (decision.status === 'RATE_LIMITED') setClock(now)
             if (decision.reconcile) {
                 await reconcilePendingTurn(

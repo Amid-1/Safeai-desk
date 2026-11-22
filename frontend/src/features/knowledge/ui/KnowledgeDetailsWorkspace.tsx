@@ -76,6 +76,7 @@ export function KnowledgeDetailsWorkspace() {
                 canDeleteDocuments={deletion.available}
                 canShowDeleteAction={deletion.canShowAction}
                 deleteUnavailableReason={deletion.unavailableReason}
+                recheckDeletion={deletion.recheck}
                 requestDeletion={deletion.requestDeletion}
                 openDeletionOperation={deletion.openOperation}
                 deletionOperations={deletion.operations}

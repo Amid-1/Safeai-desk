@@ -29,7 +29,7 @@ type OperationTarget = {
 
 const UNAVAILABLE_MESSAGES: Record<Exclude<CapabilityStatus, 'enabled'>, string> = {
     checking: 'Проверяем, доступно ли удаление документов…',
-    disabled: 'Удаление документов сейчас недоступно. Документы и файлы остаются без изменений.',
+    disabled: 'Удаление документов отключено политикой платформы или настройками сервера.',
     error: 'Не удалось проверить доступность удаления или получить историю операций. Новый запрос запрещён до проверки статуса на сервере.',
 }
 
@@ -56,6 +56,7 @@ export function useKnowledgeDeletionController(options: {
     const {knowledgeBaseId, isOwner, setError, refresh} = options
 
     const [capabilityStatus, setCapabilityStatus] = useState<CapabilityStatus>('checking')
+    const [checkRevision, setCheckRevision] = useState(0)
     const [target, setTarget] = useState<DocumentDeletionTarget | null>(null)
     const [operationTarget, setOperationTarget] = useState<OperationTarget | null>(null)
     const [busy, setBusy] = useState(false)
@@ -137,7 +138,7 @@ export function useKnowledgeDeletionController(options: {
         })
 
         return () => controller.abort()
-    }, [knowledgeBaseId, isOwner])
+    }, [knowledgeBaseId, isOwner, checkRevision])
 
     useEffect(() => {
         if (!isOwner || !knowledgeBaseId) return
@@ -190,7 +191,7 @@ export function useKnowledgeDeletionController(options: {
             controller.abort()
             window.clearInterval(handle)
         }
-    }, [isOwner, knowledgeBaseId])
+    }, [isOwner, knowledgeBaseId, checkRevision])
 
     function openOperation(
         document: KnowledgeDocument,
@@ -500,6 +501,13 @@ export function useKnowledgeDeletionController(options: {
 
     return {
         available,
+        recheck: () => {
+            if (!inFlight.current) {
+                setValidatedBaseId('')
+                setCapabilityStatus('checking')
+                setCheckRevision(value => value + 1)
+            }
+        },
         canShowAction: isOwner,
         unavailableReason,
         target,

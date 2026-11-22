@@ -66,13 +66,17 @@ export default function ChatPageDialogs({controller}: ChatPageDialogsProps) {
                     title="Архивировать чат?"
                     message={
                         `Чат «${chatToArchive.title}» исчезнет из рабочего списка. `
-                        + 'История, стоимость и доказательная цепочка сохранятся для аудита.'
+                        + 'Сохранённая история останется в архиве. Несохранённые черновики будут удалены.'
                     }
                     confirmText="Архивировать"
                     danger
                     loading={archivingChatId === chatToArchive.id}
                     onCancel={() => setChatToArchive(null)}
-                    onConfirm={() => handleArchiveChat(chatToArchive)}
+                    onConfirm={async () => {
+                        if (!await handleArchiveChat(chatToArchive)) {
+                            throw new Error('Дождитесь завершения запроса.')
+                        }
+                    }}
                 />
             )}
 

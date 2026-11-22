@@ -92,6 +92,21 @@ test('direct user link opens details and links to the organization', async ({pag
   await expect(page).not.toHaveURL(/userId=/)
 })
 
+test('users remain accessible when summary or direct details fail', async ({page}) => {
+  await page.route('**/api/users/search/statistics**', route => route.fulfill({
+    status: 503, json: {code: 'SERVICE_UNAVAILABLE'},
+  }))
+  await page.route('**/api/users/' + user(1).id, route => route.fulfill({
+    status: 403, json: {code: 'ACCESS_DENIED'},
+  }))
+  await page.goto('/admin/users?userId=' + user(1).id)
+  await expect(page.getByRole('row')).toHaveCount(22)
+  await expect(page.getByText('Не удалось получить общие итоги. Список доступен.')).toBeVisible()
+  await expect(page.getByText(/Не удалось открыть карточку пользователя/)).toBeVisible()
+  await expect(page.getByRole('dialog', {name: 'Карточка пользователя'})).toHaveCount(0)
+  await expect(page.getByText(/Найдено по фильтрам: 21/)).toBeVisible()
+})
+
 test('users search applies from the first character without submit and preserves filters', async ({page}) => {
   await page.goto('/admin/users?role=USER&status=ACTIVE')
   const search = page.getByRole('searchbox')

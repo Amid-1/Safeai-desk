@@ -56,6 +56,7 @@ export function useAdminOrganizationsDirectory() {
         useState<string | null>(null)
     const [detailsError, setDetailsError] =
         useState('')
+    const previousLinkedId = useRef('')
 
     const loadSequenceRef = useRef(0)
     const loadControllerRef =
@@ -93,7 +94,8 @@ export function useAdminOrganizationsDirectory() {
                         },
                     )
                     , query || type || status
-                        ? getOrganizations(0, 1, {signal: controller.signal}) : Promise.resolve(null)
+                        ? getOrganizations(0, 1, {signal: controller.signal}).catch(() => null)
+                        : Promise.resolve(null)
                 ])
 
                 if (
@@ -131,7 +133,8 @@ export function useAdminOrganizationsDirectory() {
                     normalized.totalPages,
                 )
                 setTotalMatched(normalized.totalElements)
-                setTotalOrganizations(global ? global.totalElements : normalized.totalElements)
+                setTotalOrganizations(query || type || status
+                    ? global?.totalElements ?? null : normalized.totalElements)
             } catch (error) {
                 if (
                     sequence
@@ -202,6 +205,10 @@ export function useAdminOrganizationsDirectory() {
     async function openDetailsModal(
         organization: Organization,
     ) {
+        if (linkedId) {
+            change({organizationId: organization.id})
+            return
+        }
         const sequence =
             ++detailsSequenceRef.current
 
@@ -216,6 +223,7 @@ export function useAdminOrganizationsDirectory() {
             organization.id,
         )
         setDetailsError('')
+        setDetailsOrganization(null)
 
         try {
             const details =
@@ -234,6 +242,10 @@ export function useAdminOrganizationsDirectory() {
                 return
             }
 
+            if (details.id !== organization.id) {
+                setDetailsError('Карточка организации недоступна.')
+                return
+            }
             setDetailsOrganization(details)
         } catch (error) {
             if (
@@ -250,11 +262,6 @@ export function useAdminOrganizationsDirectory() {
                     ),
                 )
 
-                // Fail-soft presentation only: the already loaded page
-                // snapshot remains visible, while the warning is preserved.
-                setDetailsOrganization(
-                    organization,
-                )
             }
         } finally {
             if (
@@ -276,15 +283,37 @@ export function useAdminOrganizationsDirectory() {
     }
 
     useEffect(() => {
+        if (!linkedId && !previousLinkedId.current) return
+        previousLinkedId.current = linkedId
+        const sequence = ++detailsSequenceRef.current
+        detailsControllerRef.current?.abort()
+        setDetailsOrganization(null)
+        setDetailsError('')
+        setDetailsLoadingId(linkedId || null)
         if (!linkedId) return
         const controller = new AbortController()
-        setDetailsLoadingId(linkedId)
+        detailsControllerRef.current = controller
         void getOrganizationDetails(linkedId, {signal: controller.signal})
-            .then(row => {if (!controller.signal.aborted) setDetailsOrganization(row)})
-            .catch(() => {if (!controller.signal.aborted) setLoadError('Не удалось открыть выбранную организацию.')})
-            .finally(() => {if (!controller.signal.aborted) setDetailsLoadingId(null)})
+            .then(row => {
+                if (controller.signal.aborted || sequence !== detailsSequenceRef.current) return
+                if (row.id !== linkedId) {
+                    setDetailsError('Карточка организации недоступна.')
+                    return
+                }
+                setDetailsOrganization(row)
+            })
+            .catch(() => {
+                if (!controller.signal.aborted && sequence === detailsSequenceRef.current) {
+                    setDetailsError('Не удалось открыть карточку организации. Повторите попытку.')
+                }
+            })
+            .finally(() => {
+                if (!controller.signal.aborted && sequence === detailsSequenceRef.current) {
+                    setDetailsLoadingId(null)
+                }
+            })
         return () => controller.abort()
-    }, [linkedId])
+    }, [linkedId, reloadToken])
 
     return {
         organizations,

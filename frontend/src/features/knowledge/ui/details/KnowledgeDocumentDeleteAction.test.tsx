@@ -23,10 +23,7 @@ describe('KnowledgeDocumentDeleteAction', () => {
             canDelete={false} unavailableReason={disabled} onDelete={onDelete}/>)
         fireEvent.click(screen.getByRole('button', {name: 'Удалить…'}))
         expect(screen.getByText(disabled)).toBeInTheDocument()
-        expect(screen.getByText(
-            'Для включения безвозвратного удаления требуется предварительная '
-            + 'проверка безопасности и конфигурации сервера.',
-        )).toBeInTheDocument()
+        expect(screen.getByText(/Обзор платформы → Хранение и удаление данных/)).toBeInTheDocument()
         expect(screen.getByRole('dialog')).toBeInTheDocument()
         expect(onDelete).not.toHaveBeenCalled()
         fireEvent.click(screen.getByRole('button', {name: 'Понятно'}))

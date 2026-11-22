@@ -48,6 +48,7 @@ const AdminUsagePage = lazy(
     () => import('../pages/AdminUsagePage'),
 )
 const AdminDashboardPage = lazy(() => import('../pages/AdminDashboardPage'))
+const AdminRetentionPage = lazy(() => import('../pages/AdminRetentionPage'))
 const AdminModelsPage = lazy(
     () => import('../pages/AdminModelsPage'),
 )
@@ -547,6 +548,9 @@ function AppLayout() {
                                 {user => <AdminDashboardPage key={user.id} />}
                             </ProtectedRoute>}
                         />
+                        <Route path="/admin/retention" element={<ProtectedRoute roles={['SUPER_ADMIN']}>
+                            <AdminRetentionPage />
+                        </ProtectedRoute>} />
                         <Route
                             path="/admin/users"
                             element={

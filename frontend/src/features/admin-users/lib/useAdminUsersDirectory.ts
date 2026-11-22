@@ -36,7 +36,6 @@ import type {
     AdminUsersFilter,
 } from '../ui/AdminUsersView'
 import {
-    findOrganizationName,
     isRequestAborted,
 } from './adminUsersSupport'
 
@@ -60,6 +59,7 @@ export function useAdminUsersDirectory(
         useState<UserStatistics>(
             EMPTY_STATISTICS,
         )
+    const [statisticsAvailable, setStatisticsAvailable] = useState(false)
     const [organizations, setOrganizations] =
         useState<OrganizationDirectoryItem[]>([])
     const [displayOrganizations, setDisplayOrganizations] = useState<OrganizationDirectoryItem[]>([])
@@ -136,6 +136,7 @@ export function useAdminUsersDirectory(
         async function loadUsers() {
             setLoading(true)
             setLoadError('')
+            setStatisticsAvailable(false)
 
             try {
                 const [
@@ -159,7 +160,7 @@ export function useAdminUsersDirectory(
                         ...(currentUserIsSuperAdmin ? {directory: true, organizationId: organizationId || undefined} : {}),
                         signal:
                             controller.signal,
-                    }),
+                    }).catch(() => null),
                 ])
 
                 if (
@@ -196,9 +197,8 @@ export function useAdminUsersDirectory(
                 setTotalPages(
                     normalized.totalPages,
                 )
-                setStatistics(
-                    loadedStatistics,
-                )
+                setStatistics(loadedStatistics ?? EMPTY_STATISTICS)
+                setStatisticsAvailable(loadedStatistics !== null)
             } catch (error) {
                 if (
                     sequence
@@ -465,6 +465,8 @@ export function useAdminUsersDirectory(
 
         setDetailsLoadingUserId(user.id)
         setDetailsError('')
+        setLinkedDetailsError('')
+        setDetailsUser(null)
 
         try {
             const details = await getUserDetails(
@@ -482,6 +484,11 @@ export function useAdminUsersDirectory(
                 return
             }
 
+            if (details.id !== user.id || details.organizationId !== user.organizationId
+                || (!currentUserIsSuperAdmin && details.organizationId !== currentUser.organizationId)) {
+                setLinkedDetailsError('Карточка пользователя недоступна.')
+                return
+            }
             setDetailsUser(details)
         } catch (error) {
             if (
@@ -489,20 +496,12 @@ export function useAdminUsersDirectory(
                 === detailsSequenceRef.current
                 && !isRequestAborted(error)
             ) {
-                setDetailsError(
+                setLinkedDetailsError(
                     getApiErrorMessage(
                         error,
                         'Не удалось загрузить сведения о пользователе.',
                     ),
                 )
-                setDetailsUser({
-                    ...user,
-                    organizationName:
-                        findOrganizationName(
-                            user.organizationId,
-                            organizations,
-                        ),
-                })
             }
         } finally {
             if (
@@ -519,6 +518,7 @@ export function useAdminUsersDirectory(
         detailsControllerRef.current?.abort()
         setDetailsUser(null)
         setDetailsError('')
+        setLinkedDetailsError('')
         setDetailsLoadingUserId(null)
         if (linkedUserId) change({userId: ''}, true)
     }
@@ -527,9 +527,11 @@ export function useAdminUsersDirectory(
         currentUser,
         users,
         statistics,
+        statisticsAvailable,
         organizations,
         displayOrganizations: currentUserIsSuperAdmin ? displayOrganizations : [],
-        loadError: loadError || linkedDetailsError,
+        loadError,
+        linkedDetailsError,
         organizationsError,
         loading,
         organizationsLoading,

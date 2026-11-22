@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
  *
  * <p>V0 is an intentional test-only role bootstrap. It must run before V1,
  * not be hidden or excluded to make the migration count look convenient.
- * Production migrations begin at V1 and currently extend through V101.</p>
+ * Production migrations begin at V1 and currently extend through V102.</p>
  */
 @Tag("integration")
 @Testcontainers
@@ -67,10 +67,10 @@ class FlywaySequentialUpgradeIT {
                 .toList();
 
         // Validate the complete catalog, not just the migration that failed.
-        assertThat(versions).as("Expected test V0 and production versions through V101")
-                .hasSizeGreaterThanOrEqualTo(102)
+        assertThat(versions).as("Expected test V0 and production versions through V102")
+                .hasSizeGreaterThanOrEqualTo(103)
                 .startsWith("0", "1")
-                .contains("92", "93", "94", "95", "96", "97", "98", "99", "100", "101");
+                .contains("92", "93", "94", "95", "96", "97", "98", "99", "100", "101", "102");
 
         UUID existingOrganization = UUID.randomUUID();
         UUID existingActor = UUID.randomUUID();
@@ -244,6 +244,17 @@ class FlywaySequentialUpgradeIT {
                 assertThat(jdbc.queryForObject("""
                         SELECT pg_get_viewdef('public.model_cost_commitment_ledger_v62'::regclass)
                         """, String.class)).containsIgnoringCase("LATERAL");
+                assertThat(legacyEvidence(jdbc, existingOrganization, auditId, outboxId, true))
+                        .containsExactlyElementsOf(evidenceBeforeV94);
+            }
+            if (index == 102) {
+                assertThat(jdbc.queryForObject("""
+                        SELECT count(*) FROM public.platform_erasure_policy_v102
+                        WHERE singleton AND chat_allowed AND knowledge_allowed AND version=0
+                        """, Long.class)).isEqualTo(1L);
+                assertThat(jdbc.queryForObject("""
+                        SELECT count(*) FROM public.audit_event_types WHERE name='RETENTION_POLICY_CHANGED'
+                        """, Long.class)).isEqualTo(1L);
                 assertThat(legacyEvidence(jdbc, existingOrganization, auditId, outboxId, true))
                         .containsExactlyElementsOf(evidenceBeforeV94);
             }

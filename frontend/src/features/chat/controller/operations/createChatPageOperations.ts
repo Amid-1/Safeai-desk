@@ -17,8 +17,8 @@ type ChatOperationContext = ChatControllerState
     & ReturnType<typeof useChatSessionLifecycle>
 
 export function createChatPageOperations(context: ChatOperationContext) {
-    const directory = createDirectoryActions(context)
     const updates = createTurnUpdates(context)
+    const directory = createDirectoryActions({...context, ...updates})
     const reconciliation = createTurnReconciliation({
         ...context, ...directory, ...updates,
     })

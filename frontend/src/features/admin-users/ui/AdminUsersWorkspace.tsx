@@ -78,6 +78,8 @@ export function AdminUsersWorkspace({
                 statistics={
                     directory.statistics
                 }
+                statisticsAvailable={directory.statisticsAvailable}
+                linkedDetailsError={directory.linkedDetailsError}
                 organizations={
                     directory.displayOrganizations ?? directory.organizations
                 }

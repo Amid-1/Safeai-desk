@@ -72,6 +72,7 @@ function harness() {
     const ensureAutomaticChatTitle = vi.fn(async () => undefined)
     const reconcilePendingTurn = vi.fn(async () => undefined)
     const failure = createTurnFailureHandler({
+        activeChatRef,
         setSendError: deps.setSendError,
         setClock: vi.fn(),
         reconcilePendingTurn,

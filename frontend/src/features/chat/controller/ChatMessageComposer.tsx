@@ -47,7 +47,7 @@ export default function ChatMessageComposer({ controller }: Props) {
                     aria-describedby="chat-message-counter"
                 />
                 <small id="chat-message-counter" className="muted">
-                    {activeDraft.length}{' / '}{capabilities.maxMessageChars}
+                    {activeDraft.length}{' / '}{capabilities.maxMessageChars} символов
                 </small>
             </div>
             <button

@@ -36,7 +36,7 @@ describe('adminOrganizationsSupport: protection and concurrency guards', () => {
         expect(canMutateOrganization({ ...tenant, protected: true })).toBe(false)
         expect(canMutateOrganization({ ...platform, protected: false })).toBe(false)
 
-        expect(getProtectionError(platform)).toContain('Платформенная организация защищена')
+        expect(getProtectionError(platform)).toContain('Системная организация защищена')
         expect(getProtectionError(tenant)).toBe('Организация недоступна для изменения.')
         expect(getProtectionLabel(platform)).toBe('Защищённая системная организация')
         expect(getProtectionLabel(tenant)).toBe('Недоступно')

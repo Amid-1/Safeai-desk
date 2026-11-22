@@ -61,6 +61,10 @@ async function fixture(page, role) {
     const period = {from: query.get('dateFrom')?.replace('.000Z','Z'), to: query.get('dateTo')?.replace('.000Z','Z'),
       organizationId: scope, aggregationBasis: 'PHYSICAL_ATTEMPT_STARTED_AT'}
     switch (path) {
+      case '/api/admin/retention': json = {chatAllowed: true, knowledgeAllowed: false, version: 2,
+        chat: {configured: true, workerInitialized: true},
+        document: {configured: false, workerInitialized: false},
+        base: {configured: false, workerInitialized: false}, userRetentionSeconds: 604800}; break
       case '/api/organizations': case '/api/organizations/search': json = paged([company]); break
       case '/api/organizations/directory': json = [company]; break
       case `/api/organizations/${org}`: json = company; break
@@ -427,6 +431,71 @@ test('knowledge catalog failure does not send chat in another mode', async ({pag
   await page.getByLabel('База знаний', {exact: true}).selectOption({label: base.name})
   await expect(send).toBeEnabled()
   await expect(composer).toHaveValue('Черновик вопроса')
+})
+
+test('retention policy remains usable on phone and desktop, cancel sends no mutation', async ({page}) => {
+  const requests = await fixture(page, 'SUPER_ADMIN')
+  await page.setViewportSize({width: 320, height: 640})
+  await page.goto('/admin/retention')
+  await expect(page.getByRole('heading', {name: 'Хранение и удаление данных'})).toBeVisible()
+  const pause = page.getByRole('button', {name: 'Приостановить новые удаления'})
+  await expect(pause).toBeEnabled()
+  await expect(page.getByRole('button', {name: 'Разрешить новые удаления'})).toBeDisabled()
+  for (const [width,height] of [[320,640], [1280,720]]) {
+    await page.setViewportSize({width,height})
+    await noPageOverflow(page)
+    await pause.click()
+    const dialog = page.getByRole('dialog', {name: 'Изменить политику удаления?'})
+    await expect(dialog).toBeVisible()
+    await dialog.getByRole('button', {name: 'Отмена'}).click()
+    await expect(dialog).toHaveCount(0)
+  }
+  expect(requests.filter(path => path === '/api/admin/retention')).toHaveLength(1)
+})
+
+test('chat deletion entry point archives first and respects server refusal', async ({page}) => {
+  await fixture(page, 'ADMIN')
+  const item = {id: chat, title: 'Тестовый чат', createdAt: date, updatedAt: date}
+  let archived = false
+  let deleteRequests = 0
+  await page.route('**/api/chats/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (route.request().method() === 'DELETE') {
+      deleteRequests++
+      return route.fulfill({status: 403})
+    }
+    if (path === `/api/chats/${chat}/archive`) {
+      expect(route.request().method()).toBe('POST')
+      archived = true
+      return route.fulfill({status: 204})
+    }
+    if (path === '/api/chats/archived') return route.fulfill({json: paged(archived ? [item] : [])})
+    if (path === '/api/chats/erasure-operations') return route.fulfill({json: []})
+    if (path === `/api/chats/${chat}/archived`) return route.fulfill({json: {...item, messages: []}})
+    if (path === `/api/chats/${chat}/erasure`) return route.fulfill({status: 404})
+    if (path === `/api/chats/${chat}/erasure/capability`) {
+      return route.fulfill({json: {allowed: false, reason: 'FEATURE_DISABLED', version: 1}})
+    }
+    return route.fallback()
+  })
+  await page.goto('/chat')
+  await page.getByRole('button', {name: 'Действия с чатом «Тестовый чат»'}).click()
+  await page.getByRole('button', {name: 'Удалить содержимое…', exact: true}).click()
+  await page.getByRole('button', {name: 'Архивировать и продолжить'}).click()
+  const archive = page.getByRole('dialog', {name: 'Архив чатов'})
+  await expect(archive.getByRole('heading', {name: item.title})).toBeVisible()
+  await archive.getByRole('button', {name: 'Удалить содержимое чата…'}).click()
+  await expect(archive.getByRole('alert')).toContainText('Удаление отключено на сервере.')
+  expect(archived).toBe(true)
+  expect(deleteRequests).toBe(0)
+})
+
+test('regular user cannot enter permanent erasure from the chat menu', async ({page}) => {
+  await fixture(page, 'USER')
+  await page.goto('/chat')
+  await page.getByRole('button', {name: 'Действия с чатом «Тестовый чат»'}).click()
+  await expect(page.getByRole('button', {name: 'Архивировать', exact: true})).toBeVisible()
+  await expect(page.getByRole('button', {name: 'Удалить содержимое…', exact: true})).toHaveCount(0)
 })
 
 test('mobile shell keyboard navigation and visual evidence', async ({page}, testInfo) => {

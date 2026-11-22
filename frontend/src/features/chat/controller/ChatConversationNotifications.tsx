@@ -1,5 +1,6 @@
 // frontend/src/features/chat/controller/ChatConversationNotifications.tsx
 import type { ChatPageController } from './useChatPageController'
+import { useState } from 'react'
 import { PendingTurnState } from '../ui/ChatMessageViews'
 
 type Props = { controller: ChatPageController }
@@ -20,16 +21,20 @@ export default function ChatConversationNotifications({ controller }: Props) {
         prepareNewRequestFromPending,
         copyPendingText,
         dismissUnsafePending,
+        handleCreateChat,
+        chatCreating,
     } = controller
+    const [createError, setCreateError] = useState('')
 
     return (
         <>
             {chatError && <ErrorNotice message={chatError} />}
-            {sendError && sendError !== activePendingTurn?.error && (
+            {sendError && !activePendingTurn && (
                 <ErrorNotice message={sendError} />
             )}
             {activePendingTurn && (
                 <PendingTurnState
+                    key={activePendingTurn.clientRequestId}
                     pending={activePendingTurn}
                     now={clock}
                     retryAfterSeconds={retryAfterSeconds}
@@ -38,8 +43,14 @@ export default function ChatConversationNotifications({ controller }: Props) {
                     onPrepareNew={prepareNewRequestFromPending}
                     onCopy={() => void copyPendingText()}
                     onDismissUnsafe={dismissUnsafePending}
+                    newChatBusy={chatCreating}
+                    onNewChat={() => {
+                        setCreateError('')
+                        void handleCreateChat().then(error => setCreateError(error ?? ''))
+                    }}
                 />
             )}
+            {createError && <ErrorNotice message={createError} />}
         </>
     )
 }

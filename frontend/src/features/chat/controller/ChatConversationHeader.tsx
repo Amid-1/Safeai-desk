@@ -17,7 +17,6 @@ export default function ChatConversationHeader({ controller }: Props) {
     return (
         <div className="chat-panel__header">
             <div>
-                <span className="chat-panel__eyebrow">Текущий чат</span>
                 <ChatTitleEditor
                     key={activeChat.id}
                     title={activeChat.title}
@@ -41,8 +40,7 @@ export default function ChatConversationHeader({ controller }: Props) {
                     onClick={() => setSelectedTrustItem(CHAT_TRUST_ITEMS[0])}
                     title="Информация об изоляции и защите данных"
                 >
-                    <span aria-hidden="true">●</span>
-                    Защита данных
+                    О защите данных
                 </button>
             </div>
         </div>

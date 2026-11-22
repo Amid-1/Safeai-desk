@@ -36,6 +36,9 @@ export function auditEventResult(type: string): { label: string; tone: string } 
 }
 
 const friendlyFields: Readonly<Record<string, string>> = {
+    previousChatAllowed: 'Прежний допуск удаления чатов', chatAllowed: 'Удаление чатов разрешено',
+    previousKnowledgeAllowed: 'Прежний допуск удаления баз и документов',
+    knowledgeAllowed: 'Удаление баз и документов разрешено',
     modelKey: 'Модель', provider: 'Провайдер', providerModelId: 'Модель провайдера',
     version: 'Версия', documentName: 'Документ', fileName: 'Имя файла',
     knowledgeBaseName: 'База знаний', title: 'Название', name: 'Название', enabled: 'Включено',

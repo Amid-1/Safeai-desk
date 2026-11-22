@@ -64,6 +64,7 @@ export type KnowledgeDetailsContentProps = {
     canDeleteDocuments: boolean
     canShowDeleteAction: boolean
     deleteUnavailableReason: string
+    recheckDeletion?: () => void
     requestDeletion: (document: KnowledgeDocument) => void
     openDeletionOperation: (document: KnowledgeDocument, operation: KnowledgeDocumentDeletion) => void
     deletionOperations: KnowledgeDocumentDeletion[]
@@ -98,6 +99,7 @@ export function KnowledgeDetailsContent({
     canDeleteDocuments,
     canShowDeleteAction,
     deleteUnavailableReason,
+    recheckDeletion,
     requestDeletion,
     openDeletionOperation,
     deletionOperations,
@@ -326,6 +328,8 @@ export function KnowledgeDetailsContent({
                 {canShowDeleteAction && !canDeleteDocuments && (
                     <p role="status" className="knowledge-documents__notice">
                         {deleteUnavailableReason}
+                        {recheckDeletion && <button type="button" className="secondary-button"
+                            onClick={recheckDeletion}>Проверить снова</button>}
                     </p>
                 )}
                 {deletionHistoryError && (

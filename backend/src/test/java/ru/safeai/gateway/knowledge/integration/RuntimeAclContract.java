@@ -116,10 +116,19 @@ class RuntimeAclContract {
                 "SELECT has_schema_privilege(current_user,'public','CREATE')", Boolean.class));
         assertEquals(Boolean.FALSE, jdbc.queryForObject(
                 "SELECT has_table_privilege(current_user,'public.flyway_schema_history','SELECT')", Boolean.class));
+        assertEquals(Boolean.TRUE, jdbc.queryForObject(
+                "SELECT has_table_privilege(current_user,'public.platform_erasure_policy_v102','SELECT')", Boolean.class));
+        assertEquals(Boolean.TRUE, jdbc.queryForObject(
+                "SELECT has_column_privilege(current_user,'public.platform_erasure_policy_v102','chat_allowed','UPDATE')", Boolean.class));
+        assertEquals(Boolean.FALSE, jdbc.queryForObject(
+                "SELECT has_column_privilege(current_user,'public.platform_erasure_policy_v102','singleton','UPDATE')", Boolean.class));
+        assertEquals(Boolean.FALSE, jdbc.queryForObject(
+                "SELECT has_table_privilege(current_user,'public.platform_erasure_policy_v102','DELETE,TRUNCATE,INSERT')", Boolean.class));
         System.out.println("STAGE5 IDENTITY PASS: real safeai_app Spring JDBC, Hibernate validate, no Flyway");
 
         Actor a = fixture(), b = fixture();
         Session sa = login(a), sb = login(b);
+        mvc.perform(get("/api/admin/retention").cookie(sa.access())).andExpect(status().isForbidden());
         mvc.perform(get("/api/auth/me").cookie(sa.access()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(a.id().toString()));
         mvc.perform(get("/api/auth/me").cookie(sb.access()))

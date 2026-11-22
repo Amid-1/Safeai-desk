@@ -131,6 +131,9 @@ vi.mock('../pages/AdminUsagePage', () => ({
 vi.mock('../pages/AdminDashboardPage', () => ({
     default: () => <div data-testid="admin-dashboard-page">Dashboard</div>,
 }))
+vi.mock('../pages/AdminRetentionPage', () => ({
+    default: () => <div data-testid="admin-retention-page">Retention</div>,
+}))
 
 vi.mock('../pages/AdminModelsPage', () => ({
     default: () => (
@@ -475,6 +478,7 @@ describe(
                 '/admin/organizations',
                 'admin-organizations-page',
             ],
+            ['/admin/retention', 'admin-retention-page'],
             [
                 '/admin/audit',
                 'admin-audit-page',
@@ -515,6 +519,12 @@ describe(
             expect(await screen.findByRole('alert')).toHaveTextContent('Недостаточно прав')
             expect(screen.queryByTestId('admin-dashboard-page')).not.toBeInTheDocument()
             expect(screen.queryByRole('link', {name: 'Обзор'})).not.toBeInTheDocument()
+        })
+        it.each([ADMIN, USER])('запрещает управление удалением без SUPER_ADMIN: $email', async user => {
+            setAuth(user, 'authenticated')
+            renderAt('/admin/retention')
+            expect(await screen.findByRole('alert')).toHaveTextContent('Недостаточно прав')
+            expect(screen.queryByTestId('admin-retention-page')).not.toBeInTheDocument()
         })
 
         it(

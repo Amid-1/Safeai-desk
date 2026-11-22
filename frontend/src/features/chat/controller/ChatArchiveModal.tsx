@@ -4,6 +4,7 @@ import Modal from '../../../shared/ui/Modal'
 import {useAuth} from '../../auth/state/useAuth'
 import {ApiError, getApiErrorMessage} from '../../../shared/api/http'
 import {createSecureUuid} from '../../../shared/lib/secureUuid'
+import {formatDateTime} from '../../../shared/lib/format'
 import type {Chat, ChatDetails} from '../api/chatApi'
 import {
     getArchivedChats, getArchivedChatDetails, restoreChat,
@@ -13,7 +14,30 @@ import {
 import type {ChatErasureCapability, ChatErasureOperation} from '../api/chat/chatArchiveClient'
 import './ChatArchiveModal.css'
 
-type Props = { onClose: () => void; onChanged: () => void }
+type Props = { onClose: () => void; onChanged: () => void; initialChatId?: string }
+
+const ERASURE_REASONS: Record<string, string> = {
+    RETENTION_NOT_APPROVED: 'Политика хранения ещё не разрешает удаление. Обратитесь к суперадминистратору.',
+    FEATURE_DISABLED: 'Удаление отключено на сервере. Обратитесь к суперадминистратору.',
+    POLICY_PAUSED: 'Платформа приостановила новые удаления. Чат можно оставить в архиве или восстановить.',
+    ALREADY_ERASING: 'Чат уже находится в процессе удаления.',
+    ARCHIVE_FIRST: 'Сначала архивируйте чат.',
+    RETENTION_HOLD: 'На чат распространяется обязательное хранение.',
+    ACTIVE_AI_OPERATION: 'Дождитесь завершения обработки запроса.',
+    CHAT_TOO_LARGE_FOR_ATOMIC_ERASURE: 'Объём чата требует отдельной проверки оператором.',
+}
+
+const ERASURE_STATES: Record<string, string> = {
+    ERASING: 'Удаление выполняется',
+    ERASED: 'Содержимое удалено',
+    NEEDS_REVIEW: 'Требуется проверка',
+    BLOCKED_BY_RETENTION: 'Заблокировано политикой хранения',
+    CANCELLED: 'Отменено',
+}
+
+function hiddenTitle(state: string) {
+    return state === 'ERASED' ? 'Содержимое удалено' : 'Содержимое недоступно'
+}
 
 const TERMINAL = new Set(['ERASED', 'NEEDS_REVIEW', 'BLOCKED_BY_RETENTION', 'CANCELLED'])
 const POLL_INTERVAL_MS = 12_000
@@ -33,7 +57,7 @@ async function nullOnExpectedHttpStatus<T>(
     }
 }
 
-export default function ChatArchiveModal({onClose, onChanged}: Props) {
+export default function ChatArchiveModal({onClose, onChanged, initialChatId}: Props) {
     const {currentUser} = useAuth()
     const canErase = currentUser?.roles.includes('ADMIN') ?? false
     const [items, setItems] = useState<Chat[]>([])
@@ -66,7 +90,14 @@ export default function ChatArchiveModal({onClose, onChanged}: Props) {
 
     useEffect(() => {
         const abort = new AbortController()
-        void refresh(abort.signal).catch((cause) => {
+        const load = async () => {
+            await refresh(abort.signal)
+            if (initialChatId && !abort.signal.aborted) {
+                const detail = await getArchivedChatDetails(initialChatId, abort.signal)
+                if (!abort.signal.aborted) setSelected(detail)
+            }
+        }
+        void load().catch((cause) => {
             if (!abort.signal.aborted) setError(getApiErrorMessage(cause, 'Не удалось загрузить архив.'))
         }).finally(() => {
             if (!abort.signal.aborted) setLoading(false)
@@ -75,7 +106,7 @@ export default function ChatArchiveModal({onClose, onChanged}: Props) {
             abort.abort();
             abortRef.current?.abort()
         }
-    }, [refresh])
+    }, [refresh, initialChatId])
 
     useEffect(() => {
         if (!selectedId || operation?.state !== 'ERASING') return
@@ -91,7 +122,7 @@ export default function ChatArchiveModal({onClose, onChanged}: Props) {
                 }
                 if (updated.state === 'ERASED') {
                     setSelected(current => current?.id === updated.chatId
-                        ? {...current, title: '[СОДЕРЖИМОЕ УДАЛЕНО]', messages: []} : current)
+                        ? {...current, title: hiddenTitle(updated.state), messages: []} : current)
                 }
                 if (TERMINAL.has(updated.state)) {
                     await refresh(abort.signal)
@@ -182,7 +213,7 @@ export default function ChatArchiveModal({onClose, onChanged}: Props) {
             }
             if (prior) {
                 setSelected(current => current?.id === prior.chatId
-                    ? {...current, title: '[СОДЕРЖИМОЕ УДАЛЕНО]', messages: []} : current)
+                    ? {...current, title: hiddenTitle(prior.state), messages: []} : current)
                 setOperation(prior)
                 setError('Уже существует операция стирания. Новый запрос не создавался.')
                 return
@@ -194,7 +225,8 @@ export default function ChatArchiveModal({onClose, onChanged}: Props) {
                 setConfirmationPhrase('')
                 setConfirming(true)
             } else {
-                setError(`Удаление недоступно: ${current.reason}.`)
+                setError('Удаление недоступно. '
+                    + (ERASURE_REASONS[current.reason] ?? 'Обратитесь к администратору платформы.'))
             }
         } catch (cause) {
             setError(getApiErrorMessage(cause, 'Проверка стирания не завершена. Удаление заблокировано.'))
@@ -227,7 +259,7 @@ export default function ChatArchiveModal({onClose, onChanged}: Props) {
             )
             setOperation(accepted)
             setSelected(current => current?.id === accepted.chatId
-                ? {...current, title: '[СОДЕРЖИМОЕ УДАЛЕНО]', messages: []} : current)
+                ? {...current, title: hiddenTitle(accepted.state), messages: []} : current)
             setConfirmationTitle('')
             setConfirmationPhrase('')
             setConfirming(false)
@@ -241,7 +273,7 @@ export default function ChatArchiveModal({onClose, onChanged}: Props) {
                 const current = await getChatErasureOperation(selected.id)
                 setOperation(current)
                 setSelected(previous => previous?.id === current.chatId
-                    ? {...previous, title: '[СОДЕРЖИМОЕ УДАЛЕНО]', messages: []} : previous)
+                    ? {...previous, title: hiddenTitle(current.state), messages: []} : previous)
                 setConfirmationTitle('')
                 setConfirmationPhrase('')
                 setConfirming(false)
@@ -256,31 +288,34 @@ export default function ChatArchiveModal({onClose, onChanged}: Props) {
     return (
         <Modal title="Архив чатов" size="lg" onClose={onClose} closeDisabled={busy}>
             <div className="chat-archive">
-                <p className="muted">Архивирование скрывает чат из рабочего списка, но сохраняет историю.
-                    Восстановление возвращает его обратно.</p>
+                <p className="muted">Архив сохраняет историю. Выберите чат, чтобы просмотреть
+                    или восстановить его{canErase ? ', либо проверить возможность удаления содержимого.' : '.'}</p>
                 {error && <p role="alert" className="error">{error}</p>}
-                {operations.length > 0 && <section className="chat-archive__operations">
-                    <h3>История стирания</h3>
+                {operations.length > 0 && <details className="chat-archive__operations">
+                    <summary>История удаления ({operations.length})</summary>
                     {operations.map(item => <p key={item.operationId}>
-                        Чат {item.chatId.slice(0, 8)}: {item.state}
+                        {formatDateTime(item.createdAt)}: {ERASURE_STATES[item.state] ?? 'Неизвестное состояние'}
                     </p>)}
-                </section>}
+                </details>}
                 {loading ? <p>Загрузка архива…</p> : (
                     <div className="chat-archive__layout">
                         <div className="chat-archive__list" aria-label="Архивированные чаты">
                             {items.length === 0 && <p>Архив пуст.</p>}
                             {items.map(item => (
                                 <button key={item.id} type="button" disabled={busy}
-                                        className={selected?.id === item.id ? 'secondary-button active' : 'secondary-button'}
+                                        className="secondary-button"
+                                        aria-pressed={selected?.id === item.id}
+                                        aria-label={item.title}
                                         onClick={() => void openChat(item)}>
-                                    {item.title}
+                                    <strong>{item.title}</strong>
+                                    <small>{formatDateTime(item.updatedAt)}</small>
                                 </button>
                             ))}
                             {hasNext && <button type="button" disabled={busy}
                                                 onClick={() => void more()}>Загрузить ещё</button>}
                         </div>
                         <div className="chat-archive__details">
-                            {!selected && <p className="muted">Выберите чат для просмотра.</p>}
+                            {!selected && <p className="muted">Выберите чат для просмотра и действий.</p>}
                             {selected && <>
                                 <h3>{selected.title}</h3>
                                 <div className="chat-archive__messages">
@@ -293,7 +328,7 @@ export default function ChatArchiveModal({onClose, onChanged}: Props) {
                                     ))}
                                 </div>
                                 {operation ? <div role="status">
-                                    <strong>Состояние стирания: {operation.state}</strong>
+                                    <strong>{ERASURE_STATES[operation.state] ?? 'Неизвестное состояние'}</strong>
                                     {operation.state === 'ERASING' &&
                                         <p>Содержимое стирается на сервере. Не запускайте повтор.</p>}
                                     {operation.state === 'ERASED' &&
@@ -307,12 +342,13 @@ export default function ChatArchiveModal({onClose, onChanged}: Props) {
                                     <button type="button" disabled={busy || confirming}
                                             onClick={() => void restore()}>Восстановить чат
                                     </button>
-                                    {canErase && <button type="button" className="secondary-button" disabled={busy}
-                                                         onClick={() => void inspectErasure()}>Стереть содержимое
-                                        навсегда…</button>}
+                                    {canErase && <button type="button" className="secondary-button chat-delete-action"
+                                                         disabled={busy || confirming}
+                                                         onClick={() => void inspectErasure()}>
+                                        Удалить содержимое чата…</button>}
                                 </div>}
                                 {confirming && !operation && <div className="chat-archive__erase">
-                                    <h4>Необратимое стирание содержимого</h4>
+                                    <h4>Удалить содержимое навсегда?</h4>
                                     <p>Текст сообщений, название и связанные тексты RAG будут стёрты.
                                         Невосстанавливаемые технические идентификаторы, хеши,
                                         стоимость и доказательства AI-вызовов останутся для аудита.

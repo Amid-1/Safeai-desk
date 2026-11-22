@@ -25,7 +25,10 @@ const platform: Organization = {
     name: 'SafeAI Platform', type: 'PLATFORM', protected: true,
 }
 
-function renderView(options: { rows?: Organization[], page?: number, pages?: number, total?: number, createResult?: boolean, search?: boolean } = {}) {
+function renderView(options: {
+    rows?: Organization[], page?: number, pages?: number, total?: number | null,
+    createResult?: boolean, search?: boolean, detailsError?: string,
+} = {}) {
     const onDisable = vi.fn(async () => {})
     const onEnable = vi.fn()
     const onDetails = vi.fn(async () => {})
@@ -41,7 +44,9 @@ function renderView(options: { rows?: Organization[], page?: number, pages?: num
         loadError="" mutationError="" createError="" success=""
         loading={false} creating={false} hasPendingAction={false}
         page={options.page ?? 0} totalPages={options.pages ?? 1}
-        totalOrganizations={options.total ?? (options.rows ?? [customer, platform]).length}
+        totalOrganizations={options.total === undefined
+            ? (options.rows ?? [customer, platform]).length : options.total}
+        detailsError={options.detailsError}
         name={name} detailsLoadingId={null} impactLoadingId={null}
         onNameChange={value => { setName(value); onNameChange(value) }} onCreate={onCreate}
         onReload={vi.fn()} onDetails={onDetails} onRename={onRename}
@@ -56,6 +61,12 @@ function renderView(options: { rows?: Organization[], page?: number, pages?: num
 beforeEach(() => { vi.restoreAllMocks() })
 
 describe('AdminOrganizationsView: readable UI and protected actions', () => {
+    it('показывает строки при недоступных итогах и ошибке карточки', () => {
+        renderView({total: null, detailsError: 'Карточка организации недоступна.'})
+        expect(screen.getByRole('table')).toBeVisible()
+        expect(screen.getByText('Карточка организации недоступна.')).toBeVisible()
+        expect(screen.getByRole('button', {name: 'Обновить итоги'})).toBeVisible()
+    })
     it('debounces from the first character and cancels a scheduled search on submit', async () => {
         const actions = renderView({search: true})
         const input = screen.getByRole('searchbox', {name: 'Название'})
@@ -88,7 +99,7 @@ describe('AdminOrganizationsView: readable UI and protected actions', () => {
     it('uses understandable terms without exposing implementation jargon', () => {
         renderView()
         expect(screen.getByRole('button', { name: '＋ Создать организацию' })).toBeTruthy()
-        expect(screen.getByText('УПРАВЛЕНИЕ ОРГАНИЗАЦИЯМИ')).toBeTruthy()
+        expect(screen.queryByText('УПРАВЛЕНИЕ ОРГАНИЗАЦИЯМИ')).toBeNull()
         expect(screen.queryByText('Создать tenant')).toBeNull()
         expect(screen.getByText('Всего организаций')).toBeTruthy()
         expect(screen.getByText('Показано 2 из 2')).toBeTruthy()

@@ -23,6 +23,7 @@ import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.retention.ErasureAdmissionPolicy;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -147,6 +148,7 @@ public class ChatLifecycleService {
                 : hasRetentionHold(chatId) ? "RETENTION_HOLD"
                 : hasInFlightTurn(chatId) ? "ACTIVE_AI_OPERATION"
                 : exceedsAtomicErasureLimit(chatId) ? "CHAT_TOO_LARGE_FOR_ATOMIC_ERASURE"
+                : !ErasureAdmissionPolicy.allowed(jdbc, ErasureAdmissionPolicy.Scope.CHAT) ? "POLICY_PAUSED"
                 : "ENABLED";
         return new ChatErasureCapabilityResponse("ENABLED".equals(reason), reason, chat.version());
     }
@@ -211,6 +213,7 @@ public class ChatLifecycleService {
                 "Чат превышает проверенный атомарный лимит стирания. "
                 + "Требуется отдельный утверждённый механизм крупного удаления.");
         }
+        ErasureAdmissionPolicy.requireAllowed(jdbc, ErasureAdmissionPolicy.Scope.CHAT);
         UUID opId = UUID.randomUUID();
         try {
             if (jdbc.update("""

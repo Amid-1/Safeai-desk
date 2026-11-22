@@ -1,6 +1,8 @@
 // frontend/src/features/chat/ui/ChatMessageViews.tsx
 /* frontend/src/features/chat/ui/ChatMessageViews.tsx */
 import type { KnowledgeMode } from '../api/chatApi'
+import { useState } from 'react'
+import { describeModelRouteDenial, MODEL_DECISION_ID_PATTERN } from '../../../shared/lib/modelRouteDenial'
 import type { AnswerPassport } from '../api/chatApi'
 import type { DisplayMessage, PendingTurn } from '../lib/chatPage.helpers'
 import {
@@ -184,6 +186,8 @@ type PendingTurnStateProps = {
     onPrepareNew: () => void
     onCopy: () => void
     onDismissUnsafe: () => void
+    onNewChat?: () => void
+    newChatBusy?: boolean
 }
 
 export function PendingTurnState({
@@ -195,7 +199,31 @@ export function PendingTurnState({
     onPrepareNew,
     onCopy,
     onDismissUnsafe,
+    onNewChat,
+    newChatBusy,
 }: PendingTurnStateProps) {
+    const [copyStatus, setCopyStatus] = useState('')
+    const support = /^(.*) (Номер решения|Номер обращения): ([A-Za-z0-9][A-Za-z0-9_.:-]{0,127})$/s
+        .exec(pending.error ?? '')
+    const reason = support?.[1] ?? ''
+    const supportLabel = support?.[2] ?? ''
+    const decisionId = support?.[3] ?? ''
+    const hasDecision = supportLabel === 'Номер решения' && MODEL_DECISION_ID_PATTERN.test(decisionId)
+    const hasSupportId = hasDecision || supportLabel === 'Номер обращения'
+    const inputLimit = hasDecision && reason.startsWith(describeModelRouteDenial('INPUT_LIMIT_EXCEEDED'))
+    const message = inputLimit
+        ? 'Общий объём запроса превышает допустимый лимит. Сократите сообщение или начните новый чат. '
+            + 'Если документы не нужны, выберите обычный AI. Если отказ повторяется, обратитесь к администратору.'
+        : hasSupportId ? reason : pending.error
+
+    async function copyDecision() {
+        try {
+            await navigator.clipboard.writeText(decisionId)
+            setCopyStatus('Номер скопирован.')
+        } catch {
+            setCopyStatus('Не удалось скопировать. Выделите номер вручную.')
+        }
+    }
     const canRetrySameId = canRetryPendingStatus(pending.status)
 
     const canCheck =
@@ -215,7 +243,7 @@ export function PendingTurnState({
 
     return (
         <div
-            className="card"
+            className="chat-turn-notice"
             role={
                 pending.status === 'FAILED'
                 || pending.status === 'AMBIGUOUS'
@@ -233,17 +261,17 @@ export function PendingTurnState({
             }
         >
             <strong>
-                {getPendingLabel(
+                {inputLimit ? 'Не удалось обработать запрос' : getPendingLabel(
                     pending,
                     now,
                 )}
             </strong>
 
-            {pending.error && (
-                <p>{pending.error}</p>
+            {message && (
+                <p>{message}</p>
             )}
 
-            <div className="modal-actions">
+            <div className="chat-turn-notice__actions">
                 {canRetrySameId && (
                     <button
                         type="button"
@@ -270,9 +298,13 @@ export function PendingTurnState({
                         className="secondary-button"
                         onClick={onPrepareNew}
                     >
-                        Вернуть текст как новый запрос
+                        Редактировать сообщение
                     </button>
                 )}
+                {canPrepareNew && onNewChat && <button type="button"
+                    className="secondary-button" disabled={newChatBusy} onClick={onNewChat}>
+                    Создать новый чат
+                </button>}
 
                 {(unsafeTerminal || pending.status === 'RECONCILIATION_REQUIRED') && (
                     <>
@@ -293,6 +325,14 @@ export function PendingTurnState({
                     </>
                 )}
             </div>
+            {hasSupportId && <details className="chat-turn-notice__details">
+                <summary>Сведения для поддержки</summary>
+                <p>{supportLabel}: <code>{decisionId}</code></p>
+                <button type="button" className="secondary-button" onClick={() => void copyDecision()}>
+                    {supportLabel === 'Номер решения' ? 'Копировать номер решения' : 'Копировать номер обращения'}
+                </button>
+                {copyStatus && <p role="status">{copyStatus}</p>}
+            </details>}
         </div>
     )
 }

@@ -53,6 +53,8 @@ function mount(overrides: Partial<Parameters<typeof createDirectoryActions>[0]> 
         setActiveChat,
         setDrafts: vi.fn(),
         setListError(next) { listError = applyReactStateUpdate(listError, next) },
+        setChatError: vi.fn(),
+        setSendError: vi.fn(),
         setMoreChatsLoading: vi.fn(),
         setChatCreating(next) { creating = applyReactStateUpdate(creating, next) },
         setChatToArchive: vi.fn(),
@@ -66,6 +68,9 @@ function mount(overrides: Partial<Parameters<typeof createDirectoryActions>[0]> 
         setHistoryHasNext: vi.fn(),
         chatPageSize: 50,
         openChat,
+        finishPendingTurn: vi.fn(),
+        sendInFlightRef: { current: new Set() },
+        reconciliationControllersRef: { current: new Map() },
         ...overrides,
     }
     const actions = createDirectoryActions(deps)
@@ -151,6 +156,24 @@ describe('Каталог чатов', () => {
         expect(archiveMock).toHaveBeenCalledWith(IDS.chat)
         expect(h.chats).toHaveLength(0)
         expect(h.activeChat).toBeNull()
+    })
+
+    it.each(['FAILED', 'QUOTA_BLOCKED'] as const)('архивирует завершённый отказ %s', async status => {
+        const h = mount({ pendingTurnsRef: { current: {
+            [IDS.chat]: { ...createPendingTurn(IDS.chat, 'hello', IDS.request), status },
+        } } })
+        expect(await h.handleArchiveChat(chat())).toBe(true)
+        expect(h.deps.finishPendingTurn).toHaveBeenCalledWith(IDS.chat)
+    })
+
+    it('сохраняет отказ и черновик при ошибке архивации', async () => {
+        archiveMock.mockRejectedValueOnce(new Error('offline'))
+        const h = mount({ pendingTurnsRef: { current: {
+            [IDS.chat]: { ...createPendingTurn(IDS.chat, 'hello', IDS.request), status: 'FAILED' },
+        } } })
+        await expect(h.handleArchiveChat(chat())).rejects.toThrow('offline')
+        expect(h.deps.finishPendingTurn).not.toHaveBeenCalled()
+        expect(h.deps.setDrafts).not.toHaveBeenCalled()
     })
 
     it('при автоназвании не перезаписывает ранее заданный заголовок', async () => {

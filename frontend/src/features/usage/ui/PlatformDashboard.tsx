@@ -197,6 +197,7 @@ export function PlatformDashboard() {
             <h2>Безопасность и управление</h2>
             <div className="platform-dashboard__links">
                 <Link to="/admin/audit">Журнал событий и решений</Link>
+                <Link to="/admin/retention">Хранение и удаление данных</Link>
                 <Link to="/admin/models?section=access">Правила доступа и бюджеты</Link>
             </div>
         </section>

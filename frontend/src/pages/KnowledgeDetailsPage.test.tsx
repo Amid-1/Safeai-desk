@@ -387,7 +387,7 @@ describe(
             fireEvent.click(button)
             const dialog = screen.getByRole('dialog', {name: 'Удаление документа недоступно'})
             expect(await within(dialog).findByText(
-                'Удаление документов сейчас недоступно. Документы и файлы остаются без изменений.',
+                'Удаление документов отключено политикой платформы или настройками сервера.',
             )).toBeInTheDocument()
             expect(within(dialog).queryByRole('button', {name: 'Подтвердить удаление документа'}))
                 .not.toBeInTheDocument()
