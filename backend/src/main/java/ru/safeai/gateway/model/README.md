@@ -1308,6 +1308,10 @@ model/
 ├── repository/
 │   ├── JdbcTextArrayReaderTest
 │   ├── ModelCatalogRepositoryBindingTest
+│   ├── ModelCommitmentLedgerExplainPerformanceIntegrationTest
+│   ├── ModelCommitmentLedgerFixture
+│   ├── ModelCommitmentLedgerV101GuardIntegrationTest
+│   ├── ModelCommitmentLedgerV101IntegrationTest
 │   ├── ModelRouteDecisionRepositoryContractTest
 │   └── ModelRouteRequestMutexRepositoryTest
 ├── service/

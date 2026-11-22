@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
  *
  * <p>V0 is an intentional test-only role bootstrap. It must run before V1,
  * not be hidden or excluded to make the migration count look convenient.
- * Production migrations begin at V1 and currently extend through V100.</p>
+ * Production migrations begin at V1 and currently extend through V101.</p>
  */
 @Tag("integration")
 @Testcontainers
@@ -67,10 +67,10 @@ class FlywaySequentialUpgradeIT {
                 .toList();
 
         // Validate the complete catalog, not just the migration that failed.
-        assertThat(versions).as("Expected test V0 and production versions through V100")
-                .hasSizeGreaterThanOrEqualTo(101)
+        assertThat(versions).as("Expected test V0 and production versions through V101")
+                .hasSizeGreaterThanOrEqualTo(102)
                 .startsWith("0", "1")
-                .contains("92", "93", "94", "95", "96", "97", "98", "99", "100");
+                .contains("92", "93", "94", "95", "96", "97", "98", "99", "100", "101");
 
         UUID existingOrganization = UUID.randomUUID();
         UUID existingActor = UUID.randomUUID();
@@ -78,6 +78,7 @@ class FlywaySequentialUpgradeIT {
         UUID auditId = UUID.randomUUID();
         UUID outboxId = UUID.randomUUID();
         List<String> evidenceBeforeV94 = List.of();
+        List<String> ledgerIdentity = List.of();
 
         for (int index = 0; index < versions.size(); index++) {
             String version = versions.get(index);
@@ -236,6 +237,15 @@ class FlywaySequentialUpgradeIT {
                         Long.class)).isZero();
                 assertThat(legacyEvidence(jdbc, existingOrganization, auditId, outboxId, true))
                         .containsExactlyElementsOf(evidenceBeforeV94);
+                ledgerIdentity = commitmentLedgerIdentity(jdbc);
+            }
+            if (index == 101) {
+                assertThat(commitmentLedgerIdentity(jdbc)).containsExactlyElementsOf(ledgerIdentity);
+                assertThat(jdbc.queryForObject("""
+                        SELECT pg_get_viewdef('public.model_cost_commitment_ledger_v62'::regclass)
+                        """, String.class)).containsIgnoringCase("LATERAL");
+                assertThat(legacyEvidence(jdbc, existingOrganization, auditId, outboxId, true))
+                        .containsExactlyElementsOf(evidenceBeforeV94);
             }
         }
 
@@ -253,6 +263,19 @@ class FlywaySequentialUpgradeIT {
         assertThat(finalHistory)
                 .as("Re-running Flyway must not change the migration ledger")
                 .containsExactlyElementsOf(versions);
+    }
+
+    private static List<String> commitmentLedgerIdentity(JdbcTemplate jdbc) {
+        return jdbc.queryForList("""
+                SELECT concat_ws('|', c.oid, c.relowner, coalesce(c.relacl::text, ''),
+                                 coalesce(c.reloptions::text, ''), a.attnum, a.attname,
+                                 format_type(a.atttypid, a.atttypmod))
+                FROM pg_catalog.pg_class c
+                JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid
+                WHERE c.oid = 'public.model_cost_commitment_ledger_v62'::regclass
+                  AND a.attnum > 0 AND NOT a.attisdropped
+                ORDER BY a.attnum
+                """, String.class);
     }
 
     private static void seedV93Evidence(JdbcTemplate jdbc, UUID org, UUID actor, UUID auditId, UUID outboxId) {

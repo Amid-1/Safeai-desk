@@ -35,6 +35,20 @@ import java.util.UUID;
 @SuppressWarnings({"SqlResolve", "SqlNoDataSourceInspection"})
 public class ModelRouteDecisionRepository {
 
+    // Shared with the EXPLAIN regression test: do not benchmark a simplified substitute.
+    static final String MONTHLY_COMMITMENT_SQL = """
+            with scoped as (
+                select * from public.model_cost_commitment_ledger_v62
+                where organization_id = ?
+                  and (carry_forward or (ledger_at >= ? and ledger_at < ?))
+            )
+            select
+                coalesce(sum(actual_cost_usd) filter (where not carry_forward), 0) as actual_cost_usd,
+                coalesce(sum(reserved_cost_usd), 0) as reserved_cost_usd,
+                coalesce(sum(unknown_cost_count), 0)::bigint as unknown_committed_cost_count
+            from scoped
+            """;
+
     private static final String SELECT_COLUMNS = """
             id,
             organization_id,
@@ -146,18 +160,7 @@ public class ModelRouteDecisionRepository {
             throw new IllegalArgumentException("Monthly cost period must have a positive duration");
         }
         MonthlyCostSnapshot snapshot = jdbc.queryForObject(
-                """
-                with scoped as (
-                    select * from public.model_cost_commitment_ledger_v62
-                    where organization_id = ?
-                      and (carry_forward or (ledger_at >= ? and ledger_at < ?))
-                )
-                select
-                    coalesce(sum(actual_cost_usd) filter (where not carry_forward), 0) as actual_cost_usd,
-                    coalesce(sum(reserved_cost_usd), 0) as reserved_cost_usd,
-                    coalesce(sum(unknown_cost_count), 0)::bigint as unknown_committed_cost_count
-                from scoped
-                """,
+                MONTHLY_COMMITMENT_SQL,
                 (rs, ignoredRowNumber) -> new MonthlyCostSnapshot(
                         rs.getBigDecimal("actual_cost_usd").add(rs.getBigDecimal("reserved_cost_usd")),
                         rs.getLong("unknown_committed_cost_count"),

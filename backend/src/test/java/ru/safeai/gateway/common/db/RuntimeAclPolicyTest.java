@@ -27,6 +27,7 @@ class RuntimeAclPolicyTest {
     private static final String V98 = "/db/migration/V98__usage_export_jobs.sql";
     private static final String V99 = "/db/migration/V99__usage_export_job_guard.sql";
     private static final String V100 = "/db/migration/V100__model_physical_dispatch_admission.sql";
+    private static final String V101 = "/db/migration/V101__model_commitment_ledger_lookup.sql";
     private static final String V87_CONF =
             "/db/migration/V87__chat_archive_owner_online_index.sql.conf";
     private static final String V94_CONF = V94 + ".conf";
@@ -39,7 +40,7 @@ class RuntimeAclPolicyTest {
     void acceptsCompleteReviewedMigrationInventory() throws IOException {
         var reviewed = RuntimeAclPolicy.verifyReviewedResources();
 
-        assertEquals(100, reviewed.size());
+        assertEquals(101, reviewed.size());
         assertEquals(RuntimeAclPolicy.REVIEWED_THROUGH, reviewed.size());
         assertEquals("V94__operation_correlation.sql", reviewed.get(94));
         assertEquals("V95__chat_quota_physical_attempt_gate.sql", reviewed.get(95));
@@ -48,12 +49,13 @@ class RuntimeAclPolicyTest {
         assertEquals("V98__usage_export_jobs.sql", reviewed.get(98));
         assertEquals("V99__usage_export_job_guard.sql", reviewed.get(99));
         assertEquals("V100__model_physical_dispatch_admission.sql", reviewed.get(100));
+        assertEquals("V101__model_commitment_ledger_lookup.sql", reviewed.get(101));
     }
 
     @Test
     void blocksMissingAclOrManifestBeforeMigration() {
         for (String absent : new String[]{
-                RuntimeAclPolicy.ACL_RESOURCE, MANIFEST, V92, V94, V95, V96, V97, V98, V99, V100
+                RuntimeAclPolicy.ACL_RESOURCE, MANIFEST, V92, V94, V95, V96, V97, V98, V99, V100, V101
         }) {
             fails(
                     path -> path.equals(absent) ? null : read(path),
@@ -66,7 +68,7 @@ class RuntimeAclPolicyTest {
     void blocksModifiedMigrationOrConfigAndNewOrMissingConfig() {
         for (String changed : new String[]{
                 V92, V94, V95, V96, V97, V98, V99, V87_CONF, V94_CONF, V95_CONF, V96_CONF,
-                V97 + ".conf", V98 + ".conf", V99 + ".conf", V100, V100 + ".conf"
+                V97 + ".conf", V98 + ".conf", V99 + ".conf", V100, V100 + ".conf", V101, V101 + ".conf"
         }) {
             fails(
                     path -> path.equals(changed)
@@ -77,7 +79,7 @@ class RuntimeAclPolicyTest {
         }
 
         for (String config : new String[]{V87_CONF, V94_CONF, V95_CONF, V96_CONF,
-                V97 + ".conf", V98 + ".conf", V99 + ".conf", V100 + ".conf"}) {
+                V97 + ".conf", V98 + ".conf", V99 + ".conf", V100 + ".conf", V101 + ".conf"}) {
             fails(
                     path -> path.equals(config) ? null : read(path),
                     "unreviewed migration configuration"
@@ -125,6 +127,23 @@ class RuntimeAclPolicyTest {
                 .filter(line -> line.contains("V92__"))
                 .findFirst()
                 .orElseThrow();
+    }
+
+    @Test
+    void blocksPreviousBoundaryAndUnreviewedNextVersionEvenInManifest() {
+        manifestFails(
+                manifest -> manifest.replaceAll("(?m)^.*V101__.*\\R", ""),
+                "review boundary mismatch"
+        );
+        manifestFails(
+                manifest -> manifest + "\n" + "0".repeat(64)
+                        + "  V" + NEXT_UNREVIEWED_VERSION + "__unreviewed.sql\n",
+                "review boundary mismatch"
+        );
+        manifestFails(
+                manifest -> manifest.replace("V101__", "V" + NEXT_UNREVIEWED_VERSION + "__"),
+                "missing reviewed V101"
+        );
     }
 
     private static void manifestFails(

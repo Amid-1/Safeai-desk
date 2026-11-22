@@ -2634,7 +2634,17 @@ backend/
 │   │       │       ├── V98__usage_export_jobs.sql
 │   │       │       ├── V98__usage_export_jobs.sql.conf
 │   │       │       ├── V99__usage_export_job_guard.sql
-│   │       │       └── V99__usage_export_job_guard.sql.conf
+│   │       │       ├── V99__usage_export_job_guard.sql.conf
+│   │       │       ├── V100__model_physical_dispatch_admission.sql
+│   │       │       ├── V100__model_physical_dispatch_admission.sql.conf
+│   │       │       ├── V101__model_commitment_ledger_lookup.sql
+│   │       │       ├── V101__model_commitment_ledger_lookup.sql.conf
+│   │       │       ├── 
+│   │       │       ├── 
+│   │       │       ├── 
+│   │       │       ├── 
+│   │       │       ├── 
+│   │       │       └── 
 │   │       │
 │   │       │   └── README_DB.md              # документация DB; структура db/
 │   │       │
@@ -6947,6 +6957,15 @@ executor
 - **V99**. SQL: `V99__usage_export_job_guard.sql`; Назначение:
   усилить V98: READ COMMITTED, immutable identity, bounded lease,
   актуальная авторизация владельца при INSERT и READY.
+- **V100**. SQL: `V100__model_physical_dispatch_admission.sql`; Назначение:
+
+- **V101**. SQL: `V101__model_commitment_ledger_lookup.sql`; Назначение:
+- 
+- **V101**. SQL: `V102__`; Назначение:
+- 
+- **V101**. SQL: `V103__`; Назначение:
+- 
+- **V101**. SQL: `V104__`; Назначение:
 
   V94–V99 — общие системные миграции; не расширяют destructive Knowledge
   permissions. V94/V95/V96/V98/V99 имеют transactional .sql.conf,
@@ -7749,6 +7768,17 @@ paths и
     переписывания истории. READ COMMITTED, свежий snapshot после lock,
     immutable identity/filters, lease token rotation и не более 2 минут,
     актуальные enabled/roles/token/org versions при INSERT и READY.
+- **`V100`**
+  - **Назначение:**
+
+- **`V101`**
+  - **Назначение:**
+
+- **`V102`**
+  - **Назначение:**
+
+- **`V103`**
+  - **Назначение:**
 
 
 ### V85–V99: порядок применения и эксплуатационные зависимости
@@ -7795,6 +7825,11 @@ SQL ради совпадения checksums.
 15. **V99** — проверить inventory, lock contention, immutable identity,
     lease fencing, отзыв полномочий и реальный runtime login;
     после V99 — полный Usage acceptance clean/upgrade.
+16. **V100** —  
+17. **V101** — 
+18. **V102** —
+19. **V103** —
+20. **V104** —
 
 
 
@@ -7854,6 +7889,10 @@ SQL ради совпадения checksums.
   Java/UI: bounded async export, polling, recoverable lease, download.
 - **V99**. DB: immutable job identity, lease fencing и owner authorization;
   Java: запрет stale publication и выдачи файла после отзыва прав.
+- **V100**.
+- **V101**.
+- **V102**.
+- **V103**.
 
 
 V78–V81 образуют document-erasure фундамент, V82 добавляет удаление всей базы, V83 — контролируемое
@@ -7986,6 +8025,11 @@ V1–V72 → V73 Organization → V74 Usage → V75 Audit → V76 Retrieval priv
        → V97 Physical plan/time index
        → V98 Durable export queue
        → V99 Export job guard
+       → V100 
+       → V101 
+       → V102 
+       → V103 
+       → V104 
 ```
 
 Это последовательность **номеров Flyway**, а не инструкция вручную запускать каждый SQL на действующей базе. Миграции
