@@ -674,7 +674,8 @@ public final class AnthropicProvider implements AiProvider {
                     providerRequestId,
                     errorCode,
                     retryAfter,
-                    true,
+                    status == 429 && "rate_limit_error".equals(errorCode)
+                            && AiProviderSupport.retryAfterPermitsRetry(exception, retryAfter),
                     "Anthropic API rate limited",
                     exception
             );

@@ -5823,14 +5823,18 @@ ai/
 │   └── AiProviderUnavailableException
 ├── execution/
 │   ├── AiDataAssurancePort
+│   ├── AiDispatchAbortedException
 │   ├── AiExecutionAttemptAuthorization
 │   ├── AiExecutionAttemptObserver
 │   ├── AiExecutionAttemptRecorder
 │   ├── AiExecutionAttemptScope
+│   ├── AiExecutionIdentity
 │   ├── AiExecutionPlanService
 │   ├── AiExecutionRequest
 │   ├── AiExecutionResult
 │   ├── AiExecutionService
+│   ├── AiKnowledgeExecutionMode
+│   ├── AiModelExecutionPort
 │   ├── AiOrganizationExecutionDeniedException
 │   ├── ExecutionAttemptOutcome
 │   ├── FallbackSafety
@@ -5869,11 +5873,13 @@ ai/
 │   ├── openai/
 │   │   ├── OpenAiProperties
 │   │   └── OpenAiProvider
+│   ├── AiBoundedHttpRequestFactory
 │   ├── AiContextWindowProperties
 │   ├── AiContextWindowService
 │   ├── AiJsonNodeSupport
 │   ├── AiProvider
 │   ├── AiProviderAttemptContext
+│   ├── AiProviderDispatchDeadline
 │   ├── AiProviderExceptionFactory
 │   ├── AiProviderProperties
 │   ├── AiProviderRetryExecutor

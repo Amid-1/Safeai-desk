@@ -262,6 +262,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webclient</artifactId>
         </dependency>
+        <!-- Governed provider transport: explicitly disable automatic HTTP replay. -->
+        <dependency>
+            <groupId>io.projectreactor.netty</groupId>
+            <artifactId>reactor-netty-http</artifactId>
+        </dependency>
 
         <!-- PostgreSQL JDBC driver -->
         <dependency>

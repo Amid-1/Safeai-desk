@@ -216,11 +216,13 @@ ai/
 │   ├── openai/
 │   │   ├── OpenAiProperties
 │   │   └── OpenAiProvider
+│   ├── AiBoundedHttpRequestFactory
 │   ├── AiContextWindowProperties
 │   ├── AiContextWindowService
 │   ├── AiJsonNodeSupport
 │   ├── AiProvider
 │   ├── AiProviderAttemptContext
+│   ├── AiProviderDispatchDeadline
 │   ├── AiProviderExceptionFactory
 │   ├── AiProviderProperties
 │   ├── AiProviderRetryExecutor
@@ -1029,6 +1031,7 @@ ai/
 │   ├── AiContextWindowGovernanceRegressionTest
 │   ├── AiProviderRetryEvidenceRegressionTest
 │   ├── AiProviderSupportResolvedModelTest
+│   ├── AiProviderTransportHardeningTest
 │   ├── AiResponseMetadataServiceTest
 │   ├── AiRestClientFactoryBoundaryTest
 │   ├── ProviderDataAssuranceBindingTest

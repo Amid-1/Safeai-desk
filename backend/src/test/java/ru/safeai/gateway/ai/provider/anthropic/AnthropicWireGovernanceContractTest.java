@@ -61,6 +61,34 @@ class AnthropicWireGovernanceContractTest {
             assertThat(server.requests()).hasSize(1);
         }
     }
+    @Test void rateLimitPayloadCannotOverrideNon429StatusOrInvalidRetryAfter() throws IOException {
+        String error = "{\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\"}}";
+        try (ProviderContractTestServer server = new ProviderContractTestServer()) {
+            server.enqueue(400, error);
+            server.enqueue(200, success());
+            assertThatThrownBy(() -> send(provider(server, true), governed()))
+                    .isInstanceOf(AiProviderRateLimitedException.class)
+                    .satisfies(e -> assertThat(((AiProviderException)e).isRetryable()).isFalse());
+            assertThat(server.requests()).hasSize(1);
+        }
+        try (ProviderContractTestServer server = new ProviderContractTestServer()) {
+            server.enqueue(429, Map.of("Retry-After", "invalid"), error);
+            server.enqueue(200, success());
+            assertThatThrownBy(() -> send(provider(server, true), governed()))
+                    .isInstanceOf(AiProviderRateLimitedException.class)
+                    .satisfies(e -> assertThat(((AiProviderException)e).isRetryable()).isFalse());
+            assertThat(server.requests()).hasSize(1);
+        }
+    }
+    @Test void explicit429WithValidAdviceAllowsExactlyOneNewAttempt() throws IOException {
+        try (ProviderContractTestServer server = new ProviderContractTestServer()) {
+            server.enqueue(429, Map.of("Retry-After", "0"),
+                    "{\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\"}}");
+            server.enqueue(200, success());
+            assertThat(send(provider(server, true), governed()).content()).isEqualTo("ok");
+            assertThat(server.requests()).hasSize(2);
+        }
+    }
     @Test void malformedHttp200CannotBeRetriedAsIfNoExecutionHappened() throws IOException {
         try (ProviderContractTestServer server = new ProviderContractTestServer()) {
             server.enqueue(200, "{broken");

@@ -407,10 +407,8 @@ public class OpenAiProvider implements AiProvider {
                         : error.type();
 
         if (status == 429) {
-            if (errorCode != null
-                    && QUOTA_CODES.contains(
-                    errorCode
-            )) {
+            if ((errorCode != null && QUOTA_CODES.contains(errorCode))
+                    || (error.type() != null && QUOTA_CODES.contains(error.type()))) {
                 return new AiProviderQuotaExceededException(
                         PROVIDER_NAME,
                         properties.model(),
@@ -422,10 +420,8 @@ public class OpenAiProvider implements AiProvider {
                 );
             }
 
-            if (errorCode != null
-                    && BILLING_CODES.contains(
-                    errorCode
-            )) {
+            if ((errorCode != null && BILLING_CODES.contains(errorCode))
+                    || (error.type() != null && BILLING_CODES.contains(error.type()))) {
                 return new AiProviderBillingException(
                         PROVIDER_NAME,
                         properties.model(),
@@ -444,7 +440,8 @@ public class OpenAiProvider implements AiProvider {
                     requestId,
                     errorCode,
                     retryAfter,
-                    true,
+                    ("rate_limit_exceeded".equals(errorCode) || "rate_limit_error".equals(errorCode))
+                            && AiProviderSupport.retryAfterPermitsRetry(exception, retryAfter),
                     "OpenAI API rate limited",
                     exception
             );

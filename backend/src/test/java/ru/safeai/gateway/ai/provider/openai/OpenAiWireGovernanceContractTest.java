@@ -81,6 +81,31 @@ class OpenAiWireGovernanceContractTest {
             assertThat(server.requests()).hasSize(1);
         }
     }
+    @Test void malformedOrOversizedRetryAfterNeverFallsBackToLocalRetry() throws IOException {
+        for (String header : List.of("-1", "+1", "invalid", "9999999999999999999999999999", "86401", "1, 2")) {
+            try (ProviderContractTestServer server = new ProviderContractTestServer()) {
+                server.enqueue(429, Map.of("Retry-After", header),
+                        "{\"error\":{\"type\":\"rate_limit_error\",\"code\":\"rate_limit_exceeded\"}}");
+                server.enqueue(200, success());
+                assertThatThrownBy(() -> send(provider(server, true), governed()))
+                        .isInstanceOf(AiProviderRateLimitedException.class)
+                        .satisfies(e -> assertThat(((AiProviderException)e).isRetryable()).isFalse());
+                assertThat(server.requests()).hasSize(1);
+            }
+        }
+    }
+    @Test void malformedOrUnknown429PayloadDoesNotAuthorizeRetry() throws IOException {
+        for (String body : List.of("not-json", "{\"error\":{\"code\":\"unknown_new_limit\"}}")) {
+            try (ProviderContractTestServer server = new ProviderContractTestServer()) {
+                server.enqueue(429, body);
+                server.enqueue(200, success());
+                assertThatThrownBy(() -> send(provider(server, true), governed()))
+                        .isInstanceOf(AiProviderRateLimitedException.class)
+                        .satisfies(e -> assertThat(((AiProviderException)e).isRetryable()).isFalse());
+                assertThat(server.requests()).hasSize(1);
+            }
+        }
+    }
     @Test void malformedHttp200DoesNotGetTurnedIntoSuccessfulAnswerOrBlindRetry() throws IOException {
         try (ProviderContractTestServer server = new ProviderContractTestServer()) {
             server.enqueue(200, "not valid json");
