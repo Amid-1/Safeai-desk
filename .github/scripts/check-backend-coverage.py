@@ -11,7 +11,7 @@ from xml.etree import ElementTree
 
 MODULES = (
     "ai", "audit", "auth", "chat", "common", "identity",
-    "knowledge", "model", "organization", "ratelimit", "usage", "user",
+    "knowledge", "model", "organization", "ratelimit", "retention", "usage", "user",
 )
 KINDS = ("LINE", "BRANCH")
 BASELINE_VERSION = 1

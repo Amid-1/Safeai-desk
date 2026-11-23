@@ -121,6 +121,18 @@
         87
       ]
     },
+    "retention": {
+      "line": 0.965517,
+      "line_counts": [
+        84,
+        3
+      ],
+      "branch": 0.94186,
+      "branch_counts": [
+        81,
+        5
+      ]
+    },
     "usage": {
       "line": 0.86546,
       "line_counts": [
