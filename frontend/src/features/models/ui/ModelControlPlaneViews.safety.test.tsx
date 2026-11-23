@@ -204,6 +204,10 @@ describe('PolicyCard: права и смысл политики', () => {
         const restricted = {...policy, configured:true, enabled:true, requireNoTraining:true}
         const {rerender} = render(<PolicyCard {...policyProps} policy={restricted} />)
         expect(screen.getByText('Требование запрета обучения не подтверждено')).toBeInTheDocument()
+        expect(screen.getByText(/не является доказательством фактической блокировки/)).toBeInTheDocument()
+        expect(screen.getAllByRole('button', {name: 'Открыть проверку правил'})).toHaveLength(1)
+        fireEvent.click(screen.getByRole('button', {name: 'Открыть проверку правил'}))
+        expect(policyProps.onEdit).toHaveBeenCalledWith('preview')
         rerender(<PolicyCard {...policyProps} policy={restricted}
             effectiveCatalog={[createModelCatalogEntry({trainingUseStatus:'NOT_USED'})]} />)
         expect(screen.queryByText('Требование запрета обучения не подтверждено')).not.toBeInTheDocument()
