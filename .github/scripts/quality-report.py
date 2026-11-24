@@ -12,7 +12,7 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 MODULES = ("ai", "audit", "auth", "chat", "common", "identity", "knowledge",
-           "model", "organization", "ratelimit", "usage", "user")
+           "model", "organization", "ratelimit", "retention", "usage", "user")
 
 # These Knowledge controllers moved under the Chat orchestration package.
 # Keep their original logical coverage group so a folder move neither hides
