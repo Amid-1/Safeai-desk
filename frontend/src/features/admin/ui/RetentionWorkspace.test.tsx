@@ -1,47 +1,169 @@
 // frontend/src/features/admin/ui/RetentionWorkspace.test.tsx
-import { render, screen, within, fireEvent } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { RetentionWorkspace } from './RetentionWorkspace'
 import { loadRetention, saveRetention, type RetentionStatus } from '../api/retentionApi'
+import { RetentionWorkspace } from './RetentionWorkspace'
 
 vi.mock('../api/retentionApi', () => ({loadRetention: vi.fn(), saveRetention: vi.fn()}))
-const gate = {configured: true, workerInitialized: true}
-const status: RetentionStatus = {chatAllowed: true, knowledgeAllowed: true, version: 4,
-    chat: gate, document: gate, base: gate, userRetentionSeconds: 604800}
+
+const prepared = {configured: true, workerInitialized: true}
+const notPrepared = {configured: false, workerInitialized: false}
+const status: RetentionStatus = {
+    chatAllowed: true, knowledgeAllowed: true, version: 4,
+    chat: prepared, document: prepared, base: prepared, userRetentionSeconds: 604800,
+}
 
 function mount() {
     return render(<MemoryRouter><RetentionWorkspace/></MemoryRouter>)
 }
 
-describe('Хранение и удаление', () => {
-    beforeEach(() => {vi.resetAllMocks(); vi.mocked(loadRetention).mockResolvedValue(status)})
+function confirmAction() {
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', {
+        name: /новые запросы/,
+    }))
+}
 
-    it('сохраняет изменение только после подтверждения и с версией сервера', async () => {
+describe('Хранение и удаление: понятная политика и безопасные действия', () => {
+    beforeEach(() => {
+        vi.resetAllMocks()
+        vi.mocked(loadRetention).mockResolvedValue(status)
+    })
+
+    it('показывает краткую сводку и готовность для каждой категории без ложного обещания удаления', async () => {
+        mount()
+        expect(await screen.findByText('Хранение и удаление')).toBeInTheDocument()
+        expect(screen.getByText('Для 2 из 2 категорий данных')).toBeInTheDocument()
+        expect(screen.getByText('3 из 3 типов удаления подготовлены')).toBeInTheDocument()
+        expect(screen.getAllByText('Настроено')).toHaveLength(3)
+        expect(screen.getByText(/не подтверждение его работы или физического удаления/)).toBeInTheDocument()
+        expect(screen.queryByText('Некоторые запросы могут ожидать выполнения')).not.toBeInTheDocument()
+    })
+
+    it('предупреждает об ожидании при открытом приёме, если сервер не подготовлен', async () => {
+        vi.mocked(loadRetention).mockResolvedValue({...status, chat: notPrepared,
+            document: {...prepared, workerInitialized: false}})
+        mount()
+        expect(await screen.findByText('Некоторые запросы могут ожидать выполнения')).toBeInTheDocument()
+        expect(screen.getByText(/Отправка запроса/)).toBeInTheDocument()
+        expect(screen.getByText('1 из 3 типов удаления подготовлены')).toBeInTheDocument()
+        expect(screen.getByText('Не завершены настройки и подготовка сервиса')).toBeInTheDocument()
+        expect(screen.getByText('Сервис удаления ещё не подготовлен')).toBeInTheDocument()
+    })
+
+    it('не выдумывает причину, если отсутствуют только настройки', async () => {
+        vi.mocked(loadRetention).mockResolvedValue({...status, chat: {...prepared, configured: false}})
+        mount()
+        expect(await screen.findByText('Настройки удаления ещё не включены')).toBeInTheDocument()
+        expect(screen.getAllByText('Не готово')).toHaveLength(1)
+    })
+
+    it('различает действия для чатов и баз знаний, сохраняет версию только после подтверждения', async () => {
         vi.mocked(saveRetention).mockResolvedValue({...status, chatAllowed: false, version: 5})
         mount()
-        const pause = await screen.findAllByRole('button', {name: 'Приостановить новые удаления'})
-        fireEvent.click(pause[0])
+        const pause = await screen.findByRole('button', {
+            name: 'Приостановить приём запросов на удаление чатов',
+        })
+        expect(screen.getByRole('button', {
+            name: 'Приостановить приём запросов на удаление документов и баз',
+        })).toBeInTheDocument()
+        fireEvent.click(pause)
         expect(saveRetention).not.toHaveBeenCalled()
-        fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', {name: 'Сохранить политику'}))
-        expect(await screen.findByText('Приостановлено')).toBeInTheDocument()
-        expect(saveRetention).toHaveBeenCalledWith({chatAllowed: false, knowledgeAllowed: true, expectedVersion: 4})
+        expect(screen.getByRole('dialog')).toHaveTextContent(/только новые запросы/)
+        confirmAction()
+        expect(await screen.findByText('Изменения сохранены.', {exact: false})).toBeInTheDocument()
+        expect(saveRetention).toHaveBeenCalledExactlyOnceWith({
+            chatAllowed: false, knowledgeAllowed: true, expectedVersion: 4,
+        })
     })
 
-    it('не позволяет разрешить удаление без подготовки инфраструктуры', async () => {
-        vi.mocked(loadRetention).mockResolvedValue({...status, chatAllowed: false,
-            chat: {configured: false, workerInitialized: false}})
+    it('изменяет только общий допуск документов и баз, не меняя чат', async () => {
+        vi.mocked(saveRetention).mockResolvedValue({...status, knowledgeAllowed: false, version: 5})
         mount()
-        expect(await screen.findByText('Требуется подготовка сервера')).toBeInTheDocument()
-        expect(screen.getByRole('button', {name: 'Разрешить новые удаления'})).toBeDisabled()
+        fireEvent.click(await screen.findByRole('button', {
+            name: 'Приостановить приём запросов на удаление документов и баз',
+        }))
+        confirmAction()
+        expect(saveRetention).toHaveBeenCalledExactlyOnceWith({
+            chatAllowed: true, knowledgeAllowed: false, expectedVersion: 4,
+        })
+    })
+
+    it('отмена подтверждения оставляет политику без изменений', async () => {
+        mount()
+        fireEvent.click(await screen.findByRole('button', {
+            name: 'Приостановить приём запросов на удаление чатов',
+        }))
+        fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', {name: 'Отмена'}))
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
         expect(saveRetention).not.toHaveBeenCalled()
     })
-    it('после неопределённого результата не отображает старую политику как актуальную', async () => {
+
+    it('блокирует повторное включение неподготовленных чатов', async () => {
+        vi.mocked(loadRetention).mockResolvedValue({...status, chatAllowed: false, chat: notPrepared})
+        mount()
+        expect(await screen.findByRole('button', {
+            name: 'Возобновить приём запросов на удаление чатов',
+        })).toBeDisabled()
+        expect(saveRetention).not.toHaveBeenCalled()
+    })
+
+    it('не включает базы при отсутствии подготовки обоих типов данных', async () => {
+        vi.mocked(loadRetention).mockResolvedValue({...status, knowledgeAllowed: false,
+            document: notPrepared, base: notPrepared})
+        mount()
+        expect(await screen.findByRole('button', {
+            name: 'Возобновить приём запросов на удаление документов и баз',
+        })).toBeDisabled()
+        expect(saveRetention).not.toHaveBeenCalled()
+    })
+
+    it('не отключает ранее принятые запросы при приостановленной политике', async () => {
+        vi.mocked(loadRetention).mockResolvedValue({...status, chatAllowed: false, knowledgeAllowed: false})
+        mount()
+        expect(await screen.findByText('Для 0 из 2 категорий данных')).toBeInTheDocument()
+        expect(screen.queryByText('Некоторые запросы могут ожидать выполнения')).not.toBeInTheDocument()
+        expect(screen.getByText('Ранее созданные запросы')).toBeInTheDocument()
+        expect(screen.getByText('Не отменяются')).toBeInTheDocument()
+    })
+
+    it('показывает недоступность удаления организаций без дублирования и отдельные сроки пользователей', async () => {
+        mount()
+        expect(await screen.findByText('Можно отключить с сохранением данных. Необратимое удаление пока недоступно.'))
+            .toBeInTheDocument()
+        expect(screen.getAllByText(/Необратимое удаление пока недоступно/)).toHaveLength(1)
+        expect(screen.getByText('7 дн.')).toBeInTheDocument()
+        expect(screen.getByRole('link', {name: /Управление пользователями/}))
+            .toHaveAttribute('href', '/admin/users')
+        expect(screen.getByRole('link', {name: /Управление организациями/}))
+            .toHaveAttribute('href', '/admin/organizations')
+    })
+
+    it('открывает историю с реально поддерживаемым серверным фильтром события', async () => {
+        mount()
+        const history = await screen.findByRole('link', {name: /Открыть историю изменений/})
+        expect(history).toHaveAttribute('href', '/admin/audit?eventType=RETENTION_POLICY_CHANGED')
+        expect(screen.getByText('Кто и когда менял правила приёма запросов на удаление.'))
+            .toBeInTheDocument()
+    })
+
+    it('скрывает операторские подробности за раскрывающимся разделом', async () => {
+        mount()
+        const details = (await screen.findByText('Что нужно подготовить для выполнения удаления')).closest('details')
+        expect(details).not.toHaveAttribute('open')
+        fireEvent.click(within(details!).getByText('Что нужно подготовить для выполнения удаления'))
+        expect(details).toHaveAttribute('open')
+        expect(within(details!).getByText(/журнал удаления и защищённое хранилище/)).toBeInTheDocument()
+    })
+
+    it('при неизвестном результате записи не оставляет старую политику как актуальную', async () => {
         vi.mocked(saveRetention).mockRejectedValue(new Error('offline'))
         mount()
-        fireEvent.click((await screen.findAllByRole('button', {name: 'Приостановить новые удаления'}))[0])
-        fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', {name: 'Сохранить политику'}))
+        fireEvent.click(await screen.findByRole('button', {
+            name: 'Приостановить приём запросов на удаление чатов',
+        }))
+        confirmAction()
         expect(await screen.findByText('Политика недоступна')).toBeInTheDocument()
-        expect(screen.queryByRole('button', {name: 'Разрешить новые удаления'})).not.toBeInTheDocument()
+        expect(screen.queryByRole('button', {name: /Возобновить приём запросов/})).not.toBeInTheDocument()
     })
 })

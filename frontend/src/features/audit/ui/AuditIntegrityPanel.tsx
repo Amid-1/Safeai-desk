@@ -54,7 +54,8 @@ export default function AuditIntegrityPanel({ compact = false }: { compact?: boo
             }}>Обновить состояние</button>
         </div>
         <p className={'audit-integrity__status audit-integrity__status--' + tone} role="status">{label}</p>
-        {!compact && <>
+        <details className="audit-integrity__details">
+            <summary>{compact ? 'Параметры проверки' : 'Показать параметры независимой проверки'}</summary>
             <dl className="audit-integrity__grid">
                 <div><dt>Проверено закреплённых событий</dt><dd>{available ? report?.checkedEvents : '—'}</dd></div>
                 <div><dt>Нарушений целостности</dt><dd>{available ? report?.violations : '—'}</dd></div>
@@ -64,8 +65,9 @@ export default function AuditIntegrityPanel({ compact = false }: { compact?: boo
                 <div><dt>Состояние архива</dt><dd>{available ? 'Доступен на момент проверки' : 'Не подтверждено'}</dd></div>
                 <div><dt>Новых незакреплённых событий</dt><dd>{available ? report?.unanchoredEvents : '—'}</dd></div>
             </dl>
-            <p className="muted audit-investigation__hint">Независимая проверка всего журнала, не зависит от фильтров. Действительность отчёта — 15 минут.</p>
-        </>}
+            <p className="muted audit-investigation__hint">Независимая проверка всего журнала,
+                не зависит от фильтров. Действительность отчёта — 15 минут.</p>
+        </details>
         {state === 'VIOLATION' && <p>Сохраните доказательства и обратитесь к ответственному за безопасность. Не удаляйте записи и не создавайте новый контрольный снимок до расследования.</p>}
     </section>
 }

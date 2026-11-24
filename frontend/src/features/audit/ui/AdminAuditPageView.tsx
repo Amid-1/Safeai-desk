@@ -155,6 +155,11 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
                             onRetry={retryLoad} />
 
                         {superAdmin && <AuditIntegrityPanel compact={compact} />}
+                        <p className="audit-workspace-hint">
+                            Журнал и сводка разделены изменяемой границей. Перетащите разделитель
+                            или используйте клавиши стрелок, когда он в фокусе.
+                            Двойной щелчок восстанавливает стандартную высоту.
+                        </p>
 
                         <div className="audit-workspace-switch"
                             data-resizable-upper-boundary={compact && showTable ? undefined : ''}>
@@ -316,7 +321,7 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
     return (
         <div className="page audit-page">
             {showTable ? <ResizableScrollRegion
-                storageKey="safeai:audit-events-height:v4"
+                storageKey="safeai:audit-events-height:v5"
                 preserveUpperContent
                 reserveLowerHeight
                 collapseToFooter={!shortViewport}
@@ -350,8 +355,8 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
                 }
                 lowerClassName="card table-card audit-table-card"
                 viewportClassName="admin-table-wrapper"
-                defaultHeight={1600}
-                autoFitHeight={1600}
+                defaultHeight={480}
+                autoFitHeight={480}
                 minHeight={280}
                 maxHeight={1600}
                 minUpperHeight={112}

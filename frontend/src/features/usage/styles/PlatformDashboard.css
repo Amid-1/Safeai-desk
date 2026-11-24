@@ -75,3 +75,13 @@
 .platform-dashboard .usage-chart-links--compact-period button.usage-chart-choice:hover:not(:disabled) { background: #e5edfc; }
 .platform-dashboard .usage-chart-links--compact-period small { font-size: 12px; color: #52647e; }
 @media (max-width: 760px) { .platform-dashboard__grid { grid-template-columns: 1fr; } .platform-dashboard__panel { padding: 14px; } }
+
+/* 7.5G UI/UX Fix: separate budget states from unconfigured policies. */
+.platform-dashboard__budget-sections { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 3fr); gap: 18px; }
+.platform-dashboard__budget-sections > section { min-width: 0; }
+.platform-dashboard__budget-sections h3 { margin: 0 0 9px; font-size: 14px; color: #425674; }
+.platform-dashboard__budget-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr)); }
+.platform-dashboard__accounting-note { padding: 8px 11px; border-left: 3px solid #7294cc; background: #f3f7fe; }
+.platform-dashboard__panel--sparse-usage .usage-chart-card:not(.usage-chart-card--dashboard-expanded)
+.usage-chart-viewport { height: 245px; }
+@media (max-width: 960px) { .platform-dashboard__budget-sections { grid-template-columns: 1fr; gap: 12px; } }

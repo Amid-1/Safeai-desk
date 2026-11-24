@@ -1277,3 +1277,10 @@
         scroll-padding-top: 64px;
     }
 }
+
+/* 7.5G UI/UX Fix: status remains visible while detailed evidence is optional. */
+.audit-integrity__details { margin-top: 12px; }
+.audit-integrity__details summary { cursor: pointer; font-weight: 650; color: #244f99; }
+.audit-integrity__details summary:focus-visible { outline: 3px solid #2357cf; outline-offset: 3px; }
+.audit-integrity__grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); }
+.audit-workspace-hint { color: #53647e; font-size: 12px; margin: 0 0 4px; }

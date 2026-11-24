@@ -112,6 +112,10 @@ describe('PlatformDashboard', () => {
             expect(region.querySelector('a[href*="budgetStatus=' + status + '"]')).toBeVisible()
         }
         expect(within(region).getByRole('link', {name: /Превысили лимит: 0/})).toBeEnabled()
+        expect(within(region).getByRole('region', {name: 'Состояние бюджетов'})).toBeVisible()
+        expect(within(region).getByRole('region', {name: 'Настройка правил'})).toBeVisible()
+        expect(await within(screen.getByRole('region', {name: 'Период аналитики'}))
+            .findByText(/Полнота учёта относится к сохранённым записям/)).toBeVisible()
         expect(region.compareDocumentPosition(screen.getByRole('region', {name: 'Период аналитики'})) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
         expect(await screen.findByText('Попытки ответа AI')).toBeVisible()
     })

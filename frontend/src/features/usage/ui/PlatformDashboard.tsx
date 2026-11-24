@@ -121,19 +121,36 @@ export function PlatformDashboard() {
         <Panel title="Контроль бюджетов организаций" {...budget}>
             {budget.data && <>
                 <p>Текущий календарный месяц (UTC) · {dateLabel(budget.data.periodStart)} — до {dateLabel(budget.data.periodEnd)} (не включительно). Все организации, включая отключённые.</p>
-                <div className="platform-dashboard__budget-grid">
-                    {BUDGET_CATEGORIES.map(({status, key, label, tone, description}) => <Link key={status}
-                        to={usageLink('organizations', {budgetStatus: status})}
-                        title={description} aria-label={label + ': ' + budget.data?.[key] + '. Показать организации'}
-                        className={`platform-dashboard__budget-item platform-dashboard__budget-item--${tone}`}>
-                        <span>{label}</span><span className="platform-dashboard__budget-value"><strong>{budget.data?.[key].toLocaleString('ru-RU')}</strong><span aria-hidden="true">↗</span></span>
-                    </Link>)}
+                <div className="platform-dashboard__budget-sections">
+                    {([
+                        {title: 'Состояние бюджетов', items: BUDGET_CATEGORIES.filter(item =>
+                            ['WITHIN', 'NEAR', 'EXCEEDED', 'UNKNOWN'].includes(item.status))},
+                        {title: 'Настройка правил', items: BUDGET_CATEGORIES.filter(item =>
+                            ['NO_LIMIT', 'DISABLED', 'UNCONFIGURED'].includes(item.status))},
+                    ] as const).map(group => <section key={group.title} aria-label={group.title}>
+                        <h3>{group.title}</h3>
+                        <div className="platform-dashboard__budget-grid">
+                            {group.items.map(({status, key, label, tone, description}) => <Link key={status}
+                                to={usageLink('organizations', {budgetStatus: status})}
+                                title={description}
+                                aria-label={label + ': ' + budget.data?.[key] + '. Показать организации'}
+                                className={`platform-dashboard__budget-item platform-dashboard__budget-item--${tone}`}>
+                                <span>{label}</span>
+                                <span className="platform-dashboard__budget-value">
+                                    <strong>{budget.data?.[key].toLocaleString('ru-RU')}</strong>
+                                    <span aria-hidden="true">↗</span>
+                                </span>
+                            </Link>)}
+                        </div>
+                    </section>)}
                 </div>
                 <p>Учитываются известные расходы и действующие резервы. Неизвестные затраты не считаются нулевыми; подтверждённое превышение показывается даже при неполных данных.</p>
                 <Link to={usageLink('organizations')}>Посмотреть бюджеты организаций</Link>
             </>}
         </Panel>
-        <section className="platform-dashboard__panel" aria-label="Период аналитики">
+        <section className={'platform-dashboard__panel'
+            + (daily.data && daily.data.length <= 3 ? ' platform-dashboard__panel--sparse-usage' : '')}
+            aria-label="Период аналитики">
             <div className="platform-dashboard__toolbar"><div><h2 ref={analyticsHeading} tabIndex={-1} className="platform-dashboard__analytics-heading">Использование AI</h2>
                 <p>{dateLabel(range.dateFrom)} — {dateLabel(range.dateTo)} · UTC</p>
                 <p className="platform-dashboard__scope">Область отчёта: <strong>{scope?.name ?? 'Все организации'}</strong>
@@ -148,6 +165,11 @@ export function PlatformDashboard() {
                 : daily.data && <>
                     <UsageKpis rows={daily.data} tab="daily" dailyTotals hasMore={false}
                         assistantResponses={daily.data.length ? responses : null} />
+                    <p className="platform-dashboard__accounting-note">
+                        Полнота учёта относится к сохранённым записям и известным ценам,
+                        а не к доступности провайдера или готовности финансовой интеграции.
+                        {runtime.data?.provider === 'mock' && ' Сейчас используется тестовая модель.'}
+                    </p>
                     <UsageDailyChart rows={daily.data} {...range} metric={metric} onMetricChange={setMetric} compactPeriodPicker expandable
                         onInspectRange={(dateFrom, dateTo) => navigate(usageLink('summary', {dateFrom, dateTo, ...(scope ? {organizationId: scope.id} : {})}))} />
                 </>}

@@ -22,6 +22,7 @@ describe('Независимая целостность аудита', () => {
         api.mockResolvedValueOnce(verified()).mockRejectedValueOnce(new Error('network'))
         render(<AuditIntegrityPanel />)
         expect(await screen.findByText('Целостность подтверждена')).toBeVisible()
+        fireEvent.click(screen.getByText('Показать параметры независимой проверки'))
         expect(screen.getByText('165')).toBeVisible()
         expect(screen.getByText('WORM COMPLIANCE')).toBeVisible()
         fireEvent.click(screen.getByRole('button', { name: 'Обновить состояние' }))
@@ -43,7 +44,7 @@ describe('Независимая целостность аудита', () => {
         render(<AuditIntegrityPanel compact />)
         expect(await screen.findByText('Обнаружены нарушения целостности')).toBeVisible()
         expect(screen.getByText(/Сохраните доказательства/)).toBeVisible()
-        expect(screen.queryByText('165')).not.toBeInTheDocument()
+        expect(screen.getByText('Параметры проверки')).toBeInTheDocument()
     })
 
     it('не признаёт просроченный отчёт актуальным', async () => {

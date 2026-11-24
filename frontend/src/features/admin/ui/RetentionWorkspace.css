@@ -1,25 +1,325 @@
 /* frontend/src/features/admin/ui/RetentionWorkspace.css */
-.retention-page { display: grid; gap: 16px; align-content: start; }
+.retention-page {
+    width: min(100%, 1520px);
+    margin-inline: auto;
+    display: grid;
+    align-content: start;
+    gap: 18px;
+    padding-bottom: 32px;
+    color: #17233c;
+}
+
+.retention-back {
+    justify-self: start;
+    color: #435b7c;
+    font-size: .9rem;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.retention-back:hover { color: #1d4ed8; }
+.retention-back:focus-visible,
+.retention-action:focus-visible,
+.retention-history__link:focus-visible,
+.retention-operator-details summary:focus-visible {
+    outline: 3px solid #6c96f1;
+    outline-offset: 3px;
+}
+
+.retention-hero {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 24px;
+    position: relative;
+    overflow: hidden;
+    border: 1px solid #cddaf0;
+    border-radius: 20px;
+    background: linear-gradient(112deg, #fff 4%, #f2f6ff 66%, #e9efff 100%);
+    padding: clamp(24px, 3.2vw, 42px);
+    box-shadow: 0 12px 32px rgb(32 65 122 / 5%);
+}
+
+.retention-hero::after {
+    content: '';
+    position: absolute;
+    width: 210px;
+    height: 210px;
+    border-radius: 50%;
+    right: 19%;
+    bottom: -165px;
+    border: 36px solid rgb(89 119 229 / 6%);
+    pointer-events: none;
+}
+
+.retention-hero__copy { position: relative; z-index: 1; max-width: 730px; }
+.retention-eyebrow,
+.retention-section-kicker {
+    color: #4667ad;
+    letter-spacing: .075em;
+    font-size: .72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.retention-hero h1 {
+    margin: 10px 0;
+    font-size: clamp(1.7rem, 2.2vw, 2.35rem);
+    line-height: 1.15;
+    letter-spacing: -.035em;
+}
+
+.retention-hero p {
+    margin: 0;
+    color: #4b5c77;
+    font-size: .98rem;
+    line-height: 1.55;
+}
+
+.retention-refresh {
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+    white-space: normal;
+}
+
+.retention-summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.retention-summary__item {
+    min-width: 0;
+    display: grid;
+    gap: 7px;
+    border: 1px solid #dce5f4;
+    border-radius: 16px;
+    background: #fff;
+    padding: 20px 22px;
+}
+
+.retention-summary__item:first-child { border-top: 3px solid #3f75e5; }
+.retention-summary__item:nth-child(2) { border-top: 3px solid #dd9d47; }
+.retention-summary__item--quiet { border-top: 3px solid #a5b3c9; }
+.retention-summary__label { font-size: .84rem; font-weight: 700; color: #536683; }
+.retention-summary__item strong { font-size: clamp(1.1rem, 1.5vw, 1.35rem); letter-spacing: -.025em; }
+.retention-summary__detail { color: #62738e; font-size: .84rem; line-height: 1.4; }
+
+.retention-alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 13px;
+    padding: 16px 20px;
+    border: 1px solid #eedab0;
+    border-radius: 14px;
+    background: #fffbf2;
+    color: #61451f;
+}
+
+.retention-alert__symbol {
+    flex: 0 0 23px;
+    width: 23px;
+    height: 23px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: #f5e0b3;
+    color: #80521b;
+    font-size: .85rem;
+    font-weight: 800;
+}
+.retention-alert strong { font-size: .96rem; }
+.retention-alert p { margin: 5px 0 0; line-height: 1.5; font-size: .9rem; }
+
 .retention-panel {
-    padding: clamp(16px, 2vw, 28px);
-    border: 1px solid var(--safeai-line);
-    border-radius: var(--safeai-radius-panel);
-    background: var(--safeai-surface);
+    min-width: 0;
+    padding: clamp(20px, 2.4vw, 30px);
+    border: 1px solid #dce5f4;
+    border-radius: 18px;
+    background: #fff;
+}
+
+.retention-section-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+.retention-section-heading h2,
+.retention-history h2 { margin: 7px 0 5px; font-size: clamp(1.24rem, 1.55vw, 1.5rem); }
+.retention-section-heading p { margin: 0; line-height: 1.5; color: #5c6d86; }
+.retention-section-note {
+    font-size: .8rem;
+    font-weight: 700;
+    padding: 7px 12px;
+    border: 1px solid #e3e9f3;
+    border-radius: 999px;
+    background: #f8faff;
+    color: #4c6181;
+}
+
+.retention-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.retention-card {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    border: 1px solid #d7e2f3;
+    border-radius: 16px;
+    background: linear-gradient(160deg, #f8faff 0%, #fff 67%);
+    overflow: hidden;
+}
+.retention-card__header { display: flex; align-items: center; gap: 13px; padding: 20px 20px 17px; }
+.retention-card__header h3 { margin: 0 0 4px; font-size: 1.16rem; }
+.retention-card__header p { margin: 0; font-size: .88rem; color: #64758e; line-height: 1.4; }
+.retention-card-icon {
+    display: grid;
+    place-items: center;
+    flex: 0 0 47px;
+    width: 47px;
+    height: 47px;
+    border-radius: 14px;
+    background: #e9effe;
+    color: #3567db;
+}
+.retention-card-icon svg { width: 25px; height: 25px; }
+.retention-card__admission {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 9px;
+    margin-inline: 20px;
+    padding: 16px 0;
+    border-top: 1px solid #e6ebf4;
+    border-bottom: 1px solid #e6ebf4;
+    font-weight: 700;
+    font-size: .91rem;
+}
+.retention-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: #eef1f6;
+    color: #536279;
+    font-size: .84rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+.retention-pill--good { color: #146449; background: #e4f5ed; }
+.retention-pill__dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.retention-card__preparation { padding: 18px 20px 6px; flex: 1; }
+.retention-card__preparation h4 { margin: 0 0 10px; font-size: .87rem; color: #50627f; }
+.retention-preparation-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 8px 0;
+}
+.retention-preparation-row > div { display: grid; gap: 3px; min-width: 0; }
+.retention-preparation-row strong { font-size: .9rem; }
+.retention-preparation-reason { font-size: .83rem; color: #6d7890; line-height: 1.4; }
+.retention-preparation-state {
+    flex-shrink: 0;
+    padding: 5px 9px;
+    border-radius: 8px;
+    background: #fff2da;
+    color: #91621c;
+    font-size: .78rem;
+    font-weight: 750;
+}
+.retention-preparation-state--ready { color: #16654a; background: #e6f5ed; }
+.retention-card__actions { display: grid; gap: 8px; padding: 18px 20px 21px; }
+.retention-action { width: 100%; min-height: 42px; white-space: normal; line-height: 1.4; }
+.retention-action-hint { font-size: .81rem; color: #8f601f; }
+.retention-policy-footnote {
+    margin: 15px 0 0;
+    font-size: .86rem;
+    color: #64748b;
+    line-height: 1.5;
+}
+.retention-operator-details {
+    margin-top: 14px;
+    border-top: 1px solid #e6ebf2;
+    padding-top: 13px;
+    color: #485e7d;
+    font-size: .89rem;
+}
+.retention-operator-details summary { cursor: pointer; font-weight: 700; color: #315a9b; }
+.retention-operator-details p { margin: 11px 0 0; line-height: 1.55; max-width: 950px; }
+
+.retention-other-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.retention-other-grid article {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    padding: 18px 20px;
+    border: 1px solid #e1e8f3;
+    border-radius: 14px;
+    background: #f9fbfe;
     min-width: 0;
 }
-.retention-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-.retention-panel h1, .retention-panel h2, .retention-item h3 { margin: 0 0 8px; }
-.retention-panel p { line-height: 1.5; margin: 8px 0 14px; }
-.retention-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); gap: 12px; }
-.retention-item {
-    display: flex; flex-direction: column; align-items: flex-start;
-    min-width: 0; padding: 16px; border-radius: var(--safeai-radius-panel);
-    border: 1px solid var(--safeai-line); background: var(--safeai-surface-subtle);
+.retention-other-grid h3 { margin: 0; font-size: 1rem; }
+.retention-other-grid p { margin: 0; flex: 1; color: #4d5e78; line-height: 1.5; font-size: .9rem; }
+.retention-other-grid a { align-self: flex-start; font-weight: 700; font-size: .89rem; color: #245ace; }
+
+.retention-history {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding: 22px clamp(20px, 2.4vw, 30px);
+    border: 1px solid #d5e2f6;
+    border-radius: 18px;
+    background: linear-gradient(115deg, #eaf1ff, #f8fbff 65%, #fff);
 }
-.retention-item button, .retention-item a { margin-top: auto; max-width: 100%; white-space: normal; }
-.retention-status { display: inline-block; padding: 4px 9px; border-radius: 12px; font-size: .85rem; background: #e7ecf4; }
-.retention-status--warning { color: var(--safeai-warning); background: var(--safeai-warning-fill); }
-.retention-status--ready { color: var(--safeai-success); background: var(--safeai-success-fill); }
-.retention-gates { display: grid; gap: 6px; }
-.retention-gates > div { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.retention-panel details { margin-top: 16px; }
+.retention-history h2 { margin: 6px 0 4px; }
+.retention-history p { margin: 0; color: #586b85; line-height: 1.5; font-size: .9rem; }
+.retention-history__link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 43px;
+    padding: 10px 16px;
+    border: 1px solid #abc4f4;
+    border-radius: 10px;
+    background: #fff;
+    color: #265ed1;
+    text-decoration: none;
+    font-size: .88rem;
+    font-weight: 750;
+}
+.retention-history__link:hover { border-color: #729ce7; background: #f6f9ff; }
+.retention-notice {
+    margin: 0;
+    padding: 13px 16px;
+    border-radius: 11px;
+    border: 1px solid #a7ddc2;
+    background: #eaf8f1;
+    color: #186346;
+}
+
+@media (max-width: 980px) {
+    .retention-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .retention-summary__item--quiet { grid-column: 1 / -1; }
+}
+@media (max-width: 760px) {
+    .retention-page { gap: 12px; }
+    .retention-hero { gap: 18px; }
+    .retention-refresh { width: 100%; }
+    .retention-grid, .retention-other-grid { grid-template-columns: minmax(0, 1fr); }
+    .retention-section-note { display: none; }
+}
+@media (max-width: 520px) {
+    .retention-summary { grid-template-columns: minmax(0, 1fr); }
+    .retention-summary__item--quiet { grid-column: auto; }
+    .retention-card__admission { align-items: flex-start; }
+    .retention-preparation-row { align-items: flex-start; }
+    .retention-history__link { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .retention-page button, .retention-page a { transition: none; }
+}
