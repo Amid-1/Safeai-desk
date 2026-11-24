@@ -86,7 +86,7 @@
 
 .retention-summary {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
 }
 
@@ -102,7 +102,6 @@
 
 .retention-summary__item:first-child { border-top: 3px solid #3f75e5; }
 .retention-summary__item:nth-child(2) { border-top: 3px solid #dd9d47; }
-.retention-summary__item--quiet { border-top: 3px solid #a5b3c9; }
 .retention-summary__label { font-size: .84rem; font-weight: 700; color: #536683; }
 .retention-summary__item strong { font-size: clamp(1.1rem, 1.5vw, 1.35rem); letter-spacing: -.025em; }
 .retention-summary__detail { color: #62738e; font-size: .84rem; line-height: 1.4; }
@@ -304,22 +303,50 @@
 
 @media (max-width: 980px) {
     .retention-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .retention-summary__item--quiet { grid-column: 1 / -1; }
 }
 @media (max-width: 760px) {
     .retention-page { gap: 12px; }
     .retention-hero { gap: 18px; }
     .retention-refresh { width: 100%; }
-    .retention-grid, .retention-other-grid { grid-template-columns: minmax(0, 1fr); }
+    .retention-grid { grid-template-columns: minmax(0, 1fr); }
     .retention-section-note { display: none; }
 }
 @media (max-width: 520px) {
     .retention-summary { grid-template-columns: minmax(0, 1fr); }
-    .retention-summary__item--quiet { grid-column: auto; }
     .retention-card__admission { align-items: flex-start; }
     .retention-preparation-row { align-items: flex-start; }
     .retention-history__link { width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) {
     .retention-page button, .retention-page a { transition: none; }
+}
+
+/* An informational access matrix; individual approval controls require server authorization. */
+.retention-actors .retention-section-heading { margin-bottom: 14px; }
+.retention-actor-list { display: grid; gap: 0; }
+.retention-actor-list > div {
+    display: grid;
+    grid-template-columns: minmax(100px, 150px) minmax(0, 1fr) auto;
+    gap: 16px;
+    align-items: center;
+    border-top: 1px solid #e6ecf5;
+    padding: 14px 2px;
+    font-size: .9rem;
+}
+.retention-actor-list strong { color: #192e4c; }
+.retention-actor-list span { color: #50637e; line-height: 1.55; }
+.retention-actor-list a { color: #1d4ed8; font-weight: 700; white-space: nowrap; }
+.retention-actor-note {
+    margin: 10px 0 0;
+    padding: 14px 16px;
+    border: 1px solid #dce5f4;
+    border-radius: 10px;
+    background: #f5f8ff;
+    color: #415675;
+    font-size: .88rem;
+    line-height: 1.55;
+}
+@media (max-width: 850px) {
+    .retention-actor-list > div { grid-template-columns: 1fr; gap: 5px; }
+    .retention-actor-list a { justify-self: start; }
 }
