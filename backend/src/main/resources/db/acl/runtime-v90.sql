@@ -10,6 +10,9 @@ INSERT INTO acl_matrix VALUES
 ('audit_event_user_links','I','',''),
 ('audit_events','SID','',''),
 ('audit_outbox','SIUD','',''),
+('erasure_previews_v103','SI','',''),
+('erasure_requests_v103','SI','','state,version,updated_at,submitted_at,submit_key,withdraw_key'),
+('erasure_request_events_v103','SI','',''),
 ('chat_erasure_operations_v86','SI','',''),
 ('chat_erasure_operator_approvals_v86','-','',''),
 ('chat_messages','SI','',''),
@@ -85,7 +88,7 @@ BEGIN
                    WHERE n.nspname='public' AND c.relkind='S') THEN
         RAISE EXCEPTION 'Unsafe default ACL, runtime capability or inventory';
     END IF;
-    IF (SELECT count(*) FROM acl_matrix) <> 67 OR EXISTS (
+    IF (SELECT count(*) FROM acl_matrix) <> 70 OR EXISTS (
         SELECT name FROM acl_matrix EXCEPT
         SELECT c.relname::text FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
         WHERE n.nspname='public' AND c.relkind IN ('r','p','v','m','f')

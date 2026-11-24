@@ -234,6 +234,13 @@ public class SecurityConfig {
                         )
 
                         .requestMatchers(
+                                "/api/erasure/previews",
+                                "/api/erasure/requests",
+                                "/api/erasure/requests/**"
+                        )
+                        .hasAnyRole("USER", "ADMIN", "SUPER_ADMIN")
+
+                        .requestMatchers(
                                 "/api/knowledge-bases",
                                 "/api/knowledge-bases/**"
                         )
@@ -340,13 +347,16 @@ public class SecurityConfig {
                         HttpHeaders.AUTHORIZATION,
                         HttpHeaders.CONTENT_TYPE,
                         "X-Request-Id",
-                        "X-XSRF-TOKEN"
+                        "X-XSRF-TOKEN",
+                        "Idempotency-Key",
+                        "If-Match"
                 )
         );
 
         configuration.setExposedHeaders(
                 List.of(
                         "X-Request-Id",
+                        HttpHeaders.ETAG,
                         HttpHeaders.RETRY_AFTER,
                         HttpHeaders.WWW_AUTHENTICATE
                 )

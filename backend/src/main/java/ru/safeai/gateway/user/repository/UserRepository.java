@@ -381,6 +381,13 @@ public interface UserRepository
                         from public.audit_outbox
                                 as audit_outbox_event
                         where audit_outbox_event.actor_user_id = :userId
+                    
+                        union all
+                    
+                        select 1
+                        from public.erasure_requests_v103 as erasure_case
+                        where erasure_case.requested_by_user_id = :userId
+                          and erasure_case.state in ('DRAFT', 'SUBMITTED')
                     )
                     """,
             nativeQuery = true

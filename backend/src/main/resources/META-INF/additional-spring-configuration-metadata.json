@@ -1,4 +1,3 @@
-
 {
   "properties": [
     {
@@ -38,6 +37,12 @@
       "name": "safeai.chat.erasure.worker-password",
       "type": "java.lang.String",
       "description": "Dedicated PostgreSQL worker password supplied through secrets."
+    },
+    {
+      "name": "safeai.erasure.requests.enabled",
+      "type": "java.lang.Boolean",
+      "defaultValue": false,
+      "description": "R1a case intake only (preview, draft, submit and withdraw); no physical erasure executor. Disabled by default. Do not enable in production before R1a security and migration gates."
     }
   ]
 }

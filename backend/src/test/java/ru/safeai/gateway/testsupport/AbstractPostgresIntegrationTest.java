@@ -182,6 +182,9 @@ public abstract class AbstractPostgresIntegrationTest {
                     // foreign keys. Do not truncate them again in chat fixtures.
                     jdbcTemplate.execute("""
                             TRUNCATE TABLE
+                                public.erasure_request_events_v103,
+                                public.erasure_requests_v103,
+                                public.erasure_previews_v103,
                                 public.audit_outbox,
                                 public.audit_events,
                                 public.refresh_tokens,

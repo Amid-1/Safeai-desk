@@ -2755,6 +2755,9 @@ backend/
 │   │       │       ├── V101__model_commitment_ledger_lookup.sql
 │   │       │       ├── V101__model_commitment_ledger_lookup.sql.conf
 │   │       │       ├── V102__platform_erasure_admission_policy.sql
+│   │       │       ├── V103__erasure_case_intake.sql
+│   │       │       ├── V104__erasure_actor_detachment_guards.sql
+│   │       │       ├── 
 │   │       │       ├── 
 │   │       │       ├── 
 │   │       │       ├── 
@@ -7359,6 +7362,12 @@ executor
   эквивалентная оптимизация ledger V62 без переписывания истории, с проверкой
   view identity, reloptions, колонок и валидного уникального B-tree V50.
 - **V102**. SQL: `V102__platform_erasure_admission_policy.sql`; Назначение:
+- **V103**. SQL: `V103__erasure_case_intake.sql`; Назначение:
+- **V104**. SQL: `V104__erasure_actor_detachment_guards.sql`; Назначение:
+- **V105**. SQL: `V105__`; Назначение:
+- **V106**. SQL: `V106__`; Назначение:
+- **V107**. SQL: `V107__`; Назначение:
+- **V108**. SQL: `V108__`; Назначение:
 
   V94–V101 — общие системные миграции; не расширяют destructive Knowledge
   permissions. V94/V95/V96/V98/V99/V100/V101 имеют transactional .sql.conf,
@@ -8227,6 +8236,18 @@ paths и
     финансовые формулы, grants, owner и историю; новых индексов нет.
 - **`V102`**
   - **Назначение:**
+- **`V103`**
+  - **Назначение:**
+- **`V104`**
+  - **Назначение:**
+- **`V105`**
+  - **Назначение:**
+- **`V106`**
+  - **Назначение:**
+- **`V107`**
+  - **Назначение:**
+- **`V108`**
+  - **Назначение:**
 
 ### V85–V101: порядок применения и эксплуатационные зависимости
 
@@ -8282,6 +8303,12 @@ SQL ради совпадения checksums.
     повтор после освобождения lock, EXCEPT ALL в обе стороны и performance.
     Не использовать DROP VIEW CASCADE или Flyway repair для обхода drift.
 18. **V102** —
+19. **V103** —
+20. **V104** —
+21. **V105** —
+22. **V106** —
+23. **V107** —
+24. **V108** —
 
 
 
@@ -8357,6 +8384,14 @@ SQL ради совпадения checksums.
   Java: тот же repository contract, точный monthly commitment. Приёмка:
   двусторонняя эквивалентность, schema drift, блокировки и EXPLAIN ANALYZE.
 - **V102**.
+- **V103**.
+- **V104**.
+- **V105**.
+- **V106**.
+- **V107**.
+- **V108**.
+- **V109**.
+- **V110**.
 
 
 V78–V81 образуют document-erasure фундамент, V82 добавляет удаление всей базы, V83 — контролируемое
@@ -8502,6 +8537,14 @@ V1–V72 → V73 Organization → V74 Usage → V75 Audit → V76 Retrieval priv
        → V100 One-shot model dispatch admission
        → V101 V62 commitment ledger lookup
        → V102 
+       → V103 
+       → V104 
+       → V105 
+       → V106 
+       → V107 
+       → V108 
+       → V109 
+       → V110 
 ```
 
 Это последовательность **номеров Flyway**, а не инструкция вручную запускать каждый SQL на
@@ -8927,6 +8970,15 @@ production rollout.
 - V100 durable immutable dispatch receipt, current policy, bounded cost,
   quota/calendar, organization epoch и RAG permit до physical I/O.
 - V101 schema-checked SELECT-only financial ledger, без изменения фактов.
+- V102
+- V103
+- V104
+- V105
+- V106
+- V107
+- V108
+- V109
+- V110
 
 ### Concurrent indexes
 

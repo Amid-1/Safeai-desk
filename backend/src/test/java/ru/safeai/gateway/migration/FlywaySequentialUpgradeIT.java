@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
  *
  * <p>V0 is an intentional test-only role bootstrap. It must run before V1,
  * not be hidden or excluded to make the migration count look convenient.
- * Production migrations begin at V1 and currently extend through V102.</p>
+ * Production migrations begin at V1 and currently extend through V104.</p>
  */
 @Tag("integration")
 @Testcontainers
@@ -67,10 +67,10 @@ class FlywaySequentialUpgradeIT {
                 .toList();
 
         // Validate the complete catalog, not just the migration that failed.
-        assertThat(versions).as("Expected test V0 and production versions through V102")
-                .hasSizeGreaterThanOrEqualTo(103)
+        assertThat(versions).as("Expected test V0 and production versions through V104")
+                .hasSizeGreaterThanOrEqualTo(105)
                 .startsWith("0", "1")
-                .contains("92", "93", "94", "95", "96", "97", "98", "99", "100", "101", "102");
+                .contains("92", "93", "94", "95", "96", "97", "98", "99", "100", "101", "102", "103", "104");
 
         UUID existingOrganization = UUID.randomUUID();
         UUID existingActor = UUID.randomUUID();
@@ -246,6 +246,34 @@ class FlywaySequentialUpgradeIT {
                         """, String.class)).containsIgnoringCase("LATERAL");
                 assertThat(legacyEvidence(jdbc, existingOrganization, auditId, outboxId, true))
                         .containsExactlyElementsOf(evidenceBeforeV94);
+            }
+            if (index == 103) {
+                assertThat(jdbc.queryForObject("""
+                        SELECT count(*) FROM pg_catalog.pg_class
+                        WHERE relname IN ('erasure_previews_v103',
+                            'erasure_requests_v103',
+                            'erasure_request_events_v103') AND relkind='r'
+                        """, Long.class)).isEqualTo(3L);
+            }
+            if (index == 104) {
+                assertThat(jdbc.queryForObject("""
+                        SELECT count(*) FROM pg_catalog.pg_trigger
+                        WHERE NOT tgisinternal AND tgenabled='O'
+                          AND tgname IN ('trg_erasure_preview_actor_v104',
+                                         'trg_erasure_request_actor_v104',
+                                         'trg_erasure_user_delete_v104',
+                                         'trg_erasure_request_transition_v104',
+                                         'trg_erasure_event_insert_v104')
+                        """, Long.class)).isEqualTo(5L);
+                assertThat(jdbc.queryForObject("""
+                        SELECT count(*) FROM pg_catalog.pg_constraint
+                        WHERE conname IN ('fk_erasure_preview_actor_v103',
+                                          'fk_erasure_request_actor_v103')
+                        """, Long.class)).isZero();
+                assertThat(jdbc.queryForObject("""
+                        SELECT count(*) FROM pg_catalog.pg_constraint
+                        WHERE conname='fk_erasure_request_preview_v103'
+                        """, Long.class)).isEqualTo(1L);
             }
             if (index == 102) {
                 assertThat(jdbc.queryForObject("""

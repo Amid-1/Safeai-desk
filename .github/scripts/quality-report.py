@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-MODULES = ("ai", "audit", "auth", "chat", "common", "identity", "knowledge",
+MODULES = ("ai", "audit", "auth", "chat", "common", "erasure", "identity", "knowledge",
            "model", "organization", "ratelimit", "retention", "usage", "user")
 
 # These Knowledge controllers moved under the Chat orchestration package.

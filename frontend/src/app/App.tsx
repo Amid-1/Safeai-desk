@@ -49,6 +49,8 @@ const AdminUsagePage = lazy(
 )
 const AdminDashboardPage = lazy(() => import('../pages/AdminDashboardPage'))
 const AdminRetentionPage = lazy(() => import('../pages/AdminRetentionPage'))
+const ErasureRequestsPage = lazy(() => import('../pages/ErasureRequestsPage'))
+const AdminErasureQueuePage = lazy(() => import('../pages/AdminErasureQueuePage'))
 const AdminModelsPage = lazy(
     () => import('../pages/AdminModelsPage'),
 )
@@ -325,6 +327,8 @@ function AppLayout() {
             '/admin/organizations',
             '/admin/audit',
             '/admin/usage',
+            '/my/erasure-requests',
+            '/admin/erasure/requests',
         ].includes(location.pathname)
     const appClassName = [
         'app',
@@ -405,6 +409,13 @@ function AppLayout() {
                             </NavLink>
                         )}
 
+                        {canAccessChat && (
+                            <NavLink to="/my/erasure-requests" className={getNavLinkClass}
+                                onClick={closeMenuOnNavigate}>
+                                Мои запросы
+                            </NavLink>
+                        )}
+
                         {canAccessKnowledge && (
                             <NavLink
                                 to="/knowledge"
@@ -459,6 +470,14 @@ function AppLayout() {
                                 >
                                     Использование
                                 </NavLink>
+
+                                {hasAnyRole(currentUser, ['ADMIN']) && (
+                                    <NavLink to="/admin/erasure/requests"
+                                        className={getNavLinkClass}
+                                        onClick={closeMenuOnNavigate}>
+                                        Запросы на удаление
+                                    </NavLink>
+                                )}
 
                                 <NavLink
                                     to="/admin/models"
@@ -525,6 +544,17 @@ function AppLayout() {
                                     <ChatPage />
                                 </ProtectedRoute>
                             }
+                        />
+
+                        <Route path="/my/erasure-requests"
+                            element={<ProtectedRoute roles={['USER','ADMIN']}>
+                                {user => <ErasureRequestsPage user={user} />}
+                            </ProtectedRoute>}
+                        />
+                        <Route path="/admin/erasure/requests"
+                            element={<ProtectedRoute roles={['ADMIN']}>
+                                <AdminErasureQueuePage />
+                            </ProtectedRoute>}
                         />
 
                         <Route

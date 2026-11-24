@@ -110,6 +110,11 @@ safeai:
   user-management:
     permanent-deletion-retention: ${SAFEAI_USER_DELETION_RETENTION:7d}
 
+  # R1a registers cases only. This is not a physical erasure executor gate.
+  erasure:
+    requests:
+      enabled: ${SAFEAI_ERASURE_REQUESTS_ENABLED:false}
+
   cors:
     allowed-origins: ${SAFEAI_CORS_ALLOWED_ORIGINS:http://localhost:5173}
 
@@ -338,3 +343,4 @@ safeai:
     storage-reconciliation:
       enabled: ${SAFEAI_KNOWLEDGE_STORAGE_RECONCILIATION_ENABLED:false}
       poll-delay: ${SAFEAI_KNOWLEDGE_STORAGE_RECONCILIATION_POLL_DELAY:5m}
+

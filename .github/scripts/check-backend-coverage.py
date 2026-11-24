@@ -10,7 +10,7 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 MODULES = (
-    "ai", "audit", "auth", "chat", "common", "identity",
+    "ai", "audit", "auth", "chat", "common", "erasure", "identity",
     "knowledge", "model", "organization", "ratelimit", "retention", "usage", "user",
 )
 KINDS = ("LINE", "BRANCH")
