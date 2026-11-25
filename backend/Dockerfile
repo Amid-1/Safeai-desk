@@ -11,15 +11,22 @@ WORKDIR /app
 COPY .mvn .mvn
 COPY mvnw pom.xml ./
 
+# Инициализация Maven Wrapper с повторными попытками
+# при временных сетевых сбоях.
+# При окончательной ошибке сборка останавливается.
 RUN --mount=type=cache,target=/root/.m2 \
     chmod +x mvnw \
+    && (MVNW_VERBOSE=true ./mvnw --version \
+        || (sleep 5 && MVNW_VERBOSE=true ./mvnw --version) \
+        || (sleep 15 && MVNW_VERBOSE=true ./mvnw --version)) \
     && ./mvnw -q -DskipTests dependency:go-offline
 
 COPY src src
 
-# Spring Boot собирает один исполняемый JAR. Исключаем архивы исходников и тестов.
-# При отсутствии JAR или нескольких подходящих файлах сборка завершится ошибкой.
-# find -exec не требует промежуточной shell-переменной.
+# Spring Boot собирает один исполняемый JAR.
+# Исключаем архивы исходников и тестов.
+# При отсутствии JAR или нескольких подходящих файлов
+# сборка завершится ошибкой.
 RUN --mount=type=cache,target=/root/.m2 \
     ./mvnw -q -DskipTests clean package \
     && find target -maxdepth 1 -type f \
@@ -32,8 +39,11 @@ RUN --mount=type=cache,target=/root/.m2 \
 
 FROM ${RUNTIME_IMAGE} AS runtime
 
-# Fail closed if an overridden runtime is not Noble or contains Pebble.
-RUN . /etc/os-release \
+# Проверяем Ubuntu Noble и отсутствие Pebble.
+# Явно инициализируем переменные перед чтением os-release.
+# При несоответствии сборка останавливается.
+RUN ID="" VERSION_ID="" \
+    && . /etc/os-release \
     && test "$ID" = ubuntu \
     && test "$VERSION_ID" = 24.04 \
     && test ! -e /usr/bin/pebble \
@@ -53,7 +63,8 @@ LABEL org.opencontainers.image.title="SafeAI Backend" \
 
 WORKDIR /app
 
-# Обновляем системные пакеты и не скрываем ошибки менеджера пакетов.
+# Обновляем системные пакеты и не скрываем
+# ошибки менеджера пакетов.
 RUN apt-get -o Acquire::Retries=0 update \
     && apt-get -o Acquire::Retries=0 upgrade -y \
     && apt-get -o Acquire::Retries=0 install -y --no-install-recommends curl \
