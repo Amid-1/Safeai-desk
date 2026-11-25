@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
  *
  * <p>V0 is an intentional test-only role bootstrap. It must run before V1,
  * not be hidden or excluded to make the migration count look convenient.
- * Production migrations begin at V1 and currently extend through V104.</p>
+ * Production migrations begin at V1 and currently extend through V105.</p>
  */
 @Tag("integration")
 @Testcontainers
@@ -67,10 +67,10 @@ class FlywaySequentialUpgradeIT {
                 .toList();
 
         // Validate the complete catalog, not just the migration that failed.
-        assertThat(versions).as("Expected test V0 and production versions through V104")
+        assertThat(versions).as("Expected test V0 and production versions through V105")
                 .hasSizeGreaterThanOrEqualTo(105)
                 .startsWith("0", "1")
-                .contains("92", "93", "94", "95", "96", "97", "98", "99", "100", "101", "102", "103", "104");
+                .contains("92", "93", "94", "95", "96", "97", "98", "99", "100", "101", "102", "103", "104", "105");
 
         UUID existingOrganization = UUID.randomUUID();
         UUID existingActor = UUID.randomUUID();
@@ -274,6 +274,35 @@ class FlywaySequentialUpgradeIT {
                         SELECT count(*) FROM pg_catalog.pg_constraint
                         WHERE conname='fk_erasure_request_preview_v103'
                         """, Long.class)).isEqualTo(1L);
+            }
+            if (index == 105) {
+                assertThat(jdbc.queryForObject("""
+                        SELECT count(*) FROM pg_catalog.pg_class
+                        WHERE relkind='r' AND relname IN
+                          ('erasure_reviews_v105','erasure_review_authorities_v105',
+                           'erasure_review_events_v105','erasure_review_holds_v105',
+                           'erasure_review_actor_keys_v105')
+                        """, Long.class)).isEqualTo(5L);
+                assertThat(jdbc.queryForObject("""
+                        SELECT count(*) FROM pg_catalog.pg_trigger
+                        WHERE NOT tgisinternal AND tgenabled='O' AND tgname IN
+                          ('trg_erasure_review_sync_v105','trg_erasure_review_guard_v105',
+                           'trg_erasure_review_journal_v105','trg_erasure_review_event_insert_v105',
+                           'trg_erasure_review_event_immutable_v105',
+                           'trg_erasure_hold_guard_v105','trg_erasure_hold_sync_v105')
+                        """,Long.class)).isEqualTo(7L);
+                assertThat(jdbc.queryForObject("""
+                        SELECT has_table_privilege('safeai_app',
+                           'public.erasure_review_authorities_v105','INSERT')
+                        """,Boolean.class)).isFalse();
+                assertThat(jdbc.queryForObject("""
+                        SELECT has_table_privilege('safeai_app',
+                           'public.erasure_review_events_v105','INSERT')
+                        """,Boolean.class)).isFalse();
+                assertThat(jdbc.queryForObject("""
+                        SELECT has_table_privilege('safeai_app',
+                           'public.erasure_review_actor_keys_v105','SELECT')
+                        """,Boolean.class)).isFalse();
             }
             if (index == 102) {
                 assertThat(jdbc.queryForObject("""

@@ -86,6 +86,11 @@ public class ErasureCaseAuthority {
         return liveRoles(actor).contains("ADMIN");
     }
 
+    public boolean platformSuperAdmin(SafeAiUserPrincipal actor) {
+        return actor != null && platform.organizationId().equals(actor.getOrganizationId())
+                && liveRoles(actor).contains("SUPER_ADMIN");
+    }
+
     private List<String> liveRoles(SafeAiUserPrincipal actor) {
         if (actor == null) throw denied();
         List<String> roles = jdbc.query("""

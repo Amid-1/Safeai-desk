@@ -49,8 +49,11 @@ const AdminUsagePage = lazy(
 )
 const AdminDashboardPage = lazy(() => import('../pages/AdminDashboardPage'))
 const AdminRetentionPage = lazy(() => import('../pages/AdminRetentionPage'))
+const PrivacySettingsPage = lazy(() => import('../pages/PrivacySettingsPage'))
+const ErasureReviewCenterPage = lazy(() => import('../pages/ErasureReviewCenterPage'))
+const ErasureReviewQueuePage = lazy(() => import('../pages/ErasureReviewQueuePage'))
+const ErasureReviewDetailsPage = lazy(() => import('../pages/ErasureReviewDetailsPage'))
 const ErasureRequestsPage = lazy(() => import('../pages/ErasureRequestsPage'))
-const AdminErasureQueuePage = lazy(() => import('../pages/AdminErasureQueuePage'))
 const AdminModelsPage = lazy(
     () => import('../pages/AdminModelsPage'),
 )
@@ -416,6 +419,13 @@ function AppLayout() {
                             </NavLink>
                         )}
 
+                        {isAuthenticated && (
+                            <NavLink to="/settings/privacy" className={getNavLinkClass}
+                                onClick={closeMenuOnNavigate}>
+                                Приватность
+                            </NavLink>
+                        )}
+
                         {canAccessKnowledge && (
                             <NavLink
                                 to="/knowledge"
@@ -476,6 +486,13 @@ function AppLayout() {
                                         className={getNavLinkClass}
                                         onClick={closeMenuOnNavigate}>
                                         Запросы на удаление
+                                    </NavLink>
+                                )}
+
+                                {canAccessOrganizations && (
+                                    <NavLink to="/admin/erasure" className={getNavLinkClass}
+                                        onClick={closeMenuOnNavigate}>
+                                        Центр удаления
                                     </NavLink>
                                 )}
 
@@ -552,8 +569,8 @@ function AppLayout() {
                             </ProtectedRoute>}
                         />
                         <Route path="/admin/erasure/requests"
-                            element={<ProtectedRoute roles={['ADMIN']}>
-                                <AdminErasureQueuePage />
+                            element={<ProtectedRoute roles={['ADMIN', 'SUPER_ADMIN']}>
+                                <ErasureReviewQueuePage />
                             </ProtectedRoute>}
                         />
 
@@ -572,6 +589,24 @@ function AppLayout() {
                             element={<ProtectedRoute roles={['ADMIN','USER']}><KnowledgeDetailsPage /></ProtectedRoute>}
                         />
 
+                        <Route path="/settings/privacy" element={
+                            <ProtectedRoute><PrivacySettingsPage /></ProtectedRoute>
+                        } />
+                        <Route path="/my/erasure-requests/:requestId" element={
+                            <ProtectedRoute roles={['USER', 'ADMIN']}>
+                                <ErasureReviewDetailsPage />
+                            </ProtectedRoute>
+                        } />
+                        <Route path="/admin/erasure" element={
+                            <ProtectedRoute roles={['SUPER_ADMIN']}>
+                                <ErasureReviewCenterPage />
+                            </ProtectedRoute>
+                        } />
+                        <Route path="/admin/erasure/requests/:requestId" element={
+                            <ProtectedRoute roles={['ADMIN', 'SUPER_ADMIN']}>
+                                <ErasureReviewDetailsPage reviewer />
+                            </ProtectedRoute>
+                        } />
                         <Route
                             path="/admin/dashboard"
                             element={<ProtectedRoute roles={['SUPER_ADMIN']}>

@@ -4,6 +4,18 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { ErasureRequestsWorkspace } from './ErasureRequestsWorkspace'
 import * as api from '../api/erasureApi'
 
+vi.mock('../../chat/api/chatApi', () => ({
+    getChats: vi.fn(async () => ({ content: [
+        { id: 'a8517423-018f-412b-95a2-9c79748bf19a', title: 'Рабочий чат' },
+    ] })),
+}))
+vi.mock('../../../entities/knowledge/api/knowledgeApi', () => ({
+    getKnowledgeBases: vi.fn(async () => ({ content: [] })),
+}))
+vi.mock('../../../entities/knowledge/api/knowledgeDocumentApi', () => ({
+    getKnowledgeDocuments: vi.fn(async () => ({ content: [] })),
+}))
+
 vi.mock('../api/erasureApi', () => ({
     loadMine: vi.fn(), loadTenantQueue: vi.fn(), previewCase: vi.fn(),
     createDraft: vi.fn(), submitDraft: vi.fn(), withdrawCase: vi.fn(),
@@ -54,6 +66,19 @@ describe('R1a user interface', () => {
         await screen.findByText('Заявок пока нет.')
         expect(screen.queryByRole('button', { name: 'Подать заявку' })).not.toBeInTheDocument()
         expect(screen.queryByRole('button', { name: 'Отозвать' })).not.toBeInTheDocument()
+    })
+
+    it('offers only server-returned chat choices, never manual UUID input', async () => {
+        render(<ErasureRequestsWorkspace user={user} />)
+        await screen.findByText('Заявок пока нет.')
+        fireEvent.change(screen.getByLabelText('Что вы хотите удалить'),
+            { target: { value: 'CHAT' } })
+        expect(await screen.findByRole('option', { name: 'Рабочий чат' })).toBeInTheDocument()
+        expect(screen.queryByLabelText('UUID')).not.toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Проверить запрос' })).toBeDisabled()
+        fireEvent.change(screen.getByLabelText('Мой чат'),
+            { target: { value: 'a8517423-018f-412b-95a2-9c79748bf19a' } })
+        expect(screen.getByRole('button', { name: 'Проверить запрос' })).toBeEnabled()
     })
 
     it('creates a preview only for an authorized server response', async () => {

@@ -353,37 +353,37 @@ public interface UserRepository
                         from public.chat_sessions
                                 as chat_session
                         where chat_session.user_id = :userId
-                    
+
                         union all
-                    
+
                         select 1
                         from public.usage_daily_user_model_rollups
                                 as usage_rollup
                         where usage_rollup.user_id = :userId
-                    
+
                         union all
-                    
+
                         select 1
                         from public.user_ai_quotas
                                 as user_quota
                         where user_quota.user_id = :userId
-                    
+
                         union all
-                    
+
                         select 1
                         from public.knowledge_base_memberships
                                 as knowledge_membership
                         where knowledge_membership.user_id = :userId
-                    
+
                         union all
-                    
+
                         select 1
                         from public.audit_outbox
                                 as audit_outbox_event
                         where audit_outbox_event.actor_user_id = :userId
-                    
+
                         union all
-                    
+
                         select 1
                         from public.erasure_requests_v103 as erasure_case
                         where erasure_case.requested_by_user_id = :userId

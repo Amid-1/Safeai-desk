@@ -172,7 +172,7 @@ class DatabaseMigrationMainTest {
 
     @Test
     void reviewedResourcesAndHistoryCoverExactlyCurrentMigrations() throws Exception {
-        assertEquals(104, RuntimeAclPolicy.verifyReviewedResources().size());
+        assertEquals(105, RuntimeAclPolicy.verifyReviewedResources().size());
         assertEquals("V92__organization_model_policy_budget_finite_values.sql",
                 RuntimeAclPolicy.verifyReviewedResources().get(92));
         assertEquals("V93__model_policy_preview_confirmations.sql", RuntimeAclPolicy.verifyReviewedResources().get(93));
@@ -187,8 +187,9 @@ class DatabaseMigrationMainTest {
         assertEquals("V102__platform_erasure_admission_policy.sql", RuntimeAclPolicy.verifyReviewedResources().get(102));
         assertEquals("V103__erasure_case_intake.sql", RuntimeAclPolicy.verifyReviewedResources().get(103));
         assertEquals("V104__erasure_actor_detachment_guards.sql", RuntimeAclPolicy.verifyReviewedResources().get(104));
-        assertTrue(RuntimeAclPolicy.historyQuery().contains("count(*)=104 AND count(DISTINCT version)=104"));
-        assertTrue(RuntimeAclPolicy.historyQuery().contains("BETWEEN 1 AND 104"));
+        assertEquals("V105__erasure_review_intake.sql", RuntimeAclPolicy.verifyReviewedResources().get(105));
+        assertTrue(RuntimeAclPolicy.historyQuery().contains("count(*)=105 AND count(DISTINCT version)=105"));
+        assertTrue(RuntimeAclPolicy.historyQuery().contains("BETWEEN 1 AND 105"));
     }
 
     @Test
@@ -225,7 +226,7 @@ class DatabaseMigrationMainTest {
         assertThrows(IllegalStateException.class, () -> RuntimeAclPolicy.verifyReviewedResources(
                 path -> config.equals(path) ? "executeInTransaction=false\n".getBytes(StandardCharsets.UTF_8)
                         : readResource(path)));
-        assertEquals(104, RuntimeAclPolicy.verifyReviewedResources().size());
+        assertEquals(105, RuntimeAclPolicy.verifyReviewedResources().size());
     }
 
     private static byte[] readResource(String resource) throws java.io.IOException {
@@ -326,7 +327,7 @@ class DatabaseMigrationMainTest {
 
         private void assertInvalidHistory() throws Exception {
             IllegalStateException failure = assertThrows(IllegalStateException.class, this::run);
-            assertEquals("ACL policy requires exactly V1-V104", failure.getMessage());
+            assertEquals("ACL policy requires exactly V1-V105", failure.getMessage());
             verify(aclStatement, never()).execute(aclPolicy());
             verify(aclConnection).rollback();
             verify(aclConnection, never()).commit();

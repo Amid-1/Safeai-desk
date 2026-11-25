@@ -114,6 +114,13 @@ safeai:
   erasure:
     requests:
       enabled: ${SAFEAI_ERASURE_REQUESTS_ENABLED:false}
+    # R1b read/independent review, not execution authority.
+    approvals:
+      enabled: ${SAFEAI_ERASURE_APPROVALS_ENABLED:false}
+    # 32-byte signing secret (hex). Separate copy is provisioned in PostgreSQL by the migrator.
+    # An absent or mismatched secret blocks all R1b mutations. Never log it.
+    review:
+      actor-proof-key: ${SAFEAI_ERASURE_REVIEW_ACTOR_PROOF_KEY:}
 
   cors:
     allowed-origins: ${SAFEAI_CORS_ALLOWED_ORIGINS:http://localhost:5173}

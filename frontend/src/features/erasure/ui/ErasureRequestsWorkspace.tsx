@@ -1,7 +1,12 @@
 // frontend/src/features/erasure/ui/ErasureRequestsWorkspace.tsx
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { getChats, type Chat } from '../../chat/api/chatApi'
+import { getKnowledgeBases } from '../../../entities/knowledge/api/knowledgeApi'
+import type { KnowledgeBase } from '../../../entities/knowledge/api/knowledgeApi'
+import { getKnowledgeDocuments, type KnowledgeDocument } from '../../../entities/knowledge/api/knowledgeDocumentApi'
 import { getApiErrorMessage } from '../../../shared/api/http'
-import { ErrorState, EmptyState, LoadingState } from '../../../shared/ui/StateBlock'
+import { EmptyState, LoadingState } from '../../../shared/ui/StateBlock'
 import {
     createDraft, loadMine, previewCase, submitDraft, withdrawCase,
     type CaseView, type Preview, type ResourceType, type Target,
@@ -29,6 +34,11 @@ export function ErasureRequestsWorkspace({ user }: Props) {
     const [items, setItems] = useState<CaseView[]>([])
     const [type, setType] = useState<ResourceType>('USER_ACCOUNT')
     const [resourceId, setResourceId] = useState('')
+    const [knowledgeBaseId, setKnowledgeBaseId] = useState('')
+    const [chats, setChats] = useState<Chat[]>([])
+    const [bases, setBases] = useState<KnowledgeBase[]>([])
+    const [documents, setDocuments] = useState<KnowledgeDocument[]>([])
+    const [pickerError, setPickerError] = useState<string | null>(null)
     const [preview, setPreview] = useState<Preview | null>(null)
     const [pending, setPending] = useState(false)
     const [loading, setLoading] = useState(true)
@@ -53,6 +63,34 @@ export function ErasureRequestsWorkspace({ user }: Props) {
         void reload(controller.signal)
         return () => controller.abort()
     }, [reload])
+
+    useEffect(() => {
+        const ac = new AbortController()
+        setPickerError(null)
+        setChats([]); setBases([]); setDocuments([])
+        if (type === 'CHAT') {
+            void getChats(0, 100, { signal: ac.signal })
+                .then(data => { if (!ac.signal.aborted) setChats(data.content) })
+                .catch(err => { if (!ac.signal.aborted) setPickerError(getApiErrorMessage(err,
+                    'Не удалось загрузить чаты.')) })
+        } else if (type === 'KNOWLEDGE_DOCUMENT' || type === 'KNOWLEDGE_BASE') {
+            void getKnowledgeBases(0, 100, { signal: ac.signal })
+                .then(data => { if (!ac.signal.aborted) setBases(data.content) })
+                .catch(err => { if (!ac.signal.aborted) setPickerError(getApiErrorMessage(err,
+                    'Не удалось загрузить базы знаний.')) })
+        }
+        return () => ac.abort()
+    }, [type])
+
+    useEffect(() => {
+        if (type !== 'KNOWLEDGE_DOCUMENT' || !knowledgeBaseId) return
+        const ac = new AbortController()
+        void getKnowledgeDocuments(knowledgeBaseId, 0, 100, ac.signal)
+            .then(data => { if (!ac.signal.aborted) setDocuments(data.content) })
+            .catch(err => { if (!ac.signal.aborted) setPickerError(getApiErrorMessage(err,
+                'Не удалось загрузить документы.')) })
+        return () => ac.abort()
+    }, [type, knowledgeBaseId])
 
     const selected = TYPES[type]
     const targetId = type === 'USER_ACCOUNT' ? user.id
@@ -90,21 +128,46 @@ export function ErasureRequestsWorkspace({ user }: Props) {
                     <select id="erasure-resource-type" value={type} disabled={pending}
                         onChange={event => {
                             setType(event.target.value as ResourceType)
-                            setPreview(null); setResourceId(''); setNotice(null)
+                            setPreview(null); setResourceId(''); setKnowledgeBaseId(''); setNotice(null)
                         }}>
                         {Object.entries(TYPES).filter(([key]) =>
                             key !== 'ORGANIZATION' || isAdmin).map(([key, item]) => (
                             <option key={key} value={key}>{item.title}</option>
                         ))}
                     </select>
-                    {type !== 'USER_ACCOUNT' && type !== 'ORGANIZATION' && (
-                        <>
-                            <label htmlFor="erasure-resource-id">Идентификатор объекта</label>
-                            <input id="erasure-resource-id" value={resourceId}
-                                disabled={pending} placeholder="UUID объекта"
-                                onChange={event => { setResourceId(event.target.value); setPreview(null) }}/>
-                        </>
-                    )}
+                    {type === 'CHAT' && <>
+                        <label htmlFor="erasure-chat-select">Мой чат</label>
+                        <select id="erasure-chat-select" disabled={pending} value={resourceId}
+                            onChange={e => { setResourceId(e.target.value); setPreview(null) }}>
+                            <option value="">Выберите чат</option>
+                            {chats.map(chat => <option key={chat.id} value={chat.id}>
+                                {chat.title || 'Без названия'}
+                            </option>)}
+                        </select>
+                        <p className="erasure-muted">Показаны первые 100 доступных чатов.</p>
+                    </>}
+                    {(type === 'KNOWLEDGE_BASE' || type === 'KNOWLEDGE_DOCUMENT') && <>
+                        <label htmlFor="erasure-base-select">База знаний</label>
+                        <select id="erasure-base-select" value={type === 'KNOWLEDGE_BASE' ? resourceId : knowledgeBaseId}
+                            disabled={pending} onChange={e => {
+                                if (type === 'KNOWLEDGE_BASE') setResourceId(e.target.value)
+                                else { setKnowledgeBaseId(e.target.value); setResourceId(''); setDocuments([]) }
+                                setPreview(null)
+                            }}>
+                            <option value="">Выберите базу знаний</option>
+                            {bases.map(base => <option key={base.id} value={base.id}>{base.name}</option>)}
+                        </select>
+                    </>}
+                    {type === 'KNOWLEDGE_DOCUMENT' && knowledgeBaseId && <>
+                        <label htmlFor="erasure-doc-select">Документ</label>
+                        <select id="erasure-doc-select" disabled={pending} value={resourceId}
+                            onChange={e => { setResourceId(e.target.value); setPreview(null) }}>
+                            <option value="">Выберите документ</option>
+                            {documents.map(doc => <option key={doc.id} value={doc.id}>{doc.name}</option>)}
+                        </select>
+                        <p className="erasure-muted">Показаны первые 100 доступных документов.</p>
+                    </>}
+                    {pickerError && <div role="alert" className="erasure-error">{pickerError}</div>}
                     <div className="erasure-intent">
                         <strong>{selected.title}</strong>
                         <span>Будет создан запрос на рассмотрение.
@@ -155,7 +218,11 @@ export function ErasureRequestsWorkspace({ user }: Props) {
                                         <strong>{TYPES[item.resourceType]?.title ?? item.resourceType}</strong>
                                         <span className="erasure-state">{STATE_LABELS[item.state]}</span>
                                     </div>
-                                    <small>{item.requestId}</small>
+                                    <small>Создана: {new Date(item.createdAt).toLocaleString('ru-RU')}</small>
+                                    {item.state === 'SUBMITTED' && <Link
+                                        to={`/my/erasure-requests/${item.requestId}`}>
+                                        История рассмотрения
+                                    </Link>}
                                     <div className="erasure-actions">
                                         {item.state === 'DRAFT' && (
                                             <button type="button" disabled={pending}

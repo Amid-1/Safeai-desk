@@ -13,6 +13,11 @@ INSERT INTO acl_matrix VALUES
 ('erasure_previews_v103','SI','',''),
 ('erasure_requests_v103','SI','','state,version,updated_at,submitted_at,submit_key,withdraw_key'),
 ('erasure_request_events_v103','SI','',''),
+('erasure_review_authorities_v105','S','',''),
+('erasure_review_actor_keys_v105','-','',''),
+('erasure_reviews_v105','S','','review_state,review_version,hold_revision,updated_by_user_id,last_event_code,last_key,reason_code,updated_at'),
+('erasure_review_events_v105','S','',''),
+('erasure_review_holds_v105','SI','','released_at,released_by_user_id,release_key'),
 ('chat_erasure_operations_v86','SI','',''),
 ('chat_erasure_operator_approvals_v86','-','',''),
 ('chat_messages','SI','',''),
@@ -88,7 +93,7 @@ BEGIN
                    WHERE n.nspname='public' AND c.relkind='S') THEN
         RAISE EXCEPTION 'Unsafe default ACL, runtime capability or inventory';
     END IF;
-    IF (SELECT count(*) FROM acl_matrix) <> 70 OR EXISTS (
+    IF (SELECT count(*) FROM acl_matrix) <> 75 OR EXISTS (
         SELECT name FROM acl_matrix EXCEPT
         SELECT c.relname::text FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
         WHERE n.nspname='public' AND c.relkind IN ('r','p','v','m','f')
@@ -194,7 +199,7 @@ DO $critical$
 DECLARE f record; worker text;
 BEGIN
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-        WHERE n.nspname='public' AND p.prosecdef) <> 6 THEN
+        WHERE n.nspname='public' AND p.prosecdef) <> 9 THEN
         RAISE EXCEPTION 'Unexpected SECURITY DEFINER inventory';
     END IF;
     FOR f IN SELECT p.oid,p.proname,p.proowner FROM pg_proc p
@@ -205,7 +210,8 @@ BEGIN
               coalesce((SELECT proacl FROM pg_proc WHERE oid=f.oid),acldefault('f',f.proowner))) a
                        WHERE a.grantee=0 AND a.privilege_type='EXECUTE')
             OR has_function_privilege('safeai_app',f.oid,'EXECUTE')
-                IS DISTINCT FROM (f.proname='gc_knowledge_generation_chunks_v90') THEN
+                IS DISTINCT FROM (f.proname IN ('gc_knowledge_generation_chunks_v90',
+                    'assert_erasure_review_actor_v105')) THEN
             RAISE EXCEPTION 'Unsafe definer function: %',f.proname;
         END IF;
         FOREACH worker IN ARRAY ARRAY['safeai_chat_erasure_worker','safeai_knowledge_erasure_worker'] LOOP
@@ -214,7 +220,11 @@ BEGIN
             END IF;
         END LOOP;
     END LOOP;
-    IF NOT has_function_privilege('safeai_app','public.gc_knowledge_generation_chunks_v90(uuid,uuid)','EXECUTE')
+    IF has_table_privilege('safeai_app','public.erasure_review_actor_keys_v105','SELECT')
+        OR has_table_privilege('safeai_app','public.erasure_review_events_v105','INSERT')
+        OR NOT has_function_privilege('safeai_app',
+            'public.assert_erasure_review_actor_v105(uuid,uuid,uuid,text,bigint,text)','EXECUTE')
+        OR NOT has_function_privilege('safeai_app','public.gc_knowledge_generation_chunks_v90(uuid,uuid)','EXECUTE')
         OR NOT has_column_privilege('safeai_chat_erasure_worker','public.chat_messages','content','UPDATE')
         OR NOT has_column_privilege('safeai_knowledge_erasure_worker','public.knowledge_bases','lifecycle_state','UPDATE')
         OR NOT has_table_privilege('safeai_knowledge_erasure_worker','public.knowledge_document_chunks','DELETE')

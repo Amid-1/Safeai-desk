@@ -1,5 +1,5 @@
 openapi: 3.1.0
-jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+jsonSchemaDialect: https://spec.openapis.org/oas/3.1/dialect/base
 info:
   title: SafeAI Desk — Erasure Case Management API
   version: 1.1.0-design
@@ -2975,7 +2975,7 @@ components:
       name: Idempotency-Key
       in: header
       required: true
-      description: Replay scoped by authenticated principal, tenant, endpoint and canonical body 
+      description: Replay scoped by authenticated principal, tenant, endpoint and canonical body
         digest.
       schema:
         type: string
@@ -3127,7 +3127,7 @@ components:
         - EXPIRED_CONFIRMED
     ReasonCode:
       type: string
-      description: Closed union of design reason codes. Backend also enforces smaller per-action 
+      description: Closed union of design reason codes. Backend also enforces smaller per-action
         allowlists.
       enum:
         - OWNER_REQUEST
@@ -3232,7 +3232,7 @@ components:
           type: string
           format: uuid
     ErasureTarget:
-      description: Exactly one allowed (operation, resourceType, scope) triple; availability is 
+      description: Exactly one allowed (operation, resourceType, scope) triple; availability is
         independently gated.
       oneOf:
         - type: object
@@ -3606,7 +3606,7 @@ components:
     ScopeConfirmation:
       type: object
       additionalProperties: false
-      description: Needed if full preflight expands scope or changes dependency/hold digest; does not 
+      description: Needed if full preflight expands scope or changes dependency/hold digest; does not
         execute
       required:
         - manifestDigest

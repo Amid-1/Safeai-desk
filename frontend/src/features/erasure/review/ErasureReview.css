@@ -1,0 +1,68 @@
+/* frontend/src/features/erasure/review/ErasureReview.css */
+/* SafeAI Desk R2: scoped UI styling, no global element resets. */
+.er2-page { max-width: 1260px; margin-inline: auto; padding-bottom: 48px; }
+.er2-heading { margin: 12px 0 22px; }
+.er2-heading--row { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.er2-heading h1 { margin: 6px 0 7px; font-size: clamp(27px, 3vw, 35px); font-weight: 760; color: #17223b; line-height: 1.2; }
+.er2-heading p { max-width: 780px; color: #55637b; margin: 0; line-height: 1.65; }
+.er2-eyebrow { color: #466cbb; font-size: 11px; font-weight: 800; letter-spacing: .10em; }
+.er2-card { background: #fff; border: 1px solid #dbe4f3; border-radius: 17px; padding: 24px; box-shadow: 0 7px 18px rgb(28 49 81 / 3%); min-width: 0; }
+.er2-card h2 { margin: 0 0 16px; color: #1c2943; font-size: 20px; }
+.er2-card p { color: #53657d; line-height: 1.62; }
+.er2-card a { color: #225bd9; }
+.er2-warning { margin-bottom: 22px; background: #fff9ee; color: #754c16; border-color: #efd6a4; line-height: 1.65; }
+.er2-warning strong { color: #62410f; }
+.er2-settings-layout { display: grid; grid-template-columns: 290px minmax(0,1fr); gap: 22px; }
+.er2-settings-menu { display: flex; flex-direction: column; gap: 9px; align-self: start; }
+.er2-menu-item { padding: 13px 16px; background: #f5f7fa; border-radius: 10px; color: #263754; }
+.er2-menu-item--active { background: #e4eef1; font-weight: 750; }
+.er2-settings-main { padding: 28px; }
+.er2-data-row { padding: 22px 0; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e7edf7; gap: 18px; }
+.er2-data-row p { margin: 5px 0 0; }
+.er2-info { background: #f3f7ff; margin-top: 22px; border-color: #e0e9fb; }
+.er2-muted { color: #617089; font-size: 14px; line-height: 1.5; }
+.er2-pill { display: inline-flex; max-width: max-content; align-items: center; background: #edf2fc; color: #304d82; border: 1px solid #dce6fa; padding: 5px 11px; border-radius: 999px; font-size: 12px; font-weight: 750; }
+.er2-action, .er2-primary { display: inline-flex; justify-content: center; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 10px; font: inherit; font-weight: 700; font-size: 13px; text-decoration: none; cursor: pointer; }
+.er2-action { background: #fff; color: #225bd9; border: 1px solid #bed1f4; }
+.er2-primary { background: #215ddb; border: 1px solid #215ddb; color: white !important; }
+.er2-action:hover:not(:disabled), .er2-primary:hover:not(:disabled) { filter: brightness(.96); }
+.er2-action:disabled, .er2-primary:disabled { opacity: .6; cursor: not-allowed; }
+.er2-action:focus-visible, .er2-primary:focus-visible, .er2-page :focus-visible { outline: 3px solid #9ab8ff; outline-offset: 2px; }
+.er2-stats { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 15px; margin: 0 0 22px; }
+.er2-stats .er2-card { display: flex; flex-direction: column; gap: 10px; }
+.er2-stats span { color: #52637a; font-size: 13px; }
+.er2-stats strong { color: #1b2d4b; font-size: 32px; }
+.er2-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px; }
+.er2-grid-2 .er2-card { display: flex; flex-direction: column; align-items: start; }
+.er2-grid-2 a { margin-top: auto; }
+.er2-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.er2-filter { display: flex; gap: 10px; align-items: center; font-size: 13px; color: #475c77; }
+.er2-filter select, .er2-label select { border: 1px solid #ccd9ed; border-radius: 10px; padding: 9px 12px; background: white; color: #243452; font: inherit; }
+.er2-table-wrap { overflow-x: auto; }
+.er2-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.er2-table th { color: #677790; text-align: left; font-size: 12px; padding: 15px 12px; background: #f7f9fd; white-space: nowrap; }
+.er2-table td { color: #253653; border-top: 1px solid #eaf0f8; padding: 17px 12px; vertical-align: middle; }
+.er2-table td small { display: block; color: #7a879b; margin-top: 4px; font-size: 11px; }
+.er2-table td a { font-weight: 700; text-decoration: none; }
+.er2-table td a:hover { text-decoration: underline; }
+.er2-back { display: inline-block; color: #3d5a83; text-decoration: none; margin: 7px 0 12px; font-size: 13px; font-weight: 650; }
+.er2-details-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(250px, 1fr); gap: 18px; align-items: start; }
+.er2-details-main, .er2-details-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.er2-details, .er2-summary { display: grid; gap: 0; margin: 0; }
+.er2-details div, .er2-summary div { display: grid; grid-template-columns: 40% 1fr; padding: 12px 0; border-bottom: 1px solid #edf1f8; gap: 12px; }
+.er2-details dt, .er2-summary dt { color: #65758e; }
+.er2-details dd, .er2-summary dd { margin: 0; font-weight: 650; overflow-wrap: anywhere; color: #1c2e4c; }
+.er2-technical { margin-top: 20px; font-size: 13px; color: #64738b; }
+.er2-technical p { overflow-wrap: anywhere; margin: 10px 0; }
+.er2-label { display: grid; gap: 8px; margin: 14px 0; color: #425573; font-size: 13px; }
+.er2-decision-options { display: flex; flex-wrap: wrap; gap: 16px; padding: 12px 0; border: 0; }
+.er2-decision-options legend { font-weight: 700; font-size: 13px; }
+.er2-decision-options label { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; }
+.er2-timeline { list-style: none; margin: 0; padding-left: 22px; border-left: 2px solid #e1e8f5; }
+.er2-timeline li { position: relative; display: flex; flex-direction: column; gap: 3px; padding: 4px 0 23px 16px; color: #2c3d58; font-size: 13px; }
+.er2-timeline li::before { content: ''; position: absolute; background: #5b78d9; width: 10px; height: 10px; border-radius: 50%; left: -28px; top: 8px; border: 2px solid white; }
+.er2-timeline small { color: #7d8a9f; }
+.er2-error { background: #fdf0f0; color: #9b2020; border: 1px solid #f3c3c3; padding: 14px; border-radius: 10px; margin-top: 16px; }
+.er2-notice { background: #f0f9f4; color: #236441; border: 1px solid #c3ead1; padding: 14px; border-radius: 10px; margin-top: 16px; }
+@media (max-width: 980px) { .er2-stats { grid-template-columns: repeat(2,minmax(0,1fr)); } .er2-settings-layout { grid-template-columns: 1fr; } .er2-details-grid { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .er2-heading--row { align-items: start; flex-direction: column; } .er2-stats, .er2-grid-2 { grid-template-columns: 1fr; } .er2-card { padding: 17px; } .er2-data-row { align-items: start; flex-direction: column; } .er2-details div, .er2-summary div { grid-template-columns: 1fr; gap: 5px; } }
