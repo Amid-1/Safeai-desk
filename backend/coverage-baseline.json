@@ -168,6 +168,26 @@
         6052,
         3201
       ]
+    },
+    "erasure": {
+      "line": 0.779956,
+      "line_counts": [
+        358,
+        101
+      ],
+      "branch": 0.608696,
+      "branch_counts": [
+        154,
+        99
+      ]
+    }
+  },
+  "_source": {
+    "erasure_first_measurement": {
+      "git_head": "ac5dfcd273c259535f57fd5d51fc3c43d92b9123",
+      "report_sha256": "7022c98289c6b02cc5dc7058c8f8335efd295b042b844384626b919d1a6e4167",
+      "review_required": true,
+      "note": "Existing baseline groups and total preserved; verify full test provenance and approve before use."
     }
   }
 }

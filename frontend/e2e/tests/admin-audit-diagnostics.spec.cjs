@@ -102,8 +102,12 @@ test('super admin sees independent integrity status and a violation without demo
   violated = true
   await panel.getByRole('button', { name: 'Обновить состояние' }).click()
   await expect(panel.getByText('Обнаружены нарушения целостности')).toBeVisible()
-  await expect(panel.getByText('165', { exact: true })).toBeVisible()
   await expect(panel.getByText(/Сохраните доказательства/)).toBeVisible()
+  const details = panel.locator('details')
+  await expect(details.locator('summary')).toBeVisible()
+  await details.locator('summary').click()
+  await expect(panel.getByText('165', { exact: true })).toBeVisible()
+  await expect(details.locator('div').filter({ has: page.getByText('Нарушений целостности', { exact: true }) }).locator('dd')).toHaveText('1')
 })
 
 test('audit correlation drill-down uses exact server scope and preserves URL on reload', async ({ page }) => {

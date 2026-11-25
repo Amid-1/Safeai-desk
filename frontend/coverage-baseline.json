@@ -10,6 +10,12 @@
       "stage": "7.5G.3-Fix3",
       "source": "local full Vitest run, 1668 passed; existing measurable baselines unchanged",
       "coverage_summary_sha256": "f334bd79d95948a6169dc5200ebd307ec2b9afe3c7a41eb934f22e9a9c7429c7"
+    },
+    "erasure_first_measurement": {
+      "git_head": "ac5dfcd273c259535f57fd5d51fc3c43d92b9123",
+      "report_sha256": "f9ddf9c5e0bd928e679f153d75abcf07f16b9c1a1f1e00310168ec1c921d6676",
+      "review_required": true,
+      "note": "Existing baseline groups and total preserved; verify full test provenance and approve before use."
     }
   },
   "modules": {
@@ -179,6 +185,18 @@
       "branch_counts": [
         4957,
         2044
+      ]
+    },
+    "erasure": {
+      "line": 0.691358024691358,
+      "line_counts": [
+        112,
+        50
+      ],
+      "branch": 0.5578231292517006,
+      "branch_counts": [
+        82,
+        65
       ]
     }
   }

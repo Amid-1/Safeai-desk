@@ -166,7 +166,12 @@ def frontend_stats(
             raise ValueError("Invalid frontend coverage baseline for dashboard")
         names = {item["name"] for item in rows}
         if set(modules) != names | {"_total"}:
-            raise ValueError("Frontend baseline group inventory does not match Vitest")
+            expected = names | {"_total"}
+            raise ValueError(
+                "Frontend baseline group inventory does not match Vitest: "
+                f"missing from baseline={sorted(expected - set(modules))}; "
+                f"missing from report={sorted(set(modules) - expected)}"
+            )
         for item in rows:
             saved = modules[item["name"]]
             item["baseline_line"] = saved["line"]

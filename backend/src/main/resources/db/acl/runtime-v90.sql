@@ -173,6 +173,9 @@ BEGIN
     END LOOP;
 END $routines$;
 GRANT EXECUTE ON FUNCTION public.gc_knowledge_generation_chunks_v90(uuid,uuid) TO safeai_app;
+-- Bootstrap deliberately revokes routine EXECUTE on every deployment.
+-- Restore only the reviewed V105 actor-proof verifier; no worker or PUBLIC grant.
+GRANT EXECUTE ON FUNCTION public.assert_erasure_review_actor_v105(uuid,uuid,uuid,text,bigint,text) TO safeai_app;
 
 DO $grant$
 DECLARE r record; p record; col text;
