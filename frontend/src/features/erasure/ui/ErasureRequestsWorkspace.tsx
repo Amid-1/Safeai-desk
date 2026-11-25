@@ -32,6 +32,7 @@ type Props = { user: { id: string; organizationId: string; roles: string[] } }
 
 export function ErasureRequestsWorkspace({ user }: Props) {
     const [items, setItems] = useState<CaseView[]>([])
+    const [listFilter, setListFilter] = useState<'ALL' | CaseView['state']>('ALL')
     const [type, setType] = useState<ResourceType>('USER_ACCOUNT')
     const [resourceId, setResourceId] = useState('')
     const [knowledgeBaseId, setKnowledgeBaseId] = useState('')
@@ -92,6 +93,7 @@ export function ErasureRequestsWorkspace({ user }: Props) {
         return () => ac.abort()
     }, [type, knowledgeBaseId])
 
+    const shownItems = items.filter(item => listFilter === 'ALL' || item.state === listFilter)
     const selected = TYPES[type]
     const targetId = type === 'USER_ACCOUNT' ? user.id
         : type === 'ORGANIZATION' ? user.organizationId : resourceId.trim()
@@ -117,13 +119,19 @@ export function ErasureRequestsWorkspace({ user }: Props) {
             </header>
             <div className="erasure-warning" role="note">
                 <strong>Исполнение пока не включено.</strong>
-                <span> На этом этапе система только регистрирует запросы. Ни чат,
-                    ни документ, ни учётная запись не будут физически удалены.</span>
+                <span> Система регистрирует и рассматривает обращения. Ни чат,
+                    ни документ, ни учётная запись не будут физически удалены на этапе R1b.</span>
             </div>
+            <ol className="erasure-steps" aria-label="Как подать запрос">
+                <li><span>1</span><div><strong>Выберите объект</strong><small>Доступен только ваш объект</small></div></li>
+                <li><span>2</span><div><strong>Проверьте последствия</strong><small>Предпросмотр без удаления</small></div></li>
+                <li><span>3</span><div><strong>Подайте заявку</strong><small>Решение видно в истории</small></div></li>
+            </ol>
             <div className="erasure-columns">
                 <section className="erasure-panel" aria-labelledby="new-case-title">
                     <h2 id="new-case-title">Новая заявка</h2>
-                    <p className="erasure-muted">Выберите объект и проверьте последствия.</p>
+                    <p className="erasure-muted">Выберите объект и проверьте последствия. До подачи
+                        запроса будет создан отдельный черновик.</p>
                     <label htmlFor="erasure-resource-type">Что вы хотите удалить</label>
                     <select id="erasure-resource-type" value={type} disabled={pending}
                         onChange={event => {
@@ -189,6 +197,10 @@ export function ErasureRequestsWorkspace({ user }: Props) {
                             <p>Проверка не разрешает удаление и не гарантирует его исполнение.</p>
                             <button type="button" disabled={pending}
                                 onClick={() => void run(async () => {
+                                    if (Date.parse(preview.expiresAt) <= Date.now()) {
+                                        setPreview(null)
+                                        throw new Error('Предпросмотр истёк. Запросите новую проверку.')
+                                    }
                                     await createDraft(target, preview,
                                         type === 'USER_ACCOUNT' ? 'SELF_REQUEST'
                                             : type === 'ORGANIZATION' ? 'ORGANIZATION_REQUEST'
@@ -210,13 +222,25 @@ export function ErasureRequestsWorkspace({ user }: Props) {
                             Обновить
                         </button>
                     </div>
+                    {!loading && items.length > 0 && <label className="erasure-history-filter">
+                        Показывать
+                        <select value={listFilter} onChange={event => setListFilter(event.target.value as
+                            'ALL' | CaseView['state'])}>
+                            <option value="ALL">Все заявки ({items.length})</option>
+                            <option value="DRAFT">Черновики</option>
+                            <option value="SUBMITTED">Зарегистрированные</option>
+                            <option value="WITHDRAWN">Отозванные</option>
+                        </select>
+                    </label>}
                     {loading ? <LoadingState message="Загружаем заявки..." />
                         : items.length === 0 ? <EmptyState message="Заявок пока нет." />
-                            : <ul className="erasure-list">{items.map(item => (
+                            : shownItems.length === 0 ? <EmptyState message="По выбранному фильтру заявок нет." />
+                            : <ul className="erasure-list">{shownItems.map(item => (
                                 <li key={item.requestId}>
                                     <div className="erasure-case-head">
                                         <strong>{TYPES[item.resourceType]?.title ?? item.resourceType}</strong>
-                                        <span className="erasure-state">{STATE_LABELS[item.state]}</span>
+                                        <span className={`erasure-state erasure-state--${item.state.toLowerCase()}`}>
+                                            {STATE_LABELS[item.state]}</span>
                                     </div>
                                     <small>Создана: {new Date(item.createdAt).toLocaleString('ru-RU')}</small>
                                     {item.state === 'SUBMITTED' && <Link
@@ -235,10 +259,12 @@ export function ErasureRequestsWorkspace({ user }: Props) {
                                         {item.state !== 'WITHDRAWN' && (
                                             <button type="button" className="erasure-secondary"
                                                 disabled={pending}
-                                                onClick={() => void run(async () => {
-                                                    await withdrawCase(item); await reload()
-                                                    setNotice('Заявка отозвана.')
-                                                })}>Отозвать</button>
+                                                onClick={() => { if (window.confirm('Отозвать заявку? Это действие нельзя отменить.')) {
+                                                    void run(async () => {
+                                                        await withdrawCase(item); await reload()
+                                                        setNotice('Заявка отозвана.')
+                                                    })
+                                                } }}>Отозвать</button>
                                         )}
                                     </div>
                                 </li>

@@ -39,3 +39,21 @@
 .erasure-footer {margin-top:20px; color:var(--text-secondary,#64748b);}
 @media(max-width:860px){.erasure-columns{grid-template-columns:1fr;}
  .erasure-workspace{padding:20px 14px 40px;}.erasure-panel{padding:18px 14px;}}
+/* R2: guided request flow without altering R1a API or role checks. */
+.erasure-steps { list-style:none; margin:0 0 20px; padding:17px; display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; background:white;
+    border:1px solid #dae5f3; border-radius:14px; }
+.erasure-steps li { display:flex; gap:12px; align-items:start; min-width:0; }
+.erasure-steps li > span { width:29px; height:29px; flex:0 0 29px; border-radius:50%;
+    display:grid; place-items:center; background:#e5eeff; color:#2053ae; font-weight:800; font-size:13px; }
+.erasure-steps strong { color:#273654; font-size:13px; display:block; }
+.erasure-steps small { display:block; color:#73839b; font-size:12px; margin-top:5px; line-height:1.4; }
+.erasure-history-filter { display:flex !important; flex-wrap:wrap; align-items:center; gap:10px;
+    margin:10px 0 !important; font-size:13px; color:#55647b; }
+.erasure-history-filter select { width:auto; min-width:160px; min-height:36px !important; }
+.erasure-state { display:inline-flex; align-items:center; background:#eef3ff; color:#315caa;
+    padding:5px 10px; border-radius:999px; font-size:12px; }
+.erasure-state--withdrawn { background:#edf1f5; color:#65738a; }
+.erasure-state--draft { background:#fff2df; color:#955e1c; }
+.erasure-state--submitted { background:#e8f1ff; color:#2b5eac; }
+@media(max-width:730px){.erasure-steps { grid-template-columns:1fr; }}
