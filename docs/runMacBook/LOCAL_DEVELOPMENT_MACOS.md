@@ -185,6 +185,9 @@ set +a
 export SAFEAI_JWT_PUBLIC_KEY="$(cat .local-secrets/jwt-public.pem)"
 export SAFEAI_JWT_PRIVATE_KEY="$(cat .local-secrets/jwt-private.pem)"
 
+echo "Requests: $SAFEAI_ERASURE_REQUESTS_ENABLED"
+echo "Approvals: $SAFEAI_ERASURE_APPROVALS_ENABLED"
+
 ./mvnw spring-boot:run
 ```
 
