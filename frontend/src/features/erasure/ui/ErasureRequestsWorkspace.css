@@ -57,3 +57,44 @@
 .erasure-state--draft { background:#fff2df; color:#955e1c; }
 .erasure-state--submitted { background:#e8f1ff; color:#2b5eac; }
 @media(max-width:730px){.erasure-steps { grid-template-columns:1fr; }}
+
+/* R2.5.1: keep the personal request form reachable in the fixed-height app shell.
+   Scope to the personal workspace; the legacy administrative queue shares this CSS. */
+.content--workspace:not(.content--chat) > .page.erasure-workspace:has(#new-case-title) {
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    min-width: 0;
+}
+.erasure-workspace:has(#new-case-title) {
+    padding: 12px 24px 24px;
+}
+.erasure-workspace:has(#new-case-title) .erasure-hero { margin-bottom: 14px; }
+.erasure-workspace:has(#new-case-title) .erasure-eyebrow { margin-bottom: 4px; }
+.erasure-workspace:has(#new-case-title) .erasure-hero h1 {
+    font-size: clamp(1.5rem, 2.6vw, 2rem);
+    margin-bottom: 5px;
+}
+.erasure-workspace:has(#new-case-title) .erasure-hero p { max-width: none; }
+.erasure-workspace:has(#new-case-title) .erasure-warning { padding: 10px 14px; margin-bottom: 14px; }
+.erasure-workspace:has(#new-case-title) .erasure-steps { padding: 10px 14px; margin-bottom: 14px; }
+.erasure-workspace:has(#new-case-title) .erasure-steps small { margin-top: 2px; }
+.erasure-workspace:has(#new-case-title) .erasure-columns {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+    gap: 16px;
+}
+.erasure-workspace:has(#new-case-title) .erasure-panel { min-width: 0; padding: 16px; overflow-wrap: anywhere; }
+.erasure-workspace:has(#new-case-title) .erasure-muted { margin: 0 0 8px; }
+.erasure-workspace:has(#new-case-title) .erasure-panel label { margin: 10px 0 5px; }
+.erasure-workspace:has(#new-case-title) .erasure-panel select + .erasure-muted { margin-top: 4px; }
+.erasure-workspace:has(#new-case-title) .erasure-intent { margin: 12px 0; padding: 10px 12px; gap: 4px; }
+.erasure-workspace:has(#new-case-title) .erasure-confirm { margin-top: 8px; }
+.erasure-workspace:has(#new-case-title) .erasure-confirm p { margin: 0 0 8px; }
+.erasure-workspace:has(#new-case-title) .erasure-panel-heading h2 { margin-bottom: 0; }
+.erasure-workspace:has(#new-case-title) .erasure-list { margin-top: 10px; gap: 10px; }
+.erasure-workspace:has(#new-case-title) .erasure-footer { margin-top: 14px; }
+@media (max-width: 860px) {
+    .erasure-workspace:has(#new-case-title) { padding: 10px 12px 20px; }
+    .erasure-workspace:has(#new-case-title) .erasure-columns { grid-template-columns: minmax(0, 1fr); }
+    .erasure-workspace:has(#new-case-title) .erasure-panel { padding: 14px; }
+}
