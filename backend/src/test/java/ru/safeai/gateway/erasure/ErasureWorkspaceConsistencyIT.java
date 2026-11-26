@@ -35,6 +35,7 @@ class ErasureWorkspaceConsistencyIT extends AbstractPostgresIntegrationTest {
     @Autowired ErasureCaseMutations mutations;
     @Autowired ErasureReviewService reviews;
     @Autowired ErasureWorkspaceReads workspace;
+    @Autowired ErasureNotifications notifications;
 
     private SafeAiUserPrincipal actor(UUID org, String role) {
         UUID id = UUID.randomUUID();
@@ -130,4 +131,43 @@ class ErasureWorkspaceConsistencyIT extends AbstractPostgresIntegrationTest {
         assertThatThrownBy(() -> workspace.history(admin, "", 0))
                 .isInstanceOf(ForbiddenOperationException.class);
     }
+
+    @Test
+    void notificationsRespectIdentityTenantAndRevokedReviewGrant() {
+        jdbcTemplate.update("""
+                INSERT INTO public.erasure_review_actor_keys_v105(key_id,secret)
+                VALUES (1,decode(?,'hex')) ON CONFLICT(key_id) DO UPDATE SET secret=EXCLUDED.secret
+                """, TEST_PROOF_KEY);
+        UUID orgA = UUID.randomUUID(), orgB = UUID.randomUUID();
+        insertOrganization(orgA, "R24 A " + orgA, true);
+        insertOrganization(orgB, "R24 B " + orgB, true);
+        var reviewer = actor(orgA, "ADMIN");
+        var owner = actor(orgA, "USER");
+        var other = actor(orgA, "USER");
+        var foreign = actor(orgB, "USER");
+        UUID own = create(owner, true);
+        UUID self = create(reviewer, true);
+        create(foreign, true);
+        grant(reviewer, "LEGAL");
+        assertThat(notifications.feed(reviewer).reviewCount()).isNull();
+        grant(reviewer, "REVIEW");
+        var incoming = notifications.feed(reviewer);
+        assertThat(incoming.reviewCount()).isEqualTo(1L);
+        assertThat(incoming.review()).extracting(ErasureNotifications.Event::requestId).containsExactly(own);
+        assertThat(incoming.review()).noneMatch(event -> event.requestId().equals(self));
+        reviews.decide(own, 0, "r24-decision-" + UUID.randomUUID(),
+                new ErasureReviewTypes.DecisionBody("APPROVED_REVIEW_ONLY", "VERIFIED_OWNER_REQUEST"), reviewer);
+        assertThat(notifications.feed(owner).personal()).extracting(ErasureNotifications.Event::eventCode)
+                .containsExactly("APPROVED_REVIEW_ONLY");
+        assertThat(notifications.feed(other).personal()).isEmpty();
+        assertThat(notifications.feed(foreign).personal()).isEmpty();
+        assertThat(notifications.feed(reviewer).reviewCount()).isZero();
+        jdbcTemplate.update("""
+                UPDATE public.erasure_review_authorities_v105 SET enabled=false
+                WHERE organization_id=? AND user_id=? AND authority='REVIEW'
+                """, orgA, reviewer.getId());
+        assertThat(notifications.feed(reviewer).reviewCount()).isNull();
+        assertThat(notifications.feed(reviewer).review()).isEmpty();
+    }
+
 }

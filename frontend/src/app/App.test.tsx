@@ -54,6 +54,10 @@ vi.mock('../features/auth/state/AuthContext', () => ({
     AuthProvider: ({ children }: { children: ReactNode }) => children,
 }))
 
+vi.mock('../features/erasure/api/useErasureNotifications', () => ({
+    useErasureNotifications: () => null,
+}))
+
 vi.mock('../features/auth/state/useAuth', () => ({
     useAuth: () => authMock.state,
 }))

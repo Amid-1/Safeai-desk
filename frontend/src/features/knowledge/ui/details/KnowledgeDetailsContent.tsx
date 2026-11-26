@@ -13,6 +13,7 @@ import { EmptyState, ErrorState, LoadingState } from '../../../../shared/ui/Stat
 import ResizableScrollRegion from '../../../../shared/ui/ResizableScrollRegion'
 import KnowledgePagination from '../KnowledgePagination'
 import { formatBytes } from './knowledgeDocumentFormat'
+import ErasureRequestLink from '../../../../shared/ui/ErasureRequestLink'
 import { KnowledgeDocumentDeleteAction } from './KnowledgeDocumentDeleteAction'
 import type {KnowledgeDocumentDeletion} from '../../../../entities/knowledge/api/knowledgeDocumentDeletionApi'
 import {KnowledgeDeletionProgress} from '../KnowledgeDeletionProgress'
@@ -543,6 +544,7 @@ export function KnowledgeDetailsContent({
                                                             ? 'Скачиваем…'
                                                             : 'Скачать'}
                                                     </button>
+                                                    <ErasureRequestLink target={{ type: 'KNOWLEDGE_DOCUMENT', id: document.id, baseId: document.knowledgeBaseId }} />
                                                     {access?.canEditDocuments && (
                                                         <details className="knowledge-document-more">
                                                             <summary aria-label={`Действия с документом ${document.name}`}>

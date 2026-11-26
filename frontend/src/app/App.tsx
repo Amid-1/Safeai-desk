@@ -1,4 +1,7 @@
 // frontend/src/app/App.tsx
+import { ErasureEntryContext, ErasureCountsContext } from '../shared/ui/erasureEntryContext'
+import { useErasureNotifications } from '../features/erasure/api/useErasureNotifications'
+import { ErasureNotifications } from '../features/erasure/ui/ErasureNotifications'
 import { WorkspaceReturn, WorkspaceScrollRestore } from '../shared/ui/WorkspaceReturn'
 import {
     Fragment,
@@ -306,6 +309,8 @@ function AppLayout() {
     }
 
     const isAuthenticated = authStatus === 'authenticated' && currentUser?.enabled === true
+    const notificationScope = isAuthenticated && currentUser ? JSON.stringify([currentUser.id, currentUser.organizationId, [...currentUser.roles].sort()]) : null
+    const notifications = useErasureNotifications(notificationScope, location.key)
     const canAccessChat = hasAnyRole(
         currentUser,
         ['ADMIN', 'USER'],
@@ -363,6 +368,8 @@ function AppLayout() {
     }
 
     return (
+        <ErasureEntryContext.Provider value={notifications?.canRequest === true}>
+        <ErasureCountsContext.Provider value={notifications}>
         <div className={appClassName}>
             <a
                 className="skip-link"
@@ -481,6 +488,7 @@ function AppLayout() {
                                         || location.pathname.startsWith('/admin/erasure/') })}
                                     onClick={closeMenuOnNavigate}>
                                     Управление данными
+                                    {notifications?.registryCount != null && notifications.registryCount > 0 && <span className="erasure-menu-count" title={canAccessOrganizations ? "Ожидают рассмотрения или передачи на рассмотрение" : "Зарегистрированные заявки организации"}>{notifications.registryCount}</span>}
                                 </NavLink>
 
                                 <NavLink
@@ -495,6 +503,7 @@ function AppLayout() {
                     </nav>
 
                     <div className="topbar-user" id="account-controls">
+                        <ErasureNotifications key={notificationScope ?? "anonymous"} feed={notifications} />
                         {currentUser && displayRole && (
                             <div className="current-user">
                                 <span>{currentUser.email}</span>
@@ -684,6 +693,8 @@ function AppLayout() {
                 </Suspense>
             </main>
         </div>
+        </ErasureCountsContext.Provider>
+        </ErasureEntryContext.Provider>
     )
 }
 

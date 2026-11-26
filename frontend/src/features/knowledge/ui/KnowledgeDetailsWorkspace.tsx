@@ -1,5 +1,6 @@
 // frontend/src/features/knowledge/ui/KnowledgeDetailsWorkspace.tsx
 // Композиция карточки базы знаний, предпросмотра документов и диалогов версий.
+import ErasureRequestLink from '../../../shared/ui/ErasureRequestLink'
 import { useNavigate } from 'react-router-dom'
 import { KnowledgeBaseDeleteAction } from './KnowledgeBaseDeleteAction'
 import { ErrorState, LoadingState } from '../../../shared/ui/StateBlock'
@@ -45,6 +46,7 @@ export function KnowledgeDetailsWorkspace() {
                 <KnowledgeBaseDeleteAction base={data.base}
                     onAccepted={() => navigate('/knowledge')}/>
             </div>}
+            {(data.access?.administrator || data.access?.accessLevel === 'OWNER') && <ErasureRequestLink target={{ type: 'KNOWLEDGE_BASE', id: data.base.id }} />}
             <KnowledgeDetailsContent
                 base={data.base}
                 health={data.health}

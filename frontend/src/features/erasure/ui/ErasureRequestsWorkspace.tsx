@@ -1,5 +1,7 @@
 // frontend/src/features/erasure/ui/ErasureRequestsWorkspace.tsx
 import { useCallback, useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
+import { parseContextTarget, type ContextTarget } from '../../../shared/ui/erasureContextTarget'
 import { WorkspaceLink } from '../../../shared/ui/WorkspaceReturn'
 import { getChats, type Chat } from '../../chat/api/chatApi'
 import { getKnowledgeBases } from '../../../entities/knowledge/api/knowledgeApi'
@@ -31,11 +33,17 @@ const STATE_LABELS: Record<CaseView['state'], string> = {
 type Props = { user: { id: string; organizationId: string; roles: string[] } }
 
 export function ErasureRequestsWorkspace({ user }: Props) {
+    const location = useLocation()
+    const target = parseContextTarget(location.state?.erasureTarget)
+    return <ErasureRequestForm key={location.key + ':' + user.id + ':' + user.organizationId + ':' + [...user.roles].sort().join(',')} user={user} initialTarget={target} />
+}
+
+function ErasureRequestForm({ user, initialTarget }: Props & { initialTarget: ContextTarget | null }) {
     const [items, setItems] = useState<CaseView[]>([])
     const [listFilter, setListFilter] = useState<'ALL' | CaseView['state']>('ALL')
-    const [type, setType] = useState<ResourceType>('USER_ACCOUNT')
-    const [resourceId, setResourceId] = useState('')
-    const [knowledgeBaseId, setKnowledgeBaseId] = useState('')
+    const [type, setType] = useState<ResourceType>(initialTarget?.type ?? 'USER_ACCOUNT')
+    const [resourceId, setResourceId] = useState(initialTarget?.id ?? '')
+    const [knowledgeBaseId, setKnowledgeBaseId] = useState(initialTarget?.baseId ?? '')
     const [chats, setChats] = useState<Chat[]>([])
     const [bases, setBases] = useState<KnowledgeBase[]>([])
     const [documents, setDocuments] = useState<KnowledgeDocument[]>([])
@@ -130,6 +138,7 @@ export function ErasureRequestsWorkspace({ user }: Props) {
             <div className="erasure-columns">
                 <section className="erasure-panel" aria-labelledby="new-case-title">
                     <h2 id="new-case-title">Новая заявка</h2>
+                    {initialTarget && <p className="erasure-muted">Объект выбран из карточки. Проверьте запрос перед созданием черновика.</p>}
                     <p className="erasure-muted">Выберите объект и проверьте последствия. До подачи
                         запроса будет создан отдельный черновик.</p>
                     <label htmlFor="erasure-resource-type">Что вы хотите удалить</label>
@@ -148,6 +157,7 @@ export function ErasureRequestsWorkspace({ user }: Props) {
                         <select id="erasure-chat-select" disabled={pending} value={resourceId}
                             onChange={e => { setResourceId(e.target.value); setPreview(null) }}>
                             <option value="">Выберите чат</option>
+                            {resourceId && !chats.some(chat => chat.id === resourceId) && <option value={resourceId}>Чат из карточки</option>}
                             {chats.map(chat => <option key={chat.id} value={chat.id}>
                                 {chat.title || 'Без названия'}
                             </option>)}
@@ -163,6 +173,7 @@ export function ErasureRequestsWorkspace({ user }: Props) {
                                 setPreview(null)
                             }}>
                             <option value="">Выберите базу знаний</option>
+                            {(type === 'KNOWLEDGE_BASE' ? resourceId : knowledgeBaseId) && !bases.some(base => base.id === (type === 'KNOWLEDGE_BASE' ? resourceId : knowledgeBaseId)) && <option value={type === 'KNOWLEDGE_BASE' ? resourceId : knowledgeBaseId}>База из карточки</option>}
                             {bases.map(base => <option key={base.id} value={base.id}>{base.name}</option>)}
                         </select>
                     </>}
@@ -171,6 +182,7 @@ export function ErasureRequestsWorkspace({ user }: Props) {
                         <select id="erasure-doc-select" disabled={pending} value={resourceId}
                             onChange={e => { setResourceId(e.target.value); setPreview(null) }}>
                             <option value="">Выберите документ</option>
+                            {resourceId && !documents.some(doc => doc.id === resourceId) && <option value={resourceId}>Документ из карточки</option>}
                             {documents.map(doc => <option key={doc.id} value={doc.id}>{doc.name}</option>)}
                         </select>
                         <p className="erasure-muted">Показаны первые 100 доступных документов.</p>

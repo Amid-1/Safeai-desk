@@ -1,6 +1,7 @@
 // frontend/src/features/erasure/ui/ErasureRequestsWorkspace.test.tsx
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { ErasureRequestsWorkspace } from './ErasureRequestsWorkspace'
 import * as api from '../api/erasureApi'
 
@@ -33,7 +34,7 @@ describe('R1a user interface', () => {
     })
 
     it('clearly refuses to promise physical deletion', async () => {
-        render(<ErasureRequestsWorkspace user={user} />)
+        render(<MemoryRouter><ErasureRequestsWorkspace user={user} /></MemoryRouter>)
         expect(await screen.findByText('Заявок пока нет.')).toBeInTheDocument()
         expect(screen.getByText(/Исполнение пока не включено/)).toBeInTheDocument()
         expect(screen.getByText(/не будут физически удалены/)).toBeInTheDocument()
@@ -41,13 +42,13 @@ describe('R1a user interface', () => {
     })
 
     it('does not offer tenant offboarding to ordinary users', async () => {
-        render(<ErasureRequestsWorkspace user={user} />)
+        render(<MemoryRouter><ErasureRequestsWorkspace user={user} /></MemoryRouter>)
         await screen.findByText('Заявок пока нет.')
         expect(screen.queryByRole('option', { name: 'Моя организация' })).not.toBeInTheDocument()
     })
 
     it('disables preview when document id is missing', async () => {
-        render(<ErasureRequestsWorkspace user={user} />)
+        render(<MemoryRouter><ErasureRequestsWorkspace user={user} /></MemoryRouter>)
         await screen.findByText('Заявок пока нет.')
         fireEvent.change(screen.getByLabelText('Что вы хотите удалить'),
             { target: { value: 'KNOWLEDGE_DOCUMENT' } })
@@ -56,20 +57,20 @@ describe('R1a user interface', () => {
 
     it('shows an error instead of claiming success when loading fails', async () => {
         vi.mocked(api.loadMine).mockRejectedValue(new Error('connection failed'))
-        render(<ErasureRequestsWorkspace user={user} />)
+        render(<MemoryRouter><ErasureRequestsWorkspace user={user} /></MemoryRouter>)
         await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
         expect(screen.queryByText('Заявка зарегистрирована.')).not.toBeInTheDocument()
     })
 
     it('does not expose submit or withdraw actions without a case', async () => {
-        render(<ErasureRequestsWorkspace user={user} />)
+        render(<MemoryRouter><ErasureRequestsWorkspace user={user} /></MemoryRouter>)
         await screen.findByText('Заявок пока нет.')
         expect(screen.queryByRole('button', { name: 'Подать заявку' })).not.toBeInTheDocument()
         expect(screen.queryByRole('button', { name: 'Отозвать' })).not.toBeInTheDocument()
     })
 
     it('offers only server-returned chat choices, never manual UUID input', async () => {
-        render(<ErasureRequestsWorkspace user={user} />)
+        render(<MemoryRouter><ErasureRequestsWorkspace user={user} /></MemoryRouter>)
         await screen.findByText('Заявок пока нет.')
         fireEvent.change(screen.getByLabelText('Что вы хотите удалить'),
             { target: { value: 'CHAT' } })
@@ -87,11 +88,23 @@ describe('R1a user interface', () => {
             previewDigest: 'a'.repeat(64), expectedResourceVersion: 0,
             expiresAt: '2030-01-01T12:00:00Z', executionAvailable: false,
         })
-        render(<ErasureRequestsWorkspace user={user} />)
+        render(<MemoryRouter><ErasureRequestsWorkspace user={user} /></MemoryRouter>)
         await screen.findByText('Заявок пока нет.')
         fireEvent.click(screen.getByRole('button', { name: 'Проверить запрос' }))
         expect(await screen.findByText(/Предпросмотр готов/)).toBeInTheDocument()
         expect(screen.getByRole('button', { name: 'Создать черновик' })).toBeEnabled()
         expect(vi.mocked(api.createDraft)).not.toHaveBeenCalled()
     })
+    it('prefills a contextual chat but does not submit, preview or create automatically', async () => {
+        const id = 'a8517423-018f-412b-95a2-9c79748bf19a'
+        render(<MemoryRouter initialEntries={[{ pathname: '/my/erasure-requests', state: { erasureTarget: { type: 'CHAT', id } } }]}>
+            <ErasureRequestsWorkspace user={user} />
+        </MemoryRouter>)
+        await screen.findByRole('option', { name: 'Рабочий чат' })
+        expect(screen.getByLabelText('Мой чат')).toHaveValue(id)
+        expect(api.previewCase).not.toHaveBeenCalled()
+        expect(api.createDraft).not.toHaveBeenCalled()
+        expect(api.submitDraft).not.toHaveBeenCalled()
+    })
+
 })

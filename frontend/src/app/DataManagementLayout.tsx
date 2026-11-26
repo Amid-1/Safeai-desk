@@ -1,12 +1,14 @@
 // frontend/src/app/DataManagementLayout.tsx
-import { useEffect, useRef } from 'react'
+import { useContext, useEffect, useRef } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../features/auth/state/useAuth'
 import { useWorkspaceCapabilities } from '../features/erasure/api/useWorkspaceCapabilities'
+import { ErasureCountsContext } from '../shared/ui/erasureEntryContext'
 import DataManagementIcon from '../shared/ui/DataManagementIcon'
 import './DataManagementLayout.css'
 
 export default function DataManagementLayout() {
+    const counts = useContext(ErasureCountsContext)
     const { currentUser } = useAuth()
     const location = useLocation()
     const platform = currentUser?.roles.includes('SUPER_ADMIN') === true
@@ -29,10 +31,10 @@ export default function DataManagementLayout() {
         <div className="data-management-body">
             <nav className="data-management-nav" aria-label="Управление данными">
                 {(platform || capabilities?.tenantRegistry) && <NavLink end to="/admin/erasure"><DataManagementIcon name="overview"/>Обзор</NavLink>}
-                {capabilities?.platform && <NavLink to="/admin/erasure/registry"><DataManagementIcon name="inbox"/>Заявки</NavLink>}
-                {!platform && capabilities?.tenantRegistry && <NavLink to="/admin/erasure/intake"><DataManagementIcon name="inbox"/>Заявки</NavLink>}
+                {capabilities?.platform && <NavLink to="/admin/erasure/registry"><DataManagementIcon name="inbox"/>Заявки{counts?.registryCount != null && counts.registryCount > 0 && <span className="erasure-menu-count" title={platform ? "Ожидают рассмотрения или передачи на рассмотрение" : "Зарегистрированные заявки"}>{counts.registryCount}</span>}</NavLink>}
+                {!platform && capabilities?.tenantRegistry && <NavLink to="/admin/erasure/intake"><DataManagementIcon name="inbox"/>Заявки{counts?.registryCount != null && counts.registryCount > 0 && <span className="erasure-menu-count" title={platform ? "Ожидают рассмотрения или передачи на рассмотрение" : "Зарегистрированные заявки"}>{counts.registryCount}</span>}</NavLink>}
                 {!capabilities && platform && <span className="data-management-unavailable" aria-disabled="true"><DataManagementIcon name="inbox"/>Заявки</span>}
-                {capabilities?.reviewQueue && <NavLink to="/admin/erasure/requests"><DataManagementIcon name="review"/>Согласования</NavLink>}
+                {capabilities?.reviewQueue && <NavLink to="/admin/erasure/requests"><DataManagementIcon name="review"/>Согласования{counts?.reviewCount != null && counts.reviewCount > 0 && <span className="erasure-menu-count" title="Ожидают решения, кроме собственных заявок">{counts.reviewCount}</span>}</NavLink>}
                 {platform && <NavLink to="/admin/retention"><DataManagementIcon name="database"/>Политика хранения</NavLink>}
                 {(capabilities?.platform || capabilities?.reviewQueue) &&
                     <NavLink to="/admin/erasure/history"><DataManagementIcon name="history"/>История изменений</NavLink>}

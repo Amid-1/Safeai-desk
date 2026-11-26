@@ -1,4 +1,5 @@
 // frontend/src/features/chat/controller/ChatConversationHeader.tsx
+import ErasureRequestLink from '../../../shared/ui/ErasureRequestLink'
 import type { ChatPageController } from './useChatPageController'
 import ChatTitleEditor from '../ui/ChatTitleEditor'
 import { CHAT_TRUST_ITEMS } from './chatTrustInfo'
@@ -24,6 +25,7 @@ export default function ChatConversationHeader({ controller }: Props) {
                 />
             </div>
             <div className="chat-panel__indicators">
+                <ErasureRequestLink target={{ type: 'CHAT', id: activeChat.id }} />
                 {lastAssistantModel && (
                     <span
                         className={modelIsMock

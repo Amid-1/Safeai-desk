@@ -2,13 +2,15 @@ openapi: 3.1.0
 jsonSchemaDialect: https://spec.openapis.org/oas/3.1/dialect/base
 info:
   title: SafeAI Desk — Erasure Case Management API
-  version: 1.2.0-design-r2.3
-  summary: Hardened design plus R2.3 workspace candidate; not a verified runtime contract
+  version: 1.2.0-design-r2.4.1
+  summary: Canonical hardened design with R2.3 workspace and R2.4 notification candidates; not a verified runtime contract
   description: |
     DESIGN ONLY / NO PRODUCTION GO.
     This specification does not enable any destructive endpoint.
     R1a registers DRAFT/SUBMITTED/WITHDRAWN; R1b registers independent review and holds.
-    R2.3 workspace is a candidate, not acceptance. Physical execution remains disabled.
+    R2.3 workspace and R2.4 notifications are candidates, not acceptance. Physical execution remains disabled.
+    This file is the single manually maintained specification for this design.
+    Any workspace-only view must be derived from this file, not maintained independently.
     Original paths/schemas are TARGET_DESIGN_NOT_RUNTIME unless explicitly marked otherwise.
     Do not generate a runtime client from this combined design document.
     Every transition checks fresh server-side actor, tenant, resource version, hold, policy
@@ -39,10 +41,19 @@ x-safeai-security-notes: |
   require the existing CSRF protection; never invent a CSRF exemption or accept client
   roles/tenant.
   Security requirements in OpenAPI alone do not enforce RBAC, RLS, step-up or independence.
+  Workspace reads must derive authority and scope from fresh server-side identity and grants.
+  Feature flags and capabilities never grant authority or replace object-level authorization.
+  Failure to establish authority must deny access; failures to load data must not be presented
+  as successful empty results or zero counters.
+  All workspace responses containing case metadata must use Cache-Control: no-store.
+  These are mandatory acceptance requirements, not claims of verified runtime behavior.
 x-safeai-release-gates:
   R1: Case intake, preview, approval registration and read only; all execution flags OFF.
   R2: User/tenant/platform UI and read-only projections; notifications require verification; no destructive dispatch.
   R2_3: Registry summary/detail/history and role acceptance; candidate, no destructive dispatch.
+  R2_4: Scoped in-app notification feed and counters; candidate, no destructive dispatch.
+    Requires role/tenant isolation, grant revocation, self-exclusion for REVIEW, nullable counter
+    handling, no-store HTTP checks and frontend/backend/CI acceptance.
   R3_PLUS: Individually reviewed executor/worker/storage/legal evidence per resource type.
 x-safeai-runtime-route-map:
   R1a:
@@ -58,7 +69,51 @@ x-safeai-runtime-route-map:
   R2.3:
     status: CANDIDATE_NOT_ACCEPTED
     notes: Workspace read contract below, pending Maven/real PostgreSQL/HTTP/CI. No runtime mutation schema changes.
+  R2.4:
+    status: CANDIDATE_NOT_ACCEPTED
+    notes: Scoped notification feed only. Counts describe current work, not unread messages.
+      No persistent read receipts, external delivery or destructive execution are specified.
+      Require real PostgreSQL, HTTP and CI evidence before acceptance.
 paths:
+  /api/erasure/requests/notifications:
+    get:
+      tags:
+      - Workspace
+      summary: Уведомления по заявкам и счётчики
+      operationId: workspaceNotificationsR24
+      description: Read-only. Server live-role and feature-flag checks; personal events
+        limited to own identity and tenant; review events only for REVIEW in own tenant
+        excluding own cases. Counts are not unread counts. No deletion.
+      x-safeai-contract-status: R2_4_CANDIDATE_NOT_ACCEPTED
+      x-safeai-release-phase: R2_READ_ONLY
+      x-safeai-security-acceptance:
+        - Recheck live roles, tenant, feature flags and independent REVIEW grant.
+        - Deny cross-tenant disclosure and exclude the reviewer's own requests from reviewer notifications.
+        - LEGAL alone must not enable REVIEW notifications.
+        - Never disclose raw resource contents, requester identity, or secret material in this feed.
+        - Null counters must not be converted to zero or presented as successful empty data.
+        - Do not treat notifications or counters as a grant to mutate any case.
+      x-safeai-cache-control: no-store
+      responses:
+        '200':
+          description: Scoped notification feed
+          headers:
+            Cache-Control:
+              required: true
+              description: Required acceptance contract; no-store directive must be present.
+              schema:
+                type: string
+                pattern: '(?:^|,)[ \t]*[Nn][Oo]-[Ss][Tt][Oo][Rr][Ee][ \t]*(?:,|$)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceNotificationsR24'
+        '401':
+          description: Authentication required
+        '403':
+          description: Forbidden
+        '500':
+          description: Sanitized server error
   /api/erasure/capabilities:
     get:
       tags:
@@ -2997,9 +3052,17 @@ paths:
       x-safeai-contract-status: R2_2_SOURCE_OBSERVED_NOT_ACCEPTED
       x-safeai-release-phase: R2_READ_ONLY
       parameters: []
+      x-safeai-cache-control: no-store
       responses:
         '200':
           description: Read-only result; does not prove deletion.
+          headers:
+            Cache-Control:
+              required: true
+              description: Required acceptance contract; no-store directive must be present.
+              schema:
+                type: string
+                pattern: '(?:^|,)[ \t]*[Nn][Oo]-[Ss][Tt][Oo][Rr][Ee][ \t]*(?:,|$)'
           content:
             application/json:
               schema:
@@ -3025,9 +3088,17 @@ paths:
       x-safeai-contract-status: R2_1_SOURCE_OBSERVED_NOT_ACCEPTED
       x-safeai-release-phase: R2_READ_ONLY
       parameters: []
+      x-safeai-cache-control: no-store
       responses:
         '200':
           description: Read-only result; does not prove deletion.
+          headers:
+            Cache-Control:
+              required: true
+              description: Required acceptance contract; no-store directive must be present.
+              schema:
+                type: string
+                pattern: '(?:^|,)[ \t]*[Nn][Oo]-[Ss][Tt][Oo][Rr][Ee][ \t]*(?:,|$)'
           content:
             application/json:
               schema:
@@ -3054,9 +3125,17 @@ paths:
       x-safeai-contract-status: R2_3_CANDIDATE_NOT_ACCEPTED
       x-safeai-release-phase: R2_READ_ONLY
       parameters: []
+      x-safeai-cache-control: no-store
       responses:
         '200':
           description: Read-only result; does not prove deletion.
+          headers:
+            Cache-Control:
+              required: true
+              description: Required acceptance contract; no-store directive must be present.
+              schema:
+                type: string
+                pattern: '(?:^|,)[ \t]*[Nn][Oo]-[Ss][Tt][Oo][Rr][Ee][ \t]*(?:,|$)'
           content:
             application/json:
               schema:
@@ -3112,9 +3191,17 @@ paths:
           minimum: 0
           maximum: 100000
           default: 0
+      x-safeai-cache-control: no-store
       responses:
         '200':
           description: Read-only result; does not prove deletion.
+          headers:
+            Cache-Control:
+              required: true
+              description: Required acceptance contract; no-store directive must be present.
+              schema:
+                type: string
+                pattern: '(?:^|,)[ \t]*[Nn][Oo]-[Ss][Tt][Oo][Rr][Ee][ \t]*(?:,|$)'
           content:
             application/json:
               schema:
@@ -3146,9 +3233,17 @@ paths:
         schema:
           type: string
           format: uuid
+      x-safeai-cache-control: no-store
       responses:
         '200':
           description: Read-only result; does not prove deletion.
+          headers:
+            Cache-Control:
+              required: true
+              description: Required acceptance contract; no-store directive must be present.
+              schema:
+                type: string
+                pattern: '(?:^|,)[ \t]*[Nn][Oo]-[Ss][Tt][Oo][Rr][Ee][ \t]*(?:,|$)'
           content:
             application/json:
               schema:
@@ -3203,9 +3298,17 @@ paths:
           minimum: 0
           maximum: 100000
           default: 0
+      x-safeai-cache-control: no-store
       responses:
         '200':
           description: Read-only result; does not prove deletion.
+          headers:
+            Cache-Control:
+              required: true
+              description: Required acceptance contract; no-store directive must be present.
+              schema:
+                type: string
+                pattern: '(?:^|,)[ \t]*[Nn][Oo]-[Ss][Tt][Oo][Rr][Ee][ \t]*(?:,|$)'
           content:
             application/json:
               schema:
@@ -3245,9 +3348,17 @@ paths:
           minimum: 0
           maximum: 100000
           default: 0
+      x-safeai-cache-control: no-store
       responses:
         '200':
           description: Read-only result; does not prove deletion.
+          headers:
+            Cache-Control:
+              required: true
+              description: Required acceptance contract; no-store directive must be present.
+              schema:
+                type: string
+                pattern: '(?:^|,)[ \t]*[Nn][Oo]-[Ss][Tt][Oo][Rr][Ee][ \t]*(?:,|$)'
           content:
             application/json:
               schema:
@@ -3367,6 +3478,95 @@ components:
       schema:
         $ref: '#/components/schemas/Scope'
   schemas:
+    WorkspaceNotificationsR24:
+      type: object
+      additionalProperties: false
+      required:
+      - canRequest
+      - registryCount
+      - reviewCount
+      - personal
+      - review
+      properties:
+        canRequest:
+          type: boolean
+        registryCount:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          description: 'Platform: submitted without review or pending; tenant: submitted
+            in own organization; null if not visible or unavailable. Zero means a known empty count.'
+        reviewCount:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          description: Pending cases of own organization excluding own requests; null
+            without REVIEW or if unavailable. Zero means a known empty count.
+        personal:
+          type: array
+          maxItems: 20
+          items:
+            allOf:
+              - $ref: '#/components/schemas/WorkspaceNotificationEventR24'
+              - properties:
+                  audience:
+                    const: PERSONAL
+        review:
+          type: array
+          maxItems: 20
+          items:
+            allOf:
+              - $ref: '#/components/schemas/WorkspaceNotificationEventR24'
+              - properties:
+                  audience:
+                    const: REVIEW
+    WorkspaceNotificationEventR24:
+      type: object
+      additionalProperties: false
+      required:
+      - eventId
+      - requestId
+      - eventCode
+      - createdAt
+      - audience
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        requestId:
+          type: string
+          format: uuid
+        eventCode:
+          type: string
+          enum:
+          - APPROVED_REVIEW_ONLY
+          - REJECTED
+          - NEEDS_INFORMATION
+          - SUBMITTED
+          - INFORMATION_PROVIDED
+        createdAt:
+          type: string
+          format: date-time
+        audience:
+          type: string
+          enum:
+          - PERSONAL
+          - REVIEW
+      allOf:
+        - if:
+            properties:
+              audience:
+                const: PERSONAL
+          then:
+            properties:
+              eventCode:
+                enum: [APPROVED_REVIEW_ONLY, REJECTED, NEEDS_INFORMATION]
+          else:
+            properties:
+              eventCode:
+                enum: [SUBMITTED, INFORMATION_PROVIDED]
     WorkspaceCapabilitiesR23:
       type: object
       required:

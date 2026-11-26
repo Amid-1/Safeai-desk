@@ -1,4 +1,5 @@
 // frontend/src/features/knowledge/ui/KnowledgeBaseCard.tsx
+import ErasureRequestLink from '../../../shared/ui/ErasureRequestLink'
 import type {
     KnowledgeBase,
 } from '../../../entities/knowledge/api/knowledgeApi'
@@ -202,6 +203,7 @@ function KnowledgeBaseCard({
                         onAccepted={() => onDeletionAccepted?.()}/>
                 </div>
             )}
+            {canManage && <ErasureRequestLink target={{ type: 'KNOWLEDGE_BASE', id: knowledgeBase.id }} />}
             <Link className="knowledge-card__open" to={`/knowledge/${knowledgeBase.id}`}>Открыть базу</Link>
         </article>
     )
