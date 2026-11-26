@@ -36,6 +36,13 @@ describe('R1b non-destructive review API', () => {
         expect(opts?.headers).toEqual(expect.objectContaining({ 'If-Match': '"1"',
             'Idempotency-Key': expect.any(String) }))
     })
+    it('loads platform aggregates independently of reviewer routes', async () => {
+        const summary = { total: 5, pending: 2, held: 1, needsInformation: 1 }
+        fakeRequest.mockResolvedValueOnce(summary)
+        expect(await loadReviewSummary()).toEqual(summary)
+        expect(fakeRequest).toHaveBeenCalledWith('/api/admin/erasure/overview',
+            { method: 'GET', signal: undefined })
+    })
     it('rejects fake overview counts', async () => {
         fakeRequest.mockResolvedValueOnce({ total: -1, pending: 0, held: 0, needsInformation: 0 })
         await expect(loadReviewSummary()).rejects.toThrow('Некорректная версия')

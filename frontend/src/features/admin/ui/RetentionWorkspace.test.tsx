@@ -32,20 +32,20 @@ describe('Хранение и удаление: понятная политик�
 
     it('показывает краткую сводку и готовность для каждой категории без ложного обещания удаления', async () => {
         mount()
-        expect(await screen.findByText('Хранение и удаление')).toBeInTheDocument()
-        expect(screen.getByText(/2 из 2 направлений разрешены политикой/)).toBeInTheDocument()
+        expect(await screen.findByText('Политика хранения')).toBeInTheDocument()
+        expect(screen.getByText(/2 из 2 направлений разрешены для отдельных операций/)).toBeInTheDocument()
         expect(screen.getByText(/3 из 3 типов настроены/)).toBeInTheDocument()
         expect(screen.getAllByText('Настроено')).toHaveLength(3)
         expect(screen.getByText(/Наличие настроек и обработчика не подтверждает/))
             .toHaveTextContent(/ни его работоспособность, ни фактическое удаление данных/)
-        expect(screen.queryByText('Новые операции удаления могут быть отклонены')).not.toBeInTheDocument()
+        expect(screen.queryByText('Новые операции удаления могут быть отклонены.')).not.toBeInTheDocument()
     })
 
     it('предупреждает об ожидании при открытом приёме, если сервер не подготовлен', async () => {
         vi.mocked(loadRetention).mockResolvedValue({...status, chat: notPrepared,
             document: {...prepared, workerInitialized: false}})
         mount()
-        expect(await screen.findByText('Новые операции удаления могут быть отклонены')).toBeInTheDocument()
+        expect(await screen.findByText('Новые операции удаления могут быть отклонены.')).toBeInTheDocument()
         expect(screen.getByText(/не принимаются автоматически в очередь/)).toBeInTheDocument()
         expect(screen.getByText(/1 из 3 типов настроены/)).toBeInTheDocument()
         expect(screen.getByText('Не завершены настройки и подготовка сервиса')).toBeInTheDocument()
@@ -136,14 +136,15 @@ describe('Хранение и удаление: понятная политик�
     it('не отключает ранее принятые запросы при приостановленной политике', async () => {
         vi.mocked(loadRetention).mockResolvedValue({...status, chatAllowed: false, knowledgeAllowed: false})
         mount()
-        expect(await screen.findByText(/0 из 2 направлений разрешены политикой/)).toBeInTheDocument()
-        expect(screen.queryByText('Новые операции удаления могут быть отклонены')).not.toBeInTheDocument()
+        expect(await screen.findByText(/0 из 2 направлений разрешены для отдельных операций/)).toBeInTheDocument()
+        expect(screen.queryByText('Новые операции удаления могут быть отклонены.')).not.toBeInTheDocument()
         expect(screen.getByText(/Уже принятые операции не отменяются/)).toBeInTheDocument()
     })
 
     it('показывает недоступность удаления организаций без дублирования и отдельные сроки пользователей', async () => {
         mount()
-        expect(await screen.findByText(/Необратимое удаление ещё не реализовано/)).toBeInTheDocument()
+        fireEvent.click(await screen.findByText('Кто может выполнять отдельные операции удаления'))
+        expect(screen.getByText(/Необратимое удаление ещё не реализовано/)).toBeInTheDocument()
         expect(screen.getByText('7 дн.')).toBeInTheDocument()
         expect(screen.getByRole('link', {name: 'Открыть пользователей'}))
             .toHaveAttribute('href', '/admin/users')
@@ -153,7 +154,7 @@ describe('Хранение и удаление: понятная политик�
 
     it('открывает историю с реально поддерживаемым серверным фильтром события', async () => {
         mount()
-        const history = await screen.findByRole('link', {name: /Открыть историю изменений/})
+        const history = await screen.findByRole('link', {name: /История политики хранения/})
         expect(history).toHaveAttribute('href', '/admin/audit?eventType=RETENTION_POLICY_CHANGED')
         expect(screen.getByText('Кто и когда менял правила приёма запросов на удаление.'))
             .toBeInTheDocument()
@@ -187,21 +188,32 @@ describe('Точность персонального доступа и безо
         vi.mocked(loadRetention).mockResolvedValue(status)
     })
 
-    it('показывает только две сводные карточки и не обещает немедленное стирание', async () => {
+    it('показывает компактную таблицу и не обещает немедленное стирание', async () => {
         mount()
-        expect(await screen.findByText('Политика платформы')).toBeInTheDocument()
-        expect(screen.getByText('Техническая подготовка')).toBeInTheDocument()
-        expect(screen.queryByText('Ранее созданные запросы')).not.toBeInTheDocument()
-        expect(screen.getByText(/Физическое удаление подтверждается отдельно/)).toBeInTheDocument()
+        expect(await screen.findByText(/2 из 2 направлений разрешены для отдельных операций/)).toBeInTheDocument()
+        expect(screen.getByText(/3 из 3 типов настроены/)).toBeInTheDocument()
+        expect(screen.getByRole('table')).toBeInTheDocument()
+        expect(screen.getByText(/Наличие настроек и обработчика не подтверждает/)).toBeInTheDocument()
+    })
+
+    it('оставляет связанные разделы доступными при закрытой справке', async () => {
+        mount()
+        const summary = await screen.findByText('Кто может выполнять отдельные операции удаления')
+        expect(summary.closest('details')).not.toHaveAttribute('open')
+        expect(screen.getByRole('link', {name:'Открыть пользователей'})).toBeVisible()
+        expect(screen.getByRole('link', {name:'Открыть организации'})).toBeVisible()
+        expect(screen.getByRole('link', {name:/История политики хранения/})).toBeVisible()
     })
 
     it('показывает действующие роли, но не создаёт фиктивные разрешения для отдельных людей', async () => {
         mount()
-        expect(await screen.findByRole('heading', {name: 'Кто может запросить удаление'})).toBeInTheDocument()
-        expect(screen.getByText(/Эта страница не выдаёт индивидуальных разрешений/)).toBeInTheDocument()
+        const summary = await screen.findByText('Кто может выполнять отдельные операции удаления')
+        expect(summary.closest('details')).not.toHaveAttribute('open')
+        fireEvent.click(summary)
+        expect(screen.getByText(/а не права подачи личных обращений/)).toBeInTheDocument()
         expect(screen.getByText(/не являются автоматическим разрешением на стирание/)).toBeInTheDocument()
-        expect(screen.getByRole('link', {name: 'Открыть чаты'})).toHaveAttribute('href', '/chat')
-        expect(screen.getAllByRole('link', {name: 'Открыть базы знаний'})).toHaveLength(2)
+        expect(screen.queryByRole('link', {name: 'Открыть чаты'})).not.toBeInTheDocument()
+        expect(screen.queryByRole('link', {name: 'Открыть базы знаний'})).not.toBeInTheDocument()
         expect(screen.getByRole('link', {name: 'Открыть организации'}))
             .toHaveAttribute('href', '/admin/organizations')
     })

@@ -1,6 +1,6 @@
 // frontend/src/features/erasure/ui/ErasureRequestsWorkspace.tsx
 import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { WorkspaceLink } from '../../../shared/ui/WorkspaceReturn'
 import { getChats, type Chat } from '../../chat/api/chatApi'
 import { getKnowledgeBases } from '../../../entities/knowledge/api/knowledgeApi'
 import type { KnowledgeBase } from '../../../entities/knowledge/api/knowledgeApi'
@@ -120,7 +120,7 @@ export function ErasureRequestsWorkspace({ user }: Props) {
             <div className="erasure-warning" role="note">
                 <strong>Исполнение пока не включено.</strong>
                 <span> Система регистрирует и рассматривает обращения. Ни чат,
-                    ни документ, ни учётная запись не будут физически удалены на этапе R1b.</span>
+                    ни документ, ни учётная запись не будут физически удалены.</span>
             </div>
             <ol className="erasure-steps" aria-label="Как подать запрос">
                 <li><span>1</span><div><strong>Выберите объект</strong><small>Доступен только ваш объект</small></div></li>
@@ -243,10 +243,10 @@ export function ErasureRequestsWorkspace({ user }: Props) {
                                             {STATE_LABELS[item.state]}</span>
                                     </div>
                                     <small>Создана: {new Date(item.createdAt).toLocaleString('ru-RU')}</small>
-                                    {item.state === 'SUBMITTED' && <Link
+                                    {item.state === 'SUBMITTED' && <WorkspaceLink
                                         to={`/my/erasure-requests/${item.requestId}`}>
                                         История рассмотрения
-                                    </Link>}
+                                    </WorkspaceLink>}
                                     <div className="erasure-actions">
                                         {item.state === 'DRAFT' && (
                                             <button type="button" disabled={pending}

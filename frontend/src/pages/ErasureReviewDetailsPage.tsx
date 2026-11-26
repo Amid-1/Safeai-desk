@@ -1,6 +1,8 @@
 // frontend/src/pages/ErasureReviewDetailsPage.tsx
+import { WorkspaceReturn } from '../shared/ui/WorkspaceReturn'
+// frontend/src/pages/ErasureReviewDetailsPage.tsx
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { useAuth } from '../features/auth/state/useAuth'
 import { getApiErrorMessage } from '../shared/api/http'
 import {
@@ -71,13 +73,16 @@ export default function ErasureReviewDetailsPage({ reviewer = false }: Props) {
         setLoading(true)
         setError(null)
         void reload(controller.signal).catch(err => {
-            if (!controller.signal.aborted) setError(getApiErrorMessage(err, 'Не удалось получить заявку.'))
+            if (!controller.signal.aborted) {
+                setCaseData(null); setHistory([]); setAccess({ reviewer: false, legal: false })
+                setError(getApiErrorMessage(err, 'Не удалось получить заявку.'))
+            }
         }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
         return () => controller.abort()
     }, [reload, reloadKey])
 
     async function action(task: (item: ReviewView) => Promise<ReviewView>) {
-        if (!caseData || busy) return
+        if (!caseData || busy || loading || error) return
         setBusy(true)
         setError(null)
         setNotice(null)
@@ -86,6 +91,8 @@ export default function ErasureReviewDetailsPage({ reviewer = false }: Props) {
             setCaseData(next)
             setNotice('Действие зарегистрировано. Физическое удаление не начиналось.')
             try { await reload() } catch {
+                setCaseData(null); setHistory([]); setAccess({ reviewer: false, legal: false })
+                setError('Данные и полномочия не подтверждены. Обновите карточку.')
                 setNotice('Действие зарегистрировано, но история пока не обновилась. Обновите карточку.')
             }
         } catch (err) {
@@ -95,19 +102,19 @@ export default function ErasureReviewDetailsPage({ reviewer = false }: Props) {
 
     const back = reviewer ? '/admin/erasure/requests' : '/my/erasure-requests'
     if (!requestId) return <ErrorState message="Неверный идентификатор заявки." />
-    const mayReview = !!caseData && reviewer && access.reviewer && !caseData.holdActive
+    const mayReview = !error && !!caseData && reviewer && access.reviewer && !caseData.holdActive
         && caseData.baseState === 'SUBMITTED' && caseData.reviewState === 'PENDING'
         && caseData.requesterUserId !== currentUser?.id
-    const mayHold = !!caseData && reviewer && access.legal && caseData.baseState === 'SUBMITTED'
+    const mayHold = !error && !!caseData && reviewer && access.legal && caseData.baseState === 'SUBMITTED'
         && caseData.reviewState === 'PENDING' && caseData.requesterUserId !== currentUser?.id
-    const mayClarify = !!caseData && !reviewer && caseData.baseState === 'SUBMITTED'
+    const mayClarify = !error && !!caseData && !reviewer && caseData.baseState === 'SUBMITTED'
         && caseData.reviewState === 'NEEDS_INFORMATION'
     const isFinal = caseData ? FINAL_STATES.has(caseData.reviewState) : false
 
     return <section className="er2-page page er2-case-page">
-        <Link to={back} className="er2-back">← Вернуться к заявкам</Link>
+        <WorkspaceReturn fallback={back} />
         <header className="er2-heading er2-heading--row">
-            <div><div className="er2-eyebrow">УПРАВЛЕНИЕ ДАННЫМИ / КАРТОЧКА ЗАЯВКИ</div>
+            <div>
                 <h1>Рассмотрение заявки</h1>
                 <p>История, основания решения и юридические ограничения в одном месте.</p></div>
             <button type="button" className="er2-action" disabled={loading || busy}
@@ -137,10 +144,10 @@ export default function ErasureReviewDetailsPage({ reviewer = false }: Props) {
             <div className="er2-details-grid">
                 <div className="er2-details-main">
                     <div className="er2-card"><div className="er2-panel-heading"><h2>Сведения о заявке</h2>
-                        <span className="er2-pill">Версия {caseData.version}</span></div>
+                        </div>
                         <dl className="er2-details">
                             <div><dt>Объект</dt><dd>{RESOURCE_NAMES[caseData.resourceType] ?? caseData.resourceType}</dd></div>
-                            <div><dt>Область</dt><dd>{caseData.scope}</dd></div>
+
                             <div><dt>Состояние заявки</dt><dd>{caseData.baseState === 'SUBMITTED' ? 'Зарегистрирована'
                                 : caseData.baseState === 'WITHDRAWN' ? 'Отозвана' : caseData.baseState}</dd></div>
                             <div><dt>Последнее изменение</dt><dd>{reviewTime(caseData.updatedAt)}</dd></div>
@@ -149,7 +156,7 @@ export default function ErasureReviewDetailsPage({ reviewer = false }: Props) {
                                     ?? 'Основание зарегистрировано') : 'Ещё не указано'}</dd></div>
                         </dl>
                         <details className="er2-technical"><summary>Технические идентификаторы</summary>
-                            <p>Заявка: {caseData.requestId}</p><p>Объект: {caseData.resourceId}</p>
+                            <p>Заявка: {caseData.requestId}</p><p>Объект: {caseData.resourceId}</p><p>Версия: {caseData.version}</p><p>Область: {caseData.scope}</p>
                         </details>
                     </div>
                     <div className="er2-banner er2-banner--warning" role="note">
@@ -234,9 +241,7 @@ export default function ErasureReviewDetailsPage({ reviewer = false }: Props) {
                                 <small>{reviewTime(item.createdAt)}</small>
                             </li>)}</ol>}
                     </div>
-                    <div className="er2-card er2-aside-info"><h2>Журнал действий</h2>
-                        <p>История хранится сервером. Она не доказывает завершение физического удаления.</p>
-                    </div>
+
                 </aside>
             </div>
         </>}

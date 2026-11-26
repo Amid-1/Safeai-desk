@@ -350,3 +350,43 @@
     .retention-actor-list > div { grid-template-columns: 1fr; gap: 5px; }
     .retention-actor-list a { justify-self: start; }
 }
+
+.retention-compact-heading {display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.retention-compact-heading h1{font-size:28px;margin:0 0 5px;color:#17223b}
+.retention-compact-heading p{margin:0;color:#52637a}
+.retention-compact-summary{padding:12px 16px;background:#fff;border:1px solid #dbe4f3;border-radius:10px;margin-bottom:14px;color:#34465f}
+.retention-compact-summary p{margin:7px 0 0;color:#895516}
+.retention-page .retention-panel{padding:18px;margin-bottom:14px}
+.retention-page .retention-card{padding:16px;gap:8px}
+.retention-page .retention-card__header,.retention-page .retention-card__admission,.retention-page .retention-card__preparation{padding-block:9px}
+.retention-page .retention-history{padding:16px;background:#fff}
+.retention-actors>summary{cursor:pointer;font-weight:700;color:#233d63}
+
+/* Compact policy table, rather than the former two tall cards. */
+.data-management-main .retention-page { gap:14px; }
+.retention-page .retention-compact-heading,.retention-page .retention-compact-summary,.retention-page .retention-panel { margin-bottom:0; }
+.retention-page .retention-policy { padding:0;overflow:hidden; }
+.retention-policy-table-wrap { overflow-x:auto; }
+.retention-policy-table { width:100%;border-collapse:collapse;text-align:left;font-size:14px; }
+.retention-policy-table th,.retention-policy-table td { padding:14px 16px;vertical-align:middle;border-bottom:1px solid #e4eaf3; }
+.retention-policy-table thead th { background:#f6f8fc;color:#52647c;font-weight:600;white-space:nowrap; }
+.retention-policy-table tbody th { font-weight:650;min-width:145px; }
+.retention-data-name { display:flex;align-items:center;gap:9px; }
+.retention-data-name svg { color:#3766c8;flex-shrink:0; }
+.retention-policy-table .retention-preparation-row { padding:3px 0;gap:9px; }
+.retention-policy-table .retention-preparation-reason { font-size:12px; }
+.retention-policy-table .retention-action { min-height:34px;white-space:nowrap;width:auto;padding:7px 10px;font-size:13px; }
+.retention-policy-table .retention-action-hint { display:block;margin-top:5px;max-width:165px; }
+.retention-policy .retention-policy-footnote,.retention-policy .retention-operator-details { margin:12px 16px; }
+.retention-page .retention-quick-links { display:grid;padding:10px;gap:8px; }
+.retention-quick-link { display:flex;align-items:center;gap:12px;padding:13px 14px;min-height:48px;background:#f6f8fb;border-radius:9px;color:#253b59;text-decoration:none;font-size:15px; }
+.retention-quick-link:hover { background:#eaf0fc; }
+.retention-quick-link:focus-visible { outline:2px solid #3776cb;outline-offset:2px; }
+.retention-quick-link > span { flex:1;min-width:0; }
+.retention-quick-link svg { flex-shrink:0; }
+.retention-quick-link small { display:block;color:#52647c;font-size:12px;margin-top:4px; }
+.retention-quick-link strong { font-weight:600; }
+@media(max-width:650px){.retention-policy-table th,.retention-policy-table td{padding:10px}.retention-policy-table{min-width:630px}.retention-page .retention-refresh{width:auto}}
+
+/* Resource names are content, not table column captions. */
+.retention-policy-table tbody th, .retention-policy-table .retention-data-name { text-transform: none; }

@@ -23,7 +23,7 @@ describe('KnowledgeDocumentDeleteAction', () => {
             canDelete={false} unavailableReason={disabled} onDelete={onDelete}/>)
         fireEvent.click(screen.getByRole('button', {name: 'Удалить…'}))
         expect(screen.getByText(disabled)).toBeInTheDocument()
-        expect(screen.getByText(/Обзор платформы → Хранение и удаление данных/)).toBeInTheDocument()
+        expect(screen.getByText(/Управление данными → Политика хранения/)).toBeInTheDocument()
         expect(screen.getByRole('dialog')).toBeInTheDocument()
         expect(onDelete).not.toHaveBeenCalled()
         fireEvent.click(screen.getByRole('button', {name: 'Понятно'}))

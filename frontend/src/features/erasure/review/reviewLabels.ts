@@ -13,6 +13,7 @@ export const RESOURCE_NAMES: Record<string, string> = {
     KNOWLEDGE_BASE: 'База знаний', ORGANIZATION: 'Организация',
 }
 export const EVENT_LABELS: Record<string, string> = {
+    DRAFT_CREATED: 'Создан черновик',
     SUBMITTED: 'Заявка зарегистрирована',
     APPROVED_REVIEW_ONLY: 'Предварительное согласование',
     REJECTED: 'Вынесен отказ',
@@ -26,3 +27,5 @@ export function reviewTime(value: string): string {
     const date = new Date(value)
     return Number.isNaN(date.getTime()) ? 'Дата недоступна' : date.toLocaleString('ru-RU')
 }
+
+export const registryState = (state: string) => state === 'SUBMITTED' ? 'Зарегистрирована' : state === 'DRAFT' ? 'Черновик' : REVIEW_STATES[state as ReviewState] ?? 'Неизвестное состояние'

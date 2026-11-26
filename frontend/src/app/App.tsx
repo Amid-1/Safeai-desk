@@ -1,7 +1,5 @@
 // frontend/src/app/App.tsx
-// ============================================================
-// frontend/src/app/App.tsx
-// ============================================================
+import { WorkspaceReturn, WorkspaceScrollRestore } from '../shared/ui/WorkspaceReturn'
 import {
     Fragment,
     lazy,
@@ -48,6 +46,10 @@ const AdminUsagePage = lazy(
     () => import('../pages/AdminUsagePage'),
 )
 const AdminDashboardPage = lazy(() => import('../pages/AdminDashboardPage'))
+const DataManagementLayout = lazy(() => import('./DataManagementLayout'))
+const ErasureRegistryPage = lazy(() => import('../pages/ErasureRegistryPage'))
+const ErasureRegistryDetailsPage = lazy(() => import('../pages/ErasureRegistryDetailsPage'))
+const ErasureHistoryPage = lazy(() => import('../pages/ErasureHistoryPage'))
 const AdminRetentionPage = lazy(() => import('../pages/AdminRetentionPage'))
 const PrivacySettingsPage = lazy(() => import('../pages/PrivacySettingsPage'))
 const ErasureReviewCenterPage = lazy(() => import('../pages/ErasureReviewCenterPage'))
@@ -331,7 +333,6 @@ function AppLayout() {
             '/admin/audit',
             '/admin/usage',
             '/my/erasure-requests',
-            '/admin/erasure/requests',
         ].includes(location.pathname)
     const appClassName = [
         'app',
@@ -412,13 +413,6 @@ function AppLayout() {
                             </NavLink>
                         )}
 
-                        {canAccessChat && (
-                            <NavLink to="/my/erasure-requests" className={getNavLinkClass}
-                                onClick={closeMenuOnNavigate}>
-                                Мои запросы
-                            </NavLink>
-                        )}
-
                         {isAuthenticated && (
                             <NavLink to="/settings/privacy" className={getNavLinkClass}
                                 onClick={closeMenuOnNavigate}>
@@ -481,20 +475,13 @@ function AppLayout() {
                                     Использование
                                 </NavLink>
 
-                                {hasAnyRole(currentUser, ['ADMIN']) && (
-                                    <NavLink to="/admin/erasure/requests"
-                                        className={getNavLinkClass}
-                                        onClick={closeMenuOnNavigate}>
-                                        Запросы на удаление
-                                    </NavLink>
-                                )}
-
-                                {canAccessOrganizations && (
-                                    <NavLink to="/admin/erasure" className={getNavLinkClass}
-                                        onClick={closeMenuOnNavigate}>
-                                        Центр удаления
-                                    </NavLink>
-                                )}
+                                <NavLink to='/admin/erasure'
+                                    className={({ isActive }) => getNavLinkClass({ isActive: isActive
+                                        || location.pathname === '/admin/retention'
+                                        || location.pathname.startsWith('/admin/erasure/') })}
+                                    onClick={closeMenuOnNavigate}>
+                                    Управление данными
+                                </NavLink>
 
                                 <NavLink
                                     to="/admin/models"
@@ -540,6 +527,8 @@ function AppLayout() {
             )}
 
             <main id="main-content" ref={mainRef} tabIndex={-1} className={contentClassName}>
+                <WorkspaceScrollRestore />
+                {['/admin/audit','/admin/users','/admin/organizations','/my/erasure-requests'].includes(location.pathname) && <WorkspaceReturn />}
                 <Suspense fallback={<RouteLoadingState />}>
                     <Routes>
                         <Route
@@ -568,11 +557,6 @@ function AppLayout() {
                                 {user => <ErasureRequestsPage user={user} />}
                             </ProtectedRoute>}
                         />
-                        <Route path="/admin/erasure/requests"
-                            element={<ProtectedRoute roles={['ADMIN', 'SUPER_ADMIN']}>
-                                <ErasureReviewQueuePage />
-                            </ProtectedRoute>}
-                        />
 
                         <Route
                             path="/knowledge"
@@ -597,25 +581,30 @@ function AppLayout() {
                                 <ErasureReviewDetailsPage />
                             </ProtectedRoute>
                         } />
-                        <Route path="/admin/erasure" element={
-                            <ProtectedRoute roles={['SUPER_ADMIN']}>
+                        <Route element={<ProtectedRoute roles={['ADMIN', 'SUPER_ADMIN']}>
+                            <DataManagementLayout />
+                        </ProtectedRoute>}>
+                            <Route path="/admin/erasure" element={<ProtectedRoute roles={['ADMIN', 'SUPER_ADMIN']}>
                                 <ErasureReviewCenterPage />
-                            </ProtectedRoute>
-                        } />
-                        <Route path="/admin/erasure/requests/:requestId" element={
-                            <ProtectedRoute roles={['ADMIN', 'SUPER_ADMIN']}>
-                                <ErasureReviewDetailsPage reviewer />
-                            </ProtectedRoute>
-                        } />
+                            </ProtectedRoute>} />
+                            <Route path="/admin/erasure/intake" element={<ProtectedRoute roles={['ADMIN']}>
+                                <ErasureRegistryPage />
+                            </ProtectedRoute>} />
+                            <Route path="/admin/erasure/registry" element={<ProtectedRoute roles={['SUPER_ADMIN']}><ErasureRegistryPage /></ProtectedRoute>} />
+                            <Route path="/admin/erasure/registry/:requestId" element={<ErasureRegistryDetailsPage />} />
+                            <Route path="/admin/erasure/history" element={<ErasureHistoryPage />} />
+                            <Route path="/admin/erasure/requests" element={<ErasureReviewQueuePage />} />
+                            <Route path="/admin/erasure/requests/:requestId" element={<ErasureReviewDetailsPage reviewer />} />
+                            <Route path="/admin/retention" element={<ProtectedRoute roles={['SUPER_ADMIN']}>
+                                <AdminRetentionPage />
+                            </ProtectedRoute>} />
+                        </Route>
                         <Route
                             path="/admin/dashboard"
                             element={<ProtectedRoute roles={['SUPER_ADMIN']}>
                                 {user => <AdminDashboardPage key={user.id} />}
                             </ProtectedRoute>}
                         />
-                        <Route path="/admin/retention" element={<ProtectedRoute roles={['SUPER_ADMIN']}>
-                            <AdminRetentionPage />
-                        </ProtectedRoute>} />
                         <Route
                             path="/admin/users"
                             element={

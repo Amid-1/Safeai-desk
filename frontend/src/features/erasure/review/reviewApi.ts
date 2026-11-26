@@ -147,7 +147,7 @@ export type ReviewSummary = {
     needsInformation: number
 }
 export async function loadReviewSummary(signal?: AbortSignal): Promise<ReviewSummary> {
-    const d = expectRecord(await apiRequest('/api/admin/erasure/reviews/overview', {
+    const d = expectRecord(await apiRequest('/api/admin/erasure/overview', {
         method: 'GET', signal,
     }), 'erasure.review.summary')
     return {

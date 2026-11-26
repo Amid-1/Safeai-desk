@@ -1,6 +1,7 @@
 // frontend/src/features/admin/ui/RetentionWorkspace.tsx
 import { useEffect, useState, type ReactNode } from 'react'
-import { Link } from 'react-router-dom'
+import DataManagementIcon from '../../../shared/ui/DataManagementIcon'
+import { WorkspaceLink } from '../../../shared/ui/WorkspaceReturn'
 import { getApiErrorMessage } from '../../../shared/api/http'
 import ConfirmDialog from '../../../shared/ui/ConfirmDialog'
 import { ErrorState, LoadingState } from '../../../shared/ui/StateBlock'
@@ -39,20 +40,6 @@ function Preparation({label, gate}: {label?: string; gate: RetentionGate}) {
             {prepared ? 'Настроено' : 'Не готово'}
         </span>
     </div>
-}
-
-function ScopeIcon({scope}: {scope: DeletionScope}) {
-    return <span className="retention-card-icon" aria-hidden="true">
-        {scope === 'chat' ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
-            strokeLinecap="round" strokeLinejoin="round">
-            <path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5 8 8 0 0 1-3.2-.7L4 20l1.7-5.2A7.5 7.5 0 1 1 20 11.5Z"/>
-            <path d="M8.5 11h7"/>
-        </svg> : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
-            strokeLinecap="round" strokeLinejoin="round">
-            <path d="M4.5 4.5h6a3 3 0 0 1 3 3V20a3 3 0 0 0-3-3h-6Z"/>
-            <path d="M19.5 4.5h-3a3 3 0 0 0-3 3V20a3 3 0 0 1 3-3h3Z"/>
-        </svg>}
-    </span>
 }
 
 export function RetentionWorkspace() {
@@ -107,19 +94,9 @@ export function RetentionWorkspace() {
     const changeSubject = change === 'chat' ? 'чатов' : 'документов и баз знаний'
 
     return <div className="page retention-page">
-        <Link className="retention-back" to="/admin/dashboard">← К обзору платформы</Link>
-        <header className="retention-hero">
-            <div className="retention-hero__copy">
-                <span className="retention-eyebrow">Управление данными</span>
-                <h1>Хранение и удаление</h1>
-                <p>Управляйте новыми запросами на удаление. Действующие ограничения хранения и уже созданные
-                    запросы не меняются.</p>
-            </div>
+        <header className="retention-compact-heading"><div><h1>Политика хранения</h1></div>
             <button className="secondary-button retention-refresh" type="button" disabled={busy}
-                onClick={() => { setNotice(''); setRefresh(value => value + 1) }}>
-                Обновить состояние
-            </button>
-        </header>
+                onClick={() => { setNotice(''); setRefresh(value => value + 1) }}>Обновить состояние</button></header>
 
         {notice && <p className="retention-notice" role="status">{notice}</p>}
         {!status && (error ? <ErrorState title="Политика недоступна" message={error}
@@ -127,100 +104,31 @@ export function RetentionWorkspace() {
             : <LoadingState message="Загрузка настроек…"/>)}
 
         {status && <>
-            <section className="retention-summary" aria-label="Политика и техническая готовность">
-                <div className="retention-summary__item">
-                    <span className="retention-summary__label">Политика платформы</span>
-                    <strong>{allowedCount === 2 ? 'Допуск открыт' : allowedCount === 0
-                        ? 'Допуск закрыт' : 'Частичный допуск'}</strong>
-                    <span className="retention-summary__detail">{allowedCount} из 2 направлений разрешены политикой.
-                        Это не подтверждает доступность удаления.</span>
-                </div>
-                <div className="retention-summary__item">
-                    <span className="retention-summary__label">Техническая подготовка</span>
-                    <strong>{preparedCount === 3 ? 'Конфигурация готова' : 'Есть ограничения'}</strong>
-                    <span className="retention-summary__detail">{preparedCount} из 3 типов настроены.
-                        Физическое удаление подтверждается отдельно.</span>
-                </div>
-            </section>
-
-            {operationalGap && <aside className="retention-alert" role="status">
-                <span className="retention-alert__symbol" aria-hidden="true">!</span>
-                <div>
-                    <strong>Новые операции удаления могут быть отклонены</strong>
-                    <p>Разрешение политики не заменяет готовность исполнителя и проверку прав.
-                        Неподготовленные операции не принимаются автоматически в очередь.
-                        Уже созданные запросы не отменяются изменением политики.</p>
-                </div>
-            </aside>}
-
+            <div className="retention-compact-summary" role="status">
+                <strong>{allowedCount} из 2 направлений разрешены для отдельных операций.</strong>{' '}{preparedCount} из 3 типов настроены.
+                {operationalGap && <p><strong>Новые операции удаления могут быть отклонены.</strong>{' '}Неподготовленные операции не принимаются автоматически в очередь.</p>}
+            </div>
             <section className="retention-panel retention-policy">
-                <div className="retention-section-heading">
-                    <div>
-                        <span className="retention-section-kicker">Правила удаления</span>
-                        <h2>Какие новые запросы принимать</h2>
-                        <p>Вы можете независимо приостановить удаление чатов или материалов баз знаний.</p>
-                    </div>
-                    <span className="retention-section-note">Для всех организаций</span>
-                </div>
-
-                <div className="retention-grid">
-                    <article className="retention-card">
-                        <div className="retention-card__header">
-                            <ScopeIcon scope="chat"/>
-                            <div><h3>Чаты</h3><p>Удаление содержимого архивных чатов</p></div>
-                        </div>
-                        <div className="retention-card__admission">
-                            <span>Приём запросов</span>
-                            <StatePill good={status.chatAllowed}>
-                                {status.chatAllowed ? 'Разрешён' : 'Приостановлен'}
-                            </StatePill>
-                        </div>
-                        <div className="retention-card__preparation">
-                            <h4>Подготовка к удалению</h4>
-                            <Preparation gate={status.chat}/>
-                        </div>
-                        <div className="retention-card__actions">
-                            <button type="button" className="secondary-button retention-action"
-                                disabled={busy || (!status.chatAllowed && !isPrepared(status.chat))}
-                                onClick={() => setChange('chat')}>
-                                {status.chatAllowed ? 'Приостановить приём запросов на удаление чатов'
-                                    : 'Возобновить приём запросов на удаление чатов'}
-                            </button>
-                            {!status.chatAllowed && !isPrepared(status.chat) &&
-                                <span className="retention-action-hint">Сначала завершите подготовку системы</span>}
-                        </div>
-                    </article>
-
-                    <article className="retention-card">
-                        <div className="retention-card__header">
-                            <ScopeIcon scope="knowledge"/>
-                            <div><h3>Базы знаний и документы</h3><p>Удаление документов и баз знаний</p></div>
-                        </div>
-                        <div className="retention-card__admission">
-                            <span>Приём запросов</span>
-                            <StatePill good={status.knowledgeAllowed}>
-                                {status.knowledgeAllowed ? 'Разрешён' : 'Приостановлен'}
-                            </StatePill>
-                        </div>
-                        <div className="retention-card__preparation">
-                            <h4>Подготовка к удалению</h4>
-                            <Preparation label="Документы" gate={status.document}/>
-                            <Preparation label="Базы знаний" gate={status.base}/>
-                        </div>
-                        <div className="retention-card__actions">
-                            <button type="button" className="secondary-button retention-action"
-                                disabled={busy || (!status.knowledgeAllowed
-                                    && (!isPrepared(status.document) || !isPrepared(status.base)))}
-                                onClick={() => setChange('knowledge')}>
-                                {status.knowledgeAllowed ? 'Приостановить приём запросов на удаление документов и баз'
-                                    : 'Возобновить приём запросов на удаление документов и баз'}
-                            </button>
-                            {!status.knowledgeAllowed && (!isPrepared(status.document) || !isPrepared(status.base)) &&
-                                <span className="retention-action-hint">Сначала завершите подготовку системы</span>}
-                        </div>
-                    </article>
-                </div>
-                <p className="retention-policy-footnote">Изменение политики относится только к новым запросам.
+                <div className="retention-policy-table-wrap"><table className="retention-policy-table">
+                    <thead><tr><th scope="col">Данные</th><th scope="col">Допуск операций</th><th scope="col">Готовность</th><th scope="col">Действие</th></tr></thead>
+                    <tbody>
+                        <tr><th scope="row"><span className="retention-data-name"><DataManagementIcon name="message"/>Чаты</span></th>
+                            <td><StatePill good={status.chatAllowed}>{status.chatAllowed ? 'Разрешён' : 'Приостановлен'}</StatePill></td>
+                            <td><Preparation gate={status.chat}/></td>
+                            <td><button type="button" className="secondary-button retention-action" disabled={busy || (!status.chatAllowed && !isPrepared(status.chat))}
+                                aria-label={status.chatAllowed ? 'Приостановить приём запросов на удаление чатов' : 'Возобновить приём запросов на удаление чатов'}
+                                onClick={() => setChange('chat')}>{status.chatAllowed ? 'Приостановить' : 'Возобновить'}</button>
+                                {!status.chatAllowed && !isPrepared(status.chat) && <small className="retention-action-hint">Сначала завершите подготовку системы</small>}</td></tr>
+                        <tr><th scope="row"><span className="retention-data-name"><DataManagementIcon name="database"/>Базы знаний и документы</span></th>
+                            <td><StatePill good={status.knowledgeAllowed}>{status.knowledgeAllowed ? 'Разрешён' : 'Приостановлен'}</StatePill></td>
+                            <td><Preparation label="Документы" gate={status.document}/><Preparation label="Базы знаний" gate={status.base}/></td>
+                            <td><button type="button" className="secondary-button retention-action" disabled={busy || (!status.knowledgeAllowed && (!isPrepared(status.document) || !isPrepared(status.base)))}
+                                aria-label={status.knowledgeAllowed ? 'Приостановить приём запросов на удаление документов и баз' : 'Возобновить приём запросов на удаление документов и баз'}
+                                onClick={() => setChange('knowledge')}>{status.knowledgeAllowed ? 'Приостановить' : 'Возобновить'}</button>
+                                {!status.knowledgeAllowed && (!isPrepared(status.document) || !isPrepared(status.base)) && <small className="retention-action-hint">Сначала завершите подготовку системы</small>}</td></tr>
+                    </tbody>
+                </table></div>
+                <p className="retention-policy-footnote">Приём личных обращений управляется отдельно. Изменение политики относится только к новым отдельным операциям удаления.
                     Уже принятые операции не отменяются. Наличие настроек и обработчика не подтверждает
                     ни его работоспособность, ни фактическое удаление данных.</p>
                 <details className="retention-operator-details">
@@ -231,47 +139,37 @@ export function RetentionWorkspace() {
                 </details>
             </section>
 
-            <section className="retention-panel retention-actors" aria-labelledby="retention-actors-heading">
-                <div className="retention-section-heading">
-                    <div>
-                        <span className="retention-section-kicker">Удаление конкретных данных</span>
-                        <h2 id="retention-actors-heading">Кто может запросить удаление</h2>
-                        <p>Права проверяются для конкретного пользователя, объекта и организации.
-                            Эта страница не выдаёт индивидуальных разрешений.</p>
-                    </div>
-                </div>
+            <details className="retention-panel retention-actors"><summary>Кто может выполнять отдельные операции удаления</summary>
+                <p>Ниже перечислены действующие отдельные операции, а не права подачи личных обращений. Права проверяются для конкретного объекта и организации.</p>
                 <div className="retention-actor-list">
                     <div><strong>Чат</strong><span>Пользователь архивирует свой чат. Стирание содержимого
                         собственного архивного чата запрашивает администратор при доступной функции.</span>
-                        <Link to="/chat">Открыть чаты</Link></div>
+                        </div>
                     <div><strong>Документ</strong><span>Владелец базы знаний или администратор
                         своей организации, если сервер разрешает операцию.</span>
-                        <Link to="/knowledge">Открыть базы знаний</Link></div>
+                        </div>
                     <div><strong>База знаний</strong><span>Администратор своей организации.
                         Принятие зависит от подготовки обработчика и ограничений хранения.</span>
-                        <Link to="/knowledge">Открыть базы знаний</Link></div>
+                        </div>
                     <div><strong>Пользователь</strong><span>Только суперадминистратор, после отключения,
                         выдержки срока (<strong>{new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 3})
                         .format(status.userRetentionSeconds / 86400)} дн.</strong>) и проверки связанных данных.</span>
-                        <Link to="/admin/users">Открыть пользователей</Link></div>
+                        </div>
                     <div><strong>Организация</strong><span>Можно отключить с сохранением данных.
                         Необратимое удаление ещё не реализовано.</span>
-                        <Link to="/admin/organizations">Открыть организации</Link></div>
+                        </div>
                 </div>
                 <p className="retention-actor-note">Запрос от другого человека, письмо или сообщение
                     не являются автоматическим разрешением на стирание. Для таких обращений потребуется
                     отдельный проверяемый процесс согласования.</p>
-            </section>
+            </details>
 
-            <section className="retention-history" aria-labelledby="retention-history-heading">
-                <div>
-                    <span className="retention-section-kicker">Прозрачность изменений</span>
-                    <h2 id="retention-history-heading">История политики</h2>
-                    <p>Кто и когда менял правила приёма запросов на удаление.</p>
-                </div>
-                <Link className="retention-history__link" to="/admin/audit?eventType=RETENTION_POLICY_CHANGED">
-                    Открыть историю изменений →
-                </Link>
+            <section className="retention-panel retention-quick-links" aria-label="Связанные разделы">
+                <WorkspaceLink className="retention-quick-link" to="/admin/audit?eventType=RETENTION_POLICY_CHANGED">
+                    <DataManagementIcon name="history"/><span><strong>История политики хранения</strong><small>Кто и когда менял правила приёма запросов на удаление.</small></span><DataManagementIcon name="chevron"/>
+                </WorkspaceLink>
+                <WorkspaceLink className="retention-quick-link" to="/admin/users"><DataManagementIcon name="users"/><span>Открыть пользователей</span><DataManagementIcon name="chevron"/></WorkspaceLink>
+                <WorkspaceLink className="retention-quick-link" to="/admin/organizations"><DataManagementIcon name="building"/><span>Открыть организации</span><DataManagementIcon name="chevron"/></WorkspaceLink>
             </section>
         </>}
 

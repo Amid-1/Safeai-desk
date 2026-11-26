@@ -207,3 +207,10 @@
     .er2-case-topline { flex-wrap:wrap; }
     .er2-data-row { gap:13px; }
 }
+
+.er2-search-form { justify-content: flex-start; flex-wrap: wrap; }
+.er2-filter-tabs { flex-wrap: wrap; overflow: visible; }
+.er2-registry-detail dd { overflow-wrap: anywhere; }
+
+.er2-filter-group { display: flex; flex-wrap: wrap; gap: 4px; border-inline-end: 1px solid #e9eef6; padding-inline-end: 5px; }
+.er2-filter-group:last-child { border-inline-end: 0; padding-inline-end: 0; }

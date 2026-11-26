@@ -1,121 +1,78 @@
 // frontend/src/pages/ErasureReviewCenterPage.tsx
-import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { loadReviewSummary, type ReviewSummary } from '../features/erasure/review/reviewApi'
-import { getApiErrorMessage } from '../shared/api/http'
+import { useEffect, useState } from 'react'
+import { Link, useOutletContext } from 'react-router-dom'
+import { ApiError } from '../shared/api/http'
+import { loadRegistrySummary, loadRegistry, loadCapabilities, type RegistrySummary, type RegistryItem, type Capabilities } from '../features/erasure/api/workspaceApi'
+import { RESOURCE_NAMES, registryState } from '../features/erasure/review/reviewLabels'
+import { WorkspaceLink } from '../shared/ui/WorkspaceReturn'
+import DataManagementIcon, { type DataIconName } from '../shared/ui/DataManagementIcon'
 import '../features/erasure/review/ErasureReview.css'
 
-const METRICS: { key: keyof ReviewSummary; label: string; detail: string; tone: string }[] = [
-    { key: 'total', label: 'Всего заявок', detail: 'Доступная платформенная сводка', tone: 'blue' },
-    { key: 'pending', label: 'Ожидают решения', detail: 'Нужно независимое рассмотрение', tone: 'amber' },
-    { key: 'needsInformation', label: 'Нужно уточнение', detail: 'Ожидают действий заявителя', tone: 'violet' },
-    { key: 'held', label: 'Активные удержания', detail: 'Удаление заблокировано', tone: 'rose' },
+type MetricKey = 'total' | 'pending' | 'needsInformation' | 'held' | 'registered' | 'withdrawn' | 'drafts'
+type Metric = { key: MetricKey; label: string; tone: string; icon: DataIconName }
+const PLATFORM_METRICS: Metric[] = [
+    {key:'total',label:'Всего в реестре',tone:'blue',icon:'files'},
+    {key:'pending',label:'Ожидают решения',tone:'amber',icon:'clock'},
+    {key:'needsInformation',label:'Ожидают уточнения',tone:'violet',icon:'message'},
+    {key:'held',label:'Заявки с удержаниями',tone:'rose',icon:'lock'},
 ]
-
+const TENANT_METRICS: Metric[] = [
+    {key:'total',label:'Всего в реестре',tone:'blue',icon:'files'},
+    {key:'registered',label:'Зарегистрированы',tone:'amber',icon:'clock'},
+    {key:'drafts',label:'Черновики',tone:'violet',icon:'message'},
+    {key:'withdrawn',label:'Отозваны',tone:'rose',icon:'files'},
+]
 export default function ErasureReviewCenterPage() {
-    const [summary, setSummary] = useState<ReviewSummary | null>(null)
-    const [loading, setLoading] = useState(true)
-    const [error, setError] = useState<string | null>(null)
-    const [revision, setRevision] = useState(0)
-    const refresh = useCallback(() => setRevision(value => value + 1), [])
-
-    useEffect(() => {
-        const controller = new AbortController()
-        setLoading(true)
-        setError(null)
-        void loadReviewSummary(controller.signal).then(value => {
-            if (!controller.signal.aborted) setSummary(value)
-        }).catch(err => {
-            if (!controller.signal.aborted) {
-                setSummary(null)
-                setError(getApiErrorMessage(err, 'Не удалось получить сводку R1b.'))
-            }
-        }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
-        return () => controller.abort()
-    }, [revision])
-
+    const workspace = useOutletContext<{capabilities:Capabilities|null;loading:boolean;failed:boolean}|null>()
+    const [summary,setSummary]=useState<RegistrySummary|null>(null)
+    const [attention,setAttention]=useState<RegistryItem[]|null>(null)
+    const [cap,setCap]=useState<Capabilities|null>(null)
+    const [error,setError]=useState<{status:number|null;requestId?:string}|null>(null)
+    const [secondaryErrors,setSecondaryErrors]=useState<Record<string,string>>({})
+    const [loading,setLoading]=useState(true)
+    const [revision,setRevision]=useState(0)
+    const allowed=!workspace||workspace.capabilities?.platform===true||workspace.capabilities?.tenantRegistry===true
+    const expectedPlatform=workspace?.capabilities?.platform
+    useEffect(()=>{
+        const ac=new AbortController();setLoading(true);setSummary(null);setAttention(null);setCap(null);setError(null);setSecondaryErrors({})
+        if(!allowed){setLoading(false);return ()=>ac.abort()}
+        const recordError=(name:string,e:unknown)=>{if(!ac.signal.aborted)setSecondaryErrors(old=>({...old,[name]:e instanceof ApiError?`HTTP ${e.status}${e.requestId?` · ${e.requestId}`:''}`:'Нет подтверждённого ответа'}))}
+        void loadRegistrySummary(ac.signal).then(v=>{if(!ac.signal.aborted)setSummary(v)})
+            .catch(e=>{if(!ac.signal.aborted)setError(e instanceof ApiError?{status:e.status,requestId:e.requestId}:{status:null})}).finally(()=>{if(!ac.signal.aborted)setLoading(false)})
+        void loadCapabilities(ac.signal).then(v=>{
+            if(ac.signal.aborted)return
+            setCap(v)
+            if(v.platform){void loadRegistry(false,'ATTENTION','',0,ac.signal).then(result=>{
+                if(!ac.signal.aborted)setAttention(result.items.slice(0,5))
+            }).catch(e=>recordError('Реестр заявок',e))}
+        }).catch(e=>recordError('Возможности пользователя',e))
+        return ()=>ac.abort()
+    },[revision,allowed,expectedPlatform])
+    const platform = expectedPlatform ?? cap?.platform ?? true
+    const visibleSummary = allowed && summary?.scope === (platform?'PLATFORM':'TENANT') ? summary : null
+    const metrics = platform ? PLATFORM_METRICS : TENANT_METRICS
+    const scopeMismatch = summary !== null && !visibleSummary
+    if(!allowed)return <section className="er2-page page"><h1>Обзор заявок</h1><p role="status">{workspace?.loading?'Проверяем доступ…':'Обзор сейчас недоступен.'}</p></section>
     return <section className="er2-page page er2-center">
-        <header className="er2-hero er2-center-hero">
-            <div>
-                <div className="er2-eyebrow">УПРАВЛЕНИЕ ДАННЫМИ / R1b</div>
-                <h1>Центр удаления данных</h1>
-                <p>Контроль обращений, независимых согласований и ограничений хранения.</p>
-                <div className="er2-hero-actions">
-                    <Link className="er2-primary" to="/admin/erasure/requests">Очередь рассмотрения</Link>
-                    <Link className="er2-action" to="/admin/retention">Политика хранения</Link>
-                </div>
-            </div>
-            <div className="er2-hero-aside">
-                <span className="er2-hero-aside-label">ТЕХНИЧЕСКОЕ ИСПОЛНЕНИЕ</span>
-                <strong>Удаление отключено</strong>
-                <span>Согласование заявки не запускает очистку данных.</span>
-            </div>
-        </header>
-
-        <div className="er2-banner er2-banner--warning" role="note">
-            <span className="er2-banner-mark" aria-hidden="true">!</span>
-            <div><strong>Рассмотрение и физическое удаление — разные процессы.</strong>
-                <p>R1b фиксирует решения и удержания. Исполнители R3–R8 не активированы.</p></div>
-        </div>
-
-        <section aria-labelledby="er2-metrics-title">
-            <div className="er2-section-heading">
-                <div><div className="er2-eyebrow">СВОДКА</div><h2 id="er2-metrics-title">Состояние заявок</h2>
-                    <p>Показатели берутся только из API, без демонстрационных значений.</p></div>
-                <button className="er2-action" type="button" onClick={refresh} disabled={loading}>
-                    {loading ? 'Загрузка…' : 'Обновить данные'}
-                </button>
-            </div>
-            {error && <div className="er2-banner er2-banner--danger" role="alert">
-                <span className="er2-banner-mark" aria-hidden="true">!</span>
-                <div><strong>Сводка недоступна</strong><p>{error}</p>
-                    <p>Возможные причины: R1b выключен, недостаточно прав или недоступен backend.
-                        Другие разделы ниже остаются доступны согласно вашей роли.</p></div>
-            </div>}
-            <div className="er2-metrics-grid" aria-busy={loading}>
-                {METRICS.map(metric => <div key={metric.key} className={`er2-metric er2-metric--${metric.tone}`}>
-                    <span>{metric.label}</span>
-                    <strong>{loading ? '…' : summary ? summary[metric.key].toLocaleString('ru-RU') : '—'}</strong>
-                    <small>{metric.detail}</small>
-                </div>)}
-            </div>
-        </section>
-
+        <header className="er2-heading er2-heading--row"><h1>Обзор заявок</h1><button className="er2-action er2-icon-action" type="button" disabled={loading}
+            onClick={()=>setRevision(v=>v+1)}><DataManagementIcon name="refresh"/>Обновить данные</button></header>
+        {(error||scopeMismatch||Object.keys(secondaryErrors).length>0)&&<div role="alert" className="er2-banner er2-banner--danger"><div>{scopeMismatch?'Область статистики изменилась. Обновите данные.':error?'Сводка недоступна. Не удалось загрузить статистику.':'Не удалось загрузить часть данных.'}<details><summary>Диагностика</summary>{error&&<p>Сводка: HTTP {error.status??'нет подтверждённого ответа'}{error.requestId&&` · ${error.requestId}`}</p>}{Object.entries(secondaryErrors).map(([name,value])=><p key={name}>{name}: {value}</p>)}</details></div></div>}
+        <div className="er2-metrics-grid" aria-busy={loading}>{metrics.map(m=><div key={m.key} className={`er2-metric er2-metric--${m.tone}`}>
+            <span className="er2-metric-label"><DataManagementIcon name={m.icon}/>{m.label}</span><strong>{loading?'…':visibleSummary?.[m.key]?.toLocaleString('ru-RU')??'—'}</strong></div>)}</div>
+        {platform&&visibleSummary&&<p className="er2-muted">Зарегистрированы: {visibleSummary.registered}. Отозваны: {visibleSummary.withdrawn}. Переданы на рассмотрение: {visibleSummary.reviewed}. Удержания могут пересекаться с другими статусами.</p>}
         <div className="er2-dashboard-grid">
-            <section className="er2-card er2-operations" aria-labelledby="er2-work-title">
-                <div className="er2-eyebrow">РАБОЧИЕ ПРОЦЕССЫ</div>
-                <h2 id="er2-work-title">Что требует внимания</h2>
-                <div className="er2-operation-row">
-                    <span className="er2-operation-symbol" aria-hidden="true">01</span>
-                    <div><strong>Согласования</strong><p>Решения, отказ и запрос дополнительных сведений.</p></div>
-                    <Link to="/admin/erasure/requests">Открыть очередь</Link>
-                </div>
-                <div className="er2-operation-row">
-                    <span className="er2-operation-symbol" aria-hidden="true">02</span>
-                    <div><strong>Политика хранения</strong><p>Допуск новых обращений и технические ограничения.</p></div>
-                    <Link to="/admin/retention">Посмотреть</Link>
-                </div>
-                <div className="er2-operation-row">
-                    <span className="er2-operation-symbol" aria-hidden="true">03</span>
-                    <div><strong>Журнал аудита</strong><p>История зарегистрированных действий платформы.</p></div>
-                    <Link to="/admin/audit">Открыть аудит</Link>
-                </div>
+            <section className="er2-card"><h2>{platform?'Требуют внимания':'Заявки организации'}</h2>
+                {platform?(!attention?.length?<p className="er2-attention-empty">{attention===null?((secondaryErrors['Реестр заявок']||secondaryErrors['Возможности пользователя'])?'Не удалось загрузить список.':'Загрузка списка…'):'Нет заявок, требующих внимания.'}</p>:
+                    <div className="er2-table-wrap"><table className="er2-table"><thead><tr><th>Заявка / организация</th><th>Статус</th></tr></thead><tbody>{attention.map(x=><tr key={x.requestId}>
+                        <td><WorkspaceLink to={`/admin/erasure/registry/${x.requestId}`}>{RESOURCE_NAMES[x.resourceType]??'Объект'}</WorkspaceLink><small>{x.organization} · {x.requestId.slice(0,8)}</small></td><td>{registryState(x.state)}{x.holdActive&&<small>Удержание</small>}</td></tr>)}</tbody></table></div>):
+                    <p>Регистрация обращений вашей организации. Решения и удержания доступны только в отдельной очереди согласований при наличии полномочий.</p>}
+                <div className="er2-attention-footer">{cap?.platform&&platform?<Link to="/admin/erasure/registry?state=ATTENTION">Все заявки →</Link>:cap?.tenantRegistry&&!platform?<Link to="/admin/erasure/intake">Все заявки →</Link>:<span className="er2-muted">Реестр недоступен до подтверждения доступа.</span>}</div>
             </section>
-            <aside className="er2-card er2-readiness" aria-labelledby="er2-ready-title">
-                <div className="er2-eyebrow">ГОТОВНОСТЬ</div>
-                <h2 id="er2-ready-title">Границы текущего этапа</h2>
-                <ul>
-                    <li><span className="er2-readiness-dot er2-readiness-dot--blue" />
-                        <div><strong>Регистрация обращений</strong><small>R1a: черновик, подача, отзыв</small></div></li>
-                    <li><span className="er2-readiness-dot er2-readiness-dot--blue" />
-                        <div><strong>Рассмотрение R1b</strong><small>Доступ зависит от независимых полномочий и флага</small></div></li>
-                    <li><span className="er2-readiness-dot er2-readiness-dot--amber" />
-                        <div><strong>Подтверждение личности</strong><small>Полноценный подтверждённый сценарий ещё не подключён</small></div></li>
-                    <li><span className="er2-readiness-dot er2-readiness-dot--rose" />
-                        <div><strong>Физическое удаление</strong><small>Не выполняется; никаких кнопок запуска</small></div></li>
-                </ul>
-                <p className="er2-muted">Сводка не заменяет аудиторские доказательства и release-gates.</p>
-            </aside>
+            <aside className="er2-card"><h2>Состояние системы</h2><dl className="er2-summary">
+                <div><dt>Приём обращений</dt><dd>{cap?cap.requestsEnabled?'Включён':'Отключён':'Нет данных'}</dd></div>
+                <div><dt>Рассмотрение заявок</dt><dd>{cap?cap.approvalsEnabled?'Включено':'Отключено':'Нет данных'}</dd></div>
+                <div><dt>Подтверждение личности</dt><dd>Не подключено</dd></div><div><dt>Удаление по заявкам</dt><dd>Отключено</dd></div></dl>
+                <p className="er2-muted">Согласование заявки не запускает удаление данных.</p></aside>
         </div>
     </section>
 }

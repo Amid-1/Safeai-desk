@@ -2,21 +2,25 @@ openapi: 3.1.0
 jsonSchemaDialect: https://spec.openapis.org/oas/3.1/dialect/base
 info:
   title: SafeAI Desk — Erasure Case Management API
-  version: 1.1.0-design
-  summary: Hardened design contract aligned to Erasure Roadmap v1.1, not implemented
+  version: 1.2.0-design-r2.3
+  summary: Hardened design plus R2.3 workspace candidate; not a verified runtime contract
   description: |
     DESIGN ONLY / NO PRODUCTION GO.
     This specification does not enable any destructive endpoint.
-    R1 registers DRAFT and SUBMITTED only; physical execution remains disabled.
+    R1a registers DRAFT/SUBMITTED/WITHDRAWN; R1b registers independent review and holds.
+    R2.3 workspace is a candidate, not acceptance. Physical execution remains disabled.
+    Original paths/schemas are TARGET_DESIGN_NOT_RUNTIME unless explicitly marked otherwise.
+    Do not generate a runtime client from this combined design document.
     Every transition checks fresh server-side actor, tenant, resource version, hold, policy
     and approval state.
-    Existing Chat and Knowledge destructive endpoints MUST share the enforcement gate before
+    Existing Chat, Knowledge and User destructive endpoints MUST share the enforcement gate before
     any executor rollout.
 servers:
   - url: /
     description: Relative server URL; authorization and origins follow existing deployment
 tags:
   - name: Read
+  - name: Workspace
   - name: Cases
   - name: Identity
   - name: Approvals
@@ -37,8 +41,23 @@ x-safeai-security-notes: |
   Security requirements in OpenAPI alone do not enforce RBAC, RLS, step-up or independence.
 x-safeai-release-gates:
   R1: Case intake, preview, approval registration and read only; all execution flags OFF.
-  R2: User/tenant/platform UI and notifications; no destructive dispatch.
+  R2: User/tenant/platform UI and read-only projections; notifications require verification; no destructive dispatch.
+  R2_3: Registry summary/detail/history and role acceptance; candidate, no destructive dispatch.
   R3_PLUS: Individually reviewed executor/worker/storage/legal evidence per resource type.
+x-safeai-runtime-route-map:
+  R1a:
+    status: SOURCE_OBSERVED_NOT_ACCEPTED
+    notes: Actual list is self only, limit 100. Existing same-name target DTOs are not runtime DTOs. Preview uses
+      Target; submit/withdraw use headers and no body in R1a. Flag safeai.erasure.requests.enabled.
+  R1b:
+    status: SOURCE_OBSERVED_NOT_ACCEPTED
+    notes: 'Actual review controller under /api/admin/erasure/reviews: GET base/access/overview/{id}/{id}/events;
+      POST {id}/decision, {id}/holds, {id}/holds/release. Personal /api/erasure/requests/{id}/review, /review-events
+      and POST /provide-information. Flag safeai.erasure.approvals.enabled. APPROVED_REVIEW_ONLY is never execution.
+      Do not substitute target approve/reject/release-hold routes.'
+  R2.3:
+    status: CANDIDATE_NOT_ACCEPTED
+    notes: Workspace read contract below, pending Maven/real PostgreSQL/HTTP/CI. No runtime mutation schema changes.
 paths:
   /api/erasure/capabilities:
     get:
@@ -50,6 +69,7 @@ paths:
         Tenant, owner and current roles are checked server-side; no foreign resource enumeration.
         Read-only hint; no permission grant. No physical proof.
       x-safeai-actor-authority: SUBJECT
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
       x-safeai-release-phase: R1_CASE_ONLY
       responses:
         '200':
@@ -154,6 +174,7 @@ paths:
         Recheck actor, tenant, resource versions, policy and holds; never trust client supplied
         authority. Preview is actor+tenant+resource+scope+policy+hold epoch+TTL bound.
       x-safeai-actor-authority: SUBJECT
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
       x-safeai-release-phase: R1_CASE_ONLY
       responses:
         '200':
@@ -261,6 +282,7 @@ paths:
         Tenant, owner and current roles are checked server-side; no foreign resource enumeration.
         USER sees own, ADMIN only assigned tenant, PLATFORM requires authorized explicit scope.
       x-safeai-actor-authority: SUBJECT
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
       x-safeai-release-phase: R1_CASE_ONLY
       responses:
         '200':
@@ -364,6 +386,7 @@ paths:
         Recheck actor, tenant, resource versions, policy and holds; never trust client supplied
         authority. Atomically persist a short-lived DRAFT. No worker intent/dispatch.
       x-safeai-actor-authority: SUBJECT
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
       x-safeai-release-phase: R1_CASE_ONLY
       responses:
         '201':
@@ -481,6 +504,7 @@ paths:
       description: |
         Tenant, owner and current roles are checked server-side; no foreign resource enumeration.
       x-safeai-actor-authority: SUBJECT
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
       x-safeai-release-phase: R1_CASE_ONLY
       responses:
         '200':
@@ -587,6 +611,7 @@ paths:
         Tenant, owner and current roles are checked server-side; no foreign resource enumeration.
         Append-only sanitized state transitions; actor identity disclosure separately authorized.
       x-safeai-actor-authority: SUBJECT
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
       x-safeai-release-phase: R1_CASE_ONLY
       responses:
         '200':
@@ -691,7 +716,8 @@ paths:
         authority. Proof TTL, single-use, actor+case+channel bound. Never return secret in
         response.
       x-safeai-actor-authority: SUBJECT
-      x-safeai-release-phase: R1_CASE_ONLY
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: FUTURE_GATED
       responses:
         '200':
           description: Успешно; не является доказательством стирания.
@@ -806,7 +832,8 @@ paths:
         authority. Consume server-issued single-use proof; verifying identity does not approve
         deletion.
       x-safeai-actor-authority: SUBJECT
-      x-safeai-release-phase: R1_CASE_ONLY
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: FUTURE_GATED
       responses:
         '200':
           description: Успешно; не является доказательством стирания.
@@ -921,6 +948,7 @@ paths:
         authority. Transactionally create SUBMITTED+event+outbox. No destructive intent/worker
         dispatch.
       x-safeai-actor-authority: SUBJECT
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
       x-safeai-release-phase: R1_CASE_ONLY
       responses:
         '202':
@@ -1041,7 +1069,8 @@ paths:
         Recheck actor, tenant, resource versions, policy and holds; never trust client supplied
         authority. Required after preflight scope expansion; no silent extra data removal.
       x-safeai-actor-authority: SUBJECT
-      x-safeai-release-phase: R1_CASE_ONLY
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: FUTURE_GATED
       responses:
         '200':
           description: Успешно; не является доказательством стирания.
@@ -1155,6 +1184,7 @@ paths:
         Recheck actor, tenant, resource versions, policy and holds; never trust client supplied
         authority. Only in NEEDS_INFORMATION; no freeform PII copied into case/audit.
       x-safeai-actor-authority: SUBJECT
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
       x-safeai-release-phase: R1_CASE_ONLY
       responses:
         '200':
@@ -1270,6 +1300,7 @@ paths:
         authority. Serialize with irreversible barrier. Never show WITHDRAWN after irreversible
         action.
       x-safeai-actor-authority: SUBJECT
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
       x-safeai-release-phase: R1_CASE_ONLY
       responses:
         '200':
@@ -1385,7 +1416,8 @@ paths:
         authority. Stop remaining safe steps when possible, then reconcile; cannot undo removed
         data.
       x-safeai-actor-authority: SUBJECT
-      x-safeai-release-phase: R1_CASE_ONLY
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: FUTURE_GATED
       responses:
         '200':
           description: Успешно; не является доказательством стирания.
@@ -1499,7 +1531,8 @@ paths:
         Tenant, owner and current roles are checked server-side; no foreign resource enumeration.
         Non-terminal: 409 RECEIPT_NOT_READY; never fabricate completion or expose raw data.
       x-safeai-actor-authority: SUBJECT
-      x-safeai-release-phase: R1_CASE_ONLY
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: FUTURE_GATED
       responses:
         '200':
           description: Успешно; не является доказательством стирания.
@@ -1601,6 +1634,7 @@ paths:
         Designated approver only, not automatic ADMIN authority.
         Server-side entitlement is separate from ordinary ADMIN/SUPER_ADMIN role.
       x-safeai-actor-authority: DESIGNATED_APPROVER
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
       x-safeai-release-phase: R1_CASE_ONLY
       responses:
         '200':
@@ -1705,7 +1739,8 @@ paths:
         Only frozen, sanitized manifest. No raw content and no mutable approval target.
         Server-side entitlement is separate from ordinary ADMIN/SUPER_ADMIN role.
       x-safeai-actor-authority: DESIGNATED_APPROVER
-      x-safeai-release-phase: R1_CASE_ONLY
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: FUTURE_GATED
       responses:
         '200':
           description: Успешно; не является доказательством стирания.
@@ -1813,6 +1848,7 @@ paths:
         execution.
         Server-side entitlement is separate from ordinary ADMIN/SUPER_ADMIN role.
       x-safeai-actor-authority: DESIGNATED_APPROVER
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
       x-safeai-release-phase: R1_CASE_ONLY
       responses:
         '200':
@@ -1928,6 +1964,7 @@ paths:
         authority. Sanitized reason, append-only decision.
         Server-side entitlement is separate from ordinary ADMIN/SUPER_ADMIN role.
       x-safeai-actor-authority: DESIGNATED_APPROVER
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
       x-safeai-release-phase: R1_CASE_ONLY
       responses:
         '200':
@@ -2043,6 +2080,7 @@ paths:
         authority. Enter NEEDS_INFORMATION with deadline and notification.
         Server-side entitlement is separate from ordinary ADMIN/SUPER_ADMIN role.
       x-safeai-actor-authority: DESIGNATED_APPROVER
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
       x-safeai-release-phase: R1_CASE_ONLY
       responses:
         '200':
@@ -2158,6 +2196,7 @@ paths:
         authority. Serialize legal hold with destructive step; no bypass.
         Server-side entitlement is separate from ordinary ADMIN/SUPER_ADMIN role.
       x-safeai-actor-authority: LEGAL_AUTHORITY
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
       x-safeai-release-phase: R1_CASE_ONLY
       responses:
         '200':
@@ -2274,6 +2313,7 @@ paths:
         provider proof.
         Server-side entitlement is separate from ordinary ADMIN/SUPER_ADMIN role.
       x-safeai-actor-authority: LEGAL_AUTHORITY
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
       x-safeai-release-phase: R1_CASE_ONLY
       responses:
         '202':
@@ -2395,6 +2435,7 @@ paths:
         Exact hold scope, never expose case sensitive legal documents.
         Server-side entitlement is separate from ordinary ADMIN/SUPER_ADMIN role.
       x-safeai-actor-authority: LEGAL_AUTHORITY
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
       x-safeai-release-phase: R1_CASE_ONLY
       responses:
         '200':
@@ -2503,7 +2544,8 @@ paths:
         hold release.
         Server-side entitlement is separate from ordinary ADMIN/SUPER_ADMIN role.
       x-safeai-actor-authority: INDEPENDENT_LEGAL_AUTHORITY
-      x-safeai-release-phase: R1_CASE_ONLY
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: FUTURE_GATED
       responses:
         '200':
           description: Успешно; не является доказательством стирания.
@@ -2618,7 +2660,8 @@ paths:
         May see metadata only, never raw target contents or broad actor access.
         Server-side entitlement is separate from ordinary ADMIN/SUPER_ADMIN role.
       x-safeai-actor-authority: OPERATOR
-      x-safeai-release-phase: R1_READ_ONLY
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: FUTURE_GATED
       responses:
         '200':
           description: Успешно; не является доказательством стирания.
@@ -2722,6 +2765,7 @@ paths:
         authority. Enforce approved manifest and new fencing; operator cannot mark complete.
         Server-side entitlement is separate from ordinary ADMIN/SUPER_ADMIN role.
       x-safeai-actor-authority: OPERATOR
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
       x-safeai-release-phase: R3_PLUS_EXECUTION
       responses:
         '200':
@@ -2838,6 +2882,7 @@ paths:
         manually.
         Server-side entitlement is separate from ordinary ADMIN/SUPER_ADMIN role.
       x-safeai-actor-authority: OPERATOR
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
       x-safeai-release-phase: R3_PLUS_EXECUTION
       responses:
         '200':
@@ -2942,6 +2987,282 @@ paths:
       x-safeai-body-size-limit-bytes: 8192
       x-safeai-audit: SANITIZED_APPEND_ONLY
       x-safeai-cache-control: no-store
+  /api/erasure/requests/capabilities:
+    get:
+      tags:
+      - Workspace
+      summary: Доступные возможности
+      operationId: workspaceCapabilities
+      description: All authenticated USER/ADMIN/SUPER_ADMIN; live roles, scope and flags. Not an authority grant.
+      x-safeai-contract-status: R2_2_SOURCE_OBSERVED_NOT_ACCEPTED
+      x-safeai-release-phase: R2_READ_ONLY
+      parameters: []
+      responses:
+        '200':
+          description: Read-only result; does not prove deletion.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceCapabilitiesR23'
+        '400':
+          description: Invalid parameters
+        '401':
+          description: Authentication required
+        '403':
+          description: Not authorized
+        '404':
+          description: Not found or foreign scoped ID
+        '500':
+          description: Sanitized server error
+  /api/admin/erasure/overview:
+    get:
+      tags:
+      - Workspace
+      summary: Прежняя сводка V105
+      operationId: workspaceLegacyOverview
+      description: Platform SUPER_ADMIN only; independent of approvals flag. total counts review rows; held counts
+        holds, not necessarily distinct cases. Retained for compatibility.
+      x-safeai-contract-status: R2_1_SOURCE_OBSERVED_NOT_ACCEPTED
+      x-safeai-release-phase: R2_READ_ONLY
+      parameters: []
+      responses:
+        '200':
+          description: Read-only result; does not prove deletion.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceLegacySummary'
+        '400':
+          description: Invalid parameters
+        '401':
+          description: Authentication required
+        '403':
+          description: Not authorized
+        '404':
+          description: Not found or foreign scoped ID
+        '500':
+          description: Sanitized server error
+  /api/admin/erasure/registry-summary:
+    get:
+      tags:
+      - Workspace
+      summary: Сводка реестра
+      operationId: workspaceRegistrySummary
+      description: 'Platform: registered and withdrawn, excludes drafts; held counts distinct cases. Tenant ADMIN:
+        only own organization with tenantRegistry capability; no V105 metadata, null review counts. total equals
+        registry ALL at the same database state.'
+      x-safeai-contract-status: R2_3_CANDIDATE_NOT_ACCEPTED
+      x-safeai-release-phase: R2_READ_ONLY
+      parameters: []
+      responses:
+        '200':
+          description: Read-only result; does not prove deletion.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceRegistrySummaryR23'
+        '400':
+          description: Invalid parameters
+        '401':
+          description: Authentication required
+        '403':
+          description: Not authorized
+        '404':
+          description: Not found or foreign scoped ID
+        '500':
+          description: Sanitized server error
+  /api/admin/erasure/registry:
+    get:
+      tags:
+      - Workspace
+      summary: Реестр заявок
+      operationId: workspaceRegistry
+      description: Platform redacted metadata only, no drafts; tenant ADMIN only own organization including drafts,
+        no review data. state is compatibility projection; SUBMITTED in platform filter means no review row. Offset
+        paging, 25 records; concurrent updates may move rows.
+      x-safeai-contract-status: R2_3_CANDIDATE_NOT_ACCEPTED
+      x-safeai-release-phase: R2_READ_ONLY
+      parameters:
+      - name: state
+        in: query
+        schema:
+          type: string
+          enum:
+          - ALL
+          - ATTENTION
+          - HELD
+          - PENDING
+          - NEEDS_INFORMATION
+          - APPROVED_REVIEW_ONLY
+          - REJECTED
+          - WITHDRAWN
+          - SUBMITTED
+          - DRAFT
+          default: ALL
+      - name: query
+        in: query
+        schema:
+          type: string
+          maxLength: 160
+          default: ''
+      - name: page
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 100000
+          default: 0
+      responses:
+        '200':
+          description: Read-only result; does not prove deletion.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceRegistryPageR23'
+        '400':
+          description: Invalid parameters
+        '401':
+          description: Authentication required
+        '403':
+          description: Not authorized
+        '404':
+          description: Not found or foreign scoped ID
+        '500':
+          description: Sanitized server error
+  /api/admin/erasure/registry/{requestId}:
+    get:
+      tags:
+      - Workspace
+      summary: Карточка заявки только для чтения
+      operationId: workspaceRegistryDetail
+      description: Identical scope to registry; foreign/missing or platform draft returns 404. No requester, resource
+        ID, contents or actions. Tenant sees no review fields. Never executes deletion.
+      x-safeai-contract-status: R2_3_CANDIDATE_NOT_ACCEPTED
+      x-safeai-release-phase: R2_READ_ONLY
+      parameters:
+      - name: requestId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Read-only result; does not prove deletion.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceRegistryDetailR23'
+        '400':
+          description: Invalid parameters
+        '401':
+          description: Authentication required
+        '403':
+          description: Not authorized
+        '404':
+          description: Not found or foreign scoped ID
+        '500':
+          description: Sanitized server error
+  /api/admin/erasure/review-queue:
+    get:
+      tags:
+      - Workspace
+      summary: Очередь согласований
+      operationId: workspaceReviewQueue
+      description: Requires separate REVIEW or LEGAL grant and approvals flag; current actor organization only even
+        for SUPER_ADMIN. Case mutation permission separately checked.
+      x-safeai-contract-status: R2_3_CANDIDATE_NOT_ACCEPTED
+      x-safeai-release-phase: R2_READ_ONLY
+      parameters:
+      - name: state
+        in: query
+        schema:
+          type: string
+          enum:
+          - ALL
+          - ATTENTION
+          - HELD
+          - PENDING
+          - NEEDS_INFORMATION
+          - APPROVED_REVIEW_ONLY
+          - REJECTED
+          - WITHDRAWN
+          - SUBMITTED
+          - DRAFT
+          default: ALL
+      - name: query
+        in: query
+        schema:
+          type: string
+          maxLength: 160
+          default: ''
+      - name: page
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 100000
+          default: 0
+      responses:
+        '200':
+          description: Read-only result; does not prove deletion.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceRegistryPageR23'
+        '400':
+          description: Invalid parameters
+        '401':
+          description: Authentication required
+        '403':
+          description: Not authorized
+        '404':
+          description: Not found or foreign scoped ID
+        '500':
+          description: Sanitized server error
+  /api/admin/erasure/history:
+    get:
+      tags:
+      - Workspace
+      summary: История регистрации и рассмотрения
+      operationId: workspaceHistory
+      description: Platform or current independently granted reviewer/LEGAL in actor organization, restricted to
+        reviewed cases for tenant. V103+V105 journals; no still-draft cases; source and eventId distinguish versions
+        and mirrored events. Search request UUID substring.
+      x-safeai-contract-status: R2_3_CANDIDATE_NOT_ACCEPTED
+      x-safeai-release-phase: R2_READ_ONLY
+      parameters:
+      - name: query
+        in: query
+        schema:
+          type: string
+          maxLength: 160
+          default: ''
+      - name: page
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 100000
+          default: 0
+      responses:
+        '200':
+          description: Read-only result; does not prove deletion.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceHistoryPageR23'
+        '400':
+          description: Invalid parameters
+        '401':
+          description: Authentication required
+        '403':
+          description: Not authorized
+        '404':
+          description: Not found or foreign scoped ID
+        '500':
+          description: Sanitized server error
+
 components:
   securitySchemes:
     bearerAuth:
@@ -3046,6 +3367,352 @@ components:
       schema:
         $ref: '#/components/schemas/Scope'
   schemas:
+    WorkspaceCapabilitiesR23:
+      type: object
+      required:
+      - platform
+      - tenantRegistry
+      - personalRequests
+      - reviewQueue
+      - requestsEnabled
+      - approvalsEnabled
+      additionalProperties: false
+      properties:
+        platform:
+          type: boolean
+        tenantRegistry:
+          type: boolean
+        personalRequests:
+          type: boolean
+        reviewQueue:
+          type: boolean
+        requestsEnabled:
+          type: boolean
+        approvalsEnabled:
+          type: boolean
+    WorkspaceLegacySummary:
+      type: object
+      required:
+      - total
+      - pending
+      - held
+      - needsInformation
+      additionalProperties: false
+      properties:
+        total:
+          type: integer
+          minimum: 0
+        pending:
+          type: integer
+          minimum: 0
+        held:
+          type: integer
+          minimum: 0
+        needsInformation:
+          type: integer
+          minimum: 0
+    WorkspaceRegistrySummaryR23:
+      type: object
+      required:
+      - scope
+      - total
+      - registered
+      - withdrawn
+      - drafts
+      - reviewed
+      - pending
+      - needsInformation
+      - held
+      additionalProperties: false
+      properties:
+        scope:
+          type: string
+          enum:
+          - PLATFORM
+          - TENANT
+        total:
+          type: integer
+          minimum: 0
+        registered:
+          type: integer
+          minimum: 0
+        withdrawn:
+          type: integer
+          minimum: 0
+        drafts:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        reviewed:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        pending:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        needsInformation:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        held:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+      allOf:
+      - if:
+          properties:
+            scope:
+              const: TENANT
+        then:
+          properties:
+            reviewed:
+              type: 'null'
+            pending:
+              type: 'null'
+            needsInformation:
+              type: 'null'
+            held:
+              type: 'null'
+            drafts:
+              type: integer
+              minimum: 0
+        else:
+          properties:
+            reviewed:
+              type: integer
+              minimum: 0
+            pending:
+              type: integer
+              minimum: 0
+            needsInformation:
+              type: integer
+              minimum: 0
+            held:
+              type: integer
+              minimum: 0
+            drafts:
+              type: 'null'
+    WorkspaceRegistryItemR23:
+      type: object
+      required:
+      - requestId
+      - organization
+      - requester
+      - resourceType
+      - state
+      - holdActive
+      - updatedAt
+      - intakeState
+      - reviewState
+      - reviewVisible
+      additionalProperties: false
+      properties:
+        requestId:
+          type: string
+          format: uuid
+        organization:
+          type: string
+        requester:
+          type:
+          - string
+          - 'null'
+        resourceType:
+          type: string
+        state:
+          type: string
+        holdActive:
+          type: boolean
+        updatedAt:
+          type: string
+          format: date-time
+        intakeState:
+          type: string
+          enum:
+          - DRAFT
+          - SUBMITTED
+          - WITHDRAWN
+        reviewState:
+          type:
+          - string
+          - 'null'
+          enum:
+          - null
+          - PENDING
+          - NEEDS_INFORMATION
+          - APPROVED_REVIEW_ONLY
+          - REJECTED
+          - WITHDRAWN
+        reviewVisible:
+          type: boolean
+      allOf:
+      - if:
+          properties:
+            reviewVisible:
+              const: false
+        then:
+          properties:
+            reviewState:
+              type: 'null'
+            holdActive:
+              const: false
+    WorkspaceRegistryDetailR23:
+      type: object
+      required:
+      - requestId
+      - organization
+      - resourceType
+      - intakeState
+      - reviewState
+      - reviewVisible
+      - holdActive
+      - createdAt
+      - updatedAt
+      - executionState
+      - completionProven
+      additionalProperties: false
+      properties:
+        requestId:
+          type: string
+          format: uuid
+        organization:
+          type: string
+        resourceType:
+          type: string
+        intakeState:
+          type: string
+          enum:
+          - DRAFT
+          - SUBMITTED
+          - WITHDRAWN
+        reviewState:
+          type:
+          - string
+          - 'null'
+          enum:
+          - null
+          - PENDING
+          - NEEDS_INFORMATION
+          - APPROVED_REVIEW_ONLY
+          - REJECTED
+          - WITHDRAWN
+        reviewVisible:
+          type: boolean
+        holdActive:
+          type:
+          - boolean
+          - 'null'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        executionState:
+          type: string
+          const: NOT_AVAILABLE
+        completionProven:
+          type: boolean
+          const: false
+      allOf:
+      - if:
+          properties:
+            reviewVisible:
+              const: false
+        then:
+          properties:
+            reviewState:
+              type: 'null'
+            holdActive:
+              type: 'null'
+        else:
+          properties:
+            holdActive:
+              type: boolean
+    WorkspaceHistoryItemR23:
+      type: object
+      required:
+      - requestId
+      - organization
+      - eventCode
+      - createdAt
+      - version
+      - eventId
+      - source
+      additionalProperties: false
+      properties:
+        requestId:
+          type: string
+          format: uuid
+        organization:
+          type: string
+        eventCode:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          minimum: 0
+        eventId:
+          type: string
+          format: uuid
+        source:
+          type: string
+          enum:
+          - INTAKE
+          - REVIEW
+    WorkspaceRegistryPageR23:
+      type: object
+      required:
+      - items
+      - page
+      - pageSize
+      - hasNext
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceRegistryItemR23'
+          maxItems: 25
+        page:
+          type: integer
+          minimum: 0
+          maximum: 100000
+        pageSize:
+          type: integer
+          const: 25
+        hasNext:
+          type: boolean
+    WorkspaceHistoryPageR23:
+      type: object
+      required:
+      - items
+      - page
+      - pageSize
+      - hasNext
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceHistoryItemR23'
+          maxItems: 25
+        page:
+          type: integer
+          minimum: 0
+          maximum: 100000
+        pageSize:
+          type: integer
+          const: 25
+        hasNext:
+          type: boolean
     ResourceType:
       type: string
       enum:

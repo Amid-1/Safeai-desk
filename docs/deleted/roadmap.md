@@ -1,7 +1,9 @@
 # SafeAI Desk — Production Roadmap: управляемое удаление данных и закрытие организаций
 
-> **Документ:** `roadmap.md` · версия **1.1 / 24.11.2026**
-> **Статус:** архитектурное решение и план реализации. **НЕ Production GO и НЕ реализованный API**.
+> **Документ:** `roadmap.md` · версия **1.2 / 26.11.2026**
+> **Статус:** архитектурное решение, исторический аудит и план R2.3. **НЕ Production GO**.
+> Разделы с датой 24.11.2026 отражают исторический snapshot, а не текущее состояние.
+> R2.3 — кандидат на локальную приёмку; не подтверждён Maven, PostgreSQL, E2E и CI.
 > **Основа ревизии:** новые архивы Java (`Архив(20261124-164251).zip`), resources, resources_test, tests,
 > frontend(4), frontend root (`Архив(20261124-164535).zip`); предоставленные ранее 9 тематических архивов и
 > предыдущий roadmap.
@@ -18,7 +20,7 @@
 
 - [0–3. Решение, аудит, операции и полномочия](#0-решение-техлида-и-границы-системы)
 - [4–7. Доступ, данные, заявки, миграции](#4-авторизация-проверка-личности-и-независимое-согласование)
-- [8–9. REST API, кабинеты и уведомления](#8-целевые-rest-api-контракты-проект--маршруты-ещё-отсутствуют)
+- [8–9. REST API, кабинеты и уведомления](#8-целевые-rest-api-контракты-проект--см-80-о-фактических-маршрутах)
 - [10–11. Исполнение, S3, инфраструктура](#10-пообъектная-оркестрация-исполнение)
 - [12–14. Этапы, P0-тесты, Production GO](#12-roadmap-внедрения-с-конкретными-результатами-и-шлюзами)
 - [15–19. Решения, R0+R1, исходники, итог](#15-решения-которые-нужно-утвердить-до-r1-не-угадывать)
@@ -101,7 +103,7 @@
 
 - **APPROVE R0:** инвентаризация, юридическая матрица, моделирование угроз.
 - **APPROVE R1:** регистрация и рассмотрение заявок, при неизменно выключенном исполнении.
-- **R2 — только интерфейс и workflow:** не симулировать физическое удаление.
+- **R2 — интерфейс, безопасные read-only проекции и workflow:** не симулировать физическое удаление.
 - **NO-GO R3–R8:** необратимые операции до отдельной evidence-приёмки каждого ресурса.
 - **NO-GO:** универсальное стирание аккаунта, организации, immutable версии модели,
   обход WORM/hold либо массовое стирание чужого содержимого одной ролью ADMIN.
@@ -771,46 +773,21 @@ review.
 
 ## 7. Проект БД и миграций V103+ [ПРОЕКТ]
 
-**Не создавать/именовать миграции до сверки `git rev-parse HEAD` и верхней миграции реального репозитория.**
-В полученных resources максимум V102. Ни один следующий номер не должен уже существовать в main/staging.
+**Не менять применённые V1–V105, их checksum или ACL.** Сверять Git HEAD, Flyway history
+и reviewed manifest перед любой новой миграцией. Исходный план номеров V104–V110 от 24.11.2026
+устарел и отменён. Фактические назначения подтверждены предоставленными SQL:
 
-Предлагаемые поэтапные аддитивные миграции:
-
-**V103**
-- **Назначение:** `erasure_requests`, `erasure_request_events` + статусы/versions
-- **Обязательная проверка:** FK tenant identity, RLS/ACL, immutability history, idempotency
-
-**V104**
-- **Назначение:** `erasure_approvals`, `erasure_identity_verifications`, `erasure_external_cases`
-- **Обязательная проверка:** independent approval, expiring verification, no raw PII
-
-**V105**
-- **Назначение:** `erasure_impacted_resources`, `erasure_execution_steps`, `erasure_obligations`
-- **Обязательная проверка:** scoped locks, leases/fencing, durable outbox, parent-child graph
-
-**V106**
-- **Назначение:** `erasure_evidence_receipts`, `erasure_restore_tombstones`, `erasure_external_proofs`
-- **Обязательная проверка:** immutable references, digest, no contents, backup replay
-
-**V107**
-- **Назначение:** `erasure_retention_decisions`, `erasure_holds`, `erasure_policy_versions`
-- **Обязательная проверка:** legal hold cannot be bypassed, signed decisions
-
-**V108**
-- **Назначение:** User offboarding / owner transfer / anonymization schema
-- **Обязательная проверка:** FK-safe identity changes, last admin
-
-**V109**
-- **Назначение:** Tenant offboarding / freeze / tombstone
-- **Обязательная проверка:** deny writes and durable parent saga
-
-**V110+**
-- **Назначение:** Model retirement/secret lifecycle enhancements
-- **Обязательная проверка:** V45 immutable triggers remain intact unless separately reviewed
-
-
-Имена, таблицы и номера — целевой контракт, **не утверждение о существующем коде**.
-Сгруппировать/переименовать после R0 можно до применения migration; после применения миграции не менять.
+- **V103 — `erasure_case_intake`:** `erasure_requests_v103`, `erasure_request_events_v103`, previews;
+  DRAFT / SUBMITTED / WITHDRAWN, version, append-only events.
+- **V104 — `erasure_actor_detachment_guards`:** защита связанных идентичностей и detachment.
+- **V105 — `erasure_review_intake`:** независимые REVIEW/LEGAL, `erasure_reviews_v105`,
+  `erasure_review_events_v105`, `erasure_review_holds_v105`, защищённые переходы. Состояние
+  `APPROVED_REVIEW_ONLY` не даёт право исполнения.
+- **R2.3:** read-only проекции поверх V103/V105; новые таблицы, миграции и grants не требуются
+  по проекту пакета. Проверить фактические runtime SELECT/ACL на PostgreSQL.
+- **Будущие миграции (номера не резервировать):** identity proof, frozen manifest, execution steps,
+  obligations, receipts, tombstones, retention decisions, user/tenant offboarding, model lifecycle.
+  Выделять номер только после сверки максимальной миграции в актуальной ветке.
 
 ### 7.1. Доступ и индексы
 
@@ -876,11 +853,49 @@ reviewed ACL, Flyway sequential test, fresh V1→latest, populated upgrade V85�
 
 ---
 
-## 8. Целевые REST API-контракты [ПРОЕКТ — маршруты ещё отсутствуют]
+## 8. Целевые REST API-контракты [ПРОЕКТ — см. 8.0 о фактических маршрутах]
 
 Предыдущий `openapi-erasure-DRAFT.yaml` является **непроверенным черновиком v1.0**. Перед R1 его необходимо
 пересобрать по v1.1, особенно `DRAFT -> submit`, `202`, legal holds и scope. Не подключать старый файл к
 генерации клиента или маршрутам. Нормативная целевая семантика описана ниже.
+
+### 8.0. Реальный контракт R1a/R1b и R2.3 — отдельно от целевого дизайна
+
+[ФАКТ ИЗ ИСХОДНИКОВ / ПРОВЕРИТЬ В СРЕДЕ] R1a реализует `POST /api/erasure/previews`,
+`GET/POST /api/erasure/requests`, `GET /api/erasure/requests/{id}` и `POST .../{id}/submit|withdraw`.
+`GET /api/erasure/requests` возвращает личные обращения (не глобальный реестр), до 100 записей.
+R1b использует `GET /api/admin/erasure/reviews`, `/reviews/access`, `/reviews/overview`,
+`/reviews/{id}`, `/reviews/{id}/events`; `POST /reviews/{id}/decision`, `/holds`, `/holds/release`
+(все под `/api/admin/erasure`). Личные read/review routes: `/api/erasure/requests/{id}/review`,
+`/review-events`, `POST /provide-information`. Проверять DTO и feature flags по контроллерам.
+Целевые `/approve`, `/reject`, `/queue`, `/release-hold` не являются алиасами этих маршрутов.
+Не генерировать runtime-клиент по целевому контракту. Step-up, receipt, execution, operator retry
+и подтверждённое удаление остаются будущими функциями.
+
+**Read-only workspace:**
+
+- `GET /api/erasure/requests/capabilities` — актуальные boolean-возможности; не выдаёт права.
+- `GET /api/admin/erasure/overview` — прежняя платформенная сводка V105; без approvals flag.
+- `GET /api/admin/erasure/registry-summary` [R2.3 КАНДИДАТ] — scope PLATFORM/TENANT;
+  total совпадает с registry ALL при неизменных данных. PLATFORM: SUBMITTED+WITHDRAWN, без
+  черновиков, held = число дел с активным удержанием. TENANT: включая DRAFT, только свой tenant;
+  reviewed/pending/needsInformation/held = null, а не 0. registered = intake SUBMITTED.
+- `GET /api/admin/erasure/registry` — page 0..100000, 25 строк, state, query до 160 символов,
+  hasNext; платформенная выдача без requester и resourceId. R2.3 добавляет intakeState,
+  reviewState (nullable), reviewVisible; legacy state остаётся проекцией для фильтров.
+- `GET /api/admin/erasure/registry/{requestId}` [R2.3 КАНДИДАТ] — тот же scope, отсутствие
+  чужой/несуществующей заявки = 404, только метаданные; никаких мутаций. Tenant не читает
+  V105 через этот маршрут. executionState=NOT_AVAILABLE, completionProven=false.
+- `GET /api/admin/erasure/review-queue` — актуальный REVIEW/LEGAL и approvals flag, только
+  организация проверяющего, 25 строк; не глобальная очередь, даже для SUPER_ADMIN.
+- `GET /api/admin/erasure/history` — платформа либо независимый согласующий своего tenant.
+  R2.3: V103+V105, source INTAKE/REVIEW, eventId, независимая version; зеркальные события
+  регистрации отмечены разными источниками. Черновики, которые ещё не подавались, исключены;
+  tenant reviewer видит лишь дела с записью V105. История V102 остаётся в общем аудите.
+
+Offset-пагинация — текущая реализация; cursor из 8.1 остаётся целевым требованием.
+Не выдавать сырые ошибки, PII платформе или обещание исполнения. Все новые GET требуют
+аутентификацию, live role/tenant и серверный scope, а не только скрытие меню.
 
 ### 8.1. Общие заголовки и правила
 
@@ -1140,6 +1155,28 @@ HTTP request.
 ---
 
 ## 9. Личные кабинеты, страницы и UX [ПРОЕКТ]
+
+### 9.0. R2.3 — единая фактическая навигация (кандидат)
+
+- SUPER_ADMIN: `/admin/erasure` (обзор), `/admin/erasure/registry` (заявки),
+  `/admin/erasure/registry/:requestId` (read-only карточка), `/admin/retention`
+  («Политика хранения»), `/admin/erasure/history` («История изменений»).
+- ADMIN: `/admin/erasure` (tenant overview), `/admin/erasure/intake` (реестр своего tenant),
+  та же read-only карточка; без раскрытия V105 через intake. Показ при server capability.
+- Оба: `/admin/erasure/requests` и `/admin/erasure/requests/:requestId` — отдельная очередь
+  и карточка рассмотрения только при независимых REVIEW/LEGAL; проверка каждого действия на сервере.
+- USER/ADMIN: `/settings/privacy`, `/my/erasure-requests`, `/my/erasure-requests/:requestId` —
+  только личные обращения при подтверждённом доступе. SUPER_ADMIN — особый порядок.
+- Два уровня заголовков: модуль «Управление данными» и имя выбранного раздела.
+  История политики ведёт в `/admin/audit?eventType=RETENTION_POLICY_CHANGED`; возврат через
+  allowlist внутренних маршрутов, URL-фильтры и best-effort window scroll; при прямом входе
+  безопасный fallback. Не добавлять второе хранилище аудита.
+- V102 управляет допуском отдельных legacy destructive intents, не приёмом личных обращений.
+  Готовность, допуск, intake, review, execution и доказательство — разные состояния.
+- Не показывать неподдерживаемые кнопки, сырые R1/R3/enum в основном интерфейсе, фиктивные
+  числа или страницы при пустом первом списке. Не выдавать глобальные метрики ADMIN.
+
+Разделы 9.1–9.5 ниже — дальнейший целевой UX; не считать все указанные функции реализованными.
 
 ### 9.1. USER: «Мои данные» и «Мои запросы»
 
@@ -1513,7 +1550,7 @@ deletion. Каждый пункт — самостоятельный cumulative 
   dependencies для MVP
 
 ****R1. Case Foundation****
-- **Что разрабатываем:** V103–V107, typed domain, idempotency, state transitions, immutable events, approval
+- **Что разрабатываем:** V103–V105 (intake, detachment, review); дальнейшие версии только после сверки, typed domain, idempotency, state transitions, immutable events, approval
   rules, no worker execution
 - **Поставляемые изменения:** additive SQL, Runtime ACL manifest, Java interfaces/controllers, OpenAPI,
   unit/IT
@@ -1525,6 +1562,21 @@ deletion. Каждый пункт — самостоятельный cumulative 
   support intake, notifications
 - **Поставляемые изменения:** React views/APIs, accessible dialogs, outbox notifications, tests
 - **Quality/production gate:** E2E USER/ADMIN/SUPER_ADMIN; no false success, no exposed foreign tenant data
+
+****R2.3. Workflow Consistency & Role Acceptance****
+- [КАНДИДАТ] Согласованная сводка и реестр, read-only карточка, независимые статусы,
+  V103/V105 history, упрощение UI, обновлённый OpenAPI, серверные scope tests.
+- [ПРОВЕРИТЬ] PostgreSQL 16: две организации, две независимые роли, DRAFT/SUBMITTED/WITHDRAWN,
+  REVIEW/LEGAL grant/revoke, holds, более 100 записей, равенство summary и registry,
+  прямые чужие ID → 404, неизвестный scope → deny, все flags OFF/ON в тестовой среде.
+- [ПРОВЕРИТЬ] USER/ADMIN/SUPER_ADMIN браузерная приёмка, возврат с фильтрами, 390/768/1440 px,
+  runtime ACL, coverage baselines, Maven/npm/Playwright, GitHub Actions. Нужны фактические логи.
+- [БЛОКЕР ДО R3] Проверить старые chat/document/base/account endpoints, worker credentials,
+  выключение accept/executor flags; подготовить единый admission gate (shadow и enforcement).
+  Не включать executor до доказанных отказов обходных путей. Не считать существующие legacy
+  операции объединёнными с заявками. Организация: disable/enable не равно удалению.
+- [БЛОКЕР ДО EXECUTION] Настоящий step-up/MFA, полноценный per-case allowedActions, proof,
+  safe retention/legal policy, реальная инфраструктура. Ни один новый workflow executor не включён.
 
 ****R3a. Whole-chat content erasure****
 - **Что разрабатываем:** Case adapter к V86, USER self-service после авторизации, coverage provider boundary

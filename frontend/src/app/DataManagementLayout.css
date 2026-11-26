@@ -1,0 +1,59 @@
+/* frontend/src/app/DataManagementLayout.css */
+/* Scoped administrative workspace; the global application shell stays unchanged. */
+.data-management-layout { width:100%; max-width:1500px; margin:0 auto; min-width:0; }
+.data-management-header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; padding:0 0 18px; border-bottom:1px solid #dbe4f3; }
+.data-management-kicker { font-size:11px; font-weight:750; letter-spacing:.09em; color:#526b9a; margin:0 0 5px; }
+.data-management-title { font-size:clamp(20px,2.3vw,29px); font-weight:750; color:#17223b; }
+.data-management-scope { font-size:13px; color:#52637a; margin:0; }
+.data-management-body { display:grid; grid-template-columns:205px minmax(0,1fr); align-items:start; gap:22px; padding-top:20px; }
+.data-management-nav { display:flex; flex-direction:column; gap:5px; padding:8px; background:white; border:1px solid #dbe4f3; border-radius:12px; position:sticky; top:var(--workspace-top, 80px); }
+.data-management-nav a { padding:12px 14px; border-radius:7px; text-decoration:none; font-size:14px; color:#34465f; }
+.data-management-nav a[aria-current="page"] { background:#e9efff; color:#225bd9; font-weight:700; }
+.data-management-nav a:hover { background:#f2f5fb; }
+.data-management-nav a:focus-visible { outline:2px solid #3776cb; outline-offset:2px; }
+.data-management-main { min-width:0; }
+.data-management-main > .page { max-width:none; }
+.data-management-main .er2-heading h1, .data-management-main .er2-hero h1 { font-size:clamp(23px,2.5vw,29px); }
+.data-management-main .er2-hero { margin-top:0; padding:20px; background:white; }
+.data-management-main .retention-back { display:none; }
+@media(max-width:900px) { .data-management-body { grid-template-columns:minmax(0,1fr); gap:14px; } .data-management-nav { position:static; flex-direction:row; flex-wrap:wrap; } }
+@media(max-width:480px) { .data-management-nav a { padding:9px; font-size:13px; } .data-management-main .er2-hero { padding:15px; } }
+
+.data-management-nav small { padding:8px; color:#64748b; }
+.data-management-main .er2-heading { margin:0 0 16px; }
+.data-management-main .er2-metric { min-height:100px; padding:14px 18px; }
+.data-management-main .er2-card { padding:18px; border-radius:12px; }
+.workspace-return { flex:0 0 auto; align-self:flex-start; margin:4px 0 10px; }
+
+.data-management-main .er2-center{padding-bottom:24px}
+.data-management-main .er2-dashboard-grid{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:14px}
+@media(max-width:1050px){.data-management-main .er2-dashboard-grid{grid-template-columns:minmax(0,1fr)}}
+
+/* R2.2.1: actual workspace composition, scoped to the data-management module. */
+.data-management-layout { --dm-border:#dce3ee; }
+.data-management-header { padding-bottom:14px; }
+.data-management-body { grid-template-columns:245px minmax(0,1fr); gap:20px; padding-top:18px; }
+.data-management-nav { background:transparent; border:0; padding:0; gap:7px; }
+.data-management-nav a,.data-management-unavailable { display:flex;align-items:center;gap:10px;min-height:48px;padding:12px;border-radius:9px;font-size:15px;line-height:1.35; }
+.data-management-nav a svg,.data-management-unavailable svg { flex-shrink:0; }
+.data-management-unavailable { color:#79869a; cursor:default; }
+.data-management-access-error { margin:7px 12px; font-size:12px; color:#64748b; }
+.data-management-access-error button { display:block; background:none; border:0; color:#245bd4; padding:6px 0; cursor:pointer; font:inherit; text-decoration:underline; }
+.data-management-main .er2-center .er2-metrics-grid { grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:8px; }
+.data-management-main .er2-center .er2-metric { border:1px solid var(--dm-border);border-radius:12px;box-shadow:none;min-height:108px;padding:15px 18px;gap:9px; }
+.data-management-main .er2-center .er2-metric-label { display:flex;align-items:center;gap:10px;color:#526176;font-size:15px;font-weight:500; }
+.er2-metric-label svg { flex-shrink:0;color:#3975cc; }
+.er2-metric--amber .er2-metric-label svg { color:#ad731b; }
+.er2-metric--violet .er2-metric-label svg { color:#8660b8; }
+.er2-metric--rose .er2-metric-label svg { color:#b94c58; }
+.data-management-main .er2-center .er2-metric strong { margin:0;font-size:31px; }
+.data-management-main .er2-center .er2-dashboard-grid { grid-template-columns:minmax(0,1fr);gap:14px; }
+.data-management-main .er2-center .er2-card { box-shadow:none;border-radius:12px; }
+.er2-attention-head { display:flex;justify-content:space-between;gap:12px;border-top:1px solid #e3e8f0;padding:12px 0;color:#526176;font-size:14px; }
+.er2-attention-empty { padding:12px 0 18px;text-align:center;margin:0; }
+.er2-attention-footer { border-top:1px solid #e3e8f0;padding-top:12px; }
+.data-management-main .er2-center .er2-summary div { display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0; }
+.data-management-main .er2-center .er2-summary dd { text-align:right;font-weight:500; }
+.er2-icon-action { display:inline-flex;align-items:center;gap:6px; }
+@media(max-width:900px){.data-management-body{grid-template-columns:minmax(0,1fr);gap:14px}.data-management-nav{flex-direction:row;flex-wrap:wrap}.data-management-nav a,.data-management-unavailable{min-height:40px;font-size:13px;padding:9px}}
+@media(max-width:520px){.data-management-main .er2-center .er2-metrics-grid{grid-template-columns:minmax(0,1fr)}.data-management-main .er2-center .er2-summary div{align-items:flex-start}}

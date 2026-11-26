@@ -156,9 +156,7 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
 
                         {superAdmin && <AuditIntegrityPanel compact={compact} />}
                         <p className="audit-workspace-hint">
-                            Журнал и сводка разделены изменяемой границей. Перетащите разделитель
-                            или используйте клавиши стрелок, когда он в фокусе.
-                            Двойной щелчок восстанавливает стандартную высоту.
+                            Высоту таблицы можно изменить разделителем. Стрелки — изменение, двойной щелчок — сброс.
                         </p>
 
                         <div className="audit-workspace-switch"
@@ -171,7 +169,7 @@ export function AdminAuditPageView({ controller }: AdminAuditPageViewProps) {
                             </button>
                             <span className="muted">
                                 {compact ? <>Период: {period}{activeFilters && <> · {activeFilters}</>}</>
-                                    : 'Карточки и категории открывают результаты; высоту можно менять вручную.'}
+                                    : 'Карточки и категории фильтруют результаты.'}
                                 {filtersDirty && ' · Есть неприменённые изменения'}
                             </span>
                         </div>

@@ -1,0 +1,640 @@
+openapi: 3.1.0
+info:
+  title: SafeAI Desk — Workspace R2.3 candidate
+  version: 1.2.0-r2.3-candidate
+  description: Read-only candidate, source-derived; no production GO or execution. Browser cookie and CSRF follow
+    actual deployment.
+servers:
+- url: /
+security:
+- bearerAuth: []
+tags:
+- name: Workspace
+paths:
+  /api/erasure/requests/capabilities:
+    get:
+      tags:
+      - Workspace
+      summary: Доступные возможности
+      operationId: workspaceCapabilities
+      description: All authenticated USER/ADMIN/SUPER_ADMIN; live roles, scope and flags. Not an authority grant.
+      x-safeai-contract-status: R2_2_SOURCE_OBSERVED_NOT_ACCEPTED
+      x-safeai-release-phase: R2_READ_ONLY
+      parameters: []
+      responses:
+        '200':
+          description: Read-only result; does not prove deletion.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceCapabilitiesR23'
+        '400':
+          description: Invalid parameters
+        '401':
+          description: Authentication required
+        '403':
+          description: Not authorized
+        '404':
+          description: Not found or foreign scoped ID
+        '500':
+          description: Sanitized server error
+  /api/admin/erasure/overview:
+    get:
+      tags:
+      - Workspace
+      summary: Прежняя сводка V105
+      operationId: workspaceLegacyOverview
+      description: Platform SUPER_ADMIN only; independent of approvals flag. total counts review rows; held counts
+        holds, not necessarily distinct cases. Retained for compatibility.
+      x-safeai-contract-status: R2_1_SOURCE_OBSERVED_NOT_ACCEPTED
+      x-safeai-release-phase: R2_READ_ONLY
+      parameters: []
+      responses:
+        '200':
+          description: Read-only result; does not prove deletion.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceLegacySummary'
+        '400':
+          description: Invalid parameters
+        '401':
+          description: Authentication required
+        '403':
+          description: Not authorized
+        '404':
+          description: Not found or foreign scoped ID
+        '500':
+          description: Sanitized server error
+  /api/admin/erasure/registry-summary:
+    get:
+      tags:
+      - Workspace
+      summary: Сводка реестра
+      operationId: workspaceRegistrySummary
+      description: 'Platform: registered and withdrawn, excludes drafts; held counts distinct cases. Tenant ADMIN:
+        only own organization with tenantRegistry capability; no V105 metadata, null review counts. total equals
+        registry ALL at the same database state.'
+      x-safeai-contract-status: R2_3_CANDIDATE_NOT_ACCEPTED
+      x-safeai-release-phase: R2_READ_ONLY
+      parameters: []
+      responses:
+        '200':
+          description: Read-only result; does not prove deletion.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceRegistrySummaryR23'
+        '400':
+          description: Invalid parameters
+        '401':
+          description: Authentication required
+        '403':
+          description: Not authorized
+        '404':
+          description: Not found or foreign scoped ID
+        '500':
+          description: Sanitized server error
+  /api/admin/erasure/registry:
+    get:
+      tags:
+      - Workspace
+      summary: Реестр заявок
+      operationId: workspaceRegistry
+      description: Platform redacted metadata only, no drafts; tenant ADMIN only own organization including drafts,
+        no review data. state is compatibility projection; SUBMITTED in platform filter means no review row. Offset
+        paging, 25 records; concurrent updates may move rows.
+      x-safeai-contract-status: R2_3_CANDIDATE_NOT_ACCEPTED
+      x-safeai-release-phase: R2_READ_ONLY
+      parameters:
+      - name: state
+        in: query
+        schema:
+          type: string
+          enum:
+          - ALL
+          - ATTENTION
+          - HELD
+          - PENDING
+          - NEEDS_INFORMATION
+          - APPROVED_REVIEW_ONLY
+          - REJECTED
+          - WITHDRAWN
+          - SUBMITTED
+          - DRAFT
+          default: ALL
+      - name: query
+        in: query
+        schema:
+          type: string
+          maxLength: 160
+          default: ''
+      - name: page
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 100000
+          default: 0
+      responses:
+        '200':
+          description: Read-only result; does not prove deletion.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceRegistryPageR23'
+        '400':
+          description: Invalid parameters
+        '401':
+          description: Authentication required
+        '403':
+          description: Not authorized
+        '404':
+          description: Not found or foreign scoped ID
+        '500':
+          description: Sanitized server error
+  /api/admin/erasure/registry/{requestId}:
+    get:
+      tags:
+      - Workspace
+      summary: Карточка заявки только для чтения
+      operationId: workspaceRegistryDetail
+      description: Identical scope to registry; foreign/missing or platform draft returns 404. No requester, resource
+        ID, contents or actions. Tenant sees no review fields. Never executes deletion.
+      x-safeai-contract-status: R2_3_CANDIDATE_NOT_ACCEPTED
+      x-safeai-release-phase: R2_READ_ONLY
+      parameters:
+      - name: requestId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Read-only result; does not prove deletion.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceRegistryDetailR23'
+        '400':
+          description: Invalid parameters
+        '401':
+          description: Authentication required
+        '403':
+          description: Not authorized
+        '404':
+          description: Not found or foreign scoped ID
+        '500':
+          description: Sanitized server error
+  /api/admin/erasure/review-queue:
+    get:
+      tags:
+      - Workspace
+      summary: Очередь согласований
+      operationId: workspaceReviewQueue
+      description: Requires separate REVIEW or LEGAL grant and approvals flag; current actor organization only
+        even for SUPER_ADMIN. Case mutation permission separately checked.
+      x-safeai-contract-status: R2_3_CANDIDATE_NOT_ACCEPTED
+      x-safeai-release-phase: R2_READ_ONLY
+      parameters:
+      - name: state
+        in: query
+        schema:
+          type: string
+          enum:
+          - ALL
+          - ATTENTION
+          - HELD
+          - PENDING
+          - NEEDS_INFORMATION
+          - APPROVED_REVIEW_ONLY
+          - REJECTED
+          - WITHDRAWN
+          - SUBMITTED
+          - DRAFT
+          default: ALL
+      - name: query
+        in: query
+        schema:
+          type: string
+          maxLength: 160
+          default: ''
+      - name: page
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 100000
+          default: 0
+      responses:
+        '200':
+          description: Read-only result; does not prove deletion.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceRegistryPageR23'
+        '400':
+          description: Invalid parameters
+        '401':
+          description: Authentication required
+        '403':
+          description: Not authorized
+        '404':
+          description: Not found or foreign scoped ID
+        '500':
+          description: Sanitized server error
+  /api/admin/erasure/history:
+    get:
+      tags:
+      - Workspace
+      summary: История регистрации и рассмотрения
+      operationId: workspaceHistory
+      description: Platform or current independently granted reviewer/LEGAL in actor organization, restricted
+        to reviewed cases for tenant. V103+V105 journals; no still-draft cases; source and eventId distinguish
+        versions and mirrored events. Search request UUID substring.
+      x-safeai-contract-status: R2_3_CANDIDATE_NOT_ACCEPTED
+      x-safeai-release-phase: R2_READ_ONLY
+      parameters:
+      - name: query
+        in: query
+        schema:
+          type: string
+          maxLength: 160
+          default: ''
+      - name: page
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 100000
+          default: 0
+      responses:
+        '200':
+          description: Read-only result; does not prove deletion.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceHistoryPageR23'
+        '400':
+          description: Invalid parameters
+        '401':
+          description: Authentication required
+        '403':
+          description: Not authorized
+        '404':
+          description: Not found or foreign scoped ID
+        '500':
+          description: Sanitized server error
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    WorkspaceCapabilitiesR23:
+      type: object
+      required:
+      - platform
+      - tenantRegistry
+      - personalRequests
+      - reviewQueue
+      - requestsEnabled
+      - approvalsEnabled
+      additionalProperties: false
+      properties:
+        platform:
+          type: boolean
+        tenantRegistry:
+          type: boolean
+        personalRequests:
+          type: boolean
+        reviewQueue:
+          type: boolean
+        requestsEnabled:
+          type: boolean
+        approvalsEnabled:
+          type: boolean
+    WorkspaceLegacySummary:
+      type: object
+      required:
+      - total
+      - pending
+      - held
+      - needsInformation
+      additionalProperties: false
+      properties:
+        total:
+          type: integer
+          minimum: 0
+        pending:
+          type: integer
+          minimum: 0
+        held:
+          type: integer
+          minimum: 0
+        needsInformation:
+          type: integer
+          minimum: 0
+    WorkspaceRegistrySummaryR23:
+      type: object
+      required:
+      - scope
+      - total
+      - registered
+      - withdrawn
+      - drafts
+      - reviewed
+      - pending
+      - needsInformation
+      - held
+      additionalProperties: false
+      properties:
+        scope:
+          type: string
+          enum:
+          - PLATFORM
+          - TENANT
+        total:
+          type: integer
+          minimum: 0
+        registered:
+          type: integer
+          minimum: 0
+        withdrawn:
+          type: integer
+          minimum: 0
+        drafts:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        reviewed:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        pending:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        needsInformation:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        held:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+      allOf:
+      - if:
+          properties:
+            scope:
+              const: TENANT
+        then:
+          properties:
+            reviewed:
+              type: 'null'
+            pending:
+              type: 'null'
+            needsInformation:
+              type: 'null'
+            held:
+              type: 'null'
+            drafts:
+              type: integer
+              minimum: 0
+        else:
+          properties:
+            reviewed:
+              type: integer
+              minimum: 0
+            pending:
+              type: integer
+              minimum: 0
+            needsInformation:
+              type: integer
+              minimum: 0
+            held:
+              type: integer
+              minimum: 0
+            drafts:
+              type: 'null'
+    WorkspaceRegistryItemR23:
+      type: object
+      required:
+      - requestId
+      - organization
+      - requester
+      - resourceType
+      - state
+      - holdActive
+      - updatedAt
+      - intakeState
+      - reviewState
+      - reviewVisible
+      additionalProperties: false
+      properties:
+        requestId:
+          type: string
+          format: uuid
+        organization:
+          type: string
+        requester:
+          type:
+          - string
+          - 'null'
+        resourceType:
+          type: string
+        state:
+          type: string
+        holdActive:
+          type: boolean
+        updatedAt:
+          type: string
+          format: date-time
+        intakeState:
+          type: string
+          enum:
+          - DRAFT
+          - SUBMITTED
+          - WITHDRAWN
+        reviewState:
+          type:
+          - string
+          - 'null'
+          enum:
+          - null
+          - PENDING
+          - NEEDS_INFORMATION
+          - APPROVED_REVIEW_ONLY
+          - REJECTED
+          - WITHDRAWN
+        reviewVisible:
+          type: boolean
+      allOf:
+      - if:
+          properties:
+            reviewVisible:
+              const: false
+        then:
+          properties:
+            reviewState:
+              type: 'null'
+            holdActive:
+              const: false
+    WorkspaceRegistryDetailR23:
+      type: object
+      required:
+      - requestId
+      - organization
+      - resourceType
+      - intakeState
+      - reviewState
+      - reviewVisible
+      - holdActive
+      - createdAt
+      - updatedAt
+      - executionState
+      - completionProven
+      additionalProperties: false
+      properties:
+        requestId:
+          type: string
+          format: uuid
+        organization:
+          type: string
+        resourceType:
+          type: string
+        intakeState:
+          type: string
+          enum:
+          - DRAFT
+          - SUBMITTED
+          - WITHDRAWN
+        reviewState:
+          type:
+          - string
+          - 'null'
+          enum:
+          - null
+          - PENDING
+          - NEEDS_INFORMATION
+          - APPROVED_REVIEW_ONLY
+          - REJECTED
+          - WITHDRAWN
+        reviewVisible:
+          type: boolean
+        holdActive:
+          type:
+          - boolean
+          - 'null'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        executionState:
+          type: string
+          const: NOT_AVAILABLE
+        completionProven:
+          type: boolean
+          const: false
+      allOf:
+      - if:
+          properties:
+            reviewVisible:
+              const: false
+        then:
+          properties:
+            reviewState:
+              type: 'null'
+            holdActive:
+              type: 'null'
+        else:
+          properties:
+            holdActive:
+              type: boolean
+    WorkspaceHistoryItemR23:
+      type: object
+      required:
+      - requestId
+      - organization
+      - eventCode
+      - createdAt
+      - version
+      - eventId
+      - source
+      additionalProperties: false
+      properties:
+        requestId:
+          type: string
+          format: uuid
+        organization:
+          type: string
+        eventCode:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          minimum: 0
+        eventId:
+          type: string
+          format: uuid
+        source:
+          type: string
+          enum:
+          - INTAKE
+          - REVIEW
+    WorkspaceRegistryPageR23:
+      type: object
+      required:
+      - items
+      - page
+      - pageSize
+      - hasNext
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceRegistryItemR23'
+          maxItems: 25
+        page:
+          type: integer
+          minimum: 0
+          maximum: 100000
+        pageSize:
+          type: integer
+          const: 25
+        hasNext:
+          type: boolean
+    WorkspaceHistoryPageR23:
+      type: object
+      required:
+      - items
+      - page
+      - pageSize
+      - hasNext
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceHistoryItemR23'
+          maxItems: 25
+        page:
+          type: integer
+          minimum: 0
+          maximum: 100000
+        pageSize:
+          type: integer
+          const: 25
+        hasNext:
+          type: boolean

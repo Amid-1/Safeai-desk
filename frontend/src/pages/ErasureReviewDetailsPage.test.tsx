@@ -55,6 +55,16 @@ describe('R2 review decisions', () => {
         expect(screen.queryByRole('option', { name: 'Недостаточно сведений' })).not.toBeInTheDocument()
     })
 
+    it('removes previously granted controls after a failed reload', async () => {
+        mount()
+        expect(await screen.findByText('Решение проверяющего')).toBeInTheDocument()
+        vi.mocked(api.loadReviewAccess).mockRejectedValue(new Error('Forbidden'))
+        fireEvent.click(screen.getByRole('button', { name: 'Обновить карточку' }))
+        await screen.findByRole('button', { name: 'Повторить' })
+        expect(screen.queryByText('Решение проверяющего')).not.toBeInTheDocument()
+        expect(screen.queryByText('Сведения о заявке')).not.toBeInTheDocument()
+    })
+
     it('never offers a decision when an active hold exists', async () => {
         vi.mocked(api.loadReview).mockResolvedValue({ ...entry, holdActive: true })
         mount()
