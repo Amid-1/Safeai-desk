@@ -12,6 +12,7 @@ export default function DataManagementLayout() {
     const { currentUser } = useAuth()
     const location = useLocation()
     const platform = currentUser?.roles.includes('SUPER_ADMIN') === true
+    const tenantAdmin = !platform && currentUser?.roles.includes('ADMIN') === true
     const context = [currentUser?.id, currentUser?.organizationId,
         currentUser?.roles.slice().sort().join(',')].join(':')
     const { capabilities, failed, loading, retry } = useWorkspaceCapabilities(context + ':' + location.pathname)
@@ -30,10 +31,14 @@ export default function DataManagementLayout() {
         </header>
         <div className="data-management-body">
             <nav className="data-management-nav" aria-label="Управление данными">
-                {(platform || capabilities?.tenantRegistry) && <NavLink end to="/admin/erasure"><DataManagementIcon name="overview"/>Обзор</NavLink>}
+                {(platform || tenantAdmin || capabilities?.tenantRegistry) && <NavLink end to="/admin/erasure"><DataManagementIcon name="overview"/>Обзор</NavLink>}
                 {capabilities?.platform && <NavLink to="/admin/erasure/registry"><DataManagementIcon name="inbox"/>Заявки{counts?.registryCount != null && counts.registryCount > 0 && <span className="erasure-menu-count" title={platform ? "Ожидают рассмотрения или передачи на рассмотрение" : "Зарегистрированные заявки"}>{counts.registryCount}</span>}</NavLink>}
                 {!platform && capabilities?.tenantRegistry && <NavLink to="/admin/erasure/intake"><DataManagementIcon name="inbox"/>Заявки{counts?.registryCount != null && counts.registryCount > 0 && <span className="erasure-menu-count" title={platform ? "Ожидают рассмотрения или передачи на рассмотрение" : "Зарегистрированные заявки"}>{counts.registryCount}</span>}</NavLink>}
-                {!capabilities && platform && <span className="data-management-unavailable" aria-disabled="true"><DataManagementIcon name="inbox"/>Заявки</span>}
+                {((!capabilities && platform) || (tenantAdmin && !capabilities?.tenantRegistry)) &&
+                    <span className="data-management-unavailable" aria-disabled="true"
+                        title={capabilities?.requestsEnabled === false ? 'Приём обращений отключён' : 'Доступ к реестру не подтверждён'}>
+                        <DataManagementIcon name="inbox"/>Заявки<DataManagementIcon name="lock"/>
+                    </span>}
                 {capabilities?.reviewQueue && <NavLink to="/admin/erasure/requests"><DataManagementIcon name="review"/>Согласования{counts?.reviewCount != null && counts.reviewCount > 0 && <span className="erasure-menu-count" title="Ожидают решения, кроме собственных заявок">{counts.reviewCount}</span>}</NavLink>}
                 {platform && <NavLink to="/admin/retention"><DataManagementIcon name="database"/>Политика хранения</NavLink>}
                 {(capabilities?.platform || capabilities?.reviewQueue) &&

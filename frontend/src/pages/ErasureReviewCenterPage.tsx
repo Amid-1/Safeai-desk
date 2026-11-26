@@ -22,6 +22,18 @@ const TENANT_METRICS: Metric[] = [
     {key:'drafts',label:'Черновики',tone:'violet',icon:'message'},
     {key:'withdrawn',label:'Отозваны',tone:'rose',icon:'files'},
 ]
+function SystemState({ cap }: { cap: Capabilities | null }) {
+    return <section className="er2-card er2-system-state" aria-label="Состояние системы">
+        <h2>Состояние системы</h2>
+        <dl className="er2-system-grid">
+            <div><dt>Приём обращений</dt><dd>{cap ? cap.requestsEnabled ? 'Включён' : 'Отключён' : 'Нет данных'}</dd></div>
+            <div><dt>Рассмотрение заявок</dt><dd>{cap ? cap.approvalsEnabled ? 'Включено' : 'Отключено' : 'Нет данных'}</dd></div>
+            <div><dt>Подтверждение личности</dt><dd>Не подключено</dd></div>
+            <div><dt>Удаление по заявкам</dt><dd>Отключено</dd></div>
+        </dl>
+        <p className="er2-muted">Согласование заявки не запускает удаление данных.</p>
+    </section>
+}
 export default function ErasureReviewCenterPage() {
     const workspace = useOutletContext<{capabilities:Capabilities|null;loading:boolean;failed:boolean}|null>()
     const [summary,setSummary]=useState<RegistrySummary|null>(null)
@@ -52,11 +64,25 @@ export default function ErasureReviewCenterPage() {
     const visibleSummary = allowed && summary?.scope === (platform?'PLATFORM':'TENANT') ? summary : null
     const metrics = platform ? PLATFORM_METRICS : TENANT_METRICS
     const scopeMismatch = summary !== null && !visibleSummary
-    if(!allowed)return <section className="er2-page page"><h1>Обзор заявок</h1><p role="status">{workspace?.loading?'Проверяем доступ…':'Обзор сейчас недоступен.'}</p></section>
+    const confirmedCap = workspace ? (!workspace.failed && !workspace.loading ? (allowed ? cap ?? workspace.capabilities : workspace.capabilities) : null) : cap
+    if (!allowed) {
+        const paused = confirmedCap?.requestsEnabled === false
+        return <section className="er2-page page er2-center">
+            <header className="er2-heading"><h1>Обзор заявок</h1></header>
+            <div className="er2-banner er2-banner--neutral" role="status">
+                <span className="er2-banner-mark" aria-hidden="true">i</span>
+                <div><strong>{workspace?.loading ? 'Проверяем доступ…' : workspace?.failed ? 'Не удалось проверить доступ' : paused ? 'Приём обращений приостановлен' : 'Обзор сейчас недоступен'}</strong>
+                    <p>{paused ? 'В настоящее время регистрация обращений недоступна. Новые заявки не принимаются.' : 'Статистика и реестр недоступны до подтверждения серверных полномочий.'}</p>
+                </div>
+            </div>
+            <SystemState cap={confirmedCap} />
+        </section>
+    }
     return <section className="er2-page page er2-center">
         <header className="er2-heading er2-heading--row"><h1>Обзор заявок</h1><button className="er2-action er2-icon-action" type="button" disabled={loading}
             onClick={()=>setRevision(v=>v+1)}><DataManagementIcon name="refresh"/>Обновить данные</button></header>
         {(error||scopeMismatch||Object.keys(secondaryErrors).length>0)&&<div role="alert" className="er2-banner er2-banner--danger"><div>{scopeMismatch?'Область статистики изменилась. Обновите данные.':error?'Сводка недоступна. Не удалось загрузить статистику.':'Не удалось загрузить часть данных.'}<details><summary>Диагностика</summary>{error&&<p>Сводка: HTTP {error.status??'нет подтверждённого ответа'}{error.requestId&&` · ${error.requestId}`}</p>}{Object.entries(secondaryErrors).map(([name,value])=><p key={name}>{name}: {value}</p>)}</details></div></div>}
+        <SystemState cap={confirmedCap} />
         <div className="er2-metrics-grid" aria-busy={loading}>{metrics.map(m=><div key={m.key} className={`er2-metric er2-metric--${m.tone}`}>
             <span className="er2-metric-label"><DataManagementIcon name={m.icon}/>{m.label}</span><strong>{loading?'…':visibleSummary?.[m.key]?.toLocaleString('ru-RU')??'—'}</strong></div>)}</div>
         {platform&&visibleSummary&&<p className="er2-muted">Зарегистрированы: {visibleSummary.registered}. Отозваны: {visibleSummary.withdrawn}. Переданы на рассмотрение: {visibleSummary.reviewed}. Удержания могут пересекаться с другими статусами.</p>}
@@ -68,11 +94,6 @@ export default function ErasureReviewCenterPage() {
                     <p>Регистрация обращений вашей организации. Решения и удержания доступны только в отдельной очереди согласований при наличии полномочий.</p>}
                 <div className="er2-attention-footer">{cap?.platform&&platform?<Link to="/admin/erasure/registry?state=ATTENTION">Все заявки →</Link>:cap?.tenantRegistry&&!platform?<Link to="/admin/erasure/intake">Все заявки →</Link>:<span className="er2-muted">Реестр недоступен до подтверждения доступа.</span>}</div>
             </section>
-            <aside className="er2-card"><h2>Состояние системы</h2><dl className="er2-summary">
-                <div><dt>Приём обращений</dt><dd>{cap?cap.requestsEnabled?'Включён':'Отключён':'Нет данных'}</dd></div>
-                <div><dt>Рассмотрение заявок</dt><dd>{cap?cap.approvalsEnabled?'Включено':'Отключено':'Нет данных'}</dd></div>
-                <div><dt>Подтверждение личности</dt><dd>Не подключено</dd></div><div><dt>Удаление по заявкам</dt><dd>Отключено</dd></div></dl>
-                <p className="er2-muted">Согласование заявки не запускает удаление данных.</p></aside>
         </div>
     </section>
 }

@@ -11,6 +11,8 @@ import {
 } from '../api/chat/chatArchiveClient'
 import type { ChatErasureOperation } from '../api/chat/chatArchiveClient'
 import ChatArchiveModal from './ChatArchiveModal'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { ErasureEntryContext } from '../../../shared/ui/erasureEntryContext'
 
 const auth = vi.hoisted(() => ({ roles: ['ADMIN'] }))
 vi.mock('../../auth/state/useAuth', () => ({
@@ -93,6 +95,35 @@ describe('ChatArchiveModal', () => {
         await screen.findByText('Архив пуст.')
         expect(restoreChat).toHaveBeenCalledWith(archived.id)
         expect(onChanged).toHaveBeenCalledTimes(1)
+        expect(requestChatContentErasure).not.toHaveBeenCalled()
+    })
+
+    it('allows a requester to navigate from the archive without restore or legacy erasure', async () => {
+        auth.roles = ['USER']
+        function Destination() {
+            const location = useLocation()
+            return <p>{location.state?.erasureTarget?.id} {location.state?.from}</p>
+        }
+        render(<ErasureEntryContext.Provider value={true}><MemoryRouter initialEntries={['/chat']}><Routes>
+            <Route path="/chat" element={<ChatArchiveModal onClose={vi.fn()} onChanged={vi.fn()} />} />
+            <Route path="/my/erasure-requests" element={<Destination />} />
+        </Routes></MemoryRouter></ErasureEntryContext.Provider>)
+        await open()
+        fireEvent.click(screen.getByRole('link', { name: 'Запросить удаление' }))
+        expect(screen.getByText(`${archived.id} /chat`)).toBeInTheDocument()
+        expect(restoreChat).not.toHaveBeenCalled()
+        expect(getChatErasureCapability).not.toHaveBeenCalled()
+        expect(requestChatContentErasure).not.toHaveBeenCalled()
+    })
+
+    it('explains retention refusal without starting an erasure', async () => {
+        vi.mocked(getChatErasureCapability).mockResolvedValue({ ...capability, allowed: false, reason: 'RETENTION_NOT_APPROVED' })
+        mount()
+        await open()
+        await inspect()
+        expect(await screen.findByRole('alert')).toHaveTextContent('Физическое удаление содержимого пока недоступно: обязательные условия хранения и безопасности не подтверждены.')
+        expect(screen.queryByLabelText('Введите точное название чата')).not.toBeInTheDocument()
+        expect(screen.queryByRole('link', { name: 'Запросить удаление' })).not.toBeInTheDocument()
         expect(requestChatContentErasure).not.toHaveBeenCalled()
     })
 

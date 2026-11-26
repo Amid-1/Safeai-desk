@@ -23,6 +23,7 @@ import {
 import {
     formatDateTime,
 } from '../../../shared/lib/format'
+import ErasureRequestLink from '../../../shared/ui/ErasureRequestLink'
 import './ChatHistoryRow.css'
 
 type ChatHistoryRowProps = {
@@ -160,6 +161,7 @@ export default function ChatHistoryRow({
                     >
                         Архивировать
                     </button>
+                    {!blocked && !archiving && !opening && <ErasureRequestLink target={{ type: 'CHAT', id: chat.id }} />}
                     {onErase && <button
                         type="button"
                         className="chat-delete-action"

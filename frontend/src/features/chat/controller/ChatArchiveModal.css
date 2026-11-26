@@ -104,3 +104,15 @@
         max-height: 150px
     }
 }
+
+.chat-archive__actions .erasure-context-link {
+    align-self: center;
+    border: 1px solid #bed1f4;
+    border-radius: 8px;
+    padding: 9px 12px;
+    color: #245bd4;
+    font-weight: 650;
+    text-decoration: none;
+}
+.chat-archive__actions .erasure-context-link:hover { background: #eef2ff; text-decoration: underline; }
+.chat-archive__actions .erasure-context-link:focus-visible { outline: 2px solid #3776cb; outline-offset: 2px; }

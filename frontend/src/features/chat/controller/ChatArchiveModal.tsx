@@ -1,6 +1,7 @@
 // frontend/src/features/chat/controller/ChatArchiveModal.tsx
 import {useCallback, useEffect, useRef, useState} from 'react'
 import Modal from '../../../shared/ui/Modal'
+import ErasureRequestLink from '../../../shared/ui/ErasureRequestLink'
 import {useAuth} from '../../auth/state/useAuth'
 import {ApiError, getApiErrorMessage} from '../../../shared/api/http'
 import {createSecureUuid} from '../../../shared/lib/secureUuid'
@@ -17,7 +18,6 @@ import './ChatArchiveModal.css'
 type Props = { onClose: () => void; onChanged: () => void; initialChatId?: string }
 
 const ERASURE_REASONS: Record<string, string> = {
-    RETENTION_NOT_APPROVED: 'Политика хранения ещё не разрешает удаление. Обратитесь к суперадминистратору.',
     FEATURE_DISABLED: 'Удаление отключено на сервере. Обратитесь к суперадминистратору.',
     POLICY_PAUSED: 'Платформа приостановила новые удаления. Чат можно оставить в архиве или восстановить.',
     ALREADY_ERASING: 'Чат уже находится в процессе удаления.',
@@ -225,8 +225,10 @@ export default function ChatArchiveModal({onClose, onChanged, initialChatId}: Pr
                 setConfirmationPhrase('')
                 setConfirming(true)
             } else {
-                setError('Удаление недоступно. '
-                    + (ERASURE_REASONS[current.reason] ?? 'Обратитесь к администратору платформы.'))
+                setError(current.reason === 'RETENTION_NOT_APPROVED'
+                    ? 'Физическое удаление содержимого пока недоступно: обязательные условия хранения и безопасности не подтверждены.'
+                    : 'Удаление недоступно. '
+                        + (ERASURE_REASONS[current.reason] ?? 'Обратитесь к администратору платформы.'))
             }
         } catch (cause) {
             setError(getApiErrorMessage(cause, 'Проверка стирания не завершена. Удаление заблокировано.'))
@@ -342,6 +344,7 @@ export default function ChatArchiveModal({onClose, onChanged, initialChatId}: Pr
                                     <button type="button" disabled={busy || confirming}
                                             onClick={() => void restore()}>Восстановить чат
                                     </button>
+                                    {!busy && !confirming && <ErasureRequestLink target={{ type: 'CHAT', id: selected.id }} />}
                                     {canErase && <button type="button" className="secondary-button chat-delete-action"
                                                          disabled={busy || confirming}
                                                          onClick={() => void inspectErasure()}>

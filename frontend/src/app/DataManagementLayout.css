@@ -57,3 +57,13 @@
 .er2-icon-action { display:inline-flex;align-items:center;gap:6px; }
 @media(max-width:900px){.data-management-body{grid-template-columns:minmax(0,1fr);gap:14px}.data-management-nav{flex-direction:row;flex-wrap:wrap}.data-management-nav a,.data-management-unavailable{min-height:40px;font-size:13px;padding:9px}}
 @media(max-width:520px){.data-management-main .er2-center .er2-metrics-grid{grid-template-columns:minmax(0,1fr)}.data-management-main .er2-center .er2-summary div{align-items:flex-start}}
+
+.data-management-unavailable svg:last-child:not(:first-child) { margin-inline-start: auto; width: 16px; height: 16px; }
+.data-management-main .er2-center .er2-system-state { margin-bottom: 14px; }
+.er2-system-state h2 { margin-bottom: 10px; }
+.er2-system-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 20px; margin: 0; }
+.er2-system-grid div { display: grid; gap: 4px; padding: 8px 0; border-bottom: 1px solid #edf1f8; }
+.er2-system-grid dt { font-size: 13px; color: #65758e; }
+.er2-system-grid dd { margin: 0; font-weight: 650; color: #1c2e4c; font-size: 14px; }
+.er2-system-state p { margin: 10px 0 0; font-size: 13px; }
+@media(max-width:520px) { .er2-system-grid { grid-template-columns: minmax(0, 1fr); } }

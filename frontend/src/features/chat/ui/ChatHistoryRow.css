@@ -113,3 +113,24 @@
         white-space: nowrap;
     }
 }
+
+/* A request is a navigation link, not an archive or erasure command. */
+.chat-history-actions .erasure-context-link {
+    display: flex;
+    align-items: center;
+    min-height: 32px;
+    padding: 7px 9px;
+    border-radius: 8px;
+    color: #245bd4;
+    font-size: 12px;
+    font-weight: 700;
+    text-decoration: none;
+}
+.chat-history-actions .erasure-context-link:hover {
+    background: #eef2ff;
+    text-decoration: underline;
+}
+.chat-list-row.active .chat-history-actions .erasure-context-link { color: #fff; }
+.chat-list-row.active .chat-history-actions .erasure-context-link:hover { background: rgb(255 255 255 / 17%); }
+.chat-history-actions .erasure-context-link:focus-visible { outline: 2px solid #7299ff; outline-offset: 2px; }
+.chat-list-row.active .chat-history-actions .erasure-context-link:focus-visible { outline-color: #fff; }

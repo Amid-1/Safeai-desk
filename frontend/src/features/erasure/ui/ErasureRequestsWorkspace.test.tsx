@@ -95,6 +95,18 @@ describe('R1a user interface', () => {
         expect(screen.getByRole('button', { name: 'Создать черновик' })).toBeEnabled()
         expect(vi.mocked(api.createDraft)).not.toHaveBeenCalled()
     })
+    it('preserves a contextual archived chat absent from the active list without auto-submission', async () => {
+        const id = '33333333-3333-4333-8333-333333333333'
+        render(<MemoryRouter initialEntries={[{ pathname: '/my/erasure-requests', state: { erasureTarget: { type: 'CHAT', id }, from: '/chat' } }]}>
+            <ErasureRequestsWorkspace user={user} />
+        </MemoryRouter>)
+        await screen.findByRole('option', { name: 'Рабочий чат' })
+        expect(screen.getByRole('option', { name: 'Чат из карточки' })).toBeInTheDocument()
+        expect(screen.getByLabelText('Мой чат')).toHaveValue(id)
+        expect(api.previewCase).not.toHaveBeenCalled()
+        expect(api.createDraft).not.toHaveBeenCalled()
+        expect(api.submitDraft).not.toHaveBeenCalled()
+    })
     it('prefills a contextual chat but does not submit, preview or create automatically', async () => {
         const id = 'a8517423-018f-412b-95a2-9c79748bf19a'
         render(<MemoryRouter initialEntries={[{ pathname: '/my/erasure-requests', state: { erasureTarget: { type: 'CHAT', id } } }]}>
