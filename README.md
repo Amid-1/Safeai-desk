@@ -2757,7 +2757,7 @@ backend/
 │   │       │       ├── V102__platform_erasure_admission_policy.sql
 │   │       │       ├── V103__erasure_case_intake.sql
 │   │       │       ├── V104__erasure_actor_detachment_guards.sql
-│   │       │       ├── 
+│   │       │       ├── V105__erasure_review_intake.sql
 │   │       │       ├── 
 │   │       │       ├── 
 │   │       │       ├── 
@@ -7364,7 +7364,7 @@ executor
 - **V102**. SQL: `V102__platform_erasure_admission_policy.sql`; Назначение:
 - **V103**. SQL: `V103__erasure_case_intake.sql`; Назначение:
 - **V104**. SQL: `V104__erasure_actor_detachment_guards.sql`; Назначение:
-- **V105**. SQL: `V105__`; Назначение:
+- **V105**. SQL: `V105__erasure_review_intake.sql`; Назначение:
 - **V106**. SQL: `V106__`; Назначение:
 - **V107**. SQL: `V107__`; Назначение:
 - **V108**. SQL: `V108__`; Назначение:

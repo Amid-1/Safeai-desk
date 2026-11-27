@@ -1,7 +1,7 @@
 // frontend/src/pages/ErasureReviewDetailsPage.tsx
 import { WorkspaceReturn } from '../shared/ui/WorkspaceReturn'
 // frontend/src/pages/ErasureReviewDetailsPage.tsx
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useAuth } from '../features/auth/state/useAuth'
 import { getApiErrorMessage } from '../shared/api/http'
@@ -46,6 +46,13 @@ const FINAL_STATES = new Set(['APPROVED_REVIEW_ONLY', 'REJECTED', 'WITHDRAWN'])
 export default function ErasureReviewDetailsPage({ reviewer = false }: Props) {
     const { requestId } = useParams<{ requestId: string }>()
     const { currentUser } = useAuth()
+    // A case change must not reuse pending mutation results or old controls.
+    return <ReviewDetails key={JSON.stringify([requestId, reviewer, currentUser?.id])} reviewer={reviewer} />
+}
+
+function ReviewDetails({ reviewer = false }: Props) {
+    const { requestId } = useParams<{ requestId: string }>()
+    const { currentUser } = useAuth()
     const [caseData, setCaseData] = useState<ReviewView | null>(null)
     const [history, setHistory] = useState<ReviewEvent[]>([])
     const [access, setAccess] = useState<ReviewAccess>({ reviewer: false, legal: false })
@@ -57,6 +64,8 @@ export default function ErasureReviewDetailsPage({ reviewer = false }: Props) {
     const [reason, setReason] = useState('INSUFFICIENT_INFORMATION')
     const [holdReason, setHoldReason] = useState('LEGAL_REQUEST')
     const [reloadKey, setReloadKey] = useState(0)
+    const actionController = useRef<AbortController | null>(null)
+    useEffect(() => () => actionController.current?.abort(), [])
 
     const reload = useCallback(async (signal?: AbortSignal) => {
         if (!requestId) return
@@ -65,8 +74,11 @@ export default function ErasureReviewDetailsPage({ reviewer = false }: Props) {
             loadReviewHistory(requestId, reviewer, signal),
             reviewer ? loadReviewAccess(signal) : Promise.resolve({ reviewer: false, legal: false }),
         ])
+        if (entry.requestId !== requestId || (!reviewer && entry.requesterUserId !== currentUser?.id)) {
+            throw new Error('Ответ не соответствует заявке.')
+        }
         if (!signal?.aborted) { setCaseData(entry); setHistory(events); setAccess(permissions) }
-    }, [requestId, reviewer])
+    }, [requestId, reviewer, currentUser?.id])
 
     useEffect(() => {
         const controller = new AbortController()
@@ -82,33 +94,52 @@ export default function ErasureReviewDetailsPage({ reviewer = false }: Props) {
     }, [reload, reloadKey])
 
     async function action(task: (item: ReviewView) => Promise<ReviewView>) {
-        if (!caseData || busy || loading || error) return
+        if (!caseData || caseData.requestId !== requestId || !currentUser?.id || busy || loading || error
+            || actionController.current) return
+        const controller = new AbortController()
+        actionController.current = controller
         setBusy(true)
         setError(null)
         setNotice(null)
         try {
             const next = await task(caseData)
+            if (controller.signal.aborted) return
+            if (next.requestId !== caseData.requestId || next.requesterUserId !== caseData.requesterUserId) {
+                setCaseData(null); setHistory([]); setAccess({ reviewer: false, legal: false })
+                setError('Ответ не соответствует заявке. Обновите карточку.')
+                return
+            }
             setCaseData(next)
             setNotice('Действие зарегистрировано. Физическое удаление не начиналось.')
-            try { await reload() } catch {
+            try { await reload(controller.signal) } catch {
+                if (controller.signal.aborted) return
                 setCaseData(null); setHistory([]); setAccess({ reviewer: false, legal: false })
                 setError('Данные и полномочия не подтверждены. Обновите карточку.')
                 setNotice('Действие зарегистрировано, но история пока не обновилась. Обновите карточку.')
             }
         } catch (err) {
-            setError(getApiErrorMessage(err, 'Действие не выполнено. Обновите карточку.'))
-        } finally { setBusy(false) }
+            if (!controller.signal.aborted) setError(getApiErrorMessage(err, 'Действие не выполнено. Обновите карточку.'))
+        } finally {
+            if (actionController.current === controller) actionController.current = null
+            if (!controller.signal.aborted) setBusy(false)
+        }
     }
 
     const back = reviewer ? '/admin/erasure/requests' : '/my/erasure-requests'
     if (!requestId) return <ErrorState message="Неверный идентификатор заявки." />
-    const mayReview = !error && !!caseData && reviewer && access.reviewer && !caseData.holdActive
+    const authorizedCase = !!currentUser?.id && !!caseData && caseData.requestId === requestId
+        && !error && !loading
+    const mayReview = authorizedCase && !!caseData && reviewer && access.reviewer && !caseData.holdActive
         && caseData.baseState === 'SUBMITTED' && caseData.reviewState === 'PENDING'
         && caseData.requesterUserId !== currentUser?.id
-    const mayHold = !error && !!caseData && reviewer && access.legal && caseData.baseState === 'SUBMITTED'
-        && caseData.reviewState === 'PENDING' && caseData.requesterUserId !== currentUser?.id
-    const mayClarify = !error && !!caseData && !reviewer && caseData.baseState === 'SUBMITTED'
-        && caseData.reviewState === 'NEEDS_INFORMATION'
+    // V105 permits a legal hold in all three non-rejected, non-withdrawn review states.
+    // Applying a hold invalidates the preliminary decision; the server remains authoritative.
+    const mayHold = authorizedCase && !!caseData && reviewer && access.legal && caseData.baseState === 'SUBMITTED'
+        && (caseData.reviewState === 'PENDING' || caseData.reviewState === 'NEEDS_INFORMATION'
+            || caseData.reviewState === 'APPROVED_REVIEW_ONLY') && caseData.requesterUserId !== currentUser?.id
+    const mayClarify = authorizedCase && !!caseData && !reviewer && caseData.baseState === 'SUBMITTED'
+        && caseData.reviewState === 'NEEDS_INFORMATION' && !caseData.holdActive
+        && caseData.requesterUserId === currentUser?.id
     const isFinal = caseData ? FINAL_STATES.has(caseData.reviewState) : false
 
     return <section className="er2-page page er2-case-page">
@@ -120,7 +151,7 @@ export default function ErasureReviewDetailsPage({ reviewer = false }: Props) {
             <button type="button" className="er2-action" disabled={loading || busy}
                 onClick={() => setReloadKey(key => key + 1)}>Обновить карточку</button>
         </header>
-        {loading ? <LoadingState message="Загружаем заявку..." /> : !caseData ? <div className="er2-card">
+        {loading || (caseData !== null && caseData.requestId !== requestId) ? <LoadingState message="Загружаем заявку..." /> : !caseData ? <div className="er2-card">
             <ErrorState message={error ?? 'Заявка недоступна.'} />
             <button type="button" className="er2-action" onClick={() => setReloadKey(key => key + 1)}>Повторить</button>
         </div> : <>
@@ -195,7 +226,7 @@ export default function ErasureReviewDetailsPage({ reviewer = false }: Props) {
                     </div>}
                     {mayHold && <div className="er2-card">
                         <div className="er2-eyebrow">ОГРАНИЧЕНИЯ</div><h2>Юридическое удержание</h2>
-                        <p className="er2-muted">Удержание препятствует согласованию. Снять его может только другой
+                        <p className="er2-muted">Удержание препятствует согласованию и отменяет предварительное согласование. Снять его может только другой
                             уполномоченный сотрудник, а не тот, кто установил.</p>
                         {!caseData.holdActive && <label className="er2-label">Основание удержания
                             <select value={holdReason} disabled={busy}

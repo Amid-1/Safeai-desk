@@ -107,7 +107,8 @@ public class ErasureReviewService {
     public ReviewView decide(UUID requestId, long expected, String key,
             DecisionBody body, SafeAiUserPrincipal actor) {
         ErasureCaseRules.key(key);
-        if (body == null || !DECISIONS.contains(body.decision())
+        if (body == null || body.decision() == null || body.reasonCode() == null
+                || !DECISIONS.contains(body.decision())
                 || !DECISION_REASONS.contains(body.reasonCode())
                 || !validDecisionReason(body.decision(), body.reasonCode())) throw invalid();
         requireGrant(actor, "REVIEW");
@@ -137,19 +138,21 @@ public class ErasureReviewService {
         ErasureCaseRules.key(key);
         authority.requireActor(actor);
         ReviewView old = locked(requestId, actor.getOrganizationId());
+        // Match the requester-only read contract before consulting the action journal.
+        if (!old.requesterUserId().equals(actor.getId())) throw notFound();
         if (isDuplicate(requestId, actor, key, "INFORMATION_PROVIDED", null)) return old;
-        if (!old.requesterUserId().equals(actor.getId())
-                || old.version() != expected || !"NEEDS_INFORMATION".equals(old.reviewState())
+        if (old.version() != expected || !"NEEDS_INFORMATION".equals(old.reviewState())
                 || !"SUBMITTED".equals(old.baseState()) || old.holdActive()) throw changed();
         actorProof.bind(actor.getId(), actor.getOrganizationId(), requestId,
                 "INFORMATION_PROVIDED", expected + 1, key);
-        jdbc.update("""
+        int updated = jdbc.update("""
                 UPDATE public.erasure_reviews_v105
                 SET review_state='PENDING',review_version=review_version+1,
                     updated_by_user_id=?,last_event_code='INFORMATION_PROVIDED',
                     last_key=?,reason_code=NULL,updated_at=transaction_timestamp()
                 WHERE request_id=? AND organization_id=? AND review_version=?
                 """, actor.getId(), key, requestId, actor.getOrganizationId(), expected);
+        if (updated != 1) throw changed();
         return one(requestId, actor.getOrganizationId());
     }
 
@@ -157,7 +160,7 @@ public class ErasureReviewService {
     public ReviewView hold(UUID requestId, long expected, String key,
             HoldBody body, SafeAiUserPrincipal actor) {
         ErasureCaseRules.key(key);
-        if (body == null || !HOLD_REASONS.contains(body.reasonCode())) throw invalid();
+        if (body == null || body.reasonCode() == null || !HOLD_REASONS.contains(body.reasonCode())) throw invalid();
         requireGrant(actor, "LEGAL");
         ReviewView old = locked(requestId, actor.getOrganizationId());
         if (isDuplicate(requestId, actor, key, "HOLD_APPLIED", body.reasonCode())) return old;
