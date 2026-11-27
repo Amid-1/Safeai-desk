@@ -251,7 +251,7 @@ export default function RegistryWorkspace({review = false}: { review?: boolean }
                                                               onClick={() => update('ALL', '', 0)}>Сбросить
                                                           фильтры</button> : undefined}/>
                     : <div className="er2-table-wrap">
-                        <table className="er2-table">
+                        <table className={`er2-table er2-registry-table er2-registry-table--${scope.toLowerCase()}`}>
                             <thead>
                             <tr>
                                 <th>Заявка</th>

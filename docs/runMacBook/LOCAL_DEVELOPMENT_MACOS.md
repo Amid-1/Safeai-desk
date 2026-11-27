@@ -235,6 +235,10 @@ cd ~/Workspace/Projects/Products/SafeAI-Desk/frontend
 npm run preview -- --host 127.0.0.1 --port 4173 --strictPort
 ```
 
+```bash
+cd ~/Workspace/Projects/Products/SafeAI-Desk/frontend
+npm run preview -- --host 127.0.0.1 --port 4173 --strictPort
+```
 
 Vite покажет адрес, обычно:
 

@@ -116,3 +116,55 @@ test('tenant case card does not link to or request platform history', async ({ p
     expect(calls.some(call => call.path === '/api/admin/erasure/history')).toBe(false)
     expect(calls.every(call => call.method === 'GET')).toBe(true)
 })
+
+// Expansion may increase row height, never the horizontal geometry of the registry.
+for (const role of ['SUPER_ADMIN', 'ADMIN']) {
+    for (const width of [390, 1440]) {
+        test(`${role} registry preserves column geometry when UUID is expanded at ${width}px`, async ({ page }) => {
+            const calls = await fixture(page, role)
+            await page.setViewportSize({ width, height: 900 })
+            await page.goto(role === 'SUPER_ADMIN' ? '/admin/erasure/registry' : '/admin/erasure/intake')
+            const table = page.getByRole('table')
+            const row = table.getByRole('row').filter({ hasText: item.organization })
+            const toggle = row.getByText(`Номер ${requestId.slice(0, 8)}`, { exact: true })
+            const copy = row.getByRole('button', { name: `Скопировать номер заявки ${requestId}`, exact: true })
+            await expect(toggle).toBeVisible()
+            await expect(copy).toBeHidden()
+            await expect(row.getByRole('cell', { name: 'Зарегистрирована', exact: true })).toBeVisible()
+            const geometry = () => table.evaluate(el => [
+                el.getBoundingClientRect().width,
+                el.parentElement.scrollWidth,
+                ...Array.from(el.querySelectorAll('thead th'), th => th.getBoundingClientRect().width),
+            ])
+            const before = await geometry()
+            const drift = async () => Math.max(...(await geometry()).map((value, index) => Math.abs(value - before[index])))
+            await toggle.click()
+            await expect(copy).toBeVisible()
+            await expect(row.getByText(requestId, { exact: true })).toBeVisible()
+            await expect.poll(drift).toBeLessThanOrEqual(1)
+            await expect.poll(() => row.evaluate(el => {
+                const cell = el.querySelector('td')
+                const id = cell.querySelector('.er2-id-value')
+                return Math.max(id.scrollWidth - id.clientWidth, cell.scrollWidth - cell.clientWidth)
+            })).toBeLessThanOrEqual(1)
+            // Status words may wrap between words, never inside a word.
+            await expect.poll(() => row.evaluate(el => Array.from(el.querySelectorAll('.er2-status')).every(status => {
+                const node = status.firstChild
+                if (!node || node.nodeType !== 3) return false
+                return Array.from(node.textContent.matchAll(/\S+/g)).every(match => {
+                    const range = globalThis.document.createRange()
+                    range.setStart(node, match.index)
+                    range.setEnd(node, match.index + match[0].length)
+                    return range.getClientRects().length === 1
+                })
+            }))).toBe(true)
+            await copy.click({ trial: true })
+            await row.getByRole('link', { name: 'Открыть карточку' }).click({ trial: true })
+            await noOverflow(page)
+            await toggle.click()
+            await expect(copy).toBeHidden()
+            await expect.poll(drift).toBeLessThanOrEqual(1)
+            expect(calls.every(call => call.method === 'GET')).toBe(true)
+        })
+    }
+}
