@@ -339,3 +339,12 @@
     overflow-wrap: normal;
     word-break: normal;
 }
+
+/* Keep the short identifier legible without resizing the fixed registry. */
+.er2-registry-workspace .er2-registry-table th:first-child { width: 190px; }
+.er2-registry-workspace .er2-registry-table td:first-child details summary { white-space: nowrap; font-size: 12px; cursor: pointer; }
+.er2-registry-workspace .er2-registry-table td:first-child details summary:focus-visible { outline: 2px solid #7298ed; outline-offset: 2px; }
+.er2-registry-workspace .er2-registry-table .er2-id-value { font-variant-numeric: tabular-nums; }
+.er2-registry-workspace .er2-registry-table { min-width: 1030px; }
+.er2-registry-workspace .er2-registry-table--tenant { min-width: 860px; }
+.er2-registry-workspace .er2-registry-table--review { min-width: 1160px; }

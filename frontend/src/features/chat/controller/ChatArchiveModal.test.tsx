@@ -122,6 +122,7 @@ describe('ChatArchiveModal', () => {
         await open()
         await inspect()
         expect(await screen.findByRole('alert')).toHaveTextContent('Физическое удаление содержимого пока недоступно: обязательные условия хранения и безопасности не подтверждены.')
+        expect(screen.getByRole('region', {name: 'Отдельная операция стирания'})).toContainElement(screen.getByRole('alert'))
         expect(screen.queryByLabelText('Введите точное название чата')).not.toBeInTheDocument()
         expect(screen.queryByRole('link', { name: 'Запросить удаление' })).not.toBeInTheDocument()
         expect(requestChatContentErasure).not.toHaveBeenCalled()

@@ -201,6 +201,7 @@ export default function ChatArchiveModal({onClose, onChanged, initialChatId}: Pr
     async function inspectErasure() {
         if (!selected || busy || !canErase) return
         setBusy(true)
+        setCapability(null)
         setError('')
         try {
             // A previous ambiguous request must be reconciled before a new intent.
@@ -292,7 +293,7 @@ export default function ChatArchiveModal({onClose, onChanged, initialChatId}: Pr
             <div className="chat-archive">
                 <p className="muted">Архив сохраняет историю. Выберите чат, чтобы просмотреть
                     или восстановить его{canErase ? ', либо проверить возможность удаления содержимого.' : '.'}</p>
-                {error && <p role="alert" className="error">{error}</p>}
+                {error && capability?.allowed !== false && <p role="alert" className="error">{error}</p>}
                 {operations.length > 0 && <details className="chat-archive__operations">
                     <summary>История удаления ({operations.length})</summary>
                     {operations.map(item => <p key={item.operationId}>
@@ -334,22 +335,28 @@ export default function ChatArchiveModal({onClose, onChanged, initialChatId}: Pr
                                     {operation.state === 'ERASING' &&
                                         <p>Содержимое стирается на сервере. Не запускайте повтор.</p>}
                                     {operation.state === 'ERASED' &&
-                                        <p>Содержимое уничтожено. Аудиторские и финансовые метаданные сохранены.</p>}
+                                        <p>Стирание содержимого в предусмотренном серверном объёме подтверждено. Аудиторские и финансовые метаданные сохранены. Удаление копий у внешних провайдеров и из резервных копий не подтверждено.</p>}
                                     {operation.state === 'NEEDS_REVIEW' && <p>Нужна проверка администратором.</p>}
                                     {operation.state === 'BLOCKED_BY_RETENTION' &&
                                         <p>Операция заблокирована политикой хранения.</p>}
                                     {operation.state === 'CANCELLED' &&
-                                        <p>Заявка отменена уполномоченным оператором. Содержимое не стиралось.</p>}
-                                </div> : <div className="chat-archive__actions">
-                                    <button type="button" disabled={busy || confirming}
-                                            onClick={() => void restore()}>Восстановить чат
-                                    </button>
-                                    {!busy && !confirming && <ErasureRequestLink target={{ type: 'CHAT', id: selected.id }} />}
-                                    {canErase && <button type="button" className="secondary-button chat-delete-action"
-                                                         disabled={busy || confirming}
-                                                         onClick={() => void inspectErasure()}>
-                                        Удалить содержимое чата…</button>}
-                                </div>}
+                                        <p>Операция отменена уполномоченным оператором. Содержимое не стиралось.</p>}
+                                </div> : <>
+                                    <div className="chat-archive__actions">
+                                        <button type="button" disabled={busy || confirming}
+                                                onClick={() => void restore()}>Восстановить чат
+                                        </button>
+                                        {!busy && !confirming && <ErasureRequestLink target={{ type: 'CHAT', id: selected.id }} />}
+                                    </div>
+                                    {canErase && <section className="chat-archive__separate-erasure" aria-label="Отдельная операция стирания">
+                                        <strong>Отдельная операция стирания</strong>
+                                        <p className="muted">Не является заявкой. Кнопка сначала проверяет допуск на сервере.</p>
+                                        {error && capability?.allowed === false && <p role="alert" className="chat-archive__blocked">{error}</p>}
+                                        <button type="button" className="secondary-button chat-delete-action"
+                                            disabled={busy || confirming} onClick={() => void inspectErasure()}>
+                                            Удалить содержимое чата…</button>
+                                    </section>}
+                                </>}
                                 {confirming && !operation && <div className="chat-archive__erase">
                                     <h4>Удалить содержимое навсегда?</h4>
                                     <p>Текст сообщений, название и связанные тексты RAG будут стёрты.

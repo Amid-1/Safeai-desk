@@ -13,6 +13,8 @@ export {
     updateChatTitle, assignAutomaticChatTitle, archiveChat, sendMessage, getChatTurnStatus, getAnswerPassport,
 } from './chat/chatClient'
 
+export { getArchivedChats } from './chat/chatArchiveClient'
+
 export {
     parseChat, parseChatDetails, parseChatSliceResponse, parseChatCapabilities,
 } from './chat/chatCoreParsers'

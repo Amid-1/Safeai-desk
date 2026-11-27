@@ -1,27 +1,30 @@
 // frontend/src/features/erasure/ui/ErasureRequestsWorkspace.tsx
-import { useCallback, useEffect, useState } from 'react'
-import { useLocation } from 'react-router-dom'
-import { parseContextTarget, type ContextTarget } from '../../../shared/ui/erasureContextTarget'
-import { WorkspaceLink } from '../../../shared/ui/WorkspaceReturn'
-import { getChats, type Chat } from '../../chat/api/chatApi'
-import { getKnowledgeBases } from '../../../entities/knowledge/api/knowledgeApi'
-import type { KnowledgeBase } from '../../../entities/knowledge/api/knowledgeApi'
-import { getKnowledgeDocuments, type KnowledgeDocument } from '../../../entities/knowledge/api/knowledgeDocumentApi'
-import { getApiErrorMessage } from '../../../shared/api/http'
-import { EmptyState, LoadingState } from '../../../shared/ui/StateBlock'
+import {useCallback, useEffect, useRef, useState} from 'react'
+import {useLocation} from 'react-router-dom'
+import {parseContextTarget, type ContextTarget} from '../../../shared/ui/erasureContextTarget'
+import {WorkspaceLink} from '../../../shared/ui/WorkspaceReturn'
+import {getArchivedChats, getChats, type Chat} from '../../chat/api/chatApi'
+import {getKnowledgeBases} from '../../../entities/knowledge/api/knowledgeApi'
+import type {KnowledgeBase} from '../../../entities/knowledge/api/knowledgeApi'
+import {getKnowledgeDocuments, type KnowledgeDocument} from '../../../entities/knowledge/api/knowledgeDocumentApi'
+import {getApiErrorMessage} from '../../../shared/api/http'
+import {EmptyState, LoadingState} from '../../../shared/ui/StateBlock'
 import {
     createDraft, loadMine, previewCase, submitDraft, withdrawCase,
     type CaseView, type Preview, type ResourceType, type Target,
 } from '../api/erasureApi'
+import {loadCapabilities} from '../api/workspaceApi'
 import './ErasureRequestsWorkspace.css'
 
 const TYPES: Record<ResourceType, { title: string; operation: Target['operation']; scope: string }> = {
-    USER_ACCOUNT: { title: 'Моя учётная запись', operation: 'DELETE_ACCOUNT',
-        scope: 'PERSONAL_DATA_AND_ACCESS' },
-    CHAT: { title: 'Мой чат', operation: 'REDACT_CONTENT', scope: 'FULL_CHAT_CONTENT' },
-    KNOWLEDGE_DOCUMENT: { title: 'Документ', operation: 'DELETE_OBJECT', scope: 'FULL_DOCUMENT' },
-    KNOWLEDGE_BASE: { title: 'База знаний', operation: 'DELETE_OBJECT', scope: 'FULL_BASE' },
-    ORGANIZATION: { title: 'Моя организация', operation: 'OFFBOARD_TENANT', scope: 'TENANT_CLOSURE' },
+    USER_ACCOUNT: {
+        title: 'Моя учётная запись', operation: 'DELETE_ACCOUNT',
+        scope: 'PERSONAL_DATA_AND_ACCESS'
+    },
+    CHAT: {title: 'Мой чат', operation: 'REDACT_CONTENT', scope: 'FULL_CHAT_CONTENT'},
+    KNOWLEDGE_DOCUMENT: {title: 'Документ', operation: 'DELETE_OBJECT', scope: 'FULL_DOCUMENT'},
+    KNOWLEDGE_BASE: {title: 'База знаний', operation: 'DELETE_OBJECT', scope: 'FULL_BASE'},
+    ORGANIZATION: {title: 'Моя организация', operation: 'OFFBOARD_TENANT', scope: 'TENANT_CLOSURE'},
 }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const STATE_LABELS: Record<CaseView['state'], string> = {
@@ -32,19 +35,27 @@ const STATE_LABELS: Record<CaseView['state'], string> = {
 
 type Props = { user: { id: string; organizationId: string; roles: string[] } }
 
-export function ErasureRequestsWorkspace({ user }: Props) {
+export function ErasureRequestsWorkspace({user}: Props) {
     const location = useLocation()
     const target = parseContextTarget(location.state?.erasureTarget)
-    return <ErasureRequestForm key={location.key + ':' + user.id + ':' + user.organizationId + ':' + [...user.roles].sort().join(',')} user={user} initialTarget={target} />
+    return <ErasureRequestForm
+        key={location.key + ':' + user.id + ':' + user.organizationId + ':' + [...user.roles].sort().join(',')}
+        user={user} initialTarget={target}/>
 }
 
-function ErasureRequestForm({ user, initialTarget }: Props & { initialTarget: ContextTarget | null }) {
+function ErasureRequestForm({user, initialTarget}: Props & { initialTarget: ContextTarget | null }) {
     const [items, setItems] = useState<CaseView[]>([])
     const [listFilter, setListFilter] = useState<'ALL' | CaseView['state']>('ALL')
     const [type, setType] = useState<ResourceType>(initialTarget?.type ?? 'USER_ACCOUNT')
     const [resourceId, setResourceId] = useState(initialTarget?.id ?? '')
     const [knowledgeBaseId, setKnowledgeBaseId] = useState(initialTarget?.baseId ?? '')
     const [chats, setChats] = useState<Chat[]>([])
+    const [archivedChats, setArchivedChats] = useState<Chat[]>([])
+    const [archiveError, setArchiveError] = useState<string | null>(null)
+    const [listError, setListError] = useState<string | null>(null)
+    const [reviewEnabled, setReviewEnabled] = useState<boolean | null | 'checking'>(null)
+    const loadSequence = useRef(0)
+    const mutationLock = useRef(false)
     const [bases, setBases] = useState<KnowledgeBase[]>([])
     const [documents, setDocuments] = useState<KnowledgeDocument[]>([])
     const [pickerError, setPickerError] = useState<string | null>(null)
@@ -56,37 +67,85 @@ function ErasureRequestForm({ user, initialTarget }: Props & { initialTarget: Co
     const isAdmin = user.roles.includes('ADMIN')
 
     const reload = useCallback(async (signal?: AbortSignal) => {
+        const sequence = ++loadSequence.current
+        const current = () => !signal?.aborted && sequence === loadSequence.current
         setLoading(true)
+        setListError(null)
+        setReviewEnabled(null)
         try {
             const rows = await loadMine(signal)
-            if (!signal?.aborted) { setItems(rows); setError(null) }
+            if (!current()) return
+            setItems(rows)
+            if (rows.some(item => item.state === 'SUBMITTED')) {
+                setReviewEnabled('checking')
+                setLoading(false)
+                try {
+                    const capabilities = await loadCapabilities(signal)
+                    if (current()) setReviewEnabled(capabilities.personalRequests && capabilities.approvalsEnabled)
+                } catch {
+                    // Unknown capability is not permission. Intake remains independently readable.
+                    if (current()) setReviewEnabled(null)
+                }
+            }
         } catch (err) {
-            if (!signal?.aborted) setError(getApiErrorMessage(err, 'Не удалось выполнить запрос.'))
+            if (current()) {
+                setItems([])
+                setListError(getApiErrorMessage(err, 'Не удалось загрузить заявки.'))
+            }
         } finally {
-            if (!signal?.aborted) setLoading(false)
+            if (current()) setLoading(false)
         }
+    }, [])
+
+    const invalidateLoads = useCallback(() => {
+        loadSequence.current += 1
     }, [])
 
     useEffect(() => {
         const controller = new AbortController()
+
         void reload(controller.signal)
-        return () => controller.abort()
-    }, [reload])
+
+        return () => {
+            controller.abort()
+            invalidateLoads()
+        }
+    }, [reload, invalidateLoads])
 
     useEffect(() => {
         const ac = new AbortController()
         setPickerError(null)
-        setChats([]); setBases([]); setDocuments([])
+        setChats([]);
+        setArchivedChats([]);
+        setArchiveError(null);
+        setBases([]);
+        setDocuments([])
         if (type === 'CHAT') {
-            void getChats(0, 100, { signal: ac.signal })
-                .then(data => { if (!ac.signal.aborted) setChats(data.content) })
-                .catch(err => { if (!ac.signal.aborted) setPickerError(getApiErrorMessage(err,
-                    'Не удалось загрузить чаты.')) })
+            void getChats(0, 100, {signal: ac.signal})
+                .then(data => {
+                    if (!ac.signal.aborted) setChats(data.content)
+                })
+                .catch(err => {
+                    if (!ac.signal.aborted) setPickerError(getApiErrorMessage(err,
+                        'Не удалось загрузить чаты.'))
+                })
+            void getArchivedChats(0, 100, ac.signal)
+                .then(data => {
+                    if (!ac.signal.aborted) setArchivedChats(data.content)
+                })
+                .catch(err => {
+                    if (!ac.signal.aborted) setArchiveError(getApiErrorMessage(err,
+                        'Не удалось загрузить архив чатов.'))
+                })
         } else if (type === 'KNOWLEDGE_DOCUMENT' || type === 'KNOWLEDGE_BASE') {
-            void getKnowledgeBases(0, 100, { signal: ac.signal })
-                .then(data => { if (!ac.signal.aborted) setBases(data.content) })
-                .catch(err => { if (!ac.signal.aborted) setPickerError(getApiErrorMessage(err,
-                    'Не удалось загрузить базы знаний.')) })
+            void getKnowledgeBases(0, 100, {signal: ac.signal})
+                .then(data => {
+                    if (!ac.signal.aborted) setBases(data.content)
+                })
+                .catch(err => {
+                    if (!ac.signal.aborted) setPickerError(getApiErrorMessage(err,
+                        'Не удалось загрузить базы знаний.'))
+                })
         }
         return () => ac.abort()
     }, [type])
@@ -95,9 +154,13 @@ function ErasureRequestForm({ user, initialTarget }: Props & { initialTarget: Co
         if (type !== 'KNOWLEDGE_DOCUMENT' || !knowledgeBaseId) return
         const ac = new AbortController()
         void getKnowledgeDocuments(knowledgeBaseId, 0, 100, ac.signal)
-            .then(data => { if (!ac.signal.aborted) setDocuments(data.content) })
-            .catch(err => { if (!ac.signal.aborted) setPickerError(getApiErrorMessage(err,
-                'Не удалось загрузить документы.')) })
+            .then(data => {
+                if (!ac.signal.aborted) setDocuments(data.content)
+            })
+            .catch(err => {
+                if (!ac.signal.aborted) setPickerError(getApiErrorMessage(err,
+                    'Не удалось загрузить документы.'))
+            })
         return () => ac.abort()
     }, [type, knowledgeBaseId])
 
@@ -106,15 +169,28 @@ function ErasureRequestForm({ user, initialTarget }: Props & { initialTarget: Co
     const targetId = type === 'USER_ACCOUNT' ? user.id
         : type === 'ORGANIZATION' ? user.organizationId : resourceId.trim()
     const valid = UUID.test(targetId)
+    const contextualSelection = initialTarget?.type === type && initialTarget.id === targetId
+    const uniqueArchived = archivedChats.filter(chat => !chats.some(active => active.id === chat.id))
+    const knownChat = [...chats, ...uniqueArchived].find(chat => chat.id === resourceId)
     const target: Target = {
         resourceType: type, resourceId: targetId,
         operation: selected.operation, scope: selected.scope,
     }
 
     async function run(action: () => Promise<void>) {
-        setPending(true); setError(null); setNotice(null)
-        try { await action() } catch (err) { setError(getApiErrorMessage(err, 'Не удалось выполнить запрос.')) }
-        finally { setPending(false) }
+        if (mutationLock.current) return
+        mutationLock.current = true
+        setPending(true);
+        setError(null);
+        setNotice(null)
+        try {
+            await action()
+        } catch (err) {
+            setError(getApiErrorMessage(err, 'Не удалось выполнить запрос.'))
+        } finally {
+            mutationLock.current = false;
+            setPending(false)
+        }
     }
 
     return (
@@ -127,26 +203,34 @@ function ErasureRequestForm({ user, initialTarget }: Props & { initialTarget: Co
             </header>
             <div className="erasure-warning" role="note">
                 <strong>Исполнение пока не включено.</strong>
-                <span> Система регистрирует и рассматривает обращения. Ни чат,
-                    ни документ, ни учётная запись не будут физически удалены.</span>
+                <span> По этим заявкам ни чат, ни документ, ни учётная запись не будут физически удалены.
+                    Отдельные операции удаления имеют собственные условия допуска.</span>
             </div>
             <ol className="erasure-steps" aria-label="Как подать запрос">
-                <li><span>1</span><div><strong>Выберите объект</strong><small>Доступен только ваш объект</small></div></li>
-                <li><span>2</span><div><strong>Проверьте последствия</strong><small>Предпросмотр без удаления</small></div></li>
-                <li><span>3</span><div><strong>Подайте заявку</strong><small>Решение видно в истории</small></div></li>
+                <li><span>1</span>
+                    <div><strong>Выберите объект</strong><small>Доступен только ваш объект</small></div>
+                </li>
+                <li><span>2</span>
+                    <div><strong>Проверьте последствия</strong><small>Предпросмотр без удаления</small></div>
+                </li>
+                <li><span>3</span>
+                    <div><strong>Подайте заявку</strong><small>Решение видно в истории</small></div>
+                </li>
             </ol>
             <div className="erasure-columns">
                 <section className="erasure-panel" aria-labelledby="new-case-title">
                     <h2 id="new-case-title">Новая заявка</h2>
-                    {initialTarget && <p className="erasure-muted">Объект выбран из карточки. Проверьте запрос перед созданием черновика.</p>}
-                    <p className="erasure-muted">Выберите объект и проверьте последствия. До подачи
-                        запроса будет создан отдельный черновик.</p>
+                    <p className="erasure-muted">{contextualSelection ? 'Объект выбран из карточки. Проверьте запрос перед созданием черновика.'
+                        : 'Выберите объект. Перед отправкой обращения потребуется создать черновик.'}</p>
                     <label htmlFor="erasure-resource-type">Что вы хотите удалить</label>
                     <select id="erasure-resource-type" value={type} disabled={pending}
-                        onChange={event => {
-                            setType(event.target.value as ResourceType)
-                            setPreview(null); setResourceId(''); setKnowledgeBaseId(''); setNotice(null)
-                        }}>
+                            onChange={event => {
+                                setType(event.target.value as ResourceType)
+                                setPreview(null);
+                                setResourceId('');
+                                setKnowledgeBaseId('');
+                                setNotice(null)
+                            }}>
                         {Object.entries(TYPES).filter(([key]) =>
                             key !== 'ORGANIZATION' || isAdmin).map(([key, item]) => (
                             <option key={key} value={key}>{item.title}</option>
@@ -155,34 +239,56 @@ function ErasureRequestForm({ user, initialTarget }: Props & { initialTarget: Co
                     {type === 'CHAT' && <>
                         <label htmlFor="erasure-chat-select">Мой чат</label>
                         <select id="erasure-chat-select" disabled={pending} value={resourceId}
-                            onChange={e => { setResourceId(e.target.value); setPreview(null) }}>
+                                onChange={e => {
+                                    setResourceId(e.target.value);
+                                    setPreview(null)
+                                }}>
                             <option value="">Выберите чат</option>
-                            {resourceId && !chats.some(chat => chat.id === resourceId) && <option value={resourceId}>Чат из карточки</option>}
-                            {chats.map(chat => <option key={chat.id} value={chat.id}>
-                                {chat.title || 'Без названия'}
-                            </option>)}
+                            {resourceId && !knownChat && <option value={resourceId}>Чат из карточки</option>}
+                            {chats.length > 0 &&
+                                <optgroup label="Активные чаты">{chats.map(chat => <option key={chat.id}
+                                                                                           value={chat.id}>
+                                    {chat.title || 'Без названия'}
+                                </option>)}</optgroup>}
+                            {uniqueArchived.length > 0 && <optgroup label="Архивные чаты">{uniqueArchived.map(chat =>
+                                <option key={chat.id}
+                                        value={chat.id}>{chat.title || 'Без названия'}</option>)}</optgroup>}
                         </select>
-                        <p className="erasure-muted">Показаны первые 100 доступных чатов.</p>
+                        <p className="erasure-muted">До 100 активных и 100 архивных чатов.</p>
+                        {resourceId && !knownChat && <p className="erasure-muted">Название не подтверждено списком.
+                            Объект {resourceId.slice(0, 8)}… проверит сервер.</p>}
+                        {archiveError && <p role="alert" className="erasure-error">{archiveError}</p>}
                     </>}
                     {(type === 'KNOWLEDGE_BASE' || type === 'KNOWLEDGE_DOCUMENT') && <>
                         <label htmlFor="erasure-base-select">База знаний</label>
-                        <select id="erasure-base-select" value={type === 'KNOWLEDGE_BASE' ? resourceId : knowledgeBaseId}
-                            disabled={pending} onChange={e => {
-                                if (type === 'KNOWLEDGE_BASE') setResourceId(e.target.value)
-                                else { setKnowledgeBaseId(e.target.value); setResourceId(''); setDocuments([]) }
-                                setPreview(null)
-                            }}>
+                        <select id="erasure-base-select"
+                                value={type === 'KNOWLEDGE_BASE' ? resourceId : knowledgeBaseId}
+                                disabled={pending} onChange={e => {
+                            if (type === 'KNOWLEDGE_BASE') setResourceId(e.target.value)
+                            else {
+                                setKnowledgeBaseId(e.target.value);
+                                setResourceId('');
+                                setDocuments([])
+                            }
+                            setPreview(null)
+                        }}>
                             <option value="">Выберите базу знаний</option>
-                            {(type === 'KNOWLEDGE_BASE' ? resourceId : knowledgeBaseId) && !bases.some(base => base.id === (type === 'KNOWLEDGE_BASE' ? resourceId : knowledgeBaseId)) && <option value={type === 'KNOWLEDGE_BASE' ? resourceId : knowledgeBaseId}>База из карточки</option>}
+                            {(type === 'KNOWLEDGE_BASE' ? resourceId : knowledgeBaseId) && !bases.some(base => base.id === (type === 'KNOWLEDGE_BASE' ? resourceId : knowledgeBaseId)) &&
+                                <option value={type === 'KNOWLEDGE_BASE' ? resourceId : knowledgeBaseId}>База из
+                                    карточки</option>}
                             {bases.map(base => <option key={base.id} value={base.id}>{base.name}</option>)}
                         </select>
                     </>}
                     {type === 'KNOWLEDGE_DOCUMENT' && knowledgeBaseId && <>
                         <label htmlFor="erasure-doc-select">Документ</label>
                         <select id="erasure-doc-select" disabled={pending} value={resourceId}
-                            onChange={e => { setResourceId(e.target.value); setPreview(null) }}>
+                                onChange={e => {
+                                    setResourceId(e.target.value);
+                                    setPreview(null)
+                                }}>
                             <option value="">Выберите документ</option>
-                            {resourceId && !documents.some(doc => doc.id === resourceId) && <option value={resourceId}>Документ из карточки</option>}
+                            {resourceId && !documents.some(doc => doc.id === resourceId) &&
+                                <option value={resourceId}>Документ из карточки</option>}
                             {documents.map(doc => <option key={doc.id} value={doc.id}>{doc.name}</option>)}
                         </select>
                         <p className="erasure-muted">Показаны первые 100 доступных документов.</p>
@@ -195,10 +301,10 @@ function ErasureRequestForm({ user, initialTarget }: Props & { initialTarget: Co
                     </div>
                     {!preview && (
                         <button type="button" disabled={!valid || pending}
-                            onClick={() => void run(async () => {
-                                setPreview(await previewCase(target))
-                                setNotice('Объект проверен. Подтвердите создание черновика.')
-                            })}>
+                                onClick={() => void run(async () => {
+                                    setPreview(await previewCase(target))
+                                    setNotice('Объект проверен. Подтвердите создание черновика.')
+                                })}>
                             Проверить запрос
                         </button>
                     )}
@@ -208,19 +314,21 @@ function ErasureRequestForm({ user, initialTarget }: Props & { initialTarget: Co
                                 new Date(preview.expiresAt).toLocaleString('ru-RU')}.</p>
                             <p>Проверка не разрешает удаление и не гарантирует его исполнение.</p>
                             <button type="button" disabled={pending}
-                                onClick={() => void run(async () => {
-                                    if (Date.parse(preview.expiresAt) <= Date.now()) {
-                                        setPreview(null)
-                                        throw new Error('Предпросмотр истёк. Запросите новую проверку.')
-                                    }
-                                    await createDraft(target, preview,
-                                        type === 'USER_ACCOUNT' ? 'SELF_REQUEST'
-                                            : type === 'ORGANIZATION' ? 'ORGANIZATION_REQUEST'
-                                            : 'OWNER_REQUEST')
-                                    setPreview(null); setResourceId('')
-                                    await reload()
-                                    setNotice('Черновик создан. Чтобы подать заявку, нажмите «Подать» ниже.')
-                                })}>
+                                    onClick={() => void run(async () => {
+                                        if (Date.parse(preview.expiresAt) <= Date.now()) {
+                                            setPreview(null)
+                                            throw new Error('Предпросмотр истёк. Запросите новую проверку.')
+                                        }
+                                        await createDraft(target, preview,
+                                            type === 'USER_ACCOUNT' ? 'SELF_REQUEST'
+                                                : type === 'ORGANIZATION' ? 'ORGANIZATION_REQUEST'
+                                                    : 'OWNER_REQUEST')
+                                        setPreview(null);
+                                        setResourceId('');
+                                        setListFilter('ALL')
+                                        await reload()
+                                        setNotice('Черновик создан. Нажмите «Подать заявку» в списке справа (или ниже на узком экране).')
+                                    })}>
                                 Создать черновик
                             </button>
                         </div>
@@ -230,11 +338,11 @@ function ErasureRequestForm({ user, initialTarget }: Props & { initialTarget: Co
                     <div className="erasure-panel-heading">
                         <h2 id="case-list-title">История моих заявок</h2>
                         <button type="button" className="erasure-secondary"
-                            disabled={pending || loading} onClick={() => void reload()}>
+                                disabled={pending || loading} onClick={() => void reload()}>
                             Обновить
                         </button>
                     </div>
-                    {!loading && items.length > 0 && <label className="erasure-history-filter">
+                    {!loading && !listError && items.length > 0 && <label className="erasure-history-filter">
                         Показывать
                         <select value={listFilter} onChange={event => setListFilter(event.target.value as
                             'ALL' | CaseView['state'])}>
@@ -244,49 +352,69 @@ function ErasureRequestForm({ user, initialTarget }: Props & { initialTarget: Co
                             <option value="WITHDRAWN">Отозванные</option>
                         </select>
                     </label>}
-                    {loading ? <LoadingState message="Загружаем заявки..." />
-                        : items.length === 0 ? <EmptyState message="Заявок пока нет." />
-                            : shownItems.length === 0 ? <EmptyState message="По выбранному фильтру заявок нет." />
-                            : <ul className="erasure-list">{shownItems.map(item => (
-                                <li key={item.requestId}>
-                                    <div className="erasure-case-head">
-                                        <strong>{TYPES[item.resourceType]?.title ?? item.resourceType}</strong>
-                                        <span className={`erasure-state erasure-state--${item.state.toLowerCase()}`}>
+                    {loading ? <LoadingState message="Загружаем заявки..."/>
+                        : listError ? <div role="alert" className="erasure-error">{listError}</div>
+                            : items.length === 0 ? <EmptyState message="Заявок пока нет."/>
+                                : shownItems.length === 0 ? <EmptyState message="По выбранному фильтру заявок нет."/>
+                                    : <ul className="erasure-list">{shownItems.map(item => (
+                                        <li key={item.requestId}>
+                                            <div className="erasure-case-head">
+                                                <strong>{TYPES[item.resourceType]?.title ?? item.resourceType}</strong>
+                                                <span
+                                                    className={`erasure-state erasure-state--${item.state.toLowerCase()}`}>
                                             {STATE_LABELS[item.state]}</span>
-                                    </div>
-                                    <small>Создана: {new Date(item.createdAt).toLocaleString('ru-RU')}</small>
-                                    {item.state === 'SUBMITTED' && <WorkspaceLink
-                                        to={`/my/erasure-requests/${item.requestId}`}>
-                                        История рассмотрения
-                                    </WorkspaceLink>}
-                                    <div className="erasure-actions">
-                                        {item.state === 'DRAFT' && (
-                                            <button type="button" disabled={pending}
-                                                onClick={() => void run(async () => {
-                                                    await submitDraft(item)
-                                                    await reload()
-                                                    setNotice('Заявка зарегистрирована. Удаление не начато.')
-                                                })}>Подать заявку</button>
-                                        )}
-                                        {item.state !== 'WITHDRAWN' && (
-                                            <button type="button" className="erasure-secondary"
-                                                disabled={pending}
-                                                onClick={() => { if (window.confirm('Отозвать заявку? Это действие нельзя отменить.')) {
-                                                    void run(async () => {
-                                                        await withdrawCase(item); await reload()
-                                                        setNotice('Заявка отозвана.')
-                                                    })
-                                                } }}>Отозвать</button>
-                                        )}
-                                    </div>
-                                </li>
-                            ))}</ul>}
+                                            </div>
+                                            {item.resourceType === 'CHAT' &&
+                                                <p className="erasure-case-target">{[...chats, ...uniqueArchived].find(chat => chat.id === item.resourceId)?.title || `Чат № ${item.resourceId.slice(0, 8)}`}</p>}
+                                            <small>Заявка № {item.requestId.slice(0, 8)} ·
+                                                Создана: {new Date(item.createdAt).toLocaleString('ru-RU')}</small>
+                                            <details className="erasure-case-identifiers">
+                                                <summary>Идентификаторы</summary>
+                                                <small>Номер заявки: {item.requestId}</small>
+                                                <small>Объект: {item.resourceId}</small>
+                                            </details>
+                                            {item.state === 'SUBMITTED' && reviewEnabled !== true &&
+                                                <p className="erasure-review-unavailable">
+                                                    {reviewEnabled === false ? 'Рассмотрение пока недоступно.' : reviewEnabled === 'checking' ? 'Проверяем доступ к рассмотрению…' : 'Доступ к рассмотрению не подтверждён. Обновите список.'}
+                                                </p>}
+                                            <div className="erasure-actions">
+                                                {item.state === 'SUBMITTED' && reviewEnabled === true &&
+                                                    <WorkspaceLink className="erasure-history-link"
+                                                                   to={`/my/erasure-requests/${item.requestId}`}>История
+                                                        рассмотрения</WorkspaceLink>}
+                                                {item.state === 'DRAFT' && (
+                                                    <button type="button" disabled={pending}
+                                                            onClick={() => void run(async () => {
+                                                                await submitDraft(item)
+                                                                setListFilter('ALL')
+                                                                await reload()
+                                                                setNotice('Заявка зарегистрирована. Удаление не начато.')
+                                                            })}>Подать заявку</button>
+                                                )}
+                                                {item.state !== 'WITHDRAWN' && (
+                                                    <button type="button" className="erasure-secondary"
+                                                            disabled={pending}
+                                                            onClick={() => {
+                                                                if (window.confirm('Отозвать заявку? Это действие нельзя отменить.')) {
+                                                                    void run(async () => {
+                                                                        await withdrawCase(item);
+                                                                        setListFilter('ALL');
+                                                                        await reload()
+                                                                        setNotice('Заявка отозвана.')
+                                                                    })
+                                                                }
+                                                            }}>Отозвать</button>
+                                                )}
+                                            </div>
+                                        </li>
+                                    ))}</ul>}
                 </section>
             </div>
             {error && <div role="alert" className="erasure-error">{error}</div>}
             {notice && <div role="status" className="erasure-notice">{notice}</div>}
             {isAdmin && <p className="erasure-footer">
-                Для заявок сотрудников предусмотрена отдельная очередь администратора.
+                Заявки организации доступны в разделе «Управление данными». Для принятия решений требуется отдельное
+                полномочие.
             </p>}
         </section>
     )

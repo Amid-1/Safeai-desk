@@ -116,3 +116,9 @@
 }
 .chat-archive__actions .erasure-context-link:hover { background: #eef2ff; text-decoration: underline; }
 .chat-archive__actions .erasure-context-link:focus-visible { outline: 2px solid #3776cb; outline-offset: 2px; }
+
+/* Distinguish the existing privileged operation from ordinary request intake. */
+.chat-archive__separate-erasure { margin-top: 14px; padding: 12px; border: 1px solid #dbe4f3; border-radius: 10px; min-width: 0; }
+.chat-archive__separate-erasure > strong { font-size: 13px; }
+.chat-archive__separate-erasure > p { font-size: 12px; line-height: 1.5; margin: 5px 0 9px; }
+.chat-archive__blocked { color: #814812; background: #fff4e5; border-radius: 8px; padding: 9px 10px; overflow-wrap: anywhere; }
