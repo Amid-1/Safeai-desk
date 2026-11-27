@@ -163,6 +163,7 @@ fencing и уникальные ограничения БД определяют
 │   ├── ChatContentNormalizer.java
 │   ├── ChatDatabaseClockRepository.java
 │   ├── ChatErasureLimits.java
+│   ├── ChatErasurePreconditions.java
 │   ├── ChatErasureWorker.java
 │   ├── ChatLifecycleService.java
 │   ├── ChatLockService.java
@@ -652,6 +653,7 @@ API keys или storage object keys. Наличие метрики не дока
 │   ├── AiHistoryBuilderTest.java
 │   ├── ChatContentNormalizerTest.java
 │   ├── ChatErasureFeatureGateTest.java
+│   ├── ChatErasurePreconditionsTest.java
 │   ├── ChatLockServiceTest.java
 │   ├── ChatProcessingContextTest.java
 │   ├── ChatProcessingContextTestFixtures.java

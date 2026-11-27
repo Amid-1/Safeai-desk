@@ -13,6 +13,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import ru.safeai.gateway.chat.dto.ChatErasureRequest;
 import ru.safeai.gateway.chat.service.ChatLifecycleService;
 import ru.safeai.gateway.common.exception.ConflictException;
+import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 
 import java.util.List;
@@ -100,5 +101,50 @@ class ChatErasureAdmissionLimitIT extends AbstractChatPostgresIntegrationTest {
            SELECT count(*) FROM public.chat_messages
             WHERE session_id=? AND content='test message'
            """,Long.class,CHAT_ID)).isEqualTo(10_001L);
+    }
+    @Test
+    void mismatchedAuthEpochsDenyReadsAndAdmissionWithoutChangingChat() {
+        SafeAiUserPrincipal admin = setUpArchivedAdminChat(1);
+        long version = Objects.requireNonNull(jdbcTemplate.queryForObject("""
+                SELECT version FROM public.chat_sessions WHERE id=?
+                """, Long.class, CHAT_ID));
+        // The valid principal still passes; change exactly one epoch at a time.
+        assertThat(service.capability(CHAT_ID, admin).allowed()).isTrue();
+        var wrongUserEpoch = SafeAiUserPrincipal.accessTokenPrincipal(USER_ID, ORGANIZATION_ID,
+                admin.getTokenVersion() + 1, admin.getOrganizationAuthVersion(), admin.getAuthorities());
+        var wrongOrgEpoch = SafeAiUserPrincipal.accessTokenPrincipal(USER_ID, ORGANIZATION_ID,
+                admin.getTokenVersion(), admin.getOrganizationAuthVersion() + 1, admin.getAuthorities());
+        for (var denied : List.of(wrongUserEpoch, wrongOrgEpoch)) {
+            SecurityContextHolder.getContext().setAuthentication(
+                    new UsernamePasswordAuthenticationToken(denied, null, denied.getAuthorities()));
+            assertThatThrownBy(() -> service.capability(CHAT_ID, denied))
+                    .isInstanceOf(ForbiddenOperationException.class);
+            assertThatThrownBy(() -> service.acceptErasure(CHAT_ID, version,
+                    "epoch-test-" + UUID.randomUUID(),
+                    new ChatErasureRequest("Integration chat", "УДАЛИТЬ НАВСЕГДА"), denied))
+                    .isInstanceOf(ForbiddenOperationException.class);
+            assertThatThrownBy(() -> service.restore(CHAT_ID, denied))
+                    .isInstanceOf(ForbiddenOperationException.class);
+            assertThatThrownBy(() -> service.archivedDetails(CHAT_ID, denied))
+                    .isInstanceOf(ForbiddenOperationException.class);
+            assertThatThrownBy(() -> service.archived(denied, org.springframework.data.domain.PageRequest.of(0, 10)))
+                    .isInstanceOf(ForbiddenOperationException.class);
+            assertThatThrownBy(() -> service.archive(CHAT_ID, denied))
+                    .isInstanceOf(ForbiddenOperationException.class);
+            assertThatThrownBy(() -> service.erasureStatus(CHAT_ID, denied))
+                    .isInstanceOf(ForbiddenOperationException.class);
+            assertThatThrownBy(() -> service.listErasureOperations(denied))
+                    .isInstanceOf(ForbiddenOperationException.class);
+        }
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM public.chat_erasure_operations_v86 WHERE chat_id=?
+                """, Long.class, CHAT_ID)).isZero();
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT version FROM public.chat_sessions WHERE id=? AND archived_at IS NOT NULL
+                  AND erasure_state='AVAILABLE'
+                """, Long.class, CHAT_ID)).isEqualTo(version);
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM public.chat_messages WHERE session_id=? AND content='test message'
+                """, Long.class, CHAT_ID)).isEqualTo(1L);
     }
 }

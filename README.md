@@ -5156,6 +5156,7 @@ chat/
 │   ├── ChatContentNormalizer
 │   ├── ChatDatabaseClockRepository
 │   ├── ChatErasureLimits
+│   ├── ChatErasurePreconditions
 │   ├── ChatErasureWorker
 │   ├── ChatLifecycleService
 │   ├── ChatLockService

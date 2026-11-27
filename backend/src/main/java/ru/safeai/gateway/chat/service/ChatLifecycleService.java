@@ -54,6 +54,7 @@ public class ChatLifecycleService {
     private final ChatProperties chatProperties;
     private final AuditEventService audit;
     private final JdbcTemplate jdbc;
+    private final ChatErasurePreconditions preconditions;
     private final Clock clock;
     private final boolean acceptEnabled;
     private final boolean executorEnabled;
@@ -74,6 +75,7 @@ public class ChatLifecycleService {
         this.chatProperties = Objects.requireNonNull(chatProperties);
         this.audit = Objects.requireNonNull(audit);
         this.jdbc = Objects.requireNonNull(jdbc);
+        this.preconditions = new ChatErasurePreconditions(this.jdbc);
         this.clock = Objects.requireNonNull(clock);
         this.acceptEnabled = acceptEnabled;
         this.executorEnabled = executorEnabled;
@@ -145,9 +147,9 @@ public class ChatLifecycleService {
                 : (!acceptEnabled || !executorEnabled) ? "FEATURE_DISABLED"
                 : !"AVAILABLE".equals(chat.erasureState()) ? "ALREADY_ERASING"
                 : !chat.archived() ? "ARCHIVE_FIRST"
-                : hasRetentionHold(chatId) ? "RETENTION_HOLD"
-                : hasInFlightTurn(chatId) ? "ACTIVE_AI_OPERATION"
-                : exceedsAtomicErasureLimit(chatId) ? "CHAT_TOO_LARGE_FOR_ATOMIC_ERASURE"
+                : preconditions.hasRetentionHold(chatId) ? "RETENTION_HOLD"
+                : preconditions.hasInFlightTurn(chatId) ? "ACTIVE_AI_OPERATION"
+                : preconditions.exceedsAtomicErasureLimit(chatId) ? "CHAT_TOO_LARGE_FOR_ATOMIC_ERASURE"
                 : !ErasureAdmissionPolicy.allowed(jdbc, ErasureAdmissionPolicy.Scope.CHAT) ? "POLICY_PAUSED"
                 : "ENABLED";
         return new ChatErasureCapabilityResponse("ENABLED".equals(reason), reason, chat.version());
@@ -202,11 +204,11 @@ public class ChatLifecycleService {
         if (!chat.title().equals(confirmation.confirmationTitle())) {
             throw new ConflictException("Название чата изменилось или подтверждено неверно.");
         }
-        if (hasRetentionHold(chatId)) {
+        if (preconditions.hasRetentionHold(chatId)) {
             throw new ConflictException("Удаление запрещено действующим ограничением хранения.");
         }
         rejectInFlightTurn(chatId);
-        if (exceedsAtomicErasureLimit(chatId)) {
+        if (preconditions.exceedsAtomicErasureLimit(chatId)) {
             // Reject BEFORE durable acceptance. Requeueing an impossible-sized
             // operation would otherwise produce a permanent NEEDS_REVIEW loop.
             throw new ConflictException(
@@ -290,45 +292,13 @@ public class ChatLifecycleService {
     }
 
     private void rejectInFlightTurn(UUID chatId) {
-        if (hasInFlightTurn(chatId)) {
+        if (preconditions.hasInFlightTurn(chatId)) {
             throw new ConflictException("В чате есть незавершённая AI-операция. Дождитесь её терминального статуса.");
         }
     }
 
-    private boolean hasInFlightTurn(UUID chatId) {
-        return Boolean.TRUE.equals(jdbc.queryForObject(
-            "SELECT public.chat_has_active_execution_v86(?)", Boolean.class, chatId));
-    }
-
-    private boolean exceedsAtomicErasureLimit(UUID chatId) {
-        // Counts use the SAME redaction predicates as ChatErasureWorker.
-        // Exactly 10,000 rows of each type are allowed; 10,001 are rejected.
-        return Boolean.TRUE.equals(jdbc.queryForObject("""
-            SELECT (SELECT count(*) FROM public.chat_messages
-                    WHERE session_id=? AND content IS DISTINCT FROM '[СОДЕРЖИМОЕ УДАЛЕНО]') > ?
-                OR (SELECT count(*) FROM public.knowledge_retrieval_runs r
-                    JOIN public.chat_turns t ON t.id=r.chat_turn_id
-                    WHERE t.session_id=? AND r.query_text IS DISTINCT FROM '[REDACTED:SHA256_ONLY]') > ?
-            """, Boolean.class, chatId, ChatErasureLimits.MAX_ROWS_PER_KIND,
-                chatId, ChatErasureLimits.MAX_ROWS_PER_KIND));
-    }
-
-    private boolean hasRetentionHold(UUID chatId) {
-        return Boolean.TRUE.equals(jdbc.queryForObject("""
-                SELECT EXISTS(SELECT 1 FROM public.chat_retention_holds_v86
-                    WHERE chat_id=? AND released_at IS NULL)
-                """, Boolean.class, chatId));
-    }
-
     private void requirePersistedMembership(SafeAiUserPrincipal actor) {
-        List<String> roles = jdbc.query("""
-                SELECT r.name FROM public.users u
-                JOIN public.organizations o ON o.id=u.organization_id AND o.enabled
-                JOIN public.user_roles ur ON ur.user_id=u.id
-                JOIN public.roles r ON r.id=ur.role_id
-                WHERE u.id=? AND u.organization_id=? AND u.enabled
-                FOR SHARE OF u,ur,o
-                """, (rs, index) -> rs.getString(1), actor.getId(), actor.getOrganizationId());
+        List<String> roles = persistedRoles(actor);
         if ((!roles.contains("ADMIN") && !roles.contains("USER"))
             || roles.contains("SUPER_ADMIN")) {
             throw new ForbiddenOperationException("Доступ к чату изменён или организация отключена.");
@@ -336,17 +306,26 @@ public class ChatLifecycleService {
     }
 
     private void requirePersistedAdmin(SafeAiUserPrincipal actor) {
-        List<String> roles = jdbc.query("""
+        List<String> roles = persistedRoles(actor);
+        if (!roles.contains("ADMIN") || roles.contains("SUPER_ADMIN")) {
+            throw new ForbiddenOperationException("Права администратора изменены или организация отключена.");
+        }
+    }
+
+    private List<String> persistedRoles(SafeAiUserPrincipal actor) {
+        // Match the R1a authority check: persisted membership alone does not
+        // authorize a JWT from an obsolete user or organization auth epoch.
+        // Keep identity-before-chat lock order and SHARE locks on live rows.
+        return jdbc.query("""
                 SELECT r.name FROM public.users u
                 JOIN public.organizations o ON o.id=u.organization_id AND o.enabled
                 JOIN public.user_roles ur ON ur.user_id=u.id
                 JOIN public.roles r ON r.id=ur.role_id
                 WHERE u.id=? AND u.organization_id=? AND u.enabled
+                  AND u.token_version=? AND o.auth_version=?
                 FOR SHARE OF u,ur,o
-                """, (rs, index) -> rs.getString(1), actor.getId(), actor.getOrganizationId());
-        if (!roles.contains("ADMIN") || roles.contains("SUPER_ADMIN")) {
-            throw new ForbiddenOperationException("Права администратора изменены или организация отключена.");
-        }
+                """, (rs, index) -> rs.getString(1), actor.getId(), actor.getOrganizationId(),
+                actor.getTokenVersion(), actor.getOrganizationAuthVersion());
     }
 
     private static void requireTenantUser(SafeAiUserPrincipal actor) {
