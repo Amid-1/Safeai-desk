@@ -21,6 +21,25 @@ describe('Notification polling scope', () => {
         rerender({ scope: null })
         expect(result.current).toBeNull()
     })
+    it('aborts in-flight polling and ignores the late response after access is denied', async () => {
+        let resolve: (value: NotificationFeed) => void = () => undefined
+        load.mockImplementationOnce(() => new Promise<NotificationFeed>(done => { resolve = done }))
+        const { result, rerender } = renderHook(({ scope, key }: { scope: string | null; key: string }) =>
+            useErasureNotifications(scope, key), { initialProps: { scope: 'actor-a' as string | null, key: 'allowed' } })
+        await waitFor(() => expect(load).toHaveBeenCalledTimes(1))
+        const signal = load.mock.calls[0]?.[0]
+        expect(signal?.aborted).toBe(false)
+        rerender({ scope: null, key: 'denied' })
+        expect(signal?.aborted).toBe(true)
+        expect(result.current).toBeNull()
+        await act(async () => { resolve(feed); await Promise.resolve() })
+        expect(result.current).toBeNull()
+        expect(load).toHaveBeenCalledTimes(1)
+        load.mockResolvedValueOnce(feed)
+        rerender({ scope: 'actor-a', key: 'allowed-again' })
+        await waitFor(() => expect(result.current).toEqual(feed))
+        expect(load).toHaveBeenCalledTimes(2)
+    })
     it('ignores a late response from the previous actor', async () => {
         let resolve: (value: NotificationFeed) => void = () => undefined
         load.mockImplementationOnce(() => new Promise<NotificationFeed>(done => { resolve = done }))
