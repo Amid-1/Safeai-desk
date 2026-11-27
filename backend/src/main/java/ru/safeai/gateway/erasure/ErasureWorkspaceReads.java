@@ -77,6 +77,8 @@ public class ErasureWorkspaceReads {
     ) {
     }
 
+    // Empty selections must retain the exact wire contract, including items: [].
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.ALWAYS)
     public record Page(
             List<Item> items,
             int page,
@@ -118,6 +120,7 @@ public class ErasureWorkspaceReads {
 
     public record HistoryItem(UUID requestId, String organization, String eventCode, Instant createdAt,
             long version, UUID eventId, String source) { }
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.ALWAYS)
     public record HistoryPage(List<HistoryItem> items, int page, int pageSize, boolean hasNext) { }
 
     private static final String REGISTERED_SCOPE = "r.state IN ('SUBMITTED', 'WITHDRAWN')";

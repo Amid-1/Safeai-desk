@@ -17,6 +17,16 @@ describe('Workspace API contracts',()=>{
         expect(data.items[0].requester).toBeNull()
         expect(request).toHaveBeenLastCalledWith('/api/admin/erasure/registry?state=PENDING&query=A+%26+B&page=2',{method:'GET',signal:undefined})
     })
+    it.each(['ALL','ATTENTION','HELD','PENDING','NEEDS_INFORMATION','APPROVED_REVIEW_ONLY','REJECTED','WITHDRAWN','SUBMITTED','DRAFT'])('accepts the exact empty page for %s',async state=>{
+        const empty={items:[],page:0,pageSize:25,hasNext:false}
+        request.mockResolvedValueOnce(empty)
+        await expect(loadRegistry(false,state,'',0)).resolves.toEqual(empty)
+        expect(request).toHaveBeenLastCalledWith(`/api/admin/erasure/registry?state=${state}&query=&page=0`,{method:'GET',signal:undefined})
+    })
+    it.each([{}, {items:null}, {items:{}}, {items:[],page:1}, {items:[],pageSize:0}, {items:[],hasNext:null}, {items:[],hasNext:true}])('does not turn malformed response %j into an empty page',async override=>{
+        request.mockResolvedValueOnce({page:0,pageSize:25,hasNext:false,...override})
+        await expect(loadRegistry(false,'HELD','',0)).rejects.toMatchObject({errorCode:'INVALID_RESPONSE'})
+    })
     it('rejects mismatched page and malformed history',async()=>{
         request.mockResolvedValueOnce({page:4,pageSize:25,hasNext:false,items:[]});await expect(loadRegistry(true,'ALL','',0)).rejects.toThrow()
         request.mockResolvedValueOnce({page:0,pageSize:25,hasNext:false,items:[{version:-1}]});await expect(loadWorkspaceHistory('',0)).rejects.toThrow()

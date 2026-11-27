@@ -24,10 +24,29 @@ describe('Read-only case card',()=>{
         expect(screen.queryByRole('button',{name:/согласовать|удалить/i})).not.toBeInTheDocument()
         expect(screen.getByRole('link',{name:/К списку заявок/})).toHaveAttribute('href','/admin/erasure/registry?state=HELD&page=2')
     })
+    it('explains a pending case while approvals are disabled without enabling execution',async()=>{
+        vi.mocked(loadRegistryDetail).mockResolvedValue({requestId:id,organization:'Tenant',resourceType:'CHAT',intakeState:'SUBMITTED',reviewState:'PENDING',reviewVisible:true,holdActive:false,
+            createdAt:'2026-11-25T00:00:00Z',updatedAt:'2026-11-25T00:00:00Z',executionState:'NOT_AVAILABLE',completionProven:false})
+        mount()
+        expect(await screen.findByText(/Рассмотрение заявок отключено/)).toBeInTheDocument()
+        expect(screen.getByRole('list',{name:'Жизненный цикл заявки'})).toBeInTheDocument()
+        expect(screen.getByRole('link',{name:'История этой заявки'})).toHaveAttribute('href',`/admin/erasure/history?query=${id}&page=0`)
+        expect(screen.queryByRole('button',{name:/согласовать|удалить/i})).not.toBeInTheDocument()
+    })
     it('does not fetch an unauthorized card',()=>{
         capabilities.platform=false
         mount()
         expect(screen.getByText('Карточка недоступна.')).toBeInTheDocument()
         expect(loadRegistryDetail).not.toHaveBeenCalled()
     })
+    it('allows copying a tenant-visible UUID but does not expose platform history', async () => {
+        capabilities.platform=false
+        capabilities.tenantRegistry=true
+        vi.mocked(loadRegistryDetail).mockResolvedValue({requestId:id,organization:'Tenant',resourceType:'CHAT',intakeState:'SUBMITTED',reviewState:null,reviewVisible:false,holdActive:null,
+            createdAt:'2026-11-25T00:00:00Z',updatedAt:'2026-11-25T00:00:00Z',executionState:'NOT_AVAILABLE',completionProven:false})
+        mount()
+        expect(await screen.findByRole('button',{name:`Скопировать номер заявки ${id}`})).toBeInTheDocument()
+        expect(screen.queryByRole('link',{name:'История этой заявки'})).not.toBeInTheDocument()
+    })
+
 })

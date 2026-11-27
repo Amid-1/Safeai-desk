@@ -229,6 +229,12 @@ npm install
 cd ~/Workspace/Projects/Products/SafeAI-Desk/frontend
 npm run dev
 ```
+```bash
+cd ~/Workspace/Projects/Products/SafeAI-Desk/frontend
+
+npm run preview -- --host 127.0.0.1 --port 4173 --strictPort
+```
+
 
 Vite покажет адрес, обычно:
 
@@ -342,6 +348,13 @@ infra и документацией.
 | Frontend | обычно `http://localhost:5173` |
 | PostgreSQL | `localhost:5432` |
 | Redis | `localhost:6379` |
+
+Backend	localhost:8080	REST API
+Frontend Dev	localhost:5173	Разработка
+Frontend Preview	localhost:4173	E2E-тестирование
+Actuator	localhost:9091	Мониторинг backend
+PostgreSQL	localhost:5432	База данных
+Redis	localhost:6379	Кеширование
 
 ## 12. Ежедневная схема работы
 

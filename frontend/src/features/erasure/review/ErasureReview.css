@@ -214,3 +214,78 @@
 
 .er2-filter-group { display: flex; flex-wrap: wrap; gap: 4px; border-inline-end: 1px solid #e9eef6; padding-inline-end: 5px; }
 .er2-filter-group:last-child { border-inline-end: 0; padding-inline-end: 0; }
+
+/* R2.5.4 registry: compact controls, actual server metrics and isolated overflow. */
+.er2-registry-workspace { min-width: 0; }
+.er2-registry-metrics { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; }
+.er2-registry-metric { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0;
+    text-align: left; background: #fff; border: 1px solid #dbe4f3; border-radius: 12px; padding: 14px 16px; color: #253653; cursor: pointer; }
+.er2-registry-metric[aria-pressed="true"] { border-color: #7298ed; background: #f4f7ff; }
+.er2-registry-metric span { font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; }
+.er2-registry-metric strong { font-size: 28px; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.er2-registry-caption { color: #52647b; font-size: 12px; margin: 8px 0 18px; line-height: 1.5; }
+.er2-registry-search,.er2-registry-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 0; }
+.er2-registry-search { padding-top: 0; }
+.er2-registry-search .er2-filter { flex: 1 1 260px; min-width: 0; }
+.er2-registry-search input { flex: 1; min-width: 0; width: 100%; }
+.er2-registry-filters { justify-content: space-between; border-bottom: 1px solid #e9eef6; }
+.er2-registry-filters .er2-filter { flex-wrap: wrap; min-width: 0; }
+.er2-registry-filters select { max-width: 100%; }
+.er2-registry-quick { display: flex; flex-wrap: wrap; gap: 5px; }
+.er2-registry-quick .er2-tab { padding: 9px 10px; border-radius: 7px; border-bottom: 0; }
+.er2-registry-quick .er2-tab--active { background: #e7eeff; }
+.er2-registry-workspace .er2-table td,.er2-registry-workspace .er2-table th { padding: 12px; }
+.er2-registry-workspace .er2-table th { background: #f5f7fb; }
+.er2-registry-workspace .er2-table td { overflow-wrap: anywhere; }
+.er2-registry-workspace .er2-status { white-space: normal; min-width: 0; }
+.er2-registry-workspace .er2-status--pending { background: #fff2dc; color: #80520e; }
+.er2-registry-id { overflow-wrap: anywhere; }
+.er2-registry-footer { border-top: 1px solid #e9eef6; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; padding-top: 14px; color: #52647b; font-size: 13px; }
+.er2-registry-footer > div { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.er2-registry-notice { border: 1px solid #dbe4f3; border-radius: 12px; background: #edf2fa; color: #334762; padding: 15px 18px; margin-top: 16px; }
+.er2-registry-notice p { font-size: 13px; line-height: 1.5; margin: 6px 0 0; }
+.er2-registry-feedback { padding: 14px 0; overflow-wrap: anywhere; }
+.er2-registry-feedback details { font-size: 13px; margin: 8px 0; }
+.er2-registry-feedback p { margin: 6px 0 12px; }
+@media (max-width: 1100px) { .er2-registry-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 640px) {
+    .er2-registry-metrics { gap: 8px; }
+    .er2-registry-metric { padding: 11px; }
+    .er2-registry-metric strong { font-size: 23px; }
+    .er2-registry-search .er2-filter { flex-wrap: wrap; flex-basis: 100%; }
+    .er2-registry-filters .er2-filter,.er2-registry-filters select { width: 100%; }
+    .er2-registry-workspace .er2-table { min-width: 650px; }
+    .er2-registry-footer > div { gap: 6px; }
+    .er2-registry-footer .er2-action { padding: 8px 10px; }
+}
+
+.er2-registry-lifecycle { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); list-style: none; gap: 10px; padding: 0; margin: 0 0 14px; }
+.er2-registry-lifecycle li { min-width: 0; padding: 12px; background: #f5f7fb; border: 1px solid #dbe4f3; border-radius: 10px; }
+.er2-registry-lifecycle span { display: block; font-size: 12px; color: #53657d; margin-bottom: 5px; }
+.er2-registry-lifecycle strong { display: block; font-size: 14px; color: #253653; overflow-wrap: anywhere; }
+.er2-registry-detail .er2-registry-notice { margin: 0 0 14px; }
+.er2-registry-detail .er2-summary + .er2-action { margin-top: 16px; }
+@media (max-width: 640px) { .er2-registry-lifecycle { grid-template-columns: minmax(0,1fr); } }
+
+/* R2.5.5: registry polish, consistent icons, keyboard and motion accessibility. */
+.er2-registry-metric-label { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.er2-registry-metric-icon { display: inline-flex; flex: 0 0 auto; }
+.er2-registry-metric-icon--blue { color: #225bd9; }
+.er2-registry-metric-icon--amber { color: #986213; }
+.er2-registry-metric-icon--violet { color: #7751ba; }
+.er2-registry-metric-icon--rose { color: #b43d54; }
+.er2-registry-metric:focus-visible { outline: 3px solid #9ab8ff; outline-offset: 2px; }
+@media (hover: hover) and (pointer: fine) {
+    .er2-registry-metric:hover { border-color: #7298ed; box-shadow: 0 3px 12px rgba(37, 70, 130, .10); }
+}
+@media (prefers-reduced-motion: no-preference) {
+    .er2-registry-metric { transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease; }
+}
+.er2-id-copy { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 9px; max-width: 100%; min-width: 0; }
+.er2-id-value { min-width: 0; user-select: text; overflow-wrap: anywhere; font-size: .9em; }
+.er2-id-copy-button { display: inline-flex; align-items: center; gap: 5px; border: 1px solid #bed1f4; background: #fff; color: #225bd9; border-radius: 7px; padding: 5px 9px; font: inherit; font-size: 12px; cursor: pointer; }
+.er2-id-copy-button:disabled { opacity: .65; cursor: wait; }
+.er2-id-copy-button:hover:not(:disabled) { background: #edf2ff; }
+.er2-id-copy-status { flex-basis: 100%; font-size: 12px; font-weight: 400; color: #52647b; overflow-wrap: anywhere; }
+.er2-id-copy-status:empty { flex-basis: 0; width: 0; height: 0; overflow: hidden; }
+.er2-registry-workspace td details[open] .er2-id-copy { display: flex; margin-top: 6px; }

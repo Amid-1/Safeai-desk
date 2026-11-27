@@ -1,13 +1,13 @@
 // frontend/src/features/erasure/api/workspaceApi.ts
 import { apiRequest } from '../../../shared/api/http'
-import { expectRecord } from '../../../shared/api/runtime'
+import { contractError, expectRecord } from '../../../shared/api/runtime'
 
 export type Capabilities = { platform: boolean; tenantRegistry: boolean; personalRequests: boolean;
     reviewQueue: boolean; requestsEnabled: boolean; approvalsEnabled: boolean }
 export async function loadCapabilities(signal?: AbortSignal): Promise<Capabilities> {
     const d = expectRecord(await apiRequest('/api/erasure/requests/capabilities', { method: 'GET', signal }), 'erasure.capabilities')
     function flag(key: keyof Capabilities): boolean {
-        if (typeof d[key] !== 'boolean') throw new Error('Некорректный ответ сервера.')
+        if (typeof d[key] !== 'boolean') throw contractError('Некорректный ответ сервера.')
         return d[key] as boolean
     }
     return { platform: flag('platform'), tenantRegistry: flag('tenantRegistry'), personalRequests: flag('personalRequests'),
@@ -22,17 +22,20 @@ export async function loadRegistry(review: boolean, state: string, query: string
     const params = new URLSearchParams({ state, query, page: String(page) })
     const url = review ? '/api/admin/erasure/review-queue' : '/api/admin/erasure/registry'
     const d = expectRecord(await apiRequest(`${url}?${params}`, { method: 'GET', signal }), 'erasure.registry')
-    if (!Array.isArray(d.items) || d.items.length > 25 || d.page !== page || d.pageSize !== 25 || typeof d.hasNext !== 'boolean') {
-        throw new Error('Некорректный ответ реестра.')
+    if (!Array.isArray(d.items) || d.items.length > 25 || d.page !== page || d.pageSize !== 25 || typeof d.hasNext !== 'boolean' || (d.items.length === 0 && d.hasNext)) {
+        throw contractError('Некорректный ответ реестра.')
     }
     const items = d.items.map((value: unknown): RegistryItem => {
         const x = expectRecord(value, 'erasure.registry.item')
         function text(k: string): string {
-            const v = x[k]; if (typeof v !== 'string' || !v) throw new Error('Некорректная заявка.'); return v
+            const v = x[k]; if (typeof v !== 'string' || !v) throw contractError('Некорректная заявка.'); return v
         }
-        if (typeof x.holdActive !== 'boolean' || (x.requester != null && typeof x.requester !== 'string')) throw new Error('Некорректная заявка.')
-        const reviewVisible = booleanValue(x.reviewVisible), reviewState = nullableText(x.reviewState)
-        if (!reviewVisible && (reviewState !== null || x.holdActive)) throw new Error('Некорректная область заявки.')
+        if (typeof x.holdActive !== 'boolean' || (x.requester != null && typeof x.requester !== 'string')) throw contractError('Некорректная заявка.')
+        if (typeof x.reviewVisible !== 'boolean' || (x.reviewState !== null && (typeof x.reviewState !== 'string' || !x.reviewState))) {
+            throw contractError('Некорректная область заявки.')
+        }
+        const reviewVisible = x.reviewVisible, reviewState = x.reviewState
+        if (!reviewVisible && (reviewState !== null || x.holdActive)) throw contractError('Некорректная область заявки.')
         return { requestId: text('requestId'), organization: text('organization'), requester: typeof x.requester === 'string' ? x.requester : null,
             resourceType: text('resourceType'), state: text('state'), holdActive: x.holdActive, updatedAt: text('updatedAt'),
             intakeState: text('intakeState'), reviewState, reviewVisible }
@@ -56,18 +59,18 @@ export async function loadWorkspaceHistory(query: string, page: number, signal?:
 }
 
 function requiredText(value: unknown): string {
-    if (typeof value !== 'string' || !value) throw new Error('Некорректный ответ сервера.')
+    if (typeof value !== 'string' || !value) throw contractError('Некорректный ответ сервера.')
     return value
 }
 function nullableText(value: unknown): string | null {
     return value === null ? null : requiredText(value)
 }
 function booleanValue(value: unknown): boolean {
-    if (typeof value !== 'boolean') throw new Error('Некорректный ответ сервера.')
+    if (typeof value !== 'boolean') throw contractError('Некорректный ответ сервера.')
     return value
 }
 function count(value: unknown): number {
-    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) throw new Error('Некорректная статистика.')
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) throw contractError('Некорректная статистика.')
     return value
 }
 function nullableCount(value: unknown): number | null { return value === null ? null : count(value) }
@@ -75,15 +78,15 @@ export type RegistrySummary = { scope: 'PLATFORM' | 'TENANT'; total: number; reg
     drafts: number | null; reviewed: number | null; pending: number | null; needsInformation: number | null; held: number | null }
 export async function loadRegistrySummary(signal?: AbortSignal): Promise<RegistrySummary> {
     const d = expectRecord(await apiRequest('/api/admin/erasure/registry-summary', {method:'GET',signal}), 'erasure.registry.summary')
-    if (d.scope !== 'PLATFORM' && d.scope !== 'TENANT') throw new Error('Некорректная область статистики.')
+    if (d.scope !== 'PLATFORM' && d.scope !== 'TENANT') throw contractError('Некорректная область статистики.')
     const result: RegistrySummary = {scope:d.scope,total:count(d.total),registered:count(d.registered),withdrawn:count(d.withdrawn),
         drafts:nullableCount(d.drafts),reviewed:nullableCount(d.reviewed),pending:nullableCount(d.pending),
         needsInformation:nullableCount(d.needsInformation),held:nullableCount(d.held)}
     const review = [result.reviewed,result.pending,result.needsInformation,result.held]
     if (result.scope==='PLATFORM' ? result.drafts!==null||review.some(v=>v===null) : result.drafts===null||review.some(v=>v!==null)) {
-        throw new Error('Некорректная область статистики.')
+        throw contractError('Некорректная область статистики.')
     }
-    if (result.total!==result.registered+result.withdrawn+(result.drafts??0)) throw new Error('Некорректная статистика.')
+    if (result.total!==result.registered+result.withdrawn+(result.drafts??0)) throw contractError('Некорректная статистика.')
     return result
 }
 export type RegistryDetail = {requestId:string;organization:string;resourceType:string;intakeState:string;reviewState:string|null;
