@@ -101,6 +101,12 @@ public class KnowledgeIngestionProcessor {
                 "claim не должен быть null"
         );
 
+        try (var ignored = ru.safeai.gateway.common.security.CorrelationContext.open(claim.correlationId())) {
+            processClaim(claim);
+        }
+    }
+
+    private void processClaim(KnowledgeIngestionClaim claim) {
         AtomicReference<KnowledgeIngestionStatus> activeStatus =
                 new AtomicReference<>(KnowledgeIngestionStatus.VALIDATING);
         if (activeClaims.putIfAbsent(claim.processingToken(), activeStatus) != null) {
@@ -108,7 +114,7 @@ public class KnowledgeIngestionProcessor {
         }
         long heartbeatMillis = Math.clamp(properties.processingLease().toMillis() / 3L, 1_000L, 30_000L);
         ScheduledFuture<?> heartbeat = leaseHeartbeats.scheduleWithFixedDelay(() -> {
-            try {
+            try (var ignored = ru.safeai.gateway.common.security.CorrelationContext.open(claim.correlationId())) {
                 renewLeaseAt(claim, activeStatus.get(), clock.instant());
             } catch (RuntimeException error) {
                 // A transient heartbeat error never grants ownership.

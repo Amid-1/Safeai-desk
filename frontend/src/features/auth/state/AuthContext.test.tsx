@@ -307,7 +307,7 @@ function Probe() {
                 onClick={() => void loginUser({
                     email: 'admin@safeai.test',
                     password: 'secret',
-                })}
+                }).catch(() => undefined)}
             >
                 Login
             </button>
@@ -640,5 +640,94 @@ describe('AuthContext concurrency and logout', () => {
         ).toBeInTheDocument()
         expect(screen.getByTestId('roles'))
             .toHaveTextContent('SUPER_ADMIN')
+    })
+
+    it.each([401, 429])('login %i оставляет пользователя неавторизованным', async (status) => {
+        apiMock.getCurrentUser.mockRejectedValue(new ApiError('Rejected', {}, 401))
+        apiMock.login.mockRejectedValue(new ApiError('Rejected', {}, status))
+        const user = userEvent.setup()
+        renderProvider()
+        await screen.findByText('unauthenticated')
+
+        await user.click(screen.getByRole('button', { name: 'Login' }))
+
+        expect(screen.getByTestId('status')).toHaveTextContent('unauthenticated')
+        expect(screen.getByTestId('email')).toHaveTextContent('none')
+        expect(screen.getByTestId('error')).toHaveTextContent('none')
+        expect(apiMock.login).toHaveBeenCalledOnce()
+        expect(eventMock.publishAuthEvent).not.toHaveBeenCalled()
+    })
+
+    it('login 503 не раскрывает детали сервера и позволяет проверить сессию повторно', async () => {
+        apiMock.getCurrentUser.mockRejectedValueOnce(new ApiError('Rejected', {}, 401))
+            .mockResolvedValueOnce(ADMIN)
+        apiMock.login.mockRejectedValue(new ApiError('private backend details', {}, 503))
+        const user = userEvent.setup()
+        renderProvider()
+        await screen.findByText('unauthenticated')
+
+        await user.click(screen.getByRole('button', { name: 'Login' }))
+        expect(await screen.findByText('temporarily-unavailable')).toBeInTheDocument()
+        expect(screen.getByTestId('email')).toHaveTextContent('none')
+        expect(screen.getByTestId('error')).toHaveTextContent('Не удалось выполнить вход')
+        expect(screen.getByTestId('error')).not.toHaveTextContent('private backend details')
+        expect(eventMock.publishAuthEvent).not.toHaveBeenCalled()
+
+        await user.click(screen.getByRole('button', { name: 'Reload' }))
+        expect(await screen.findByText(ADMIN.email)).toBeInTheDocument()
+        expect(screen.getByTestId('status')).toHaveTextContent('authenticated')
+    })
+
+    it.each(['success', 'failure'])('устаревший login (%s) не отменяет logout', async (outcome) => {
+        const pending = deferred<AuthUser>()
+        apiMock.getCurrentUser.mockResolvedValue(USER)
+        apiMock.login.mockReturnValue(pending.promise)
+        apiMock.logout.mockResolvedValue(undefined)
+        const user = userEvent.setup()
+        renderProvider()
+        await screen.findByText(USER.email)
+
+        await user.click(screen.getByRole('button', { name: 'Login' }))
+        const signal = apiMock.login.mock.calls[0]?.[1]?.signal
+        expect(signal?.aborted).toBe(false)
+        await user.click(screen.getByRole('button', { name: 'Logout' }))
+        expect(signal?.aborted).toBe(true)
+        await screen.findByText('unauthenticated')
+
+        await act(async () => {
+            if (outcome === 'success') pending.resolve(ADMIN)
+            else pending.reject(new ApiError('Late failure', {}, 503))
+            await pending.promise.catch(() => undefined)
+        })
+        expect(screen.getByTestId('status')).toHaveTextContent('unauthenticated')
+        expect(screen.getByTestId('email')).toHaveTextContent('none')
+        expect(eventMock.publishAuthEvent).toHaveBeenCalledExactlyOnceWith('LOGOUT')
+    })
+
+    it('отмена проверки сессии не превращается в отказ авторизации', async () => {
+        apiMock.getCurrentUser.mockRejectedValueOnce(new ApiError('Cancelled', {
+            code: 'REQUEST_ABORTED',
+        }, 0)).mockResolvedValueOnce(USER)
+        const user = userEvent.setup()
+        await act(async () => { renderProvider() })
+        expect(screen.getByTestId('status')).toHaveTextContent('loading')
+        expect(screen.getByTestId('error')).toHaveTextContent('none')
+
+        await user.click(screen.getByRole('button', { name: 'Reload' }))
+        expect(await screen.findByText(USER.email)).toBeInTheDocument()
+    })
+
+    it('REFRESH_SUCCEEDED проверяет актуальные роли, SESSION_REJECTED скрывает данные', async () => {
+        apiMock.getCurrentUser.mockResolvedValueOnce(USER).mockResolvedValueOnce(ADMIN)
+        renderProvider()
+        await screen.findByText(USER.email)
+
+        act(() => emitAuthEvent('REFRESH_SUCCEEDED'))
+        expect(await screen.findByText(ADMIN.email)).toBeInTheDocument()
+        expect(screen.getByTestId('roles')).toHaveTextContent('ADMIN')
+        act(() => emitAuthEvent('SESSION_REJECTED'))
+        expect(screen.getByTestId('status')).toHaveTextContent('unauthenticated')
+        expect(screen.getByTestId('email')).toHaveTextContent('none')
+        expect(screen.getByTestId('roles')).toHaveTextContent('none')
     })
 })

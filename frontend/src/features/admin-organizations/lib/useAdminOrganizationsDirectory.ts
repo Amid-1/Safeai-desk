@@ -1,6 +1,7 @@
 // frontend/src/features/admin-organizations/lib/useAdminOrganizationsDirectory.ts
 import {
     useEffect,
+    useCallback,
     useRef,
     useState,
 } from 'react'
@@ -17,6 +18,8 @@ import {
 import {
     normalizePageResponse,
 } from '../../../shared/lib/page'
+import { directoryPage, directoryUuid, useDirectoryUrl } from '../../../shared/lib/adminDirectoryUrl'
+import type { OrganizationType } from '../../../entities/organization/api/organizationApi'
 import {
     isOrganizationRequestAborted,
 } from './adminOrganizationsSupport'
@@ -31,9 +34,19 @@ export function useAdminOrganizationsDirectory() {
     const [loading, setLoading] =
         useState(true)
 
-    const [page, setPage] = useState(0)
+    const {params, change} = useDirectoryUrl()
+    const page = directoryPage(params.get('page'))
+    const setPage = useCallback((next: number) => change({page: next ? String(next) : ''}), [change])
+    const query = (params.get('query') ?? '').slice(0, 255)
+    const rawType = params.get('type')
+    const type: OrganizationType | '' = rawType === 'PLATFORM' || rawType === 'TENANT' ? rawType : ''
+    const rawStatus = params.get('status')
+    const status = rawStatus === 'ACTIVE' || rawStatus === 'DISABLED' ? rawStatus : ''
+    const linkedId = directoryUuid(params.get('organizationId'))
     const [totalPages, setTotalPages] =
         useState(0)
+    const [totalOrganizations, setTotalOrganizations] = useState<number | null>(null)
+    const [totalMatched, setTotalMatched] = useState<number | null>(null)
     const [reloadToken, setReloadToken] =
         useState(0)
 
@@ -43,6 +56,7 @@ export function useAdminOrganizationsDirectory() {
         useState<string | null>(null)
     const [detailsError, setDetailsError] =
         useState('')
+    const previousLinkedId = useRef('')
 
     const loadSequenceRef = useRef(0)
     const loadControllerRef =
@@ -67,15 +81,22 @@ export function useAdminOrganizationsDirectory() {
             setLoadError('')
 
             try {
-                const response =
-                    await getOrganizations(
+                const [response, global] = await Promise.all([
+                    getOrganizations(
                         page,
                         PAGE_SIZE,
                         {
                             signal:
                                 controller.signal,
+                            query: query || undefined,
+                            type: type || undefined,
+                            enabled: status ? status === 'ACTIVE' : undefined,
                         },
                     )
+                    , query || type || status
+                        ? getOrganizations(0, 1, {signal: controller.signal}).catch(() => null)
+                        : Promise.resolve(null)
+                ])
 
                 if (
                     sequence
@@ -111,6 +132,9 @@ export function useAdminOrganizationsDirectory() {
                 setTotalPages(
                     normalized.totalPages,
                 )
+                setTotalMatched(normalized.totalElements)
+                setTotalOrganizations(query || type || status
+                    ? global?.totalElements ?? null : normalized.totalElements)
             } catch (error) {
                 if (
                     sequence
@@ -121,6 +145,8 @@ export function useAdminOrganizationsDirectory() {
                 ) {
                     setOrganizations([])
                     setTotalPages(0)
+                    setTotalOrganizations(null)
+                    setTotalMatched(null)
                     setLoadError(
                         getApiErrorMessage(
                             error,
@@ -147,6 +173,10 @@ export function useAdminOrganizationsDirectory() {
     }, [
         page,
         reloadToken,
+        query,
+        type,
+        status,
+        setPage,
     ])
 
     useEffect(() => {
@@ -175,6 +205,10 @@ export function useAdminOrganizationsDirectory() {
     async function openDetailsModal(
         organization: Organization,
     ) {
+        if (linkedId) {
+            change({organizationId: organization.id})
+            return
+        }
         const sequence =
             ++detailsSequenceRef.current
 
@@ -189,6 +223,7 @@ export function useAdminOrganizationsDirectory() {
             organization.id,
         )
         setDetailsError('')
+        setDetailsOrganization(null)
 
         try {
             const details =
@@ -207,6 +242,10 @@ export function useAdminOrganizationsDirectory() {
                 return
             }
 
+            if (details.id !== organization.id) {
+                setDetailsError('Карточка организации недоступна.')
+                return
+            }
             setDetailsOrganization(details)
         } catch (error) {
             if (
@@ -223,11 +262,6 @@ export function useAdminOrganizationsDirectory() {
                     ),
                 )
 
-                // Fail-soft presentation only: the already loaded page
-                // snapshot remains visible, while the warning is preserved.
-                setDetailsOrganization(
-                    organization,
-                )
             }
         } finally {
             if (
@@ -245,7 +279,41 @@ export function useAdminOrganizationsDirectory() {
         setDetailsOrganization(null)
         setDetailsLoadingId(null)
         setDetailsError('')
+        if (linkedId) change({organizationId: ''}, true)
     }
+
+    useEffect(() => {
+        if (!linkedId && !previousLinkedId.current) return
+        previousLinkedId.current = linkedId
+        const sequence = ++detailsSequenceRef.current
+        detailsControllerRef.current?.abort()
+        setDetailsOrganization(null)
+        setDetailsError('')
+        setDetailsLoadingId(linkedId || null)
+        if (!linkedId) return
+        const controller = new AbortController()
+        detailsControllerRef.current = controller
+        void getOrganizationDetails(linkedId, {signal: controller.signal})
+            .then(row => {
+                if (controller.signal.aborted || sequence !== detailsSequenceRef.current) return
+                if (row.id !== linkedId) {
+                    setDetailsError('Карточка организации недоступна.')
+                    return
+                }
+                setDetailsOrganization(row)
+            })
+            .catch(() => {
+                if (!controller.signal.aborted && sequence === detailsSequenceRef.current) {
+                    setDetailsError('Не удалось открыть карточку организации. Повторите попытку.')
+                }
+            })
+            .finally(() => {
+                if (!controller.signal.aborted && sequence === detailsSequenceRef.current) {
+                    setDetailsLoadingId(null)
+                }
+            })
+        return () => controller.abort()
+    }, [linkedId, reloadToken])
 
     return {
         organizations,
@@ -253,6 +321,11 @@ export function useAdminOrganizationsDirectory() {
         loading,
         page,
         totalPages,
+        totalOrganizations,
+        totalMatched,
+        query, type, status,
+        changeFilters: (nextQuery: string, nextType: string, nextStatus: string, replace = false) =>
+            change({query: nextQuery.trim(), type: nextType, status: nextStatus, page: ''}, replace),
         setPage,
         requestReloadFromFirstPage,
         reloadCurrentPage,

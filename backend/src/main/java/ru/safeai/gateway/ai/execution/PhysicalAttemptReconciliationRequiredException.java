@@ -4,8 +4,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * A physical provider response was observed,
- * but terminal evidence outcome is unverified.
+ * Physical dispatch or terminal evidence is unverified.
  */
 public final class PhysicalAttemptReconciliationRequiredException
         extends IllegalStateException {
@@ -17,7 +16,7 @@ public final class PhysicalAttemptReconciliationRequiredException
             RuntimeException cause
     ) {
         super(
-                "Physical response observed; terminal evidence requires reconciliation: attemptId="
+                "Physical attempt evidence requires reconciliation: attemptId="
                         + Objects.requireNonNull(
                                 providerAttemptId,
                                 "providerAttemptId"

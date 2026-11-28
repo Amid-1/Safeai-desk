@@ -1,14 +1,20 @@
 package ru.safeai.gateway.ai.execution;
 
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import ru.safeai.gateway.ai.dto.AiChatRequest;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
+import ru.safeai.gateway.ai.exception.AiProviderErrorType;
+import ru.safeai.gateway.ai.exception.AiProviderException;
 import ru.safeai.gateway.ai.provider.AiProvider;
 import ru.safeai.gateway.ai.provider.AiProviderProperties;
 import ru.safeai.gateway.ai.provider.AiProviderAttemptContext;
+import ru.safeai.gateway.ai.provider.AiRetryProperties;
 
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /** Generic physical execution boundary with mandatory persisted route binding. */
 @Service
@@ -19,14 +25,21 @@ public class AiExecutionService {
     private final AiExecutionAttemptRecorder recorder;
     private final AiExecutionAttemptScope scope;
     private final AiModelExecutionPort bindingService;
+    private final AiExecutionAttemptAuthorization attemptAuthorization;
+    private final AiDataAssurancePort dataAssurance;
+    private final AiRetryProperties retryProperties;
 
+    @Autowired
     public AiExecutionService(
             AiProvider provider,
             AiProviderProperties properties,
             AiExecutionPlanService planService,
             AiExecutionAttemptRecorder recorder,
             AiExecutionAttemptScope scope,
-            AiModelExecutionPort bindingService
+            AiModelExecutionPort bindingService,
+            AiExecutionAttemptAuthorization attemptAuthorization,
+            AiDataAssurancePort dataAssurance,
+            AiRetryProperties retryProperties
     ) {
         this.provider = Objects.requireNonNull(provider, "provider");
         this.properties = Objects.requireNonNull(properties, "properties");
@@ -34,6 +47,9 @@ public class AiExecutionService {
         this.recorder = Objects.requireNonNull(recorder, "recorder");
         this.scope = Objects.requireNonNull(scope, "scope");
         this.bindingService = Objects.requireNonNull(bindingService, "bindingService");
+        this.attemptAuthorization = Objects.requireNonNull(attemptAuthorization, "attemptAuthorization");
+        this.dataAssurance = Objects.requireNonNull(dataAssurance, "dataAssurance");
+        this.retryProperties = Objects.requireNonNull(retryProperties, "retryProperties");
     }
 
     public AiExecutionResult execute(AiExecutionRequest request) {
@@ -65,13 +81,30 @@ public class AiExecutionService {
         // until a multi-attempt cost envelope is versioned and reserved.
         boolean oneAttemptOnly = bindingService.requiresSinglePhysicalAttempt(
                 request.modelRouteDecisionId());
+        if (request.executionIdentity().usesKnowledge() && request.knowledgeExecutionPermitId() == null) {
+            throw new IllegalStateException("Knowledge route is missing its durable execution permit");
+        }
         ModelExecutionPlanEntity plan = planService.createOrRead(request);
-        AiChatResponse response = scope.execute(
-                request.aiRequest().providerOperationId(),
-                new Observer(plan, activeTarget),
-                oneAttemptOnly ? 1 : Integer.MAX_VALUE,
-                () -> provider.sendMessage(request.aiRequest())
-        );
+        AiChatResponse response;
+        try {
+            response = scope.execute(
+                    request.aiRequest().providerOperationId(),
+                    new Observer(plan, activeTarget, request),
+                    oneAttemptOnly ? 1 : retryProperties.effectiveMaxAttempts(),
+                    () -> provider.sendMessage(request.aiRequest())
+            );
+        } catch (AiDispatchAbortedException denied) {
+            if (denied.getCause() instanceof AiProviderException known
+                    && !known.isOutcomeAmbiguous() && !known.isRetryable()) {
+                throw known;
+            }
+            // Chat's existing unambiguous finalization releases its reservation.
+            // No provider status or request ID is fabricated.
+            throw new AiProviderException(activeTarget.providerType(),
+                    activeTarget.requestedPhysicalModel(), null, null,
+                    "DISPATCH_ABORTED", AiProviderErrorType.PERMISSION_DENIED,
+                    false, false, null, "Physical dispatch denied", denied);
+        }
         return new AiExecutionResult(plan.getId(), response);
     }
 
@@ -120,15 +153,53 @@ public class AiExecutionService {
     private final class Observer implements AiExecutionAttemptObserver {
         private final ModelExecutionPlanEntity plan;
         private final ProviderExecutionTarget target;
+        private final AiExecutionRequest request;
+        private final ConcurrentMap<UUID, UUID> attemptLeases = new ConcurrentHashMap<>();
 
-        private Observer(ModelExecutionPlanEntity plan, ProviderExecutionTarget target) {
+        private Observer(ModelExecutionPlanEntity plan, ProviderExecutionTarget target,
+                         AiExecutionRequest request) {
             this.plan = plan;
             this.target = target;
+            this.request = request;
         }
 
         @Override
         public void started(AiProviderAttemptContext attempt) {
-            recorder.started(plan.getId(), target, attempt);
+            dataAssurance.require(request, false);
+            UUID leaseId = attemptAuthorization.beforePhysicalAttempt(request, attempt);
+            try {
+                recorder.started(plan.getId(), target, attempt);
+                if (leaseId != null) attemptLeases.put(attempt.attemptId(), leaseId);
+            } catch (RuntimeException failure) {
+                if (leaseId != null) {
+                    try {
+                        attemptAuthorization.afterPhysicalAttempt(request, attempt, leaseId,
+                                AiExecutionAttemptAuthorization.Outcome.ABORTED);
+                    } catch (RuntimeException releaseFailure) {
+                        failure.addSuppressed(releaseFailure);
+                    }
+                }
+                throw failure;
+            }
+        }
+
+        @Override
+        public void beforeNetworkDispatch(AiProviderAttemptContext attempt) {
+            UUID leaseId = attemptLeases.get(attempt.attemptId());
+            if (request.executionIdentity().usesKnowledge() && leaseId == null) {
+                throw new IllegalStateException(
+                        "Knowledge dispatch is forbidden without an owned attempt lease");
+            }
+            attemptAuthorization.beforeNetworkDispatch(request, attempt, leaseId);
+            dataAssurance.require(request, true);
+            recorder.beforeNetworkDispatch(plan.getId(), attempt.attemptId());
+        }
+
+        @Override
+        public boolean abortedBeforeDispatch(AiProviderAttemptContext attempt, RuntimeException reason) {
+            recorder.abortedBeforeDispatch(attempt.attemptId());
+            releaseLease(attempt, AiExecutionAttemptAuthorization.Outcome.ABORTED);
+            return true;
         }
 
         @Override
@@ -136,6 +207,7 @@ public class AiExecutionService {
             // The physical attempt may be billable even if the resolved target
             // violates our deployment contract: retain usage/pricing first.
             recorder.succeeded(attempt.attemptId(), response);
+            releaseLease(attempt, AiExecutionAttemptAuthorization.Outcome.SUCCEEDED);
             target.requireApprovedResponse(
                     response.requestedModel(), response.model(), response.providerRequestId());
         }
@@ -146,11 +218,26 @@ public class AiExecutionService {
                 ru.safeai.gateway.ai.exception.AiProviderException exception
         ) {
             recorder.failed(attempt.attemptId(), exception);
+            releaseLease(attempt, AiExecutionAttemptAuthorization.Outcome.FAILED);
         }
 
         @Override
         public void ambiguous(AiProviderAttemptContext attempt, RuntimeException exception) {
             recorder.ambiguous(attempt.attemptId(), exception);
+            releaseLease(attempt, AiExecutionAttemptAuthorization.Outcome.AMBIGUOUS);
+        }
+
+        private void releaseLease(AiProviderAttemptContext attempt,
+                                  AiExecutionAttemptAuthorization.Outcome outcome) {
+            UUID leaseId = attemptLeases.get(attempt.attemptId());
+            if (leaseId == null) {
+                if (request.executionIdentity().usesKnowledge()) {
+                    throw new IllegalStateException("Knowledge attempt lease is missing at terminal transition");
+                }
+                return;
+            }
+            attemptAuthorization.afterPhysicalAttempt(request, attempt, leaseId, outcome);
+            attemptLeases.remove(attempt.attemptId(), leaseId);
         }
     }
 }

@@ -101,7 +101,8 @@ public class AuditOutboxFailureService {
                 databaseClock.now();
 
         boolean deadLettered =
-                attemptCount
+                failure instanceof AuditEvidenceConflictException
+                        || attemptCount
                         >= properties
                         .effectiveMaxAttempts();
 

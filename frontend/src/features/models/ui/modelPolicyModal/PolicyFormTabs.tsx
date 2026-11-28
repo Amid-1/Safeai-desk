@@ -13,7 +13,7 @@ const TAB_DETAILS: Readonly<Record<PolicyTab, {label: string; subtitle: string}>
     access: {label: 'Доступ', subtitle: 'Разрешения, запреты и модель по умолчанию'},
     limits: {label: 'Лимиты', subtitle: 'Максимум входных и выходных токенов'},
     budget: {label: 'Бюджет', subtitle: 'Стоимость запроса и месячный бюджет'},
-    data: {label: 'Требования к данным', subtitle: 'Стоимость, обучение и хранение данных'},
+    data: {label: 'Требования', subtitle: 'Стоимость, обучение и хранение данных'},
     preview: {label: 'Проверка', subtitle: 'Предварительная оценка доступности моделей для организации'},
 }
 
@@ -46,7 +46,7 @@ export function PolicyFormTabs({formId, selected, onSelect, panels, previewStatu
     return (
         <div className="models-policy-tabs">
             <div className="models-policy-tabs__nav" role="tablist" aria-label="Разделы правил моделей">
-                {POLICY_TABS.map((tab, index) => (
+                {POLICY_TABS.map((tab) => (
                     <button
                         ref={(element) => {tabsRef.current[tab] = element}}
                         key={tab}
@@ -63,7 +63,6 @@ export function PolicyFormTabs({formId, selected, onSelect, panels, previewStatu
                         onKeyDown={(event) => handleKeyDown(event, tab)}
                         className="models-policy-tabs__tab"
                     >
-                        <span className="models-policy-tabs__number" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
                         <span>{TAB_DETAILS[tab].label}</span>
                         {tab === 'preview' && previewStatus !== 'idle' && (
                             <span className={`models-policy-tabs__dot models-policy-tabs__dot--${previewStatus}`} aria-hidden="true" />

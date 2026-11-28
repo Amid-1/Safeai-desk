@@ -56,7 +56,7 @@ class VersionedCatalogPricingResolverTest {
 
     @Test
     void priceCannotBeProvenWithoutDurableProviderOperationIdentity() {
-        PricingResult result = resolver.resolve(TARGET, "gpt-test", plain());
+        PricingResult result = resolver.resolve(null, TARGET, "gpt-test", plain());
 
         assertThat(result.status()).isEqualTo(PricingStatus.UNPRICED);
         assertThat(result.costUsd()).isNull();
@@ -146,6 +146,58 @@ class VersionedCatalogPricingResolverTest {
 
         assertThat(result.status()).isEqualTo(PricingStatus.UNPRICED);
         assertThat(result.costUsd()).isNull();
+    }
+
+    @Test
+    void zeroConfiguredRatesCannotBeCertifiedAsFree() {
+        ModelCatalogEntry zero = withPricing(verifiedConfiguredEntry(),
+                ModelPricingScheme.FLAT_TOKEN_V1, BigDecimal.ZERO, null, null, BigDecimal.ZERO);
+        assertThat(CatalogPricingEligibility.verified(zero)).isFalse();
+        allow(zero);
+        assertThat(resolver.resolve(OPERATION, TARGET, "gpt-test", plain()).status())
+                .isEqualTo(PricingStatus.UNPRICED);
+    }
+
+    @Test
+    void contradictoryFreeRateIsNotEligibleForZeroCostReservation() {
+        ModelCatalogEntry invalid = withPricing(ModelTestFixtures.freeEntry(),
+                ModelPricingScheme.FLAT_TOKEN_V1, BigDecimal.ONE, null, null, BigDecimal.ZERO);
+        assertThat(CatalogPricingEligibility.verified(invalid)).isFalse();
+        allow(invalid);
+        assertThat(resolver.resolve(OPERATION, TARGET, "gpt-test", plain()).status())
+                .isEqualTo(PricingStatus.UNPRICED);
+    }
+
+    @Test
+    void missingOperationCannotBecomeFreeEvenForLocalMock() {
+        var resolver = ru.safeai.gateway.ai.testsupport.CatalogPricingFixture.resolver(
+                "mock", "mock-safeai", OPERATION,
+                java.util.List.of(new ru.safeai.gateway.ai.testsupport.CatalogPricingFixture.Price(
+                        "mock-safeai", BigDecimal.ZERO, BigDecimal.ZERO, "USD", null)),
+                Clock.fixed(NOW, ZoneOffset.UTC));
+        var mockTarget = ProviderExecutionTarget.staticTarget("mock", "mock-safeai");
+        assertThat(resolver.resolve(UUID.randomUUID(), mockTarget, "mock-safeai", plain()).status())
+                .isEqualTo(PricingStatus.UNPRICED);
+        var result = resolver.resolve(OPERATION, mockTarget, "mock-safeai", plain());
+        assertThat(result.status()).isEqualTo(PricingStatus.FREE);
+        assertThat(result.costUsd()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(result.priceVersion()).startsWith("cat-v1-");
+    }
+
+    @Test
+    void mockUsesCatalogForSyntheticPaidPricingAsWell() {
+        var resolver = ru.safeai.gateway.ai.testsupport.CatalogPricingFixture.resolver(
+                "mock", "mock-safeai", OPERATION,
+                java.util.List.of(new ru.safeai.gateway.ai.testsupport.CatalogPricingFixture.Price(
+                        "mock-safeai", BigDecimal.ONE, new BigDecimal("4"), "USD", "v2")),
+                Clock.fixed(NOW, ZoneOffset.UTC));
+        var mockTarget = ProviderExecutionTarget.staticTarget("mock", "mock-safeai");
+        var result = resolver.resolve(OPERATION, mockTarget, "mock-safeai", plain());
+        assertThat(result.status()).isEqualTo(PricingStatus.PRICED);
+        assertThat(result.costUsd()).isEqualByComparingTo("0.003000000000");
+        assertThat(resolver.resolve(OPERATION, mockTarget, "mock-safeai",
+                new AiTokenUsage(100, 20, 0, 10, true, true)).status())
+                .isEqualTo(PricingStatus.UNPRICED);
     }
 
     @Test

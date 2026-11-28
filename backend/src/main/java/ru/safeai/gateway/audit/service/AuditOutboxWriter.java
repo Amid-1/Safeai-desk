@@ -65,6 +65,7 @@ public class AuditOutboxWriter {
 
         AuditOutboxEntity entity = new AuditOutboxEntity();
         entity.setId(command.eventId());
+        entity.setCorrelationId(command.correlationId());
 
         AuditActor actor = command.actor();
         if (actor != null) {

@@ -1,0 +1,177 @@
+{
+  "ru.safeai.gateway.ai.AiProviderPropertiesTest": [],
+  "ru.safeai.gateway.ai.AiProviderRetryExecutorTest": [],
+  "ru.safeai.gateway.ai.AiProviderSupportTest": [
+    "duplicateRetryAfterCannotAuthorizeRetryButMissingHeaderCan"
+  ],
+  "ru.safeai.gateway.ai.AiRestClientFactoryTest": [],
+  "ru.safeai.gateway.ai.AnthropicPropertiesTest": [],
+  "ru.safeai.gateway.ai.OpenAiPropertiesTest": [],
+  "ru.safeai.gateway.ai.config.AiProductionConfigurationValidatorTest": [],
+  "ru.safeai.gateway.ai.config.ProviderSecretConfigurationValidatorTest": [
+    "actualFileBindingMustMatchAndPermissionsCannotBeBroadened",
+    "missingOrSymlinkFilesCannotBeAcceptedEvenWithCorrectBinding",
+    "parsesExactScalarWithAtMostOneTerminalNewline",
+    "systemEnvironmentCannotShadowSecretMountEvenIfEmpty"
+  ],
+  "ru.safeai.gateway.ai.execution.AiExecutionAttemptScopeTest": [
+    "ambiguousOutcomeNeverPermitsAnotherAttempt",
+    "capCannotBeInflatedInTheFirstAttemptContext",
+    "duplicateDispatchIsRejectedAndCannotBeConvertedToSuccess",
+    "lostDbAckNeverCreatesContradictoryTerminalEventOrSecondCall",
+    "lostStartedAckCannotBeRetriedEvenWhenExceptionIsCaught",
+    "retryMustKeepOriginalLimitAndUseNewIdAfterKnownRejection"
+  ],
+  "ru.safeai.gateway.ai.execution.AiExecutionPreDispatchGateTest": [
+    "missingAbortProofRequiresReconciliationAndSealsScope",
+    "providerIsCalledOnlyAfterExplicitSecondAuthorization",
+    "revokedContextPreventsActionFromRunningAndRecordsTerminalFailure"
+  ],
+  "ru.safeai.gateway.ai.execution.ModelAttemptMonitorPostgresIntegrationTest": [
+    "boundedSqlDistinguishesCostsAndReportsFailureAndRecovery",
+    "concurrentFailureCannotOverwriteOrLoseLastSuccessfulTimestamp"
+  ],
+  "ru.safeai.gateway.ai.provider.AiProviderEndpointSecurityTest": [
+    "absoluteUriAndCustomHostCannotEscapePinnedEndpoint",
+    "blockedAddressClassesAndUnresolvedSocketsCannotConnect",
+    "httpsLoopbackIsRejectedBeforeTcpConnectionNotJustBeforeHttp",
+    "rejectsEncodedTraversalAndMalformedUrlWithoutRetainingRawValue"
+  ],
+  "ru.safeai.gateway.ai.provider.AiProviderMetricsTest": [
+    "preservesResultsAndExceptionsAndBoundsCardinality",
+    "realExecutorDoesNotCountRejectedDispatchAsAdapterEntry"
+  ],
+  "ru.safeai.gateway.ai.provider.AiProviderRetryEvidenceRegressionTest": [
+    "expiredDeadlineAfterDurableDispatchCheckNeverEntersAdapter"
+  ],
+  "ru.safeai.gateway.ai.provider.AiProviderTransportHardeningTest": [
+    "compressedBodyIsRejectedEvenWhenSmall",
+    "delayedHeadersCannotOutliveInheritedDeadline",
+    "disconnectAfterPostDoesNotReplayAtTransportLayer",
+    "expiredDeadlineDoesNotSendAndIsRemovedAfterFailure",
+    "incompleteRateLimitBodyCannotBecomeKnownRejection",
+    "incompleteSuccessfulBodyCannotOutliveInheritedDeadline",
+    "periodicBytesCannotExtendAbsoluteDeadline",
+    "redirectWithSuccessfulLookingBodyIsRejectedWithoutSecondRequest"
+  ],
+  "ru.safeai.gateway.ai.provider.AiRestClientFactoryBoundaryTest": [],
+  "ru.safeai.gateway.ai.provider.anthropic.AnthropicProviderContractTest": [],
+  "ru.safeai.gateway.ai.provider.anthropic.AnthropicResolvedModelProvenanceContractTest": [],
+  "ru.safeai.gateway.ai.provider.anthropic.AnthropicWireGovernanceContractTest": [
+    "explicit429WithValidAdviceAllowsExactlyOneNewAttempt",
+    "rateLimitPayloadCannotOverrideNon429StatusOrInvalidRetryAfter",
+    "secretsAndRawProviderBodyNeverAppearInExceptionMessage",
+    "successfulLookingResponseCannotPublishReflectedCredential"
+  ],
+  "ru.safeai.gateway.ai.provider.openai.OpenAiProviderContractTest": [],
+  "ru.safeai.gateway.ai.provider.openai.OpenAiResolvedModelProvenanceContractTest": [],
+  "ru.safeai.gateway.ai.provider.openai.OpenAiWireGovernanceContractTest": [
+    "malformedOrOversizedRetryAfterNeverFallsBackToLocalRetry",
+    "malformedOrUnknown429PayloadDoesNotAuthorizeRetry",
+    "providerErrorBodyAndCredentialsAreNotCopiedIntoPublicExceptionMessage",
+    "successfulLookingResponseCannotPublishReflectedCredential"
+  ],
+  "ru.safeai.gateway.architecture.AiModelKnowledgeBoundaryArchitectureTest": [],
+  "ru.safeai.gateway.chat.integration.ChatConcurrencyIntegrationTest": [
+    "organizationQuotaReservationIsAtomicAcrossTwoChats"
+  ],
+  "ru.safeai.gateway.common.db.DatabaseMigrationMainTest": [
+    "ciV85MigratesOnlyTo85WithoutApplyingRuntimeAcl",
+    "missingDuplicateRenamedOrUnresolvedMigrationIsBlockedBeforeDdl",
+    "newMigrationCannotRunUntilExplicitlyReviewed",
+    "normalMigrationValidatesAndCommitsReviewedAclOnlyAfterHistoryCheck",
+    "reviewedResourcesAndHistoryCoverExactlyCurrentMigrations",
+    "rollsBackAndPropagatesSqlFailureWhileApplyingAcl",
+    "rollsBackAndRefusesAclWhenMigrationHistoryIsMissingOrInvalid",
+    "v101TransactionConfigurationCannotBeRemovedOrChanged"
+  ],
+  "ru.safeai.gateway.common.db.RuntimeAclPolicyTest": [
+    "acceptsCompleteReviewedMigrationInventory",
+    "blocksCorruptDuplicateIncompleteOrNonContiguousManifest",
+    "blocksMissingAclOrManifestBeforeMigration",
+    "blocksModifiedMigrationOrConfigAndNewOrMissingConfig",
+    "blocksPreviousBoundaryAndUnreviewedNextVersionEvenInManifest"
+  ],
+  "ru.safeai.gateway.knowledge.embedding.KnowledgeEmbeddingBoundaryTest": [],
+  "ru.safeai.gateway.knowledge.embedding.OpenAiKnowledgeEmbeddingProviderRegressionTest": [],
+  "ru.safeai.gateway.knowledge.ocr.KnowledgeOcrBoundaryRegressionTest": [],
+  "ru.safeai.gateway.migration.FlywaySequentialUpgradeIT": [
+    "everyVersionCanBeAppliedInOrderWithoutDroppingSchema"
+  ],
+  "ru.safeai.gateway.model.dto.PolicyNumericRequestTest": [
+    "missingAndNullAcknowledgmentNeverImplyConsent"
+  ],
+  "ru.safeai.gateway.model.integration.ModelBudgetCommitmentV64PostgresIntegrationTest": [
+    "concurrentPaidRoutesInDifferentChatsCannotSpendSameHardBudget",
+    "knownFreeRoutePersistsSeparatedKnownBudgetEvidenceAndItIsImmutable"
+  ],
+  "ru.safeai.gateway.model.integration.ModelControlPlanePostgresIntegrationTest": [],
+  "ru.safeai.gateway.model.integration.ModelExecutionV53V54PostgresIntegrationTest": [],
+  "ru.safeai.gateway.model.integration.ModelGovernanceV59V60V61PostgresIntegrationTest": [
+    "v100ChangedPolicyAfterStartedDeniesDispatch",
+    "v100ChangedPolicyBeforeStartedDeniesPhysicalAttempt",
+    "v100ConcurrentDispatchCannotConsumeSameAttemptTwice",
+    "v100DispatchReceiptIsDurableOneShotAndImmutable",
+    "v100ExpiredProcessingLeaseAfterStartedDeniesDispatch",
+    "v100HardBudgetRechecksActualSpendAfterStarted",
+    "v100MissingAdmissionTriggerCannotTurnDefaultIntoValidReceipt",
+    "v100NoReceiptAbortReleasesReservationAndCannotBeReplayedAsDispatch",
+    "v100OldUtcMonthCannotStartHardBudgetAttempt",
+    "v100ReceiptPreventsFalseKnownNotExecutedAbort",
+    "v100RevokedOrganizationAfterStartedDeniesDispatch",
+    "v100SettlementWaitsForConcurrentTenantAdmissionInsteadOfLosingResult"
+  ],
+  "ru.safeai.gateway.model.integration.ModelRoutingRequestMutexPostgresIntegrationTest": [
+    "budgetFenceRefusesRepeatableReadEvenWithRealPostgres",
+    "policyPublicationAndRoutingShareTransactionFenceButOtherTenantsDoNot",
+    "sameIdempotencyIdentityCannotCreateTwoFirstRouteDecisions"
+  ],
+  "ru.safeai.gateway.model.pricing.VersionedCatalogPricingResolverTest": [
+    "outOfDomainPriceBookRatesCannotProduceVerifiedSettlement"
+  ],
+  "ru.safeai.gateway.model.repository.ModelCommitmentLedgerExplainPerformanceIntegrationTest": [
+    "denseActivePlansAndSkewedTenantPreserveResultsAndBoundRegression",
+    "selectiveTenantAndGlobalLedgerPlansBeforeAndAfterMigration"
+  ],
+  "ru.safeai.gateway.model.repository.ModelCommitmentLedgerV101GuardIntegrationTest": [
+    "concurrentBudgetReservationsUseUpdatedLedgerAndSharedLock",
+    "concurrentIndexMaintenancePreventsReplacementUntilReleased",
+    "concurrentReaderCausesBoundedRollbackThenRetrySucceeds",
+    "deferrableUniqueKeyPreventsReplacement",
+    "missingLedgerIsNotSilentlyRecreated",
+    "missingUniqueConstraintPreventsReplacement",
+    "nonUniqueIndexCannotSubstituteV50Constraint",
+    "nullableAttemptNumberPreventsReplacement",
+    "repeatableReadCannotUseStaleCatalogSnapshotForReplacement",
+    "reversedUniqueKeyPreventsReplacement",
+    "sameNamedTableCannotSubstituteLedgerView",
+    "securityBarrierAndInvokerOptionsCannotBeReset",
+    "unexpectedViewColumnContractPreventsReplacement"
+  ],
+  "ru.safeai.gateway.model.repository.ModelCommitmentLedgerV101IntegrationTest": [
+    "everyLedgerRowAndMonthlyCommitmentRemainIdenticalAcrossUpgrade"
+  ],
+  "ru.safeai.gateway.model.repository.ModelRouteDecisionRepositoryContractTest": [
+    "budgetFenceRejectsAutocommitAndStaleSnapshotIsolation"
+  ],
+  "ru.safeai.gateway.model.repository.ModelRouteMetricsTest": [
+    "countsOnlyCommittedDecisionsAndPreservesBudgetReason"
+  ],
+  "ru.safeai.gateway.model.service.ModelPolicyPreviewConfirmationServiceTest": [],
+  "ru.safeai.gateway.model.service.ModelPolicyPreviewServiceTest": [],
+  "ru.safeai.gateway.model.service.ModelRoutingCostEnvelopeV54Test": [],
+  "ru.safeai.gateway.model.service.ModelRoutingCostPolicyTest": [
+    "negativeTokenCountsCannotReduceReservationOrBecomeFree",
+    "overflowingCommitmentProducesPersistableUnknownEvidenceAndHardDenial"
+  ],
+  "ru.safeai.gateway.model.service.ModelRoutingServiceTest": [
+    "routingTimeIsSampledAfterBudgetFenceAcrossUtcMonthBoundary"
+  ],
+  "ru.safeai.gateway.model.service.OrganizationBudgetStatusSecurityTest": [
+    "httpAndServiceRetainAdministrativeAuthorizationContracts",
+    "tenantAndRoleDenialsPrecedeAllFinancialReads",
+    "unknownCommitmentsNeverBecomeAvailableBudget"
+  ],
+  "ru.safeai.gateway.model.service.OrganizationModelPolicyServiceTest": [],
+  "ru.safeai.gateway.usage.repository.UsagePhysicalSpendRepositoryIntegrationTest": []
+}

@@ -24,11 +24,29 @@ if [[ "${SAFEAI_REQUIRE_IMMUTABLE_IMAGES:-true}" == "true" ]]; then
     done
 fi
 
+# Do not allow production env overrides to diverge from the Docker CI bases.
+expected_java_build="$(sed -n 's/^ARG BUILD_IMAGE=//p' "$repo_dir/backend/Dockerfile")"
+expected_java_runtime="$(sed -n 's/^ARG RUNTIME_IMAGE=//p' "$repo_dir/backend/Dockerfile")"
+[[ "$expected_java_build" =~ ^eclipse-temurin:21[.]0[.]13_9-jdk-noble@sha256:[0-9a-f]{64}$ ]]
+[[ "$expected_java_runtime" =~ ^eclipse-temurin:21[.]0[.]13_9-jre-noble@sha256:[0-9a-f]{64}$ ]]
+[[ "$JAVA_BUILD_IMAGE" == "$expected_java_build" && "$JAVA_RUNTIME_IMAGE" == "$expected_java_runtime" ]] || {
+    echo 'BLOCKED: Java build/runtime images must match the pinned CI bases.' >&2
+    exit 1
+}
+
 if [[ -n "$(git -C "$repo_dir" status --porcelain --untracked-files=all)" ]]; then
     echo "Production build requires a clean Git working tree." >&2
     echo "Commit all intended changes before building release images." >&2
     exit 1
 fi
+
+# Политика репозитория имеет приоритет над произвольным POSTGRES_BASE_IMAGE.
+# Так CI и Release собираются из одного и того же base digest.
+expected_postgres_base="$(cat "$repo_dir/infra/postgres/base-image.txt")"
+[[ "$POSTGRES_BASE_IMAGE" == "$expected_postgres_base" ]] || {
+    echo "BLOCKED: POSTGRES_BASE_IMAGE не совпадает с infra/postgres/base-image.txt" >&2
+    exit 1
+}
 
 vcs_ref="$(git -C "$repo_dir" rev-parse HEAD)"
 build_date="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
@@ -47,8 +65,10 @@ if [[ -f "$repo_dir/frontend/package-lock.json" ]]; then
     (
         cd "$repo_dir/frontend"
         npm ci
-        npm run ci
         npm run audit:prod
+        node --test ../scripts/npm-audit-gate.test.cjs
+        node ../scripts/npm-audit-gate.cjs
+        npm run ci
     )
 fi
 [[ -f "$repo_dir/frontend/dist/index.html" ]] || { echo "frontend/dist/index.html is missing" >&2; exit 1; }
@@ -56,7 +76,7 @@ fi
 
 docker build \
     --file "$repo_dir/infra/postgres/Dockerfile" \
-    --build-arg "POSTGRES_BASE_IMAGE=$POSTGRES_BASE_IMAGE" \
+    --build-arg "UBUNTU_IMAGE=$POSTGRES_BASE_IMAGE" \
     --build-arg "SAFEAI_READER_GID=$SAFEAI_SECRET_GID" \
     --build-arg "APP_VERSION=$APP_VERSION" \
     --build-arg "VCS_REF=$vcs_ref" \

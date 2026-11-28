@@ -1,5 +1,8 @@
 package ru.safeai.gateway.auth.dto;
 
+import org.jetbrains.annotations.Contract;
+import org.jspecify.annotations.NonNull;
+
 import java.util.Objects;
 
 public record CsrfTokenResponse(
@@ -12,6 +15,13 @@ public record CsrfTokenResponse(
         requireText(headerName, "headerName");
         requireText(parameterName, "parameterName");
         requireText(token, "token");
+    }
+
+    @Contract(pure = true)
+    @Override
+    public @NonNull String toString() {
+        return "CsrfTokenResponse[headerName=" + headerName
+                + ", parameterName=" + parameterName + ", token=<redacted>]";
     }
 
     private static void requireText(

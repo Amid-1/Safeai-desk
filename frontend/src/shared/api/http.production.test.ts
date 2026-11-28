@@ -18,11 +18,13 @@ describe('http — контракт ошибок и конфиденциальн
     it('не показывает внутренние детали 500 пользователю, сохраняя Request ID',()=>{
         const err=new ApiError('stack trace /secret',{code:'INTERNAL_ERROR',requestId:'rid-42'},500)
         expect(getApiErrorPresentation(err,'Внутренняя ошибка')).toEqual({message:'Внутренняя ошибка',requestId:'rid-42'})
-        expect(getApiErrorMessage(err,'Внутренняя ошибка')).toBe('Внутренняя ошибка Request ID: rid-42')
+        expect(getApiErrorMessage(err, 'Внутренняя ошибка')).toBe('Внутренняя ошибка Номер обращения: rid-42')
     })
     it('не раскрывает Request ID для ожидаемых 4xx',()=>{
         const err=new ApiError('Ограничение',{error:'RATE_LIMIT_EXCEEDED',requestId:'rid'},429)
-        expect(getApiErrorPresentation(err,'Fallback')).toEqual({message:'Ограничение',requestId:undefined})
+        expect(getApiErrorPresentation(err, 'Fallback')).toEqual({
+            message: 'Слишком много запросов. Повторите попытку позже.', requestId: undefined,
+        })
     })
     it('обрабатывает Retry-After HTTP-date и числа без отрицательных задержек',()=>{
         vi.useFakeTimers(); vi.setSystemTime(new Date('2026-08-10T12:00:00Z'))
@@ -46,6 +48,14 @@ describe('http — контракт ошибок и конфиденциальн
 })
 
 describe('http — CSRF и небезопасные запросы',()=>{
+    it('успешно читает JSON новой базы знаний при HTTP 201 Created',async()=>{
+        csrf('secure')
+        const created={id:'11111111-1111-4111-8111-111111111111',name:'Runbooks'}
+        vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify(created),{
+            status:201,headers:{'Content-Type':'application/json','Location':`/api/knowledge-bases/${created.id}`},
+        })))
+        await expect(apiRequest('/api/knowledge-bases',{method:'POST',json:{name:'Runbooks'}})).resolves.toEqual(created)
+    })
     it('не выполняет мутацию, если сервер не устанавливает CSRF cookie',async()=>{
         const fetchMock=vi.fn(async()=>new Response(null,{status:204}))
         vi.stubGlobal('fetch',fetchMock)

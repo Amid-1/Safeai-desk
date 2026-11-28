@@ -1,0 +1,84 @@
+# SafeAI-Desk/infra/prometheus/rules/safeai-usage.yml
+groups:
+  - name: safeai-usage
+    rules:
+      - alert: SafeAiUsageExportMonitoringUnavailable
+        expr: absent(safeai_usage_export_last_observation_timestamp) or (time() - safeai_usage_export_last_observation_timestamp > 180) or (up{job="safeai-backend"} unless on(job, instance) safeai_usage_export_last_observation_timestamp)
+        for: 3m
+        labels: {severity: critical, service: safeai-backend}
+        annotations:
+          summary: "Мониторинг очереди Usage недоступен"
+          description: "Проверьте PostgreSQL, worker экспорта и сбор метрик."
+      - alert: SafeAiUsageExportQueueSaturated
+        expr: max(safeai_usage_export_queued) >= 4
+        for: 5m
+        labels: {severity: warning, service: safeai-backend}
+        annotations:
+          summary: "Очередь экспорта Usage заполнена"
+          description: "Проверьте время выполнения отчётов и состояние PostgreSQL."
+      - alert: SafeAiUsageExportLeaseExpired
+        expr: max(safeai_usage_export_expired_leases) > 0
+        for: 3m
+        labels: {severity: warning, service: safeai-backend}
+        annotations:
+          summary: "Зависшая аренда экспорта Usage"
+          description: "Проверьте восстановление задания после отказа backend."
+      - alert: SafeAiUsageExportFailures
+        expr: sum(increase(safeai_usage_export_events_total{result=~"failed|storage_error|lease_lost"}[5m])) >= 3
+        for: 2m
+        labels: {severity: warning, service: safeai-backend}
+        annotations:
+          summary: "Рост ошибок экспорта Usage"
+          description: "Проверьте хранилище заданий, аренды и выполнение запросов."
+      - alert: SafeAiUsageReportTimeouts
+        expr: sum(increase(safeai_usage_reports_timeout_total[5m])) >= 3
+        for: 2m
+        labels: {severity: warning, service: safeai-backend}
+        annotations:
+          summary: "Превышено время выполнения отчётов Usage"
+          description: "Проверьте EXPLAIN ANALYZE и нагрузку PostgreSQL."
+      - alert: SafeAiUsageReportErrors
+        expr: sum(increase(safeai_usage_reports_error_total[5m])) >= 3
+        for: 2m
+        labels: {severity: warning, service: safeai-backend}
+        annotations:
+          summary: "Рост ошибок отчётов Usage"
+          description: "Проверьте подключение к PostgreSQL и серверные журналы."
+      - alert: SafeAiUsageReportAdmissionSaturated
+        expr: sum(increase(safeai_usage_reports_rejected_total[5m])) >= 10
+        for: 2m
+        labels: {severity: warning, service: safeai-backend}
+        annotations:
+          summary: "Частые отказы допуска отчётов Usage"
+          description: "Проверьте нагрузку. Не отключайте ограничитель отчётов."
+      - alert: SafeAiUsageRollupLag
+        expr: max(safeai_usage_rollup_lag_days) > 1 or min(safeai_usage_rollup_lag_days) < 0
+        for: 30m
+        labels: {severity: warning, service: safeai-backend}
+        annotations:
+          summary: "Агрегаты Usage отстают"
+          description: "Проверьте watermark, backfill и расписание пересчёта."
+      - alert: SafeAiUsageRollupDirtyDates
+        expr: max(safeai_usage_rollup_dirty_days) > 0
+        for: 30m
+        labels: {severity: warning, service: safeai-backend}
+        annotations:
+          summary: "Ожидают пересчёта исторические даты Usage"
+          description: "Проверьте очередь dirty dates и состояние rollup."
+      - alert: SafeAiUsageRollupMonitoringUnavailable
+        expr: >-
+          absent(safeai_usage_rollup_last_observation_timestamp)
+          or (time() - safeai_usage_rollup_last_observation_timestamp > 180)
+          or (up{job="safeai-backend"} unless on(job, instance) safeai_usage_rollup_last_observation_timestamp)
+        for: 5m
+        labels: {severity: warning, service: safeai-backend}
+        annotations:
+          summary: "Мониторинг rollup Usage недоступен"
+          description: "Проверьте расписание, PostgreSQL и включение rollup."
+      - alert: SafeAiUsageRollupObservationErrors
+        expr: sum(increase(safeai_usage_rollup_observation_errors_total[5m])) >= 3
+        for: 2m
+        labels: {severity: warning, service: safeai-backend}
+        annotations:
+          summary: "Ошибки мониторинга агрегатов Usage"
+          description: "Проверьте доступ к PostgreSQL, таймауты и состояние rollup."

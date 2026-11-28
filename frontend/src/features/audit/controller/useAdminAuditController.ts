@@ -4,12 +4,16 @@
 // Контроллер журнала аудита: фильтры, адресная строка, пагинация и права.
 // ============================================================
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { AuditEvent } from '../api/adminAuditApi'
+import type { AuditEvent, AuditCategory, AuditMetric } from '../api/adminAuditApi'
+import { getAuditEvents } from '../api/adminAuditApi'
+import { REPORT_EXPORT_LIMIT, useBoundedReportExport } from '../../../shared/lib/useBoundedReportExport'
+import { downloadAuditCsv } from '../ui/auditCsv'
 import { useAuth } from '../../auth/state/useAuth'
 import { auditDraftFiltersEqual } from '../ui/types'
 import type { AuditDraftFilter, DatePreset } from '../ui/types'
 import useAuditDirectories from '../hooks/useAuditDirectories'
 import useAuditEvents from '../hooks/useAuditEvents'
+import { useAuditSummary } from '../hooks/useAuditSummary'
 import {
     applyAuditDatePreset,
     buildAuditSearch,
@@ -27,6 +31,7 @@ export function useAdminAuditController() {
         currentUser?.roles.includes(
             'SUPER_ADMIN',
         ) ?? false
+    const authScope = JSON.stringify([currentUser?.id, currentUser?.organizationId, superAdmin])
 
     const initialState =
         useMemo(
@@ -41,11 +46,13 @@ export function useAdminAuditController() {
         )
 
     const [
-        selectedEvent,
-        setSelectedEvent,
-    ] = useState<AuditEvent | null>(
-        null,
-    )
+        selectedEventState,
+        setSelectedEventState,
+    ] = useState<{ scope: string; event: AuditEvent | null }>({scope: authScope, event: null})
+    const selectedEvent = selectedEventState.scope === authScope ? selectedEventState.event : null
+    function setSelectedEvent(event: AuditEvent | null) {
+        setSelectedEventState({scope: authScope, event})
+    }
 
     const [
         page,
@@ -131,6 +138,7 @@ export function useAdminAuditController() {
             : { ...appliedFilter, targetOrganizationId: undefined },
         [appliedFilter, superAdmin],
     )
+    const summary = useAuditSummary(authScope, effectiveAppliedFilter, reloadToken)
 
     const {
         events,
@@ -139,6 +147,7 @@ export function useAdminAuditController() {
         error:
             loadError,
     } = useAuditEvents({
+        authScope,
         page,
         filter:
             effectiveAppliedFilter,
@@ -150,6 +159,19 @@ export function useAdminAuditController() {
     const effectiveLoading =
         loading
         || requestTransitioning
+
+    const exportTask = useBoundedReportExport(JSON.stringify([
+        currentUser?.id, currentUser?.organizationId, superAdmin, effectiveAppliedFilter, reloadToken,
+    ]))
+
+    function exportFiltered() {
+        if (!currentUser || effectiveLoading || loadError || filtersDirty) return
+        return exportTask.run(async signal => {
+            const result = await getAuditEvents(0, REPORT_EXPORT_LIMIT, effectiveAppliedFilter, { signal })
+            return result.page !== 0 || result.totalElements > REPORT_EXPORT_LIMIT || result.totalPages > 1
+                || result.content.length !== result.totalElements ? null : result.content
+        }, rows => downloadAuditCsv(rows, 'filtered'))
+    }
 
     useEffect(() => {
         if (!loading) {
@@ -165,18 +187,7 @@ export function useAdminAuditController() {
         loading,
     ])
 
-    const filtersDirty =
-        useMemo(
-            () =>
-                !auditDraftFiltersEqual(
-                    draftFilter,
-                    appliedDraftFilter,
-                ),
-            [
-                draftFilter,
-                appliedDraftFilter,
-            ],
-        )
+    const filtersDirty = !auditDraftFiltersEqual(draftFilter, appliedDraftFilter)
 
     const organizationNameById =
         useMemo(
@@ -275,12 +286,32 @@ export function useAdminAuditController() {
     ])
 
     function applyFilters() {
+        applyDraftFilter(draftFilter)
+    }
+
+    function selectAuditMetric(metric?: AuditMetric) {
+        if (filtersDirty || effectiveLoading) return
+        applyDraftFilter({ ...appliedDraftFilter, metric })
+    }
+
+    function selectAuditCategory(category?: AuditCategory) {
+        if (filtersDirty || effectiveLoading) return
+        applyDraftFilter({ ...appliedDraftFilter, category, metric: undefined, eventType: '' })
+    }
+
+    function filterByActor(actorUserId: string) {
+        // Do not discard unsubmitted edits or allow actions on stale results.
+        if (!actorUserId || filtersDirty || effectiveLoading) return
+        applyDraftFilter({ ...appliedDraftFilter, actorUserId, eventType: '', actorEmail: '' })
+    }
+
+    function applyDraftFilter(next: AuditDraftFilter) {
         setFilterError('')
 
         try {
             const normalized =
                 toAuditEventFilter(
-                    draftFilter,
+                    next,
                     superAdmin,
                 )
 
@@ -412,13 +443,29 @@ export function useAdminAuditController() {
     const showTable =
         events.length > 0
 
+    // The directory is paginated/searchable; a selected historical actor may be
+    // absent. Reuse its already authorized event snapshot for the selected label.
+    const selectedActorSnapshot = draftFilter.actorUserId && !actors.some(actor => actor.actorUserId === draftFilter.actorUserId)
+        ? events.find(event => event.actorUserId === draftFilter.actorUserId)
+        : undefined
+    const visibleActors = selectedActorSnapshot ? [...actors, {
+        actorUserId: selectedActorSnapshot.actorUserId,
+        actorOrganizationId: selectedActorSnapshot.actorOrganizationId,
+        actorEmail: selectedActorSnapshot.actorEmail,
+        actorDisplayName: selectedActorSnapshot.actorDisplayName,
+    }] : actors
+
     return {
+        ...summary,
+        selectAuditMetric,
+        selectAuditCategory,
+        exportFiltered, exportPending: exportTask.pending, filteredExportError: exportTask.error,
         superAdmin,
         selectedEvent,
         draftFilter,
         eventTypes,
         organizations,
-        actors,
+        actors: visibleActors,
         directoriesLoading,
         eventTypesError,
         organizationsError,
@@ -437,6 +484,7 @@ export function useAdminAuditController() {
         setSelectedEvent,
         applyDatePreset,
         applyFilters,
+        filterByActor,
         resetFilters,
         retryLoad,
         changePage,

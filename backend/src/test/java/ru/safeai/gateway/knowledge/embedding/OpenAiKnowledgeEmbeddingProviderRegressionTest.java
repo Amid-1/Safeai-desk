@@ -148,7 +148,7 @@ class OpenAiKnowledgeEmbeddingProviderRegressionTest {
         var properties = new KnowledgeEmbeddingProperties("openai", null, "secret-for-test",
                 "text-embedding-3-small", 384, 2, 100_000,
                 Duration.ofSeconds(1), Duration.ofSeconds(2));
-        return new Setup(new OpenAiKnowledgeEmbeddingProvider(properties, builder.build()), server);
+        return new Setup(EmbeddingAssuranceTestSupport.provider(properties, builder.build()), server);
     }
 
     private static String batch(int size, float component) {

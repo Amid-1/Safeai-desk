@@ -1,0 +1,124 @@
+/* frontend/src/features/chat/controller/ChatArchiveModal.css */
+.chat-archive {
+    display: grid;
+    gap: 1rem;
+    min-width: 0
+}
+
+.chat-archive__layout {
+    display: grid;
+    grid-template-columns:minmax(180px, 0.75fr) minmax(0, 1.8fr);
+    gap: 1rem;
+    min-height: 250px;
+    max-height: 60vh
+}
+
+.chat-archive__list {
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+    overflow: auto;
+    min-width: 0
+}
+
+.chat-archive__list button {
+    display: grid;
+    gap: .25rem;
+    text-align: left;
+    overflow-wrap: anywhere
+}
+
+.chat-archive__list button[aria-pressed="true"] {
+    border-color: #3157dc;
+    background: #e8efff;
+    color: #153baf;
+}
+
+.chat-archive__list small {
+    font-weight: 400;
+    font-size: .75rem;
+}
+
+.chat-archive__details {
+    overflow: auto;
+    min-width: 0;
+    padding: .5rem
+}
+
+.chat-archive__messages {
+    max-height: 280px;
+    overflow: auto;
+    border: 1px solid var(--border-color, #dce3ef);
+    border-radius: 8px;
+    padding: .75rem
+}
+
+.chat-archive__message {
+    padding: .5rem 0;
+    border-bottom: 1px solid #e5e7eb;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap
+}
+
+.chat-archive__message:last-child {
+    border-bottom: 0
+}
+
+.chat-archive__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .75rem;
+    margin-top: 1rem
+}
+
+.chat-archive__erase {
+    display: grid;
+    gap: .5rem;
+    margin-top: 1rem;
+    border-top: 1px solid #e5e7eb;
+    padding-top: 1rem
+}
+
+.chat-archive__erase input {
+    min-width: 0;
+    width: 100%
+}
+
+.chat-delete-action {
+    color: #a81b23;
+    border-color: #efb4b8;
+}
+
+.chat-delete-action:not(:disabled):hover {
+    color: #95151d;
+    background: #fff0f1;
+}
+
+@media (max-width: 650px) {
+    .chat-archive__layout {
+        grid-template-columns:1fr;
+        max-height: 70vh
+    }
+
+    .chat-archive__list {
+        max-height: 150px
+    }
+}
+
+.chat-archive__actions .erasure-context-link {
+    align-self: center;
+    border: 1px solid #bed1f4;
+    border-radius: 8px;
+    padding: 9px 12px;
+    color: #245bd4;
+    font-weight: 650;
+    text-decoration: none;
+}
+.chat-archive__actions .erasure-context-link:hover { background: #eef2ff; text-decoration: underline; }
+.chat-archive__actions .erasure-context-link:focus-visible { outline: 2px solid #3776cb; outline-offset: 2px; }
+
+/* Distinguish the existing privileged operation from ordinary request intake. */
+.chat-archive__separate-erasure { margin-top: 14px; padding: 12px; border: 1px solid #dbe4f3; border-radius: 10px; min-width: 0; }
+.chat-archive__separate-erasure > strong { font-size: 13px; }
+.chat-archive__separate-erasure > p { font-size: 12px; line-height: 1.5; margin: 5px 0 9px; }
+.chat-archive__blocked { color: #814812; background: #fff4e5; border-radius: 8px; padding: 9px 10px; overflow-wrap: anywhere; }

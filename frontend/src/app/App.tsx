@@ -1,26 +1,37 @@
 // frontend/src/app/App.tsx
-// ============================================================
-// frontend/src/app/App.tsx
-// ============================================================
+import {ErasureEntryContext, ErasureCountsContext} from '../shared/ui/erasureEntryContext'
+import {useErasureNotifications} from '../features/erasure/api/useErasureNotifications'
+import {ErasureNotifications} from '../features/erasure/ui/ErasureNotifications'
+import {WorkspaceReturn, WorkspaceScrollRestore} from '../shared/ui/WorkspaceReturn'
 import {
+    Fragment,
+    isValidElement,
     lazy,
     Suspense,
+    useEffect,
+    useRef,
     useState,
+    type MouseEvent,
     type ReactNode,
 } from 'react'
 import {
+    createRoutesFromElements,
+    matchRoutes,
     NavLink,
     Navigate,
     Route,
-    Routes,
     useLocation,
     useNavigate,
+    useRoutes,
 } from 'react-router-dom'
-import type { AuthUser } from '../features/auth/api/authApi'
-import type { UserRole } from '../shared/api/types'
-import { AuthProvider } from '../features/auth/state/AuthContext'
-import { useAuth } from '../features/auth/state/useAuth'
-import { ErrorState, LoadingState } from '../shared/ui/StateBlock'
+import type {AuthUser} from '../features/auth/api/authApi'
+import type {UserRole} from '../shared/api/types'
+import {AuthProvider} from '../features/auth/state/AuthContext'
+import {useAuth} from '../features/auth/state/useAuth'
+import {ErrorState, LoadingState} from '../shared/ui/StateBlock'
+import {roleLabel} from '../shared/lib/roleLabel'
+
+const MAIN_CONTENT_ID = 'main-content'
 
 const LoginPage = lazy(() => import('../pages/LoginPage'))
 const ChatPage = lazy(() => import('../pages/ChatPage'))
@@ -42,6 +53,17 @@ const AdminAuditPage = lazy(
 const AdminUsagePage = lazy(
     () => import('../pages/AdminUsagePage'),
 )
+const AdminDashboardPage = lazy(() => import('../pages/AdminDashboardPage'))
+const DataManagementLayout = lazy(() => import('./DataManagementLayout'))
+const ErasureRegistryPage = lazy(() => import('../pages/ErasureRegistryPage'))
+const ErasureRegistryDetailsPage = lazy(() => import('../pages/ErasureRegistryDetailsPage'))
+const ErasureHistoryPage = lazy(() => import('../pages/ErasureHistoryPage'))
+const AdminRetentionPage = lazy(() => import('../pages/AdminRetentionPage'))
+const PrivacySettingsPage = lazy(() => import('../pages/PrivacySettingsPage'))
+const ErasureReviewCenterPage = lazy(() => import('../pages/ErasureReviewCenterPage'))
+const ErasureReviewQueuePage = lazy(() => import('../pages/ErasureReviewQueuePage'))
+const ErasureReviewDetailsPage = lazy(() => import('../pages/ErasureReviewDetailsPage'))
+const ErasureRequestsPage = lazy(() => import('../pages/ErasureRequestsPage'))
 const AdminModelsPage = lazy(
     () => import('../pages/AdminModelsPage'),
 )
@@ -75,7 +97,7 @@ function isSuperAdmin(user: AuthUser | null): boolean {
 
 function getDefaultAuthenticatedRoute(user: AuthUser): string {
     return isSuperAdmin(user)
-        ? '/admin/users'
+        ? '/admin/dashboard'
         : '/chat'
 }
 
@@ -96,8 +118,8 @@ function getDisplayRole(user: AuthUser | null): UserRole | null {
 }
 
 function getNavLinkClass({
-    isActive,
-}: {
+                             isActive,
+                         }: {
     isActive: boolean
 }): string {
     return isActive
@@ -146,41 +168,42 @@ function AccessDeniedState() {
 function RouteLoadingState() {
     return (
         <div className="page narrow-page route-state">
-            <LoadingState message="Загрузка страницы..." />
+            <LoadingState message="Загрузка страницы..."/>
         </div>
     )
 }
 
 function ProtectedRoute({
-    roles,
-    children,
-}: ProtectedRouteProps) {
+                            roles,
+                            children,
+                        }: ProtectedRouteProps) {
     const {
         currentUser,
         authStatus,
     } = useAuth()
 
     if (authStatus === 'loading') {
-        return <LoadingState message="Проверка доступа..." />
+        return <LoadingState message="Проверка доступа..."/>
     }
 
     if (authStatus === 'temporarily-unavailable') {
-        return <AuthUnavailableState />
+        return <AuthUnavailableState/>
     }
 
-    if (!currentUser) {
-        return <Navigate to="/login" replace />
+    if (authStatus !== 'authenticated' || !currentUser) {
+        return <Navigate to="/login" replace/>
     }
 
-    if (!hasRequiredRole(currentUser, roles)) {
-        return <AccessDeniedState />
+    if (!currentUser.enabled || !hasRequiredRole(currentUser, roles)) {
+        return <AccessDeniedState/>
     }
 
-    if (typeof children === 'function') {
-        return <>{children(currentUser)}</>
-    }
-
-    return <>{children}</>
+    const scope = JSON.stringify([currentUser.id, currentUser.organizationId, [...currentUser.roles].sort()])
+    return (
+        <Fragment key={scope}>
+            {typeof children === 'function' ? children(currentUser) : children}
+        </Fragment>
+    )
 }
 
 function RootRedirect() {
@@ -190,17 +213,17 @@ function RootRedirect() {
     } = useAuth()
 
     if (authStatus === 'loading') {
-        return <LoadingState message="Проверка доступа..." />
+        return <LoadingState message="Проверка доступа..."/>
     }
 
     if (authStatus === 'temporarily-unavailable') {
-        return <AuthUnavailableState />
+        return <AuthUnavailableState/>
     }
 
     return (
         <Navigate
             to={
-                currentUser
+                authStatus === 'authenticated' && currentUser
                     ? getDefaultAuthenticatedRoute(currentUser)
                     : '/login'
             }
@@ -216,14 +239,14 @@ function LoginRoute() {
     } = useAuth()
 
     if (authStatus === 'loading') {
-        return <LoadingState message="Проверка доступа..." />
+        return <LoadingState message="Проверка доступа..."/>
     }
 
     if (authStatus === 'temporarily-unavailable') {
-        return <AuthUnavailableState />
+        return <AuthUnavailableState/>
     }
 
-    if (currentUser) {
+    if (authStatus === 'authenticated' && currentUser) {
         return (
             <Navigate
                 to={getDefaultAuthenticatedRoute(currentUser)}
@@ -232,7 +255,7 @@ function LoginRoute() {
         )
     }
 
-    return <LoginPage />
+    return <LoginPage/>
 }
 
 function NotFoundRoute() {
@@ -246,7 +269,7 @@ function NotFoundRoute() {
                 action={
                     <button
                         type="button"
-                        onClick={() => navigate('/', { replace: true })}
+                        onClick={() => navigate('/', {replace: true})}
                     >
                         На главную
                     </button>
@@ -262,10 +285,57 @@ function AppLayout() {
     const {
         currentUser,
         logoutUser,
+        authStatus,
     } = useAuth()
     const [logoutPending, setLogoutPending] = useState(false)
+    const [menuLocation, setMenuLocation] = useState<string | null>(null)
+    const menuButtonRef = useRef<HTMLButtonElement>(null)
+    const mainRef = useRef<HTMLElement>(null)
+    const menuOpen = menuLocation === location.key
 
-    const isAuthenticated = currentUser !== null
+    useEffect(() => {
+        if (!menuOpen) return
+
+        function handleEscape(event: KeyboardEvent) {
+            if (event.key !== 'Escape' || event.defaultPrevented) return
+            if (!menuButtonRef.current?.getClientRects().length) return
+            setMenuLocation(null)
+            menuButtonRef.current.focus()
+        }
+
+        window.addEventListener('keydown', handleEscape)
+        return () => window.removeEventListener('keydown', handleEscape)
+    }, [menuOpen])
+
+    function closeMenuOnNavigate(event: MouseEvent<HTMLAnchorElement>) {
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+        if (menuOpen) {
+            setMenuLocation(null)
+            mainRef.current?.focus()
+        }
+    }
+
+    const isAuthenticated = authStatus === 'authenticated' && currentUser?.enabled === true
+    // The static route elements must never retain a page from another session scope.
+    // Keep the key stable for ordinary navigation and same-scope profile refreshes.
+    const actorScope = currentUser
+        ? JSON.stringify([currentUser.id, currentUser.organizationId, [...currentUser.roles].sort()])
+        : null
+    const routeSessionKey = JSON.stringify([authStatus, currentUser?.enabled ?? null, actorScope])
+    const guards = (matchRoutes(appRoutes, location) ?? []).flatMap(({route}) => {
+        const element = route.element
+        return isValidElement<ProtectedRouteProps>(element) && element.type === ProtectedRoute
+            ? [element.props]
+            : []
+    })
+    const routeRoleDenied = isAuthenticated && currentUser !== null
+        && guards.some(guard => !hasRequiredRole(currentUser, guard.roles))
+    // No protected polling on denied, public, redirect or unknown routes.
+    // The existing hook aborts requests and clears its timer when scope changes.
+    const notificationScope = isAuthenticated && guards.length > 0 && !routeRoleDenied
+        ? actorScope
+        : null
+    const notifications = useErasureNotifications(notificationScope, location.key)
     const canAccessChat = hasAnyRole(
         currentUser,
         ['ADMIN', 'USER'],
@@ -292,6 +362,7 @@ function AppLayout() {
             '/admin/organizations',
             '/admin/audit',
             '/admin/usage',
+            '/my/erasure-requests',
         ].includes(location.pathname)
     const appClassName = [
         'app',
@@ -317,244 +388,361 @@ function AppLayout() {
             // AuthContext очищает локальную сессию в finally.
         } finally {
             setLogoutPending(false)
-            void navigate('/login', { replace: true })
+            void navigate('/login', {replace: true})
         }
     }
 
     return (
-        <div className={appClassName}>
-            {isAuthenticated && (
-                <header className="topbar">
-                    <NavLink
-                        to={currentUser
-                            ? getDefaultAuthenticatedRoute(currentUser)
-                            : '/'}
-                        className="logo"
-                        aria-label="SafeAI Desk — на главную"
-                        title="На главную"
+        <ErasureEntryContext.Provider value={notifications?.canRequest === true}>
+            <ErasureCountsContext.Provider value={notifications}>
+                <div className={appClassName}>
+                    <a
+                        className="skip-link"
+                        href={`#${MAIN_CONTENT_ID}`}
+                        onClick={event => {
+                            event.preventDefault()
+                            setMenuLocation(null)
+                            mainRef.current?.focus()
+                        }}
                     >
-                        <span className="logo__mark" aria-hidden="true">S</span>
-                        <span>SafeAI Desk</span>
-                    </NavLink>
-
-                    <nav aria-label="Основная навигация">
-                        {canAccessChat && (
+                        Перейти к содержимому
+                    </a>
+                    {isAuthenticated && (
+                        <header className="topbar" data-menu-open={menuOpen}>
                             <NavLink
-                                to="/chat"
-                                className={getNavLinkClass}
+                                to={currentUser
+                                    ? getDefaultAuthenticatedRoute(currentUser)
+                                    : '/'}
+                                className="logo"
+                                aria-label="SafeAI Desk — на главную"
+                                title="На главную"
+                                onClick={closeMenuOnNavigate}
                             >
-                                Чат
+                                <span className="logo__mark" aria-hidden="true">S</span>
+                                <span>SafeAI Desk</span>
                             </NavLink>
-                        )}
 
-                        {canAccessKnowledge && (
-                            <NavLink
-                                to="/knowledge"
-                                className={getNavLinkClass}
+                            <button
+                                ref={menuButtonRef}
+                                className="topbar-menu-toggle"
+                                type="button"
+                                aria-expanded={menuOpen}
+                                aria-controls="main-navigation account-controls"
+                                onClick={() => setMenuLocation(menuOpen ? null : location.key)}
                             >
-                                Базы знаний
-                            </NavLink>
-                        )}
+                                <span aria-hidden="true" className="topbar-menu-toggle__icon"/>
+                                Меню
+                            </button>
 
-                        {canAccessAdmin && (
-                            <>
-                                <NavLink
-                                    to="/admin/users"
-                                    className={getNavLinkClass}
-                                >
-                                    Пользователи
-                                </NavLink>
-
-                                {canAccessOrganizations && (
+                            <nav id="main-navigation" aria-label="Основная навигация">
+                                {canAccessChat && (
                                     <NavLink
-                                        to="/admin/organizations"
+                                        to="/chat"
                                         className={getNavLinkClass}
+                                        onClick={closeMenuOnNavigate}
                                     >
-                                        Организации
+                                        Чат
                                     </NavLink>
                                 )}
 
-                                <NavLink
-                                    to="/admin/audit"
-                                    className={getNavLinkClass}
-                                >
-                                    Аудит
-                                </NavLink>
+                                {isAuthenticated && (
+                                    <NavLink to="/settings/privacy" className={getNavLinkClass}
+                                             onClick={closeMenuOnNavigate}>
+                                        Приватность
+                                    </NavLink>
+                                )}
 
-                                <NavLink
-                                    to="/admin/usage"
-                                    className={getNavLinkClass}
-                                >
-                                    Использование
-                                </NavLink>
+                                {canAccessKnowledge && (
+                                    <NavLink
+                                        to="/knowledge"
+                                        className={getNavLinkClass}
+                                        onClick={closeMenuOnNavigate}
+                                    >
+                                        Базы знаний
+                                    </NavLink>
+                                )}
 
-                                <NavLink
-                                    to="/admin/models"
-                                    className={getNavLinkClass}
-                                >
-                                    Модели
-                                </NavLink>
-                            </>
-                        )}
-                    </nav>
+                                {canAccessAdmin && (
+                                    <>
+                                        {canAccessOrganizations && (
+                                            <NavLink
+                                                to="/admin/dashboard"
+                                                className={getNavLinkClass}
+                                                onClick={closeMenuOnNavigate}
+                                            >
+                                                Обзор
+                                            </NavLink>
+                                        )}
+                                        <NavLink
+                                            to="/admin/users"
+                                            className={getNavLinkClass}
+                                            onClick={closeMenuOnNavigate}
+                                        >
+                                            Пользователи
+                                        </NavLink>
 
-                    <div className="topbar-user">
-                        {currentUser && displayRole && (
-                            <div className="current-user">
-                                <span>{currentUser.email}</span>
+                                        {canAccessOrganizations && (
+                                            <NavLink
+                                                to="/admin/organizations"
+                                                className={getNavLinkClass}
+                                                onClick={closeMenuOnNavigate}
+                                            >
+                                                Организации
+                                            </NavLink>
+                                        )}
 
-                                <span
-                                    className={
-                                        displayRole === 'SUPER_ADMIN'
-                                            ? 'role-badge role-super-admin'
-                                            : displayRole === 'ADMIN'
-                                                ? 'role-badge role-admin'
-                                                : 'role-badge role-user'
-                                    }
-                                >
-                                    {displayRole}
+                                        <NavLink
+                                            to="/admin/audit"
+                                            className={getNavLinkClass}
+                                            onClick={closeMenuOnNavigate}
+                                        >
+                                            Аудит
+                                        </NavLink>
+
+                                        <NavLink
+                                            to="/admin/usage"
+                                            className={getNavLinkClass}
+                                            onClick={closeMenuOnNavigate}
+                                        >
+                                            Использование
+                                        </NavLink>
+
+                                        <NavLink to='/admin/erasure'
+                                                 className={({isActive}) => getNavLinkClass({
+                                                     isActive: isActive
+                                                         || location.pathname === '/admin/retention'
+                                                         || location.pathname.startsWith('/admin/erasure/')
+                                                 })}
+                                                 onClick={closeMenuOnNavigate}>
+                                            Управление данными
+                                            {notifications?.registryCount != null && notifications.registryCount > 0 &&
+                                                <span className="erasure-menu-count"
+                                                      title={canAccessOrganizations ? "Ожидают рассмотрения или передачи на рассмотрение" : "Зарегистрированные заявки организации"}>{notifications.registryCount}</span>}
+                                        </NavLink>
+
+                                        <NavLink
+                                            to="/admin/models"
+                                            className={getNavLinkClass}
+                                            onClick={closeMenuOnNavigate}
+                                        >
+                                            Модели
+                                        </NavLink>
+                                    </>
+                                )}
+                            </nav>
+
+                            <div className="topbar-user" id="account-controls">
+                                <ErasureNotifications key={notificationScope ?? "anonymous"} feed={notifications}/>
+                                {currentUser && displayRole && (
+                                    <div className="current-user">
+                                        <span>{currentUser.email}</span>
+
+                                        <span
+                                            className={
+                                                displayRole === 'SUPER_ADMIN'
+                                                    ? 'role-badge role-super-admin'
+                                                    : displayRole === 'ADMIN'
+                                                        ? 'role-badge role-admin'
+                                                        : 'role-badge role-user'
+                                            }
+                                        >
+                                    {roleLabel(displayRole)}
                                 </span>
+                                    </div>
+                                )}
+
+                                <button
+                                    type="button"
+                                    disabled={logoutPending}
+                                    onClick={() => void handleLogout()}
+                                >
+                                    {logoutPending
+                                        ? 'Выход...'
+                                        : 'Выйти'}
+                                </button>
                             </div>
-                        )}
+                        </header>
+                    )}
 
-                        <button
-                            type="button"
-                            disabled={logoutPending}
-                            onClick={() => void handleLogout()}
-                        >
-                            {logoutPending
-                                ? 'Выход...'
-                                : 'Выйти'}
-                        </button>
-                    </div>
-                </header>
-            )}
-
-            <main className={contentClassName}>
-                <Suspense fallback={<RouteLoadingState />}>
-                    <Routes>
-                        <Route
-                            path="/"
-                            element={<RootRedirect />}
-                        />
-
-                        <Route
-                            path="/login"
-                            element={<LoginRoute />}
-                        />
-
-                        <Route
-                            path="/chat"
-                            element={
-                                <ProtectedRoute
-                                    roles={['ADMIN', 'USER']}
-                                >
-                                    <ChatPage />
-                                </ProtectedRoute>
-                            }
-                        />
-
-                        <Route
-                            path="/knowledge"
-                            element={
-                                <ProtectedRoute
-                                    roles={['ADMIN', 'USER']}
-                                >
-                                    <KnowledgePage />
-                                </ProtectedRoute>
-                            }
-                        />
-                        <Route
-                            path="/knowledge/:knowledgeBaseId"
-                            element={<ProtectedRoute roles={['ADMIN','USER']}><KnowledgeDetailsPage /></ProtectedRoute>}
-                        />
-
-                        <Route
-                            path="/admin/users"
-                            element={
-                                <ProtectedRoute
-                                    roles={[
-                                        'ADMIN',
-                                        'SUPER_ADMIN',
-                                    ]}
-                                >
-                                    {(user) => (
-                                        <AdminUsersPage
-                                            currentUser={user}
-                                        />
-                                    )}
-                                </ProtectedRoute>
-                            }
-                        />
-
-                        <Route
-                            path="/admin/organizations"
-                            element={
-                                <ProtectedRoute
-                                    roles={['SUPER_ADMIN']}
-                                >
-                                    <AdminOrganizationsPage />
-                                </ProtectedRoute>
-                            }
-                        />
-
-                        <Route
-                            path="/admin/audit"
-                            element={
-                                <ProtectedRoute
-                                    roles={[
-                                        'ADMIN',
-                                        'SUPER_ADMIN',
-                                    ]}
-                                >
-                                    <AdminAuditPage />
-                                </ProtectedRoute>
-                            }
-                        />
-
-                        <Route
-                            path="/admin/usage"
-                            element={
-                                <ProtectedRoute
-                                    roles={[
-                                        'ADMIN',
-                                        'SUPER_ADMIN',
-                                    ]}
-                                >
-                                    <AdminUsagePage />
-                                </ProtectedRoute>
-                            }
-                        />
-
-                        <Route
-                            path="/admin/models"
-                            element={
-                                <ProtectedRoute
-                                    roles={[
-                                        'ADMIN',
-                                        'SUPER_ADMIN',
-                                    ]}
-                                >
-                                    <AdminModelsPage />
-                                </ProtectedRoute>
-                            }
-                        />
-
-                        <Route
-                            path="*"
-                            element={<NotFoundRoute />}
-                        />
-                    </Routes>
-                </Suspense>
-            </main>
-        </div>
+                    <main id="main-content" ref={mainRef} tabIndex={-1} className={contentClassName}>
+                        <WorkspaceScrollRestore/>
+                        {['/admin/audit', '/admin/users', '/admin/organizations', '/my/erasure-requests'].includes(location.pathname) &&
+                            <WorkspaceReturn/>}
+                        <Suspense fallback={<RouteLoadingState/>}>
+                            {routeRoleDenied ? <AccessDeniedState/> : <AppRoutes key={routeSessionKey}/>}
+                        </Suspense>
+                    </main>
+                </div>
+            </ErasureCountsContext.Provider>
+        </ErasureEntryContext.Provider>
     )
+}
+
+// Both the shell and the actual router use this same route tree. A denied
+// child route must not mount its otherwise authorized parent layout.
+const appRoutes = createRoutesFromElements(
+    <>
+        <Route
+            path="/"
+            element={<RootRedirect/>}
+        />
+
+        <Route
+            path="/login"
+            element={<LoginRoute/>}
+        />
+
+        <Route
+            path="/chat"
+            element={
+                <ProtectedRoute
+                    roles={['ADMIN', 'USER']}
+                >
+                    <ChatPage/>
+                </ProtectedRoute>
+            }
+        />
+
+        <Route path="/my/erasure-requests"
+               element={<ProtectedRoute roles={['USER', 'ADMIN']}>
+                   {user => <ErasureRequestsPage user={user}/>}
+               </ProtectedRoute>}
+        />
+
+        <Route
+            path="/knowledge"
+            element={
+                <ProtectedRoute
+                    roles={['ADMIN', 'USER']}
+                >
+                    <KnowledgePage/>
+                </ProtectedRoute>
+            }
+        />
+        <Route
+            path="/knowledge/:knowledgeBaseId"
+            element={<ProtectedRoute roles={['ADMIN', 'USER']}><KnowledgeDetailsPage/></ProtectedRoute>}
+        />
+
+        <Route path="/settings/privacy" element={
+            <ProtectedRoute><PrivacySettingsPage/></ProtectedRoute>
+        }/>
+        <Route path="/my/erasure-requests/:requestId" element={
+            <ProtectedRoute roles={['USER', 'ADMIN']}>
+                <ErasureReviewDetailsPage/>
+            </ProtectedRoute>
+        }/>
+        <Route element={<ProtectedRoute roles={['ADMIN', 'SUPER_ADMIN']}>
+            <DataManagementLayout/>
+        </ProtectedRoute>}>
+            <Route path="/admin/erasure" element={<ProtectedRoute roles={['ADMIN', 'SUPER_ADMIN']}>
+                <ErasureReviewCenterPage/>
+            </ProtectedRoute>}/>
+            <Route path="/admin/erasure/intake" element={<ProtectedRoute roles={['ADMIN']}>
+                <ErasureRegistryPage/>
+            </ProtectedRoute>}/>
+            <Route path="/admin/erasure/registry"
+                   element={<ProtectedRoute roles={['SUPER_ADMIN']}><ErasureRegistryPage/></ProtectedRoute>}/>
+            <Route path="/admin/erasure/registry/:requestId" element={<ErasureRegistryDetailsPage/>}/>
+            <Route path="/admin/erasure/history" element={<ErasureHistoryPage/>}/>
+            <Route path="/admin/erasure/requests" element={<ErasureReviewQueuePage/>}/>
+            <Route path="/admin/erasure/requests/:requestId" element={<ErasureReviewDetailsPage reviewer/>}/>
+            <Route path="/admin/retention" element={<ProtectedRoute roles={['SUPER_ADMIN']}>
+                <AdminRetentionPage/>
+            </ProtectedRoute>}/>
+        </Route>
+        <Route
+            path="/admin/dashboard"
+            element={<ProtectedRoute roles={['SUPER_ADMIN']}>
+                {user => <AdminDashboardPage key={user.id}/>}
+            </ProtectedRoute>}
+        />
+        <Route
+            path="/admin/users"
+            element={
+                <ProtectedRoute
+                    roles={[
+                        'ADMIN',
+                        'SUPER_ADMIN',
+                    ]}
+                >
+                    {(user) => (
+                        <AdminUsersPage
+                            currentUser={user}
+                        />
+                    )}
+                </ProtectedRoute>
+            }
+        />
+
+        <Route
+            path="/admin/organizations"
+            element={
+                <ProtectedRoute
+                    roles={['SUPER_ADMIN']}
+                >
+                    <AdminOrganizationsPage/>
+                </ProtectedRoute>
+            }
+        />
+
+        <Route
+            path="/admin/audit"
+            element={
+                <ProtectedRoute
+                    roles={[
+                        'ADMIN',
+                        'SUPER_ADMIN',
+                    ]}
+                >
+                    <AdminAuditPage/>
+                </ProtectedRoute>
+            }
+        />
+
+        <Route
+            path="/admin/usage"
+            element={
+                <ProtectedRoute
+                    roles={[
+                        'ADMIN',
+                        'SUPER_ADMIN',
+                    ]}
+                >
+                    <AdminUsagePage/>
+                </ProtectedRoute>
+            }
+        />
+
+        <Route
+            path="/admin/models"
+            element={
+                <ProtectedRoute
+                    roles={[
+                        'ADMIN',
+                        'SUPER_ADMIN',
+                    ]}
+                >
+                    <AdminModelsPage/>
+                </ProtectedRoute>
+            }
+        />
+
+        <Route
+            path="*"
+            element={<NotFoundRoute/>}
+        />
+    </>,
+)
+
+function AppRoutes() {
+    return useRoutes(appRoutes)
 }
 
 function App() {
     return (
         <AuthProvider>
-            <AppLayout />
+            <AppLayout/>
         </AuthProvider>
     )
 }

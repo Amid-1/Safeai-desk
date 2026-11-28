@@ -1,333 +1,651 @@
 # SafeAI Desk — RateLimit
 
-> **Техническое описание и аудит модуля на 17 октября 2026 года**  
-> Стек: Java 21, Spring Boot 4, Spring Data Redis / Lettuce, Redis Lua, Micrometer, Spring Security.  
-> Источники: Java-классы из предоставленного текста; дополнительно сопоставлены одноимённые файлы ветки `main` репозитория `Amid-1/Safeai-desk`, конфигурации `application.yml`, `application-prod.yml`, `ClientIpResolver`, `RateLimitAuditListener` и имеющиеся тесты.  
-> **Статус**: статический аудит. Исправления в исходный код этим README не вносятся; тесты, отказоустойчивость и нагрузка в ходе подготовки отчёта *не запускались*.
+Этап: **7.5F.6 — финальная приёмка и документация**.
 
 ## 1. Назначение
 
-Модуль `ru.safeai.gateway.ratelimit` ограничивает частоту обращений к чувствительным API SafeAI Desk. Его задачи:
+RateLimit — распределённый механизм ограничения запросов backend на основе Redis и Lua.
+Защищает аутентификацию, обновление токенов и отправку AI-сообщений от злоупотреблений,
+перегрузки и неконтролируемого выделения памяти Redis.
 
-- затруднять перебор учётных данных на `/login` с учётом **email** и **IP**;
-- ограничивать анонимные запросы обновления сессии по **IP** до обращения к БД токенов;
-- ограничивать платные **AI-запросы** одновременно на уровне **пользователя** и **организации**;
-- одинаково применять лимиты при нескольких экземплярах приложения (включая Kubernetes): счётчики и проверка находятся в общем Redis, а не в памяти JVM;
-- при сбоях Redis не переходить к неограниченному пропуску запросов (*fail-closed*);
-- выдавать клиенту HTTP **429** и `Retry-After`, а при отказе инфраструктуры — безопасный HTTP **503**;
-- генерировать события превышения для аудита и метрики наблюдаемости.
+| Область | Что ограничивается |
+| --- | --- |
+| Login | Попытки входа по email и IP независимо друг от друга |
+| Refresh | Попытки обновления токена по IP, до обращения к хранилищу токенов |
+| AI Message | Логические сообщения пользователя и организации за час |
+| Allocation | Глобальная ёмкость резервов анонимного трафика login/refresh |
+| Epoch fence | Допуск только при согласованном HMAC и подтверждённом Redis primary |
+| Observability | Решения лимитера, доступность Redis, память, AOF и состояние epoch |
 
-**Границы ответственности.** RateLimit регулирует *частоту*, но не заменяет проверку пароля, JWT/refresh-token, authorization, лимиты финансовых квот AI, учёт физических вызовов провайдера или антибот-защиту. Число допущенных AI-запросов не равно числу оплачиваемых физических AI-вызовов: один логический запрос может порождать несколько попыток выполнения.
+Redis является общим источником состояния для всех реплик backend. Решение о допуске
+принимается на стороне Redis, а не на основании локальных JVM-счётчиков или метрик.
 
-## 2. Карта компонентов
+### Границы ответственности
+
+- RateLimit не заменяет аутентификацию, авторизацию, финансовый ledger и аудит.
+- Логический допуск AI-сообщения не равен физическому вызову провайдера.
+- RPM, TPM и распределённые лимиты конкурентности физических вызовов AI — отдельный
+  контур 7.5F.2. Их наличие нельзя подтвердить только исходниками данного пакета.
+- Nginx ограничивает входящий трафик до backend; RateLimit защищает прикладные операции.
+- Алерты и метрики диагностируют состояние, но никогда не разрешают обход лимитов.
+
+## 2. Структура production-кода
+
+Пакет: `ru.safeai.gateway.ratelimit`.
+
+Расположение: `backend/src/main/java/ru/safeai/gateway/ratelimit/`.
 
 ```text
-ru.safeai.gateway.ratelimit/
+ratelimit/
 ├── exception/
-│   ├── RateLimitExceededException          # 429, Retry-After
-│   ├── RateLimitUnavailableException       # внутренняя ошибка Redis
-│   ├── RateLimitExceptionHandler            # HTTP 429 / 503, ApiErrorResponse
-│   └── RateLimitUnavailableLogger           # подавление повторяющихся логов
-├── AiMessageRateLimitProperties              # user/admin/organization AI лимиты
-├── LoginRateLimitProperties                  # login email+IP, окно, audit org
-├── RefreshRateLimitProperties                # refresh IP, окно
-├── RateLimitRedisKeyProperties               # HMAC secret, namespace, version
-├── RateLimitProductionProperties             # явный escape hatch для AI
-├── RateLimitProductionConfigurationValidator # production fail-fast
-├── RateLimitKeyFactory                       # Redis ключи, HMAC, cluster tags
-├── RedisFixedWindowRateLimiter               # все атомарные Lua-операции
-├── LoginRateLimitService                     # политика входа/компенсация
-├── RefreshRateLimitService                   # политика обновления сессии
-├── RedisRateLimitService                     # политика AI трафика
-├── RateLimitResult                           # одиночный счётчик и TTL
-├── DualRateLimitResult                       # решение по двум измерениям
-├── RateLimitDecision                         # ALLOWED/FIRST/SECOND/BOTH
-├── RateLimitExceededEvent                    # событие аудита
-└── RateLimitMetrics                          # Micrometer счётчики и таймеры
+│   ├── RateLimitExceededException
+│   ├── RateLimitExceptionHandler
+│   ├── RateLimitUnavailableException
+│   └── RateLimitUnavailableLogger
+├── AiMessageRateLimitProperties
+├── AnonymousCapacityExceededException
+├── DualRateLimitResult
+├── LoginRateLimitExceededEvent
+├── LoginRateLimitProperties
+├── LoginRateLimitService
+├── RateLimitDecision
+├── RateLimitEpochFence
+├── RateLimitExceededEvent
+├── RateLimitKeyFactory
+├── RateLimitMetrics
+├── RateLimitProductionConfigurationValidator
+├── RateLimitProductionProperties
+├── RateLimitRedisKeyProperties
+├── RateLimitRedisMonitor
+├── RateLimitResult
+├── README.md
+├── RedisFixedWindowRateLimiter
+├── RedisRateLimitService
+├── RefreshRateLimitProperties
+└── RefreshRateLimitService
 ```
 
-Смежные, но важные классы вне модуля:
+Всего: 24 Java-типа (классы, records, enum и исключения), включая 4 в `exception/`.
 
-- `audit/listener/RateLimitAuditListener`: синхронный слушатель `RateLimitExceededEvent`, запись `RATE_LIMIT_EXCEEDED` через standalone audit outbox (`REQUIRES_NEW`);
-- `common/security/ClientIpResolver`: разбор IP и доверенных прокси; в конфигурации production `server.forward-headers-strategy: none`;
-- `common/exception/ApiErrorResponseFactory` и `ApiExceptionResponseSupport`: единый JSON-контракт ошибок;
-- вызовы RateLimit из authentication/chat-кода: **точный порядок всех фильтров и бизнес-транзакций требует отдельной сквозной проверки**.
+## 3. Архитектура и основные инварианты
 
-## 3. Как работает обработка запросов
+```mermaid
+flowchart TD
+    A[Входящий запрос] --> B{Тип операции}
+    B --> C[LoginRateLimitService]
+    B --> D[RefreshRateLimitService]
+    B --> E[RedisRateLimitService]
+    C --> F[RateLimitKeyFactory]
+    D --> F
+    E --> F
+    F --> G[RedisFixedWindowRateLimiter]
+    G --> H[Lua: epoch fence и лимиты]
+    H --> I[(Redis)]
+    H --> J{Решение}
+    J --> K[Продолжить операцию]
+    J --> L[429: лимит превышен]
+    J --> M[503: защита недоступна]
+```
 
-### 3.1. Вход в систему: LoginRateLimitService
+Сервис формирует ключи, передаёт их общему Redis-лимитеру и интерпретирует результат.
+При разрешении запроса продолжается обычный сценарий приложения; это не гарантия
+успешной аутентификации, авторизации или выполнения AI-вызова.
 
-1. При включённом лимитере нормализуются email (`trim` + `Locale.ROOT` lower-case) и IP (`trim`). Пустые значения заменяются специальной строкой `unknown`.
-2. `RateLimitKeyFactory` создаёт псевдонимизированные HMAC-SHA-256 ключи для email/IP, а также ключи маркеров превышения.
-3. `RedisFixedWindowRateLimiter.incrementBothAndCheck(...)` исполняет **один Lua-скрипт** с четырьмя `KEYS`.
-4. Скрипт проверяет существующие счётчики, увеличивает **оба счётчика на попытку** (`INCR`), назначает TTL только если его нет, сравнивает `newCount > limit`.
-5. Если превышена хотя бы одна граница, попытка блокируется. При первом превышении данного измерения в окне через `SET ... NX PX` создаётся notification marker.
-6. Сервис публикует событие превышения (при необходимости), записывает метрику отказа и выбрасывает `RateLimitExceededException` (HTTP 429).
-7. **Только после успешной аутентификации** должен вызываться `onLoginSuccess(...)`: другой Lua-скрипт полностью удаляет email-счётчик и его marker, а IP-счётчик уменьшает на 1, сохраняя ранее накопленные ошибки других пользователей за NAT.
+### 3.1. Fixed window
 
-**Семантика:** отличие login от AI важно: отклонённая login-попытка *тоже увеличивает* counters. Это помогает учитывать дальнейший перебор. Ветка успешной авторизации выполняет компенсацию, чтобы добросовестные пользователи за общим NAT не исчерпывали IP-limit.
+- TTL устанавливается при создании счётчика и не продлевается каждым запросом.
+- Новое окно начинается при создании нового счётчика после истечения предыдущего.
+- Lua проверяет и обновляет связанные счётчики без гонок между клиентами Redis.
+- Некорректные счётчики, TTL, параметры и недопустимые значения отклоняются.
+- Redis Lua обеспечивает атомарность выполнения относительно других команд,
+  но не общий rollback произвольных записей при runtime error или OOM.
+- Fixed window допускает всплески на границе двух окон; это не sliding window.
 
-**Пограничная ситуация:** компенсация не содержит идентификатора конкретной попытки/окна. Если ответ об успешном входе задержался до истечения TTL и создания нового окна либо перекрывается параллельными попытками, `DECR` может затронуть чужой или новый IP-счётчик. Это требует отдельного дизайна и теста (см. P1-03).
+### 3.2. Login
 
-### 3.2. Обновление сессии: RefreshRateLimitService
+`LoginRateLimitService.checkAllowed()` проверяет две размерности: email и IP.
 
-1. Ключ строится по HMAC IP в отдельном namespace `rate-limit:refresh:ip:`.
-2. `incrementAndGet()` атомарно увеличивает **один** счётчик, TTL закрепляется на начале фиксированного окна.
-3. Проверка `count <= ipLimit`: первые N запросов допускаются, N+1 возвращает HTTP 429.
-4. При отказе Redis сервис выдаёт 503. В комментариях указано, что проверка должна выполняться до обращения к хранилищу refresh-токенов; само место вызова нужно подтверждать при интеграционной проверке.
+1. Email нормализуется: `trim`, нижний регистр с `Locale.ROOT`.
+2. IP очищается от пробелов; отсутствующие значения заменяются на `unknown`.
+3. `RateLimitKeyFactory` строит HMAC-ключи без исходных идентификаторов.
+4. Lua проверяет epoch и допустимость выделения новой ёмкости.
+5. `incrementBothAndCheck()` учитывает попытки входа и определяет превышение лимитов.
+6. При допуске сервис возвращает `Attempt` — receipt конкретной попытки входа.
+7. После успешной аутентификации и фиксации сессии `onLoginSuccess()` компенсирует
+   именно эту попытку; ранее накопленные ошибки по email и общему IP сохраняются.
 
-### 3.3. AI-запросы: RedisRateLimitService
+Компенсация идемпотентна: повторная обработка receipt не уменьшает счётчики повторно.
+Проверка поколения окна предотвращает списание попытки из нового окна после истечения
+старого. Ошибка компенсации не отменяет уже успешную операцию аутентификации.
 
-1. Вычисляются лимит пользователя (повышенный для `ROLE_ADMIN` / `ROLE_SUPER_ADMIN`) и общий лимит организации.
-2. Lua `tryIncrementBoth(...)` **сначала проверяет текущие значения** (`current >= limit`). Если какое-либо измерение исчерпано, оба счётчика **не увеличиваются**.
-3. Если оба лимита допускают запрос, скрипт атомарно увеличивает оба counters.
-4. При отказе возвращаются HTTP 429 и оставшийся TTL того/тех измерений, которые блокируют запрос; при двойном превышении берётся максимум TTL.
-5. Redis недоступен — HTTP 503, а не выполнение платного вызова без ограничения.
+При блокировке одной размерности не выделяются новые identity keys другой размерности.
+Существующие счётчики продолжают учитывать предусмотренные алгоритмом попытки.
+Резерв allocation не возвращается при успешной аутентификации.
 
-**Гарантия:** для корректно выполненного Lua-скрипта при едином Redis состоянии допуск user+org линеаризуем в рамках одного Redis server/slot. **Оговорка:** Redis Lua атомарен относительно конкурирующих команд, но не является транзакцией с rollback при ошибке внутри скрипта; уже выполненные операции могут сохраниться, если следующая команда скрипта аварийно завершилась.
+IP должен поступать из доверенного механизма определения адреса клиента. Сам сервис
+не заменяет конфигурацию trusted proxy и не является валидатором сетевой топологии.
 
-### 3.4. Маркеры уведомлений и аудит
+### 3.3. Refresh
 
-- Внутри Lua `SET marker '1' PX ttl NX` снижает число одинаковых событий за окно.
-- `RateLimitExceededEvent` передаётся через `ApplicationEventPublisher`.
-- `RateLimitAuditListener` слушает его синхронно и инициирует durable audit outbox в отдельной транзакции. Системный actor применяется для анонимного login.
-- Если synchronous publish/enqueue провалился, сервис старается удалить созданные markers, чтобы при следующем отказе была повторная попытка аудита.
-- Ошибка публикации **не должна заменять** исходный ответ 429 ошибкой аудита. Это намеренная best-effort модель, а **не** строгая гарантия «каждый отказ сохранён в audit_events».
-- Удаление marker сейчас выполняется по имени ключа; без сравнения уникального ownership token возможна гонка с маркером, созданным позже.
+`RefreshRateLimitService.checkAllowed()` ограничивает попытки по IP ещё до трудоёмкой
+проверки refresh token. При недоступности Redis дальнейший refresh не разрешается.
 
-**Важная деталь PII:** тест `RateLimitExceededEventPiiTest` демонстрирует безопасно составленный отдельный DTO, однако production-код `LoginRateLimitService` в `buildEventDetails()` добавляет **сырое нормализованное `email`** в `details`, а `RateLimitExceededEvent` получает его как `actorEmail` даже при `actorUserId == null`. Далее listener создаёт системное событие, и центральный unstructured sanitizer, согласно предоставленному коду Audit, не допускает неизвестные свободные строковые ключи (`email`). Это **не доказывает утечку в БД**, но перенос PII по event pipeline существует и требует проверки/сокращения. Тест с ручным DTO не доказывает поведение production-пути.
+- `incrementRefreshAndGet()` резервирует глобальную ёмкость, затем учитывает попытку.
+- Резервирование и обновление счётчика — отдельные фазы; потеря ответа может оставить
+  резерв до его штатного истечения. Это консервативная защита от переполнения.
+- Dispatch margin составляет 10 секунд (`REFRESH_DISPATCH_MARGIN_MS`).
+- Повторная попытка не сдвигает абсолютное время истечения fixed window.
 
-## 4. Redis: ключи, TTL и особенности Cluster
+### 3.4. AI Message
 
-Примеры логических форм ключей (реальные HMAC-значения не приводятся):
+`RedisRateLimitService.checkAiMessageAllowed()` проверяет лимиты пользователя и его
+организации. Для административных ролей предусмотрен отдельный пользовательский лимит.
+
+Метод `tryIncrementBoth()` увеличивает оба счётчика только при допустимости обеих
+размерностей. Если лимит пользователя или организации исчерпан, новый допуск не списывает
+квоту второй размерности. Ключи разных организаций изолированы друг от друга.
+
+Окно составляет один час. Это ограничение логических AI-сообщений, а не токенов,
+стоимости, числа повторных физических вызовов или параллельных запросов провайдера.
+
+## 4. Защита памяти, конфигурации и отказоустойчивость
+
+### 4.1. Глобальное ограничение allocation (7.5F.1)
+
+Анонимный трафик может генерировать большое число новых email/IP. Помимо персональных
+лимитов применяются общие для реплик backend реестры резервов на основе Redis ZSET.
+
+| Контур | Максимум активных резервов |
+| --- | ---: |
+| Login | 4096 |
+| Refresh | 8192 |
+
+Это константы `LOGIN_ALLOCATION_LIMIT` и `REFRESH_ALLOCATION_LIMIT` из кода, а не
+лимиты количества уникальных пользователей или общего количества Redis-ключей.
+Для refresh резерв создаётся на попытку. Истёкшие записи удаляются по времени Redis.
+
+Глобальные ключи не зависят от поколения HMAC:
 
 ```text
-<prefix>:<keyVersion>:rate-limit:{login}:email:<hmac>
-<prefix>:<keyVersion>:rate-limit:{login}:ip:<hmac>
-<prefix>:<keyVersion>:rate-limit:{login}:email:<hmac>:exceeded
-<prefix>:<keyVersion>:rate-limit:refresh:ip:<hmac>
-<prefix>:<keyVersion>:rate-limit:{ai-<org-hmac-prefix>}:user:<user-hmac>
-<prefix>:<keyVersion>:rate-limit:{ai-<org-hmac-prefix>}:organization
+safeai:rate-limit:guard:{login}:allocations
+safeai:rate-limit:guard:{refresh}:allocations
 ```
 
-- **HMAC-SHA-256** скрывает исходные email/IP/User UUID в ключах Redis. Используются разные domain separators: `login-email:`, `login-ip:`, `refresh-ip:`, `audit-email:`, `audit-ip:`, `ai-user:`, `ai-organization:`.
-- Все login-ключи используют `{login}` — одинаковый Redis Cluster hash slot, необходимый для скрипта, изменяющего email+IP. **Цена**: весь login rate-limit трафик концентрируется на **одном шарде**; горизонтальный рост Cluster сам по себе этого не снимает.
-- AI user+org используют общий **для конкретной организации** hash tag, т.е. распределяются между организациями. Очень крупная организация остаётся hot slot.
-- Refresh использует один ключ без фиксированного общего hash tag и лучше распределяется по слотам.
-- `key-prefix`/`key-version` являются частью identity namespace; изменение `key-version` фактически переключает трафик на новые, пустые счётчики. Во время rolling deployment с разными версиями появляются **раздельные бюджеты** ограничений.
-- TTL в **миллисекундах**; возвращаемые пользователю TTL округляются **вверх до секунд**. Повторный `INCR` не продлевает первоначальное окно.
-- Это **fixed window с TTL от первой операции**, не sliding-window и не token bucket. На границе двух соседних окон краткосрочная плотность запросов может быть близка к двум лимитам подряд.
-
-## 5. HTTP и исключения
-
-| Ситуация | HTTP | Код API | Особенности |
-|---|---:|---|---|
-| Достигнут лимит | `429` | `RATE_LIMIT_EXCEEDED` | `Retry-After` в секундах, если положителен; безопасное сообщение |
-| Redis/script/connection недоступны | `503` | `RATE_LIMIT_UNAVAILABLE` | Фиксированное публичное сообщение, без Redis stack trace |
-| Запрос допустим | Зависит от бизнес-эндпоинта | — | RateLimit продолжает бизнес-операцию |
-
-`RateLimitExceededException` округляет `Duration` без опасного `Duration.toMillis()` и насыщает значение на `Long.MAX_VALUE`, что корректно для больших Duration. `RateLimitExceptionHandler` использует общую фабрику JSON-ответов.
-
-**Риск:** наружу стеки не возвращаются, но внутреннее логирование в ряде веток выводит объект исключения с cause. Разделять безопасность HTTP-response и безопасность логов обязательно.
-
-## 6. Конфигурация
-
-Значения по умолчанию из проверенного `backend/src/main/resources/application.yml` (их можно переопределять env):
-
-| Параметр | Значение | Назначение |
-|---|---|---|
-| `safeai.rate-limit.login.enabled` | `true` | Обязательность login-limiter |
-| `safeai.rate-limit.login.email-limit` | `10` | Попыток email за окно |
-| `safeai.rate-limit.login.ip-limit` | `100` | Попыток IP за окно |
-| `safeai.rate-limit.login.window` | `10m` | Login fixed window |
-| `safeai.rate-limit.refresh.enabled` | `true` | Refresh limiter |
-| `safeai.rate-limit.refresh.ip-limit` | `600` | Refresh запросов на IP |
-| `safeai.rate-limit.refresh.window` | `1m` | Refresh fixed window |
-| `safeai.rate-limit.ai-messages.enabled` | `true` | User+org AI limiter |
-| `safeai.rate-limit.ai-messages.user-limit-per-hour` | `20` | Часовой лимит пользователя |
-| `safeai.rate-limit.ai-messages.admin-limit-per-hour` | `100` | Часовой лимит администратора |
-| `safeai.rate-limit.ai-messages.organization-limit-per-hour` | `1000` | Часовой лимит организации |
-| `safeai.rate-limit.redis.key-version` | `v1` | Версия namespace счётчиков |
-| `safeai.rate-limit.redis.hmac-secret` | Обязательный env | Не менее 32 UTF-8 байт; не выводить в логи |
-| `safeai.rate-limit.redis.key-prefix` | `safeai:local` в общем конфиге | **В prod обязательное внешнее значение**, без наследования local |
-
-`safeai.rate-limit.login.audit-organization-id` обязателен для включённого login-limiter; в общей конфигурации предусмотрен fallback через platform organization. Он должен соответствовать реальной существующей организации в БД.
-
-`RateLimitProductionConfigurationValidator` запрещает в production отключение **login** и **refresh**. Для отключения AI-limiter требуется явное `safeai.rate-limit.production.allow-unlimited-ai-traffic=true`. Это предохранитель от случайного отключения, но сам escape hatch открывает риск неограниченного платного трафика; нужен отдельный change approval/мониторинг.
-
-**Deployment:** Redis namespace, HMAC secret и key version должны быть синхронизированы между всеми pod приложения. Разные секреты дают разные Redis-ключи даже при общем префиксе; нарушение означает обход объединённого rate-limit бюджета. При ротации секретов нужен согласованный план cutover.
-
-## 7. Наблюдаемость
-
-Реализованные Micrometer meters (имена до Prometheus-normalization):
-
-- `safeai.rate.limit.allowed` — число допусков (label `type`);
-- `safeai.rate.limit.rejected` — отклонения (`type`, `dimension`);
-- `safeai.rate.limit.unavailable` — ошибки инфраструктуры (`type`);
-- `safeai.rate.limit.audit.publish.failed` — ошибка публикации audit event (`type`);
-- `safeai.rate.limit.redis.duration` — latency Redis-операций (`type`, `operation`, `outcome`) и histogram.
-
-`RateLimitMetrics` реализует **best-effort observability**: отказ метрик не может изменить решение о допуске либо скрыть Redis ошибку. Значения tags в штатном использовании имеют низкую кардинальность.
-
-**Предлагаемые алерты** (пороговые значения настроить на профиле нагрузки):
-
-1. `increase(safeai_rate_limit_unavailable_total[5m]) > 0` — любое событие отказа limiter в production;
-2. `increase(safeai_rate_limit_audit_publish_failed_total[5m]) > 0` — потери надёжности аудита;
-3. высокий p95/p99 `safeai_rate_limit_redis_duration_seconds` — деградация Redis, особенно login hash slot;
-4. резкий рост `safeai_rate_limit_rejected_total` по `type` и `dimension` — brute force, сбой клиента либо слишком низкий лимит;
-5. Redis memory/CPU latency, `rejected_connections`, `evicted_keys`, состояние Cluster, failover, число тайм-аутов Lettuce.
-
-*Примечание:* точный экспорт names зависит от Micrometer/Prometheus registry; сверить с реальным `/actuator/prometheus` перед включением правил. Метрики запроса не являются доказательством доставки Audit: отдельно контролировать Audit Outbox backlog/dead-letter.
-
-## 8. Что хорошо и современно на 2026–2027
-
-| Область | Вывод |
-|---|---|
-| Распределённый rate limit | **Сильно:** общий Redis делает ограничения общими для всех JVM/pod. |
-| Атомарный допуск AI | **Сильно:** user и organization проверяются и резервируются одним Lua-скриптом, нет обычной гонки read-then-INCR. |
-| Fail-closed | **Сильно:** login/refresh/AI не переходят на безлимитную деградацию при сбое Redis. |
-| Redis Cluster | **Хорошо с оговоркой:** ключи multi-key Lua гарантированно относятся к одному slot, но `{login}` создаёт single-shard hotspot. |
-| Privacy by design | **Хорошо:** HMAC keys, domain separation, `RateLimitRedisKeyProperties.toString()` редактирует секрет. Нужен контроль PII в событиях и логах. |
-| Отдельные политики | **Сильно:** login, refresh и AI имеют разные алгоритмы и конфигурации, не смешаны в generic limiter. |
-| Публичный HTTP API | **Хорошо:** 429 + Retry-After, 503 + без раскрытия детали Redis, общий `ApiErrorResponse`. |
-| Audit | **Хорошо:** отдельный durable outbox, retry-on-next-rejection при сбое enqueue; однако доставка самих событий остаётся best effort на границе rate-limit. |
-| Production invariants | **Хорошо:** fail-fast на выключенных login/refresh, явный escape hatch для AI. |
-| Тестируемость | **Хорошо:** уже есть Testcontainers Redis, проверки параллельного допускания, TTL, malformed counters, Cluster slot contract и properties validation. |
-
-Современный дизайн не означает отсутствие предельных случаев. Особенно важно различать **атомарность выполнения Lua относительно других клиентов** и **транзакционный rollback при внутренней ошибке Lua**: второго Redis Lua не обещает.
-
-## 9. Найденные проблемы и приоритеты
-
-### P0 — подтверждённых безусловных блокеров по предоставленному коду нет
-
-Не выявлен доказанный сценарий, в котором обычная ошибка Redis автоматически разрешает неограниченные AI/авторизационные вызовы. Это **не** заключение о полном отсутствии критических уязвимостей: код вызывающих auth/chat-контроллеров и эксплуатационная инфраструктура не охвачены полным сквозным аудитом.
-
-### P1-01. Полные исключения / stack traces в логах — риск утечки сведений
-
-**Подтверждено кодом:**
-
-- `RateLimitUnavailableLogger.log()` передаёт `exception` последним аргументом `logger.error(...)` — SLF4J трактует Throwable как stack trace со всеми вложенными сообщениями.
-- `LoginRateLimitService.publishExceededEventBestEffort()` и `warnCleanupFailureRateLimited()` передают exception в `log.warn(...)`.
-- `RedisRateLimitService.publishExceededEventBestEffort()` передаёт exception в `log.warn(...)`.
-- `RateLimitMetrics.warn()` записывает `exception.toString()`, включая сообщение.
-- `RateLimitUnavailableLogger` пишет `request.getRequestURI()` без нормализации; path segments могут быть недоверенными и содержать чувствительные значения.
-
-**Риск:** причины Spring Data Redis/Lettuce и сторонних исключений могут содержать адреса, ключи или части запросов. Включение stack trace в журнал не эквивалентно непосредственной утечке секретов, но делает это возможным.
-
-**Рекомендация:** централизованный `SafeRateLimitFailureDescriptor` — класс исключения, bounded error classification и requestId; без `getMessage()`, `toString()`, `Throwable` и произвольного URI. Сохранять корреляцию через requestId и метрики. Полные трассы — только в специально защищённом диагностическом контуре с контролируемой редукцией, если это действительно необходимо.
-
-### P1-02. Общий Redis Cluster slot `{login}` — масштабирование и доступность
-
-**Подтверждено кодом:** все email и IP login keys входят в `{login}`. Для `incrementBothAndCheck` Redis Cluster требует общего slot. На интенсивном потоке login один node/slot становится hotspot, даже если Cluster имеет несколько shard.
-
-**Рекомендация:** замер CPU/latency и пропускной способности при пиковом login/brute-force. Нельзя просто убрать `{login}`: multi-key Lua начнёт давать `CROSSSLOT`. Возможные архитектурные варианты — отдельный Redis/шард для login, переработка модели на сегменты с понятной гарантией атомарности либо специализированный gateway-level limiter. Выбор требует требования к точной атомарности двух измерений.
-
-### P1-03. Компенсация успешного login без привязки к попытке и окну
-
-**Подтверждено кодом:** после login `resetFirstAndDecrementSecond(emailKey, ipKey, markers)` уменьшает текущий IP counter, но не проверяет факт/идентификатор ранее засчитанной попытки. Временной интервал между check и success не связан с конкретным TTL или reservation token.
-
-**Риск:** запоздалая успешная аутентификация, смена окна или параллельные запросы под одним NAT могут уменьшить счётчик новых/чужих попыток. Сценарий нужно воспроизвести тестом до утверждения степени фактического ущерба.
-
-**Рекомендация:** reservation id + window id и idempotent компенсация **той самой** инкрементации; либо модель отдельных failed-attempt counters, в которой success не требует раздельного IP `DECR`. Не менять арифметику Lua без нагрузки и регрессионных тестов NAT/параллелизма.
-
-### P1-04. PII в production event pipeline и недостаточная coverage теста
-
-**Подтверждено кодом:** `LoginRateLimitService.buildEventDetails()` передаёт нормализованный raw `email`, а `RateLimitExceededEvent` — `actorEmail`; при этом DTO-тест проверяет вручную созданный event без raw email, не сам production producer. Audit sanitizer может не пропустить поле `email` в хранилище, но **внутри приложения** оно присутствует.
-
-**Рекомендация:** для анонимного login убрать email из event details и actor snapshot, оставить HMAC fingerprint; проверить фактический `AuditDetailsSanitizer` и DB payload сквозным интеграционным тестом, а также запрет raw email в логах. Не удалять fingerprint, который нужен для расследований.
-
-### P1-05. Best-effort audit не равен гарантированному evidence
-
-Сервис отвечает 429 даже после ошибки публикации; маркер удаляется best-effort. При повторных отказах Redis, отсутствии следующей попытки либо ошибках восстановления markers событие превышения **может не попасть в Audit**.
-
-**Рекомендация:** закрепить SLA/требование: является ли каждая блокировка security evidence или достаточны выборочные/агрегированные notifications. Если необходим 100%-й учёт отказов, нужен проект durable-first/event-log подхода, учитывающий failure isolation и latency. Не объявлять нынешний best-effort `at least once` без доказательства.
-
-### P2-01. Гонка при удалении notification markers
-
-`releaseNotificationMarkers()` удаляет Redis keys без проверки значения маркера. При истечении TTL и создании нового marker между `SET NX` и `DEL` старый обработчик может стереть чужой marker. Возможны лишние повторные уведомления либо изменение политики дедупликации.
-
-**Рекомендация:** случайный ownership token на каждый установленный marker; атомарное Lua compare-and-delete. В существующих scripts marker value сейчас константа `'1'`, её придётся менять согласованно в producer/release.
-
-### P2-02. Первое предупреждение может быть подавлено из-за `nanoTime()`
-
-`RateLimitUnavailableLogger` и `LoginRateLimitService` инициализируют `nextLogNanos = 0`. `System.nanoTime()` не гарантирует положительного значения. При отрицательном базовом значении проверка `now - next < 0` может не дать залогировать **первую** ошибку. Вторая проблема: rate limiting логов локальный на JVM, а не cluster-wide.
-
-**Рекомендация:** явный `initialized`/CAS sentinel, независимый от знака `nanoTime()`, либо проверенный monotonic rate-limited logger. Добавить тест с инжектируемым clock/nanoTime source и отрицательным стартовым значением.
-
-### P2-03. `unknown` объединяет разных клиентов в общий bucket
-
-`LoginRateLimitService.normalizeEmail/normalizeIp`, `RefreshRateLimitService.normalizeIp` возвращают одинаковое `unknown` для пустого идентификатора. Если upstream validation допускает такие обращения, независимые клиенты оказываются в общем bucket: один атакующий сможет исчерпать лимит для других.
-
-**Рекомендация:** email валидировать до limiter, IP получать исключительно через `ClientIpResolver`, неизвестный IP обрабатывать отдельной защитной политикой, а не считать его полноценной идентичностью. Важно не превращать отсутствие IP в разрешение запроса без учёта.
-
-### P2-04. Окна fixed-window и изменения конфигурации
-
-На границе окна можно отправить плотный всплеск запросов; Redis key version / HMAC secret / key-prefix при несогласованном rolling deployment порождают несколько независимых наборов counters. Это документированная семантика, не программная ошибка.
-
-**Рекомендация:** если требуется строгий per-minute/per-second enforcement, оценить sliding-window / GCRA / token bucket; для конфигурации — immutable rollout и проверку всех pod на одинаковые namespace/secret/version без вывода самих секретов.
-
-### P2-05. Redis Lua частичные изменения при runtime-ошибке
-
-Скрипт атомарен по отношению к другим запросам, но error после успешного `INCR`, `PEXPIRE` либо первого marker `SET` не откатывает исполненные Redis-команды. В обычных сценариях код валидирует counters до инкрементов, что хорошо, но это не покрывает ошибки вроде OOM после первой записи.
-
-**Рекомендация:** fault-injection на стадии мутаций, анализ допустимой консервативной блокировки и мониторинг расхождения/ошибок Redis. Не полагаться на несуществующий Lua rollback.
-
-### P2-06. Масштабирование счётчиков и мониторинг
-
-Хотя TTL сдерживает срок жизни большинства ключей, атакующий может создавать очень много разных идентификаторов и раздувать Redis memory. Также нет доказанного теста throughput для единого `{login}` slot и сетевых сбоев Sentinel/Cluster во всех production-сценариях.
-
-**Рекомендация:** ограничить длины/кардинальность email перед key derivation, использовать upstream WAF/gateway per-IP protection и Redis memory alerts; провести нагрузочные и failover тесты.
-
-## 10. Программа тестирования перед production
-
-### Уже присутствуют в репозитории (наличие проверено, успешный прогон не подтверждён)
-
-- `RedisFixedWindowRateLimiterIntegrationTest`: Testcontainers Redis, atomic limits, TTL, NAT и notifications;
-- `RedisFixedWindowRateLimiterIT`: конкурентная dual reservation, TTL, malformed counter/overflow;
-- `RedisFixedWindowRateLimiterSingleKeyIntegrationTest`: single-key сценарии;
-- `RedisClusterSlotContractTest`: соответствие hash slots для multi-key Lua;
-- `LoginRateLimitServiceTest`, `RedisRateLimitServiceTest`, `RefreshRateLimitServiceTest`: business policies;
-- `RateLimitExceededExceptionTest` и `exception/RateLimitExceptionHandlerTest`: `Retry-After`, 429/503;
-- `RateLimitProductionConfigurationValidatorTest`, `RateLimitPropertiesTest`, `RateLimitKeyFactoryTest`: конфигурация и HMAC;
-- `RateLimitExceededEventPiiTest`: часть PII DTO-contract, **не полноценный end-to-end producer → Audit outbox тест**.
-
-### Обязательно добавить / проверить
-
-1. **PII leakage regression:** fake exception `new RuntimeException("secret_token=... email=...")`; убедиться, что ответ **и все структурированные журналы** не содержат секретов.
-2. **End-to-end audit:** producer login с настоящими details → listener → outbox → audit_events; verify raw email/user IP/header не попали в immutable event.
-3. **Login post-window compensation:** check в окне A, задержка, новое окно B, затем success A; попытка A не уменьшает счётчик B.
-4. **Marker compare-and-delete concurrency:** TTL expired, new marker claimed, stale failure A не удаляет marker B.
-5. **Kubernetes/Redis Cluster smoke:** два pod с одним HMAC/namespace, подтверждение общего budget; разные секреты/версии должны быть обнаружены в deployment-контроле.
-6. **Single-slot load test:** тысячи одновременных login при допустимых условиях, p95/p99 и CPU shard `{login}`, connect pool/timeouts.
-7. **Redis failure-injection:** timeout, unreachable, failover, error после первой Lua мутации, malformed keys/counters, eviction, Redis OOM.
-8. **Proxy trust validation:** подмена `X-Forwarded-For`, недоверенный client socket, trusted proxy chain, IPv4/IPv6, invalid headers и `unknown`.
-9. **HTTP contract:** 429 с правильным `Retry-After`, 503 без backend details и всегда `Cache-Control: no-store`.
-10. **Alert delivery:** проверить Prometheus scrape/Alertmanager и связать инциденты `rate.limit.unavailable` с состоянием Redis и Audit dead-letter.
-
-Команды в корне `backend` (при наличии Docker/Testcontainers, JDK 21, Maven wrapper):
+При исчерпании ёмкости новый допуск отклоняется с 429 (`capacity`). Redis OOM, сбой
+команды или потеря связи — другая категория отказа: 503. Нельзя смешивать эти причины.
+
+Защитная конфигурация Redis предусматривает `maxmemory 192mb`, `noeviction`, AOF,
+`appendfsync always`, `no-appendfsync-on-rewrite no` и `aof-load-truncated no`.
+Фактические параметры, RSS и резерв памяти контейнера проверяются при развёртывании.
+`maxmemory` не равен общему потреблению процесса или cgroup.
+
+Запрещено снимать блокировку удалением reservations, сбросом базы или сменой HMAC.
+
+### 4.2. HMAC и Redis key isolation (7.5F.3)
+
+`RateLimitKeyFactory` использует HMAC-SHA256 с разделением назначений ключей,
+настраиваемым namespace и версией ключа. Исходные email, IP и UUID не должны попадать
+в Redis key names. Секрет HMAC — не менее 32 байт; одинаковая конфигурация обязательна
+для всех реплик, которые совместно обслуживают один контур RateLimit.
+
+Login-ключи общей Lua-операции используют общий hash tag. AI-ключи пользователя
+и организации согласованы по Redis slot внутри одной организации. Это контракт
+размещения ключей, а не заявление о поддержке Redis Cluster в production epoch fence.
+
+Для аудита используются отдельные безопасные fingerprints анонимных идентификаторов.
+В AI-аудите идентификаторы акторов используются по контракту события; это не разрешение
+публиковать их в Prometheus, логах ошибок или именах Redis-ключей.
+
+### 4.3. Epoch fence
+
+`RateLimitEpochFence` проверяет согласованность HMAC, активность epoch, роль Redis,
+идентификатор процесса (`run_id`), `master_replid` и отсутствие TTL у epoch-записи.
+
+```text
+safeai:rate-limit:guard:{login}:epoch
+```
+
+В production epoch обязателен независимо от локального флага. Отсутствующий,
+повреждённый, приостановленный или несовместимый epoch, смена primary и ошибка Redis
+блокируют допуск. Максимальное поддерживаемое окно — 24 часа.
+
+Для операторского управления используется `infra/scripts/rate-limit-epoch.py`.
+Инициализация пустого контура, pause/activate и rebind сохранённого состояния допускаются
+только по протоколу 7.5F.3. При ротации с ожиданием требуется полное защитное окно
+24 часа плюс 10 секунд. Rebind не заменяет проверку сохранности счётчиков и fencing
+прежнего primary. Backend и монитор не восстанавливают epoch автоматически.
+
+### 4.4. Redis topology
+
+| Топология | Назначение и ограничения |
+| --- | --- |
+| Standalone | Текущий production Compose; единственная точка отказа Redis |
+| Sentinel | Поддерживаемая модель epoch fence; нужен реальный failover и приёмка |
+| Cluster | Контракт slot и отдельный внешний тест; не production epoch fence |
+
+Sentinel не означает автоматический безопасный допуск после failover. Сначала необходимо
+подтвердить новый primary, сохранность состояния и выполнить предусмотренный rebind.
+Текущий standalone deployment не следует называть HA.
+
+### 4.5. Production configuration
+
+| Префикс свойств | Назначение |
+| --- | --- |
+| `safeai.rate-limit.login` | Включение, email/IP limits, окно, организация аудита |
+| `safeai.rate-limit.refresh` | Включение, IP limit, окно |
+| `safeai.rate-limit.ai-messages` | Включение, лимиты пользователя, админа и организации |
+| `safeai.rate-limit.redis` | Namespace Redis, версия ключей, HMAC и epoch |
+| `safeai.rate-limit.production` | Явно разрешённые эксплуатационные исключения |
+
+`RateLimitProductionConfigurationValidator` проверяет конфигурацию при старте production.
+Login и refresh должны быть включены. Отключение AI-лимитера допустимо только при явно
+заданном `allow-unlimited-ai-traffic=true` (по умолчанию false). Это операторское
+исключение, а не автоматический fail-open при ошибке Redis.
+
+Эффективные числовые лимиты следует сверять с конфигурацией конкретного deployment.
+Значения 20, 30, 7 и 25 из приёмочных тестов — тестовые фикстуры, не production SLA.
+
+## 5. Назначение Java-классов
+
+### 5.1. Сервисы и Redis enforcement
+
+| Класс | Ответственность |
+| --- | --- |
+| `LoginRateLimitService` | Двойной лимит входа, receipt и компенсация успешной попытки |
+| `RefreshRateLimitService` | Проверка IP и общей ёмкости перед обновлением токена |
+| `RedisRateLimitService` | Допуск AI-сообщений по пользователю и организации |
+| `RedisFixedWindowRateLimiter` | Lua, fixed windows, allocation, audit markers, компенсация |
+| `RateLimitKeyFactory` | HMAC, namespace, Redis slot, fingerprints и имена ключей |
+| `RateLimitEpochFence` | Проверка допустимости текущего epoch и Redis primary |
+
+### 5.2. Конфигурация
+
+| Record / класс | Ответственность |
+| --- | --- |
+| `LoginRateLimitProperties` | Параметры и ограничения конфигурации login |
+| `RefreshRateLimitProperties` | Параметры и ограничения refresh |
+| `AiMessageRateLimitProperties` | Часовые квоты AI-сообщений по ролям и организации |
+| `RateLimitRedisKeyProperties` | HMAC, версия, префикс Redis и политика epoch |
+| `RateLimitProductionProperties` | Политика допустимых исключений в production |
+| `RateLimitProductionConfigurationValidator` | Запрет небезопасного запуска production |
+
+### 5.3. Результаты, решения и события
+
+| Record / enum | Ответственность |
+| --- | --- |
+| `RateLimitResult` | Значение одного счётчика и оставшийся TTL |
+| `DualRateLimitResult` | Два счётчика, TTL, решение, признаки уведомления и operation ID |
+| `RateLimitDecision` | ALLOWED, FIRST_EXCEEDED, SECOND_EXCEEDED, BOTH_EXCEEDED |
+| `LoginRateLimitExceededEvent` | Событие превышения лимита login с fingerprints |
+| `RateLimitExceededEvent` | Событие превышения лимита AI-сообщений для аудита |
+
+`DualRateLimitResult.retryAfterSeconds()` использует максимальный оставшийся срок
+среди блокирующих размерностей. Маркеры уведомлений ограничивают дублирование событий
+в рамках окна. Сбой публикации не превращает отказ в разрешение. При освобождении
+созданных маркеров проверяется принадлежность операции; exactly-once не гарантируется.
+
+### 5.4. Ошибки и HTTP-контракт
+
+| Класс | Ответственность |
+| --- | --- |
+| `AnonymousCapacityExceededException` | Внутренний признак исчерпания общей ёмкости |
+| `RateLimitExceededException` | Прикладной отказ по лимиту и расчёт Retry-After |
+| `RateLimitUnavailableException` | Невозможность безопасно выполнить проверку |
+| `RateLimitExceptionHandler` | Преобразование исключений в безопасный HTTP-ответ |
+| `RateLimitUnavailableLogger` | Ограничение частоты и sanitization логов недоступности |
+
+| Результат | HTTP / API error code |
+| --- | --- |
+| Допуск | Продолжение стандартного сценария приложения |
+| Лимит или allocation capacity исчерпаны | 429 / `RATE_LIMIT_EXCEEDED` |
+| Redis, epoch или проверка недоступны | 503 / `RATE_LIMIT_UNAVAILABLE` |
+
+Для 429 при наличии срока ожидания заголовок `Retry-After` выражен в целых секундах
+с округлением вверх. Детали Redis и секреты не передаются клиенту. Logger ограничивает
+частоту диагностических сообщений, сохраняя сведения о числе подавленных сообщений.
+
+### 5.5. Наблюдаемость
+
+| Класс | Ответственность |
+| --- | --- |
+| `RateLimitMetrics` | Micrometer: счётчики, таймеры, allowlist значений labels |
+| `RateLimitRedisMonitor` | Периодический read-only snapshot Redis, gauges и epoch state |
+
+## 6. Эксплуатационный мониторинг (7.5F.4)
+
+Каждые 30 секунд после начального ожидания 10 секунд backend запрашивает один
+read-only Lua snapshot с Redis. Используется настроенный Redis command timeout.
+Prometheus scrape читает только снимок в памяти JVM: дополнительных обращений к Redis нет.
+
+При ошибке Redis, неправильной структуре данных или неподдерживаемой топологии:
+
+- `healthy=0`, числовые значения `NaN`, состояние `unavailable`;
+- время последнего успешного снимка не обновляется;
+- наблюдатель не инициализирует, не очищает, не продлевает и не ремонтирует ключи.
+
+Lua наблюдателя использует `no-writes`, чтобы чтение было возможно и при превышении
+лимита памяти Redis, если сам Redis и необходимый набор команд доступны.
+
+### 6.1. Метрики запросов
+
+- `safeai_rate_limit_allowed_total` — разрешённые логические проверки, label `type`.
+- `safeai_rate_limit_rejected_total` — отказы по `type,dimension`; capacity отдельно.
+- `safeai_rate_limit_unavailable_total` — ошибки Redis-проверок и компенсации, `type`.
+  Не обязательно соответствует числу HTTP 503.
+- `safeai_rate_limit_audit_publish_failed_total` — сбои публикации уведомлений, `type`.
+- `safeai_rate_limit_redis_duration_seconds_bucket` — latency histogram Redis-операций.
+  Labels: `type,operation,outcome,le`. Используется для расчёта p95/p99.
+
+Типы: `login`, `refresh`, `ai_message`. Значения labels ограничены allowlist;
+неизвестные значения отображаются как `unknown`.
+
+### 6.2. Redis gauges
+
+- `safeai_rate_limit_redis_observation_healthy`
+  — 1, если snapshot получен и разобран; это не гарантия безопасности Redis.
+- `safeai_rate_limit_redis_last_observation_timestamp`
+  — Unix seconds последнего успешного snapshot; 0 до первого успеха.
+- `safeai_rate_limit_redis_memory_accounted_bytes`
+  — `max(0,used_memory-mem_not_counted_for_evict)`.
+- `safeai_rate_limit_redis_memory_max_bytes`
+  — `maxmemory`; 0 означает отсутствие ограничения.
+- `safeai_rate_limit_redis_memory_rss_bytes`
+  — RSS процесса Redis; не равен cgroup usage.
+- `safeai_rate_limit_redis_noeviction`
+  — 1 только для политики `noeviction`.
+- `safeai_rate_limit_redis_evicted_keys`
+  — число evictions процесса (gauge); сбрасывается при его перезапуске.
+- `safeai_rate_limit_redis_aof_healthy`
+  — 1, если AOF включён, запись и последний rewrite успешны, загрузка завершена.
+- `safeai_rate_limit_redis_primary`
+  — 1 только для primary.
+- `safeai_rate_limit_redis_epoch_required`
+  — 1, если epoch обязателен.
+- `safeai_rate_limit_redis_epoch_state`
+  — one-hot: active, disabled, missing, invalid, paused, mismatch,
+  primary_changed, unavailable.
+- `safeai_rate_limit_redis_allocation_active`
+  — действующие reservations, `ZCOUNT` по Redis TIME; тип login/refresh.
+- `safeai_rate_limit_redis_allocation_limit`
+  — лимит reserves из кода: 4096 для login, 8192 для refresh.
+
+### 6.3. Правила работы с метриками
+
+- Не добавлять в labels UUID, email, IP, HMAC, run_id, Redis keys, токены,
+  содержимое запросов, адреса и детали исключений.
+- Запросы Prometheus не должны инициировать новые Redis-операции.
+- Для одного общего Redis gauges с нескольких backend не суммировать:
+  применять `max` и проверять каждую instance отдельно при расследовании.
+- Счётчики запросов агрегировать через `sum(increase(...))`, учитывая рестарты.
+- Не смешивать capacity rejection с Redis failure.
+- Prometheus и management endpoint не публиковать в Интернет.
+
+Snapshot AOF не доказывает корректность fsync, непрерывность истории, quorum Sentinel
+или отсутствие evictions до перезапуска процесса. Нужны отдельные проверки F.3,
+сохранности счётчиков, памяти и реальной топологии.
+
+### 6.4. Prometheus alerts
+
+Все имена правил имеют префикс `SafeAiRateLimit` (14 правил).
+
+| Суффикс правила | Условие | Уровень |
+| --- | --- | --- |
+| ScrapeUnavailable | Нет scrape 2м | Critical |
+| InstrumentationMissing | Нет обязательных серий 2м | Critical |
+| ObservationUnhealthy | Нет снимка, старше 120с или часы впереди >30с; 1м | Critical |
+| EpochUnavailable | Обязательный epoch не active; 1м | Critical |
+| RedisUnsafe | Небезопасные maxmemory, policy, role или AOF; 1м | Critical |
+| RedisEvictions | Обнаружены evictions | Critical |
+| RedisMemoryCritical | Память ≥95%; 1м | Critical |
+| Unavailable | ≥1 ошибка за 5м | Critical |
+| RedisMemoryHigh | Память ≥80%; 5м | Warning |
+| AllocationHigh | ≥80% резервов; 2м | Warning |
+| CapacityRejects | ≥1 отказ capacity за 5м | Warning |
+| AuditPublishFailed | ≥1 сбой публикации за 5м | Warning |
+| RejectionRatio | ≥50% и ≥20 отказов за 5м; 3м | Warning |
+| RedisSlow | p95 >250мс, ≥20 успешных проверок за 5м; 3м | Warning |
+
+### 6.5. Runbook: реакция на алерты
+
+- **ScrapeUnavailable / InstrumentationMissing:** проверить management endpoint, сеть,
+  версию backend и регистрацию обязательных метрик.
+- **ObservationUnhealthy:** проверить Redis, command timeout, scheduler и часы.
+- **EpochUnavailable:** остановить неконтролируемый rollout, проверить epoch и primary;
+  выполнить только предусмотренные протоколом 7.5F.3 действия.
+- **RedisUnsafe:** проверить maxmemory, noeviction, role, AOF, диск и права.
+- **RedisEvictions:** security-инцидент; проверить сохранность счётчиков.
+  Не выполнять `FLUSHDB` или `CONFIG RESETSTAT`, чтобы убрать тревогу.
+- **RedisMemoryHigh / RedisMemoryCritical:** ограничить ingress, проверить RSS, cgroup,
+  диск/AOF, масштабировать ресурсы по согласованному плану.
+- **AllocationHigh / CapacityRejects:** проверить Nginx и анонимный трафик.
+  Не удалять reservations для восстановления допуска.
+- **Unavailable:** проверить Redis, epoch и безопасные логи причин отказа.
+- **AuditPublishFailed:** проверить Audit/outbox. Отказ 429 остаётся отказом 429.
+- **RejectionRatio:** исследовать лимиты, нагрузку и распределённые атаки.
+  Не повышать лимиты автоматически.
+- **RedisSlow:** проверить Redis latency, CPU, сеть и AOF fsync.
+
+Нельзя устранять алерты отключением fence, сменой HMAC или разрешением fail-open.
+
+Проверка реальных конфигураций и правил:
 
 ```bash
-./mvnw -Dtest=RateLimitPropertiesTest,RateLimitKeyFactoryTest,RedisClusterSlotContractTest,LoginRateLimitServiceTest,RedisRateLimitServiceTest,RefreshRateLimitServiceTest,RateLimitProductionConfigurationValidatorTest test
-
-./mvnw -Dtest=RedisFixedWindowRateLimiterIntegrationTest,RedisFixedWindowRateLimiterSingleKeyIntegrationTest,RedisFixedWindowRateLimiterIT test
+bash infra/scripts/check-prometheus-config.sh
 ```
 
-Если Maven wrapper отсутствует, использовать `mvn`. Уточнить в CI, какие `*IT` запускаются через Surefire и какие вынесены в Failsafe/profile: совпадение имени не является гарантией запуска нужного набора по умолчанию.
+После deployment подтвердить доступность scrape каждой реплики, обязательные серии,
+`healthy=1`, активный обязательный epoch, безопасные Redis gauges и отсутствие evictions.
 
-## 11. План улучшений без ослабления существующих гарантий
+Grafana, Redis Exporter/cgroup, Alertmanager, receiver, TLS, routing, deduplication,
+inhibition и проверка доставки оповещений дежурному относятся к этапу 7.5C.
+Наличие правил Prometheus не означает, что внешняя доставка уже настроена.
 
-**Этап 1 — конфиденциальность и проверяемость (P1):** безопасное логирование без exception messages/Throwable; исключить raw email из audit event producer; добавить end-to-end PII и log-capture тесты. Не менять политику fail-closed и HTTP-коды.
+## 7. Структура тестов
 
-**Этап 2 — консистентность (P1/P2):** согласовать модель компенсации login по window/reservation; ввести ownership-aware notification marker release; добавить конкурентные и boundary-тесты. Обязательно сохранить неизменными смысл двух типов Lua-скриптов: login считает все попытки, AI — только разрешённые.
+Расположение: `backend/src/test/java/ru/safeai/gateway/ratelimit/`.
 
-**Этап 3 — эксплуатационная надёжность (P1/P2):** профилировать `{login}` slot; проверить Redis Sentinel/Cluster failover; алерты по недоступности, latency, rejects, audit publish failures; защитить секреты и namespace от несогласованного rollout.
+```text
+ratelimit/
+├── exception/
+│   ├── RateLimitExceptionHandlerTest
+│   └── RateLimitUnavailableLoggerTest
+├── external/
+│   ├── RedisClusterRateLimitIT
+│   └── RedisSentinelFailoverIT
+├── DualRateLimitResultTest
+├── LoginRateLimitServiceTest
+├── RateLimitEpochFenceIntegrationTest
+├── RateLimitExceededEventPiiTest
+├── RateLimitExceededExceptionTest
+├── RateLimitKeyFactoryTest
+├── RateLimitMetricsTest
+├── RateLimitProductionAcceptanceIT
+├── RateLimitProductionConfigurationValidatorTest
+├── RateLimitPropertiesTest
+├── RateLimitRedisMonitorIntegrationTest
+├── RedisClusterSlotContractTest
+├── RedisFixedWindowRateLimiterIntegrationTest
+├── RedisFixedWindowRateLimiterIT
+├── RedisFixedWindowRateLimiterSingleKeyIntegrationTest
+├── RedisRateLimitServiceTest
+└── RefreshRateLimitServiceTest
+```
 
-**Этап 4 — масштабирование по измерениям:** при необходимости рассмотреть модель login-limiter без общего hot slot, но только с формальным контрактом атомарного dual limit. Простая смена hash tag сломает Redis Cluster multi-key Lua.
+Всего: 21 тестовый класс, из них 19 локальных и 2 внешних топологических.
 
-## 12. Итоговый вердикт
+### 7.1. Unit и contract tests
 
-**Архитектура RateLimit в целом грамотная и актуальная для 2026–2027 годов**: распределённое состояние, атомарная проверка Redis Lua, детализированные политики, HMAC-псевдонимизация, fail-closed, отдельные домены Redis, безопасный HTTP-контракт, production guards и наличие реальных Redis integration tests.
+- `DualRateLimitResultTest` — инварианты результата, решение, retry и уведомления.
+- `LoginRateLimitServiceTest` — нормализация, допуск/отказ, receipt, capacity,
+  компенсация, события, метрики и ошибки Redis.
+- `RateLimitExceededEventPiiTest` — безопасность данных событий и audit details.
+- `RateLimitExceededExceptionTest` — округление Retry-After и контракт исключения.
+- `RateLimitKeyFactoryTest` — детерминированный HMAC, разделение назначений ключей,
+  версии, fingerprints и отсутствие исходных PII в key names.
+- `RateLimitMetricsTest` — имена метрик, гистограммы и allowlist labels.
+- `RateLimitProductionConfigurationValidatorTest` — запрет небезопасной конфигурации
+  production и обработка явного операторского исключения для AI.
+- `RateLimitPropertiesTest` — defaults, граничные и недопустимые значения свойств.
+- `RedisClusterSlotContractTest` — совместимость hash slots связанных ключей
+  и стабильность глобальных guard keys.
+- `RedisRateLimitServiceTest` — квоты пользователя и организации, роли, события,
+  решения и обработка недоступности Redis.
+- `RefreshRateLimitServiceTest` — ограничение по IP, capacity и обработка отказов.
+- `RateLimitExceptionHandlerTest` — HTTP 429/503, API error codes, заголовки,
+  безопасное тело ответа.
+- `RateLimitUnavailableLoggerTest` — ограничение частоты логирования и защита данных.
 
-**Не следует считать модуль полностью production-hardened без устранения P1:** прежде всего исключить потенциально конфиденциальные stack traces, убрать raw email из production event pipeline, проверить компенсацию успешного login при пересечении окон и измерить нагрузку на единый `{login}` slot. P2 — гонки markers, monotonic logger, `unknown` buckets, window-boundary/rolling secrets и реальные fault/load-тесты.
+### 7.2. Redis integration tests
 
-**Важное ограничение отчёта:** это инженерный аудит предоставленных классов и дополнительных найденных исходников, а не результат успешного CI/CD или тестирования живого кластера. Указанные выводы отделяют подтверждённые по коду свойства от требующих воспроизведения гипотез.
+- `RedisFixedWindowRateLimiterSingleKeyIntegrationTest` — одиночные счётчики,
+  конкурентные операции, TTL и некорректные параметры.
+- `RedisFixedWindowRateLimiterIntegrationTest` — двойные операции, allocation,
+  атака 10 000 fresh-email, OOM/noeviction, TTL, receipt и audit markers.
+- `RedisFixedWindowRateLimiterIT` — атомарность, конкурентность, некорректные
+  счётчики и overflow.
+- `RateLimitEpochFenceIntegrationTest` — обязательный epoch, несовместимый HMAC,
+  повреждённое состояние, restart и rebind.
+- `RateLimitRedisMonitorIntegrationTest` — реальный Redis snapshot, состояния epoch,
+  признаки безопасности и отсутствие изменения ключей наблюдателем.
+- `RateLimitProductionAcceptanceIT` — совокупная нагрузочная и security-приёмка
+  прикладных сервисов на двух независимых Redis-клиентах (7.5F.5).
+
+### 7.3. Внешние topology tests
+
+- `RedisClusterRateLimitIT` — контракт Redis Cluster в отдельном тестовом окружении.
+  Не подтверждает поддержку production epoch fence в Cluster.
+- `RedisSentinelFailoverIT` — проверка поведения при реальном Sentinel failover.
+
+Тесты запускаются только на изолированном окружении для испытаний. Они могут менять
+состояние Redis и инициировать failover. Нельзя использовать production endpoints.
+
+## 8. Нагрузочная и Security-приёмка (7.5F.5)
+
+`RateLimitProductionAcceptanceIT` использует реальные сервисы, две независимые
+`LettuceConnectionFactory`, Redis Testcontainers с паролем, AOF always, noeviction,
+maxmemory 192 MB и включённый production epoch fence. Без внешних рабочих секретов.
+
+| Сценарий | Ожидаемый результат |
+| --- | --- |
+| 128 login, 16 workers | 20 допусков, 108 отказов, оба счётчика 128 |
+| 64 login receipts, 128 cleanup | Идемпотентность, сохранена прежняя ошибка за NAT |
+| 128 refresh | 30 допусков, 98 отказов, счётчик 128, TTL не сдвигается |
+| 128 AI checks, 4 пользователя | 25 допусков организации, изоляция tenant |
+| 128 AI checks, 1 пользователь | 7 допусков, нет расхода квоты org после отказа |
+| Allocation capacity | По 32 отказа login/refresh, нет новых identity keys |
+| HMAC mismatch / missing epoch | Fail-closed во всех трёх сервисах |
+| Redis stopped | Fail-closed на обеих инстанциях всех трёх сервисов |
+
+Проверяются точные прикладные результаты, Redis-счётчики и Micrometer. Для login
+также проверяются нормализация email, уникальность receipt и единственный audit marker.
+Для AI сумма пользовательских счётчиков должна соответствовать допускам организации.
+При недоступном fence не должны создаваться новые ключи и audit-события превышения.
+
+Конкурентные сценарии стартуют синхронно. Все future должны завершиться в общий
+75-секундный дедлайн; unexpected errors не засчитываются в число ожидаемых отказов.
+Elapsed, p95 и p99 итераций — диагностические данные, а не SLA production VPS.
+
+Глобальная capacity в новом IT заполняется фикстурой. Дополнительный обязательный тест
+`distributedAttackCannotExceedSharedAllocationCapacityAcrossInstances` проверяет
+фактическое выделение резервов до границы в распределённом сценарии.
+
+### 8.1. Запуск проверок
+
+Из корня репозитория (JDK 21, Docker, доступные образы и зависимости Maven):
+
+```bash
+bash infra/scripts/verify-ratelimit-acceptance.sh
+bash infra/scripts/test-ratelimit-nginx.sh
+bash infra/scripts/check-prometheus-config.sh
+bash infra/scripts/check-redis-memory.sh
+bash infra/scripts/check-redis-durability.sh
+```
+
+Последние два скрипта предназначены для проверки настроенного Redis окружения;
+перед запуском использовать только соответствующий стенд и его параметры.
+
+Полная backend-проверка:
+
+```bash
+cd backend
+./mvnw clean verify
+```
+
+Для нового service IT можно указать точный digest тестируемого Redis image:
+
+```bash
+SAFEAI_RATELIMIT_TEST_REDIS_IMAGE='redis@sha256:<digest>' \
+  bash infra/scripts/verify-ratelimit-acceptance.sh
+```
+
+Команда выполняется из корня репозитория; `<digest>` нужно заменить реальным digest.
+Исторические интеграционные тесты сохраняют собственные test image tags.
+
+### 8.2. CI gate
+
+`verify-ratelimit-acceptance.sh` запускает чистый целевой Maven test по десяти классам
+и проверяет наличие всех 50 обязательных тестовых методов в XML-отчётах.
+
+Gate завершается ошибкой при отсутствии отчёта или метода, skipped, failed, error,
+rerun/flaky или повреждённом XML. Десять дополнительных Python-сценариев проверяют
+сам механизм анализа отчётов. Нулевой exit code Maven сам по себе недостаточен.
+
+- Backend CI (`backend-ci.yml`) проверяет gate после полного clean verify.
+- Performance CI (`performance-ci.yml`) запускает отдельный job с Redis и Nginx,
+  проверяет Prometheus через `promtool check rules` и `promtool test rules`.
+- Production release использует Performance CI; существующие ACL, PostgreSQL,
+  security и release gates сохраняются.
+- `redis-topology-ci.yml` — отдельный workflow для внешних тестов, защищённого
+  окружения `redis-topology-test` и изолированной топологии.
+
+Для внешней топологии используется профиль Maven `rate-limit-topology-it` и явно
+подтверждённое изолированное окружение (`SAFEAI_REDIS_TOPOLOGY_ISOLATED=true`).
+Параметры подключения и секреты берутся из защищённой конфигурации CI.
+
+## 9. Финальная приёмка (7.5F.6)
+
+Документация описывает реализованный пакет и тестовые контракты. Подготовленные тесты
+не равны успешной приёмке. Для закрытия этапа нужны отчёты на одном конечном commit SHA.
+
+| Этап | Состояние |
+| --- | --- |
+| 7.5F.1 — защита памяти Redis | Реализация и тесты подготовлены |
+| 7.5F.2 — RPM/TPM и конкурентность provider calls | Требуется подтверждение |
+| 7.5F.3 — HMAC, epoch fence, Sentinel | Реализация есть; реальный failover ожидает приёмки |
+| 7.5F.4 — Prometheus и алерты | Реализация есть; реальный promtool/scrape ожидают |
+| 7.5F.5 — нагрузочная и Security-приёмка | Сценарии и CI gate подготовлены |
+| 7.5F.6 — финальная приёмка и README | README актуализирован; приёмочные отчёты ожидают |
+
+### 9.1. Обязательный чек-лист перед закрытием 7.5F
+
+- [ ] Полный Maven `clean verify` и все Testcontainers на конечном SHA.
+- [ ] 50 обязательных тестовых методов успешно пройдены, без skipped и flaky.
+- [ ] Проверены 8 сценариев `RateLimitProductionAcceptanceIT` и точные инварианты.
+- [ ] Подтверждены Nginx edge HTTP, 429/503, trusted proxy, память и Redis durability.
+- [ ] Подтверждены физические RPM/TPM/concurrency для provider calls (F.2), включая
+  retry, fallback, probe, embeddings и recovery по применимым путям исполнения.
+- [ ] Выполнен реальный Sentinel failover на изолированном стенде, если требуется HA.
+- [ ] Проверены epoch rotation/rebind, fencing старого primary и сохранность счётчиков.
+- [ ] Реальный promtool, scrape и 14 alert rules проверены на целевой конфигурации.
+- [ ] Flyway V1–V101, Runtime ACL clean/upgrade и обязательные security gates — PASS.
+- [ ] Зафиксированы commit SHA, образы/digest, CI reports и результаты стенда.
+
+До получения доказательств пункты не считаются выполненными. Миграции V1–V101
+в состав изменений этого README и пакета нагрузочной приёмки не входят.
+
+### 9.2. Дальнейшая дорожная карта
+
+| Этап | Цель |
+| --- | --- |
+| 7.5G | Frontend UI/UX Production Hardening, обработка 429/503 |
+| 7.5C | Deployment Readiness, Redis topology, monitoring и alert delivery |
+| 7.6 | Full Production Audit: безопасность, нагрузка, данные, эксплуатация |
+| 8 | Production Deployment после формального решения GO |
+
+В 7.5C дополнительно подтвердить TLS/egress, ресурсы, фактические image digests,
+Grafana, Redis Exporter, Alertmanager и доставку тревог, целевые latency/throughput,
+поведение при memory pressure, а также backup/recovery и план rollback.
+
+**Production GO:** только после успешной приёмки всех обязательных контуров и
+решения на этапе 7.6. Standalone Compose, подготовленный README или наличие зелёных
+проверок отдельных компонентов сами по себе не доказывают общую готовность к production.

@@ -1,6 +1,8 @@
 package ru.safeai.gateway.chat.integration;
 
+import ru.safeai.gateway.testsupport.PostgresTestMigrationBootstrap;
 import org.flywaydb.core.Flyway;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.flywaydb.core.api.MigrationVersion;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -106,6 +108,7 @@ class ChatLegacyUpgradeMigrationIntegrationTest {
     @BeforeAll
     static void setUpDatabase() throws Exception {
         POSTGRES.start();
+        PostgresTestMigrationBootstrap.prepare(POSTGRES);
 
         flyway(
                 MigrationVersion.fromVersion("31")
@@ -116,6 +119,8 @@ class ChatLegacyUpgradeMigrationIntegrationTest {
         flyway(
                 MigrationVersion.LATEST
         ).migrate();
+        PostgresTestMigrationBootstrap.verifyMigratedSchema(
+                new JdbcTemplate(PostgresTestMigrationBootstrap.migrationDataSource(POSTGRES)), false);
     }
 
     @AfterAll
@@ -312,11 +317,11 @@ class ChatLegacyUpgradeMigrationIntegrationTest {
                 )
                 .dataSource(
                         POSTGRES.getJdbcUrl(),
-                        POSTGRES.getUsername(),
-                        POSTGRES.getPassword()
+                        PostgresTestMigrationBootstrap.MIGRATOR,
+                        PostgresTestMigrationBootstrap.MIGRATOR_PASSWORD
                 )
                 .locations(
-                        "classpath:db/migration"
+                        PostgresTestMigrationBootstrap.productionLocation()
                 )
                 .target(target)
                 .validateMigrationNaming(true)

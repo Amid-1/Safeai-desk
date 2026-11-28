@@ -21,7 +21,9 @@ export function parseAuditEvent(
             record.details,
         )
 
+    const correlationId = expectNullableUuid(record.correlationId ?? null, `${field}.correlationId`)
     return {
+        ...(correlationId ? { correlationId } : {}),
         id: expectUuid(
             record.id,
             `${field}.id`,

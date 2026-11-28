@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.ai.provider.ProviderDataEvidence;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
@@ -19,6 +20,7 @@ import ru.safeai.gateway.model.domain.OrganizationModelPolicy;
 import ru.safeai.gateway.model.dto.RuntimeModelStatusResponse;
 import ru.safeai.gateway.model.dto.ModelRouteDecisionResponse;
 import ru.safeai.gateway.model.exception.ModelRouteDeniedException;
+import ru.safeai.gateway.model.pricing.CatalogPricingEligibility;
 import ru.safeai.gateway.model.repository.ModelCatalogRepository;
 import ru.safeai.gateway.model.repository.ModelRouteDecisionRepository;
 import ru.safeai.gateway.model.repository.ModelRouteRequestMutexRepository;
@@ -224,7 +226,6 @@ public class ModelRoutingService {
 
         ModelRoutingCostPolicy.PricingEstimate pricing = costPolicy.estimateCost(
                 entry,
-                runtime,
                 estimatedInputTokens,
                 estimatedOutputTokens
         );
@@ -294,7 +295,7 @@ public class ModelRoutingService {
         );
         decisionRepository.insert(decision);
         persistBudgetCommitment(decision, budget);
-        recordDecisionAudit(currentUser, decision, budget, AuditEventType.MODEL_ROUTE_DECIDED);
+        recordDecisionAudit(currentUser, decision, budget, runtime, AuditEventType.MODEL_ROUTE_DECIDED);
         return decisionFactory.toResult(decision);
     }
 
@@ -424,13 +425,7 @@ public class ModelRoutingService {
             pricingComplete = pricing.complete();
             estimatedCost = pricing.cost();
         } else if (selection.entry() != null) {
-            pricingComplete = selection.entry().pricingComplete();
-            estimatedCost = null;
-        } else if (runtime != null
-                && selection.selectedProvider() != null
-                && selection.selectedProviderModelId() != null
-                && "FREE".equals(runtime.pricingStatus())) {
-            pricingComplete = true;
+            pricingComplete = CatalogPricingEligibility.verified(selection.entry());
             estimatedCost = null;
         } else {
             pricingComplete = false;
@@ -461,7 +456,7 @@ public class ModelRoutingService {
         );
         decisionRepository.insert(decision);
         persistBudgetCommitment(decision, budget);
-        recordDecisionAudit(currentUser, decision, budget, AuditEventType.MODEL_ROUTE_DENIED);
+        recordDecisionAudit(currentUser, decision, budget, runtime, AuditEventType.MODEL_ROUTE_DENIED);
 
         return new ModelRouteDeniedException(
                 decision.id(),
@@ -493,13 +488,15 @@ public class ModelRoutingService {
             SafeAiUserPrincipal currentUser,
             ModelRouteDecision decision,
             ModelRoutingCostPolicy.BudgetSnapshot budget,
+            RuntimeModelStatusResponse runtime,
             AuditEventType eventType
     ) {
         audit.recordPrincipalSnapshot(
                 currentUser,
                 decision.organizationId(),
                 eventType,
-                new ModelRouteDecisionAuditDetails(decision, budget)
+                new ModelRouteDecisionAuditDetails(decision, budget,
+                        runtime == null ? ProviderDataEvidence.Status.UNKNOWN : runtime.dataAssurance())
         );
     }
 

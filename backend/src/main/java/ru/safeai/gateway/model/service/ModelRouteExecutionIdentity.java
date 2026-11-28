@@ -238,6 +238,11 @@ public record ModelRouteExecutionIdentity(
         );
     }
 
+    @Override
+    public boolean usesKnowledge() {
+        return knowledgeMode.usesKnowledge();
+    }
+
     void requireSameDecision(ModelRouteDecision decision) {
         ModelRouteDecisionIntegrity.requireValid(decision);
         if (decision.outcome() != ModelRouteOutcome.ALLOWED

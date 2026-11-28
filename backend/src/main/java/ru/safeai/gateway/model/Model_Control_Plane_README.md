@@ -1466,3 +1466,19 @@ production runtime не запускали. Доказанность конкр�
 Исходные `.java` не исправлялись: данный документ является анализом и планом усиления. Изменять
 persisted SHA semantics, исторические версии каталога, V66/V65/V67/V72, tenant/RBAC, immutable
 receipts или `UNKNOWN != ZERO` ради «зелёных тестов» недопустимо.
+
+## Дополнение 7.5E.3 — V100
+
+Предыдущий аналитический снимок сохранён. В 7.5E.3 добавлен
+физический барьер PostgreSQL, использующий V62/V64 и V96:
+проверка актуальной model policy, pinned price envelope, текущего
+HARD бюджета и неизменяемого одноразового dispatch receipt.
+Java `AiExecutionAttemptRecorder.beforeNetworkDispatch` потребляет
+разрешение отдельной транзакцией. Receipt фиксирует авторизацию,
+не подтверждение внешнего выполнения. Приёмка требует реальной
+PostgreSQL, ACL, Maven и проверки сценариев конкуренции.
+
+Fix1 до первого применения V100: независимый V85 Knowledge fence,
+неизменяемый marker нового протокола, запрет ложного abort после
+receipt, tenant lock перед settlement row lock и ограниченный
+повтор записи terminal evidence. Повтор внешнего I/O запрещён.

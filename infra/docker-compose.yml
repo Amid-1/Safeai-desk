@@ -10,7 +10,7 @@ x-logging: &default-logging
 
 services:
   backend:
-    image: "${SAFEAI_BACKEND_IMAGE:?SAFEAI_BACKEND_IMAGE is required}"
+    image: "${SAFEAI_BACKEND_IMAGE:?SAFEAI_BACKEND_IMAGE_REQUIRED}"
 
     # This passes non-secret runtime settings into the container. Compose-file
     # interpolation still requires CLI --env-file backend/.env.prod.
@@ -19,15 +19,19 @@ services:
 
     environment:
       SPRING_PROFILES_ACTIVE: prod
+      SPRING_FLYWAY_ENABLED: "false"
+      SPRING_FLYWAY_USER: ""
+      SPRING_FLYWAY_PASSWORD: ""
       SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/${POSTGRES_DB:?POSTGRES_DB is required}"
 
-      # pricing.yml is non-secret deployment config. jwt-keys.yml is a secret
-      # structured Spring config file, not a scalar configtree entry.
+      # jwt-keys.yml is a secret structured Spring config file, not a
+      # scalar configtree entry. Model tariffs live in the versioned catalog.
       SPRING_CONFIG_ADDITIONAL_LOCATION: >-
-        file:/run/config/pricing.yml,file:/run/secrets/jwt-keys.yml
+        file:/run/secrets/jwt-keys.yml
 
       SAFEAI_DB_APP_USER: "${SAFEAI_DB_APP_USER:?SAFEAI_DB_APP_USER is required}"
-      SAFEAI_DB_MIGRATOR_USER: "${SAFEAI_DB_MIGRATOR_USER:?SAFEAI_DB_MIGRATOR_USER is required}"
+      SAFEAI_DB_MIGRATOR_USER: ""
+      SAFEAI_DB_MIGRATOR_PASSWORD: ""
 
       REDIS_HOST: redis
       REDIS_PORT: "6379"
@@ -37,13 +41,18 @@ services:
 
       SAFEAI_KNOWLEDGE_STORAGE_ENDPOINT: "${SAFEAI_KNOWLEDGE_STORAGE_ENDPOINT:?SAFEAI_KNOWLEDGE_STORAGE_ENDPOINT is required}"
       SAFEAI_KNOWLEDGE_STORAGE_BUCKET: "${SAFEAI_KNOWLEDGE_STORAGE_BUCKET:-safeai-knowledge}"
+      SAFEAI_KNOWLEDGE_ERASURE_JOURNAL_ENABLED: "${SAFEAI_KNOWLEDGE_ERASURE_JOURNAL_ENABLED:-false}"
+      SAFEAI_KNOWLEDGE_ERASURE_JOURNAL_BUCKET: "${SAFEAI_KNOWLEDGE_ERASURE_JOURNAL_BUCKET:-safeai-erasure-journal}"
+      SAFEAI_KNOWLEDGE_ERASURE_JOURNAL_OBJECT_LOCK_REQUIRED: "${SAFEAI_KNOWLEDGE_ERASURE_JOURNAL_OBJECT_LOCK_REQUIRED:-false}"
+      SAFEAI_KNOWLEDGE_EXECUTION_LEASE_TTL: "${SAFEAI_KNOWLEDGE_EXECUTION_LEASE_TTL:-PT10M}"
+      SAFEAI_KNOWLEDGE_EXECUTION_PERMIT_TTL: "${SAFEAI_KNOWLEDGE_EXECUTION_PERMIT_TTL:-PT2H}"
+      SAFEAI_KNOWLEDGE_EXECUTION_HEARTBEAT_DELAY: "${SAFEAI_KNOWLEDGE_EXECUTION_HEARTBEAT_DELAY:-PT15S}"
+      SAFEAI_KNOWLEDGE_EXECUTION_RECOVERY_DELAY: "${SAFEAI_KNOWLEDGE_EXECUTION_RECOVERY_DELAY:-PT30S}"
 
     secrets:
       # Scalar secrets are loaded by application.yml configtree:/run/secrets/.
       - source: db_app_password
         target: SAFEAI_DB_APP_PASSWORD
-      - source: db_migrator_password
-        target: SAFEAI_DB_MIGRATOR_PASSWORD
       - source: redis_password
         target: REDIS_PASSWORD
       - source: rate_limit_hmac_secret
@@ -63,12 +72,6 @@ services:
       - source: jwt_keys
         target: jwt-keys.yml
 
-    volumes:
-      - type: bind
-        source: "${SAFEAI_CONFIG_DIR:?SAFEAI_CONFIG_DIR is required}/pricing.yml"
-        target: /run/config/pricing.yml
-        read_only: true
-
     user: "10001:10001"
 
     # File-backed Compose secrets preserve host ownership/permissions. The host
@@ -81,7 +84,7 @@ services:
       - "9091"
 
     depends_on:
-      db-bootstrap:
+      db-migrate:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
@@ -127,7 +130,7 @@ services:
 
   postgres:
     # Must contain the pgvector extension used by V41+ migrations.
-    image: "${POSTGRES_IMAGE:?POSTGRES_IMAGE is required}"
+    image: "${POSTGRES_IMAGE:?POSTGRES_IMAGE_REQUIRED}"
 
     environment:
       POSTGRES_DB: "${POSTGRES_DB:?POSTGRES_DB is required}"
@@ -169,7 +172,7 @@ services:
     restart: unless-stopped
 
   db-bootstrap:
-    image: "${POSTGRES_IMAGE:?POSTGRES_IMAGE is required}"
+    image: "${POSTGRES_IMAGE:?POSTGRES_IMAGE_REQUIRED}"
 
     entrypoint:
       - /bin/bash
@@ -213,8 +216,42 @@ services:
     logging: *default-logging
     restart: "no"
 
+  db-migrate:
+    image: "${SAFEAI_BACKEND_IMAGE:?SAFEAI_BACKEND_IMAGE_REQUIRED}"
+    entrypoint:
+      - java
+      - -Dloader.main=ru.safeai.gateway.common.db.DatabaseMigrationMain
+      - -cp
+      - /app/app.jar
+      - org.springframework.boot.loader.launch.PropertiesLauncher
+    environment:
+      SAFEAI_MIGRATION_JDBC_URL: "jdbc:postgresql://postgres:5432/${POSTGRES_DB:?POSTGRES_DB is required}"
+      SAFEAI_MIGRATION_PASSWORD_FILE: /run/secrets/db_migrator_password
+    secrets:
+      - db_migrator_password
+    depends_on:
+      db-bootstrap:
+        condition: service_completed_successfully
+    networks:
+      safeai_data: {}
+    user: "10001:10001"
+    group_add:
+      - "${SAFEAI_SECRET_GID:?SAFEAI_SECRET_GID is required}"
+    read_only: true
+    tmpfs:
+      - "/tmp:size=64m,mode=1777,noexec,nosuid,nodev"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 768m
+    cpus: "1.0"
+    pids_limit: 128
+    logging: *default-logging
+    restart: "no"
+
   redis:
-    image: "${REDIS_IMAGE:?REDIS_IMAGE is required}"
+    image: "${REDIS_IMAGE:?REDIS_IMAGE_REQUIRED}"
 
     entrypoint:
       - /bin/sh
@@ -229,7 +266,9 @@ services:
         cat > /tmp/redis.conf <<EOF_REDIS
         requirepass $$REDIS_PASSWORD
         appendonly yes
-        appendfsync everysec
+        appendfsync always
+        no-appendfsync-on-rewrite no
+        aof-load-truncated no
         maxmemory 192mb
         maxmemory-policy noeviction
         EOF_REDIS
@@ -278,18 +317,25 @@ services:
       - no-new-privileges:true
 
     cpus: "0.5"
-    mem_limit: 256m
-    mem_reservation: 64m
+    # Redis maxmemory excludes some buffers/RSS and AOF fork/COW overhead.
+    # Keep headroom; verify actual RSS and AOF rewrite peaks in staging.
+    mem_limit: 512m
+    mem_reservation: 256m
     pids_limit: 128
 
     logging: *default-logging
     restart: unless-stopped
 
   nginx:
-    image: "${SAFEAI_NGINX_IMAGE:?SAFEAI_NGINX_IMAGE is required}"
+    image: "${SAFEAI_NGINX_IMAGE:?SAFEAI_NGINX_IMAGE_REQUIRED}"
 
     ports:
-      - "${SAFEAI_PUBLIC_BIND:?SAFEAI_PUBLIC_BIND is required}:8080"
+      # Host Nginx is the public HTTPS edge; container Nginx stays localhost-only.
+      # Canonical SAFEAI_PUBLIC_BIND=127.0.0.1:8080 (backend/.env.prod.example).
+      - target: 8080
+        published: "8080"
+        host_ip: 127.0.0.1
+        protocol: tcp
 
     depends_on:
       backend:
@@ -330,7 +376,8 @@ services:
     restart: unless-stopped
 
   prometheus:
-    image: "prom/prometheus:v3.13.2"
+    # Pinned by digest: required by production preflight.
+    image: "${SAFEAI_PROMETHEUS_IMAGE:?SAFEAI_PROMETHEUS_IMAGE_REQUIRED}"
 
     command:
       - --config.file=/etc/prometheus/prometheus.yml

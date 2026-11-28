@@ -5,7 +5,9 @@ import ru.safeai.gateway.ai.dto.AiChatResponse;
 import ru.safeai.gateway.ai.exception.AiProviderException;
 import ru.safeai.gateway.ai.provider.AiProviderAttemptContext;
 
+import java.util.HashSet;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -19,6 +21,8 @@ import java.util.function.Supplier;
 @Component
 public class AiExecutionAttemptScope {
 
+    private static final int MAX_PHYSICAL_ATTEMPTS = 3;
+
     private final ThreadLocal<State> current = new ThreadLocal<>();
 
     public <T extends AiChatResponse> T execute(
@@ -26,7 +30,7 @@ public class AiExecutionAttemptScope {
             AiExecutionAttemptObserver observer,
             Supplier<T> action
     ) {
-        return execute(operationId, observer, Integer.MAX_VALUE, action);
+        return execute(operationId, observer, MAX_PHYSICAL_ATTEMPTS, action);
     }
 
     public <T extends AiChatResponse> T execute(
@@ -35,8 +39,8 @@ public class AiExecutionAttemptScope {
             int maxCalls,
             Supplier<T> action
     ) {
-        if (maxCalls < 1) {
-            throw new IllegalArgumentException("maxCalls must be positive");
+        if (maxCalls < 1 || maxCalls > MAX_PHYSICAL_ATTEMPTS) {
+            throw new IllegalArgumentException("maxCalls must be between 1 and 3");
         }
 
         Objects.requireNonNull(operationId, "operationId не должен быть null");
@@ -53,7 +57,7 @@ public class AiExecutionAttemptScope {
         try {
             T response = action.get();
 
-            if (!state.eventSeen) {
+            if (state.lastAttemptNumber == 0) {
                 throw new IllegalStateException(
                         "AI provider adapter did not report a physical attempt"
                 );
@@ -69,6 +73,12 @@ public class AiExecutionAttemptScope {
                 throw incompleteAttempt;
             }
 
+            // Only the exact response whose successful evidence was accepted
+            // by the observer may leave the governed execution.
+            if (state.successfulResponse == null || response != state.successfulResponse) {
+                throw new IllegalStateException(
+                        "AI provider adapter returned without matching successful physical evidence");
+            }
             return response;
         } catch (AiProviderException exception) {
             if (state.activeAttempt != null) {
@@ -121,10 +131,67 @@ public class AiExecutionAttemptScope {
             );
         }
 
+        if (state.sealed) {
+            throw new IllegalStateException("AI execution does not permit another physical attempt");
+        }
+        if (attempt.maxAttempts() > state.maxCalls
+                || attempt.attemptNumber() > state.maxCalls) {
+            throw new IllegalStateException("AI execution physical attempt cap exceeded");
+        }
+        if (state.declaredMaxAttempts != 0 && attempt.maxAttempts() != state.declaredMaxAttempts) {
+            throw new IllegalStateException("AI execution attempt limit must remain unchanged");
+        }
+        if (!state.attemptIds.add(attempt.attemptId())) {
+            throw new IllegalStateException("AI execution attempt ID must not be reused");
+        }
+
+        // A failed STARTED acknowledgement might represent a committed write.
+        // Seal before the callback; only a confirmed return reopens execution.
+        state.sealed = true;
         state.observer.started(attempt);
-        state.eventSeen = true;
         state.activeAttempt = attempt;
         state.lastAttemptNumber = attempt.attemptNumber();
+        state.declaredMaxAttempts = attempt.maxAttempts();
+        state.dispatchAuthorized = false;
+        state.sealed = false;
+    }
+
+    /**
+     * Сохраняет порядок: долговечный STARTED -> проверка dispatch -> HTTP.
+     * Не разрешает проверять чужую или уже завершённую попытку.
+     */
+    public void beforeNetworkDispatch(AiProviderAttemptContext attempt) {
+        State state = active(attempt);
+        if (state.sealed || state.dispatchAuthorized) {
+            state.sealed = true;
+            throw new IllegalStateException("AI physical dispatch authorization cannot be reused");
+        }
+        // An observer rejection must never allow a second authorization or retry.
+        state.sealed = true;
+        state.dispatchCheckInProgress = true;
+        try {
+            state.observer.beforeNetworkDispatch(attempt);
+        } catch (RuntimeException denied) {
+            // The callback did not return; the adapter cannot have entered I/O.
+            // The recorder must additionally prove receipt absence under DB lock.
+            state.activeAttempt = null;
+            state.dispatchCheckInProgress = false;
+            boolean confirmed;
+            try {
+                confirmed = state.observer.abortedBeforeDispatch(attempt, denied);
+            } catch (RuntimeException recordingFailure) {
+                if (recordingFailure != denied) denied.addSuppressed(recordingFailure);
+                throw new PhysicalAttemptReconciliationRequiredException(attempt.attemptId(), denied);
+            }
+            if (!confirmed) {
+                throw new PhysicalAttemptReconciliationRequiredException(attempt.attemptId(), denied);
+            }
+            throw new AiDispatchAbortedException(denied);
+        } finally {
+            state.dispatchCheckInProgress = false;
+        }
+        state.dispatchAuthorized = true;
+        state.sealed = false;
     }
 
     public void succeeded(
@@ -132,9 +199,20 @@ public class AiExecutionAttemptScope {
             AiChatResponse response
     ) {
         State state = active(attempt);
+        Objects.requireNonNull(response, "response");
+        if (!state.dispatchAuthorized || state.sealed) {
+            state.sealed = true;
+            throw new IllegalStateException("AI physical success requires dispatch authorization");
+        }
+
+        // A terminal write may have committed even if its acknowledgement is lost.
+        // No subsequent terminal callback or STARTED may overwrite that evidence.
+        state.sealed = true;
+        state.activeAttempt = null;
 
         try {
             state.observer.succeeded(attempt, response);
+            state.successfulResponse = response;
         } catch (AiProviderException governanceRejection) {
             // Physical success was already persisted by the observer.
             throw governanceRejection;
@@ -143,8 +221,6 @@ public class AiExecutionAttemptScope {
                     attempt.attemptId(),
                     terminalPersistenceFailure
             );
-        } finally {
-            state.activeAttempt = null;
         }
     }
 
@@ -153,8 +229,14 @@ public class AiExecutionAttemptScope {
             AiProviderException exception
     ) {
         State state = active(attempt);
-        state.observer.failed(attempt, exception);
+        Objects.requireNonNull(exception, "exception");
+        boolean retryAllowed = !state.sealed && state.dispatchAuthorized
+                && exception.isRetryable()
+                && ProviderFailureCertainty.classify(exception) != OutcomeCertainty.AMBIGUOUS;
+        state.sealed = true;
         state.activeAttempt = null;
+        state.observer.failed(attempt, exception);
+        state.sealed = !retryAllowed;
     }
 
     public void ambiguous(
@@ -162,8 +244,10 @@ public class AiExecutionAttemptScope {
             RuntimeException exception
     ) {
         State state = active(attempt);
-        state.observer.ambiguous(attempt, exception);
+        Objects.requireNonNull(exception, "exception");
+        state.sealed = true;
         state.activeAttempt = null;
+        state.observer.ambiguous(attempt, exception);
     }
 
     public boolean active() {
@@ -192,6 +276,9 @@ public class AiExecutionAttemptScope {
 
         State state = required();
 
+        if (state.dispatchCheckInProgress) {
+            throw new IllegalStateException("AI execution observer cannot report nested attempt events");
+        }
         if (state.activeAttempt == null
                 || !state.activeAttempt.equals(attempt)) {
             throw new IllegalStateException(
@@ -244,9 +331,14 @@ public class AiExecutionAttemptScope {
         private final UUID operationId;
         private final AiExecutionAttemptObserver observer;
         private final int maxCalls;
-        private boolean eventSeen;
+        private final Set<UUID> attemptIds = new HashSet<>();
+        private boolean sealed;
+        private boolean dispatchAuthorized;
+        private boolean dispatchCheckInProgress;
+        private int declaredMaxAttempts;
         private int lastAttemptNumber;
         private AiProviderAttemptContext activeAttempt;
+        private AiChatResponse successfulResponse;
 
         private State(
                 UUID operationId,

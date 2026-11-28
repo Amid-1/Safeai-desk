@@ -5,7 +5,9 @@
 import {
     render,
     screen,
+    fireEvent,
 } from '@testing-library/react'
+import type {ReactNode} from 'react'
 import {
     MemoryRouter,
 } from 'react-router-dom'
@@ -28,6 +30,8 @@ import type {
 
 import App from './App'
 
+const notificationHook = vi.hoisted(() => vi.fn<(scope: string | null, locationKey: string) => null>(() => null))
+
 const authMock = vi.hoisted(() => ({
     state: {
         currentUser:
@@ -45,6 +49,17 @@ const authMock = vi.hoisted(() => ({
         logoutUser: vi.fn(),
         reloadCurrentUser: vi.fn(),
     },
+}))
+
+// Route tests own the auth state; the real provider is tested separately.
+vi.mock(import('../features/auth/state/AuthContext'), () => ({
+    AuthProvider: ({children}: { children: ReactNode }) => (
+        <>{children}</>
+    ),
+}))
+
+vi.mock('../features/erasure/api/useErasureNotifications', () => ({
+    useErasureNotifications: notificationHook,
 }))
 
 vi.mock('../features/auth/state/useAuth', () => ({
@@ -120,6 +135,12 @@ vi.mock('../pages/AdminUsagePage', () => ({
             Admin usage page
         </div>
     ),
+}))
+vi.mock('../pages/AdminDashboardPage', () => ({
+    default: () => <div data-testid="admin-dashboard-page">Dashboard</div>,
+}))
+vi.mock('../pages/AdminRetentionPage', () => ({
+    default: () => <div data-testid="admin-retention-page">Retention</div>,
 }))
 
 vi.mock('../pages/AdminModelsPage', () => ({
@@ -205,7 +226,7 @@ function renderAt(
                 path,
             ]}
         >
-            <App />
+            <App/>
         </MemoryRouter>,
     )
 }
@@ -220,6 +241,115 @@ describe(
                 null,
                 'unauthenticated',
             )
+        })
+
+        it('закрывает меню при выборе раздела и переносит фокус к содержимому', async () => {
+            setAuth(ADMIN, 'authenticated')
+            renderAt('/chat')
+            await screen.findByTestId('chat-page')
+            const menu = screen.getByRole('button', {name: 'Меню'})
+            expect(menu).toHaveAttribute('aria-expanded', 'false')
+            fireEvent.click(menu)
+            expect(menu).toHaveAttribute('aria-expanded', 'true')
+            fireEvent.click(screen.getByRole('link', {name: 'Базы знаний'}))
+            await screen.findByTestId('knowledge-page')
+            expect(menu).toHaveAttribute('aria-expanded', 'false')
+            expect(screen.getByRole('main')).toHaveFocus()
+        })
+
+        it('Escape закрывает мобильное меню, а ссылка пропуска переводит фокус в main', async () => {
+            setAuth(ADMIN, 'authenticated')
+            renderAt('/chat')
+            await screen.findByTestId('chat-page')
+            const menu = screen.getByRole('button', {name: 'Меню'})
+            vi.spyOn(menu, 'getClientRects').mockReturnValue({length: 1} as DOMRectList)
+            fireEvent.click(menu)
+            fireEvent.keyDown(window, {key: 'Escape'})
+            expect(menu).toHaveAttribute('aria-expanded', 'false')
+            expect(menu).toHaveFocus()
+            fireEvent.click(screen.getByRole('link', {name: 'Перейти к содержимому'}))
+            expect(screen.getByRole('main')).toHaveFocus()
+        })
+
+        it('не сохраняет страницу при смене организации текущего администратора', async () => {
+            setAuth(ADMIN, 'authenticated')
+            const view = renderAt('/admin/models')
+            const first = await screen.findByTestId('admin-models-page')
+            setAuth({...ADMIN, organizationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'}, 'authenticated')
+            view.rerender(<MemoryRouter initialEntries={['/admin/models']}><App/></MemoryRouter>)
+            expect(await screen.findByTestId('admin-models-page')).not.toBe(first)
+        })
+
+        it('preserves the page when the authenticated actor scope has not changed', async () => {
+            setAuth(ADMIN, 'authenticated')
+            const view = renderAt('/admin/models')
+            const first = await screen.findByTestId('admin-models-page')
+            setAuth({...ADMIN, fullName: 'Updated name'}, 'authenticated')
+            view.rerender(<MemoryRouter initialEntries={['/admin/models']}><App/></MemoryRouter>)
+            expect(await screen.findByTestId('admin-models-page')).toBe(first)
+        })
+
+        it('remounts the page when the actor changes within the same organization', async () => {
+            setAuth(ADMIN, 'authenticated')
+            const view = renderAt('/admin/models')
+            const first = await screen.findByTestId('admin-models-page')
+            const next = {...ADMIN, id: USER.id}
+            setAuth(next, 'authenticated')
+            view.rerender(<MemoryRouter initialEntries={['/admin/models']}><App/></MemoryRouter>)
+            expect(await screen.findByTestId('admin-models-page')).not.toBe(first)
+            expect(first).not.toBeInTheDocument()
+            expect(notificationHook).toHaveBeenLastCalledWith(
+                JSON.stringify([next.id, next.organizationId, next.roles]), expect.any(String),
+            )
+        })
+
+        it('remounts the page when roles change even if the route remains allowed', async () => {
+            setAuth(ADMIN, 'authenticated')
+            const view = renderAt('/admin/models')
+            const first = await screen.findByTestId('admin-models-page')
+            const next: AuthUser = {...ADMIN, roles: ['ADMIN', 'SUPER_ADMIN']}
+            setAuth(next, 'authenticated')
+            view.rerender(<MemoryRouter initialEntries={['/admin/models']}><App/></MemoryRouter>)
+            expect(await screen.findByTestId('admin-models-page')).not.toBe(first)
+            expect(first).not.toBeInTheDocument()
+        })
+
+        it('unmounts a live protected page when its account is disabled', async () => {
+            setAuth(ADMIN, 'authenticated')
+            const view = renderAt('/admin/models')
+            const first = await screen.findByTestId('admin-models-page')
+            setAuth(
+                {...ADMIN, enabled: false} as unknown as AuthUser,
+                'authenticated',
+            )
+            view.rerender(<MemoryRouter initialEntries={['/admin/models']}><App/></MemoryRouter>)
+            expect(await screen.findByText('Недостаточно прав')).toBeInTheDocument()
+            expect(first).not.toBeInTheDocument()
+            expect(screen.queryByTestId('admin-models-page')).not.toBeInTheDocument()
+            expect(notificationHook).toHaveBeenLastCalledWith(null, expect.any(String))
+        })
+
+        it.each(['loading', 'temporarily-unavailable'] as const)(
+            'unmounts a protected page while authentication is %s', async status => {
+                setAuth(ADMIN, 'authenticated')
+                const view = renderAt('/admin/models')
+                const first = await screen.findByTestId('admin-models-page')
+                setAuth(null, status)
+                view.rerender(<MemoryRouter initialEntries={['/admin/models']}><App/></MemoryRouter>)
+                expect(first).not.toBeInTheDocument()
+                expect(screen.queryByTestId('admin-models-page')).not.toBeInTheDocument()
+                expect(notificationHook).toHaveBeenLastCalledWith(null, expect.any(String))
+                setAuth(ADMIN, 'authenticated')
+                view.rerender(<MemoryRouter initialEntries={['/admin/models']}><App/></MemoryRouter>)
+                expect(await screen.findByTestId('admin-models-page')).not.toBe(first)
+            },
+        )
+
+        it('не показывает закрытые страницы при отключённом пользователе', async () => {
+            setAuth({...ADMIN, enabled: false} as unknown as AuthUser, 'authenticated')
+            renderAt('/admin/models')
+            expect(await screen.findByText('Недостаточно прав')).toBeInTheDocument()
+            expect(screen.queryByTestId('admin-models-page')).not.toBeInTheDocument()
         })
 
         it(
@@ -254,6 +384,28 @@ describe(
                 ).toBeInTheDocument()
             },
         )
+
+        it.each([
+            [SUPER_ADMIN, '/admin/dashboard', 'admin-dashboard-page'],
+            [ADMIN, '/chat', 'chat-page'],
+            [USER, '/chat', 'chat-page'],
+        ] as const)('выбирает главную страницу по роли: %j', async (user, home, testId) => {
+            for (const path of ['/', '/login']) {
+                setAuth(user, 'authenticated')
+                const view = renderAt(path)
+                expect(await screen.findByTestId(testId)).toBeInTheDocument()
+                expect(screen.getByTitle('На главную')).toHaveAttribute('href', home)
+                view.unmount()
+            }
+        })
+
+        it('возвращает суперадминистратора с каталога пользователей на обзор по логотипу', async () => {
+            setAuth(SUPER_ADMIN, 'authenticated')
+            renderAt('/admin/users')
+            expect(await screen.findByTestId('admin-users-page')).toBeInTheDocument()
+            fireEvent.click(screen.getByTitle('На главную'))
+            expect(await screen.findByTestId('admin-dashboard-page')).toBeInTheDocument()
+        })
 
         it(
             'включает chat-specific классы только для рабочего чата',
@@ -390,6 +542,7 @@ describe(
         )
 
         it.each([
+            ['/admin/dashboard', 'admin-dashboard-page'],
             [
                 '/admin/users',
                 'admin-users-page',
@@ -398,6 +551,7 @@ describe(
                 '/admin/organizations',
                 'admin-organizations-page',
             ],
+            ['/admin/retention', 'admin-retention-page'],
             [
                 '/admin/audit',
                 'admin-audit-page',
@@ -431,6 +585,71 @@ describe(
                 ).toBeInTheDocument()
             },
         )
+
+        it.each([ADMIN, USER])('запрещает доступ к Dashboard без SUPER_ADMIN: $email', async user => {
+            setAuth(user, 'authenticated')
+            renderAt('/admin/dashboard')
+            expect(await screen.findByRole('alert')).toHaveTextContent('Недостаточно прав')
+            expect(screen.queryByTestId('admin-dashboard-page')).not.toBeInTheDocument()
+            expect(screen.queryByRole('link', {name: 'Обзор'})).not.toBeInTheDocument()
+        })
+        it.each([ADMIN, USER])('запрещает управление удалением без SUPER_ADMIN: $email', async user => {
+            setAuth(user, 'authenticated')
+            renderAt('/admin/retention')
+            expect(await screen.findByRole('alert')).toHaveTextContent('Недостаточно прав')
+            expect(screen.queryByTestId('admin-retention-page')).not.toBeInTheDocument()
+        })
+
+        it.each([
+            [USER, '/admin/dashboard'],
+            [USER, '/admin/erasure/requests/123'],
+            [ADMIN, '/admin/organizations'],
+            [ADMIN, '/admin/retention'],
+            [ADMIN, '/admin/erasure/registry'],
+            [SUPER_ADMIN, '/chat'],
+            [SUPER_ADMIN, '/knowledge/123'],
+            [SUPER_ADMIN, '/admin/erasure/intake'],
+            [SUPER_ADMIN, '/my/erasure-requests/123'],
+        ] as const)('does not start notification polling on forbidden route %#', async (user, path) => {
+            setAuth(user, 'authenticated')
+            renderAt(path)
+            expect(await screen.findByRole('alert')).toHaveTextContent('Недостаточно прав')
+            expect(notificationHook).toHaveBeenCalled()
+            expect(notificationHook.mock.calls.every(([scope]) => scope === null)).toBe(true)
+        })
+
+        it.each([
+            [USER, '/chat', 'chat-page'],
+            [ADMIN, '/admin/users', 'admin-users-page'],
+            [SUPER_ADMIN, '/admin/dashboard', 'admin-dashboard-page'],
+        ] as const)('keeps notifications on allowed routes %#', async (user, path, testId) => {
+            setAuth(user, 'authenticated')
+            renderAt(path)
+            await screen.findByTestId(testId)
+            expect(notificationHook).toHaveBeenLastCalledWith(
+                JSON.stringify([user.id, user.organizationId, [...user.roles].sort()]),
+                expect.any(String),
+            )
+        })
+
+        it('clears notification scope immediately when the current route becomes forbidden', async () => {
+            setAuth(SUPER_ADMIN, 'authenticated')
+            const view = renderAt('/admin/dashboard')
+            await screen.findByTestId('admin-dashboard-page')
+            expect(notificationHook).toHaveBeenLastCalledWith(expect.any(String), expect.any(String))
+            setAuth(ADMIN, 'authenticated')
+            view.rerender(<MemoryRouter initialEntries={['/admin/dashboard']}><App/></MemoryRouter>)
+            expect(await screen.findByRole('alert')).toHaveTextContent('Недостаточно прав')
+            expect(notificationHook).toHaveBeenLastCalledWith(null, expect.any(String))
+        })
+
+        it('does not poll on an authenticated unknown route', async () => {
+            setAuth(USER, 'authenticated')
+            renderAt('/unknown-route')
+            expect(await screen.findByRole('alert')).toHaveTextContent('Страница не найдена')
+            expect(notificationHook).toHaveBeenCalled()
+            expect(notificationHook.mock.calls.every(([scope]) => scope === null)).toBe(true)
+        })
 
         it(
             'показывает 404 state для неизвестного route',
@@ -562,7 +781,7 @@ describe(
                             '/admin/organizations',
                         ]}
                     >
-                        <App />
+                        <App/>
                     </MemoryRouter>,
                 )
 
@@ -606,7 +825,7 @@ describe(
                             '/admin/audit',
                         ]}
                     >
-                        <App />
+                        <App/>
                     </MemoryRouter>,
                 )
 
@@ -622,7 +841,31 @@ describe(
                         'admin-audit-page',
                     ),
                 ).not.toBeInTheDocument()
+                expect(notificationHook).toHaveBeenLastCalledWith(null, expect.any(String))
+                expect(screen.queryByRole('navigation', {name: 'Основная навигация'})).not.toBeInTheDocument()
             },
         )
+
+        it('skip link references the actual main content element', async () => {
+            setAuth(ADMIN, 'authenticated')
+            renderAt('/chat')
+
+            await screen.findByTestId('chat-page')
+
+            const link = screen.getByRole('link', {
+                name: 'Перейти к содержимому',
+            })
+
+            const main = screen.getByRole('main')
+
+            expect(main).toHaveAttribute('id', 'main-content')
+            expect(main).toHaveAttribute('tabindex', '-1')
+            expect(link).toHaveAttribute('href', '#main-content')
+            expect(document.getElementById('main-content')).toBe(main)
+
+            fireEvent.click(link)
+
+            expect(main).toHaveFocus()
+        })
     },
 )

@@ -3,10 +3,10 @@
 // frontend/src/features/chat/controller/operations/chatDirectoryActions.ts
 // Операции контроллера чата. Исходные сценарии сохранены.
 // ============================================================
-import { archiveChat, createChat, getChatById, getChats, updateChatTitle } from '../../api/chatApi'
+import { archiveChat, assignAutomaticChatTitle, createChat, getChatById, getChats, updateChatTitle } from '../../api/chatApi'
 import type { Chat } from '../../api/chatApi'
 import { getApiErrorMessage } from '../../../../shared/api/http'
-import { mergeChats } from '../../lib/chatPage.helpers'
+import { isSafeToPrepareNewRequest, mergeChats } from '../../lib/chatPage.helpers'
 import type { ChatControllerDependencies } from './chatControllerTypes'
 
 export function createDirectoryActions(deps: Pick<ChatControllerDependencies,
@@ -31,6 +31,8 @@ export function createDirectoryActions(deps: Pick<ChatControllerDependencies,
     | 'setActiveChat'
     | 'setDrafts'
     | 'setListError'
+    | 'setChatError'
+    | 'setSendError'
     | 'setMoreChatsLoading'
     | 'setChatCreating'
     | 'setChatToArchive'
@@ -44,6 +46,9 @@ export function createDirectoryActions(deps: Pick<ChatControllerDependencies,
     | 'setHistoryHasNext'
     | 'chatPageSize'
     | 'openChat'
+    | 'finishPendingTurn'
+    | 'sendInFlightRef'
+    | 'reconciliationControllersRef'
 >) {
     const { chats, activeChat, pendingTurns, moreChatsLoading, chatToRename, renamingChatId, archivingChatId, chatPage, chatHasNext, openRequestSequenceRef, historyRequestSequenceRef, openControllerRef, historyControllerRef, createInFlightRef, pendingTurnsRef, activeChatRef, scrollIntentRef, setChats, setActiveChat, setDrafts, setListError, setMoreChatsLoading, setChatCreating, setChatToArchive, setRenamingChatId, setArchivingChatId, setOpeningChatId, setHistoryLoading, setChatPage, setChatHasNext, setHistoryPage, setHistoryHasNext, chatPageSize, openChat } = deps
 
@@ -86,15 +91,23 @@ export function createDirectoryActions(deps: Pick<ChatControllerDependencies,
         }
     }
 
-    async function renameChatById(chatId: string, title: string): Promise<void> {
-        const updated = await updateChatTitle(chatId, title)
-        setChats((items) => items.map((item) =>
-            item.id === chatId ? updated : item,
+    // Один путь синхронизации заголовка. Остальные поля чата не перетираем:
+    // ответ API на изменение метаданных не является полной историей сообщений.
+    function applyServerTitle(chatId: string, title: string, updatedAt: string, onlyDefault = false) {
+        const shouldUpdate = (item: Chat) =>
+            item.id === chatId && (!onlyDefault || item.title === 'Новый чат')
+        setChats(items => items.map(item =>
+            shouldUpdate(item) ? { ...item, title, updatedAt } : item,
         ))
-        setActiveChat((current) => current?.id === chatId
-            ? { ...current, ...updated }
+        setActiveChat(current => current && shouldUpdate(current)
+            ? { ...current, title, updatedAt }
             : current,
         )
+    }
+
+    async function renameChatById(chatId: string, title: string): Promise<void> {
+        const updated = await updateChatTitle(chatId, title)
+        applyServerTitle(chatId, updated.title, updated.updatedAt)
     }
 
     async function handleRenameChat(title: string): Promise<void> {
@@ -118,39 +131,40 @@ export function createDirectoryActions(deps: Pick<ChatControllerDependencies,
         }
     }
 
-    async function refreshChatTitle(chatId: string): Promise<void> {
-        // Источник названия чата — backend; клиент не должен придумывать его сам.
+    async function ensureAutomaticChatTitle(chatId: string, content: string): Promise<void> {
+        // Мутация только метаданных; сбой не инициирует повтор AI-вызова.
         try {
-            const serverChat = await getChatById(chatId)
-            setChats((items) => items.map((item) =>
-                item.id === chatId
-                    ? { ...item, title: serverChat.title, updatedAt: serverChat.updatedAt }
-                    : item,
-            ))
-            setActiveChat((current) => current?.id === chatId
-                ? { ...current, title: serverChat.title, updatedAt: serverChat.updatedAt }
-                : current,
-            )
+            const updated = await assignAutomaticChatTitle(chatId, content)
+            applyServerTitle(chatId, updated.title, updated.updatedAt, true)
         } catch {
-            // Сообщение уже сохранено сервером. Следующая загрузка исправит
-            // заголовок; повторная отправка сообщения ради UI запрещена.
+            // При следующей загрузке backend снова станет источником истины.
         }
     }
 
-    async function handleCreateChat() {
+    async function refreshChatTitle(chatId: string): Promise<void> {
+        try {
+            const updated = await getChatById(chatId)
+            applyServerTitle(chatId, updated.title, updated.updatedAt)
+        } catch {
+            // Отказ чтения заголовка не меняет статус отправленного сообщения.
+        }
+    }
+
+    async function handleCreateChat(title?: string): Promise<string | null> {
         if (createInFlightRef.current) {
-            return
+            return 'Чат уже создаётся.'
         }
 
         // Не плодим пустые "Новый чат" при повторных кликах после
         // сетевых/контрактных ошибок. Пользователь уже находится в пустом чате.
         if (
-            activeChat
+            !title
+            && activeChat
             && activeChat.title === 'Новый чат'
             && activeChat.messages.length === 0
             && !pendingTurns[activeChat.id]
         ) {
-            return
+            return null
         }
 
         createInFlightRef.current = true
@@ -167,7 +181,9 @@ export function createDirectoryActions(deps: Pick<ChatControllerDependencies,
         setHistoryLoading(false)
 
         try {
-            const chat = await createChat()
+            const chat = title ? await createChat(title) : await createChat()
+            deps.setChatError('')
+            deps.setSendError('')
 
             setChats((current) => [
                 chat,
@@ -186,13 +202,9 @@ export function createDirectoryActions(deps: Pick<ChatControllerDependencies,
             })
             setHistoryPage(1)
             setHistoryHasNext(false)
+            return null
         } catch (error) {
-            setListError(
-                getApiErrorMessage(
-                    error,
-                    'Не удалось создать чат.',
-                ),
-            )
+            return getApiErrorMessage(error, 'Не удалось создать чат.')
         } finally {
             createInFlightRef.current = false
             setChatCreating(false)
@@ -200,8 +212,12 @@ export function createDirectoryActions(deps: Pick<ChatControllerDependencies,
     }
 
     async function handleArchiveChat(chat: Chat) {
-        if (archivingChatId || pendingTurnsRef.current[chat.id]) {
-            return
+        const pending = pendingTurnsRef.current[chat.id]
+        if (archivingChatId || deps.sendInFlightRef.current.has(chat.id)
+            || deps.reconciliationControllersRef.current.has(chat.id)
+            || (pending && !isSafeToPrepareNewRequest(pending.status))) {
+            setListError('Архивирование недоступно, пока не определён результат запроса.')
+            return false
         }
 
         setArchivingChatId(chat.id)
@@ -209,6 +225,7 @@ export function createDirectoryActions(deps: Pick<ChatControllerDependencies,
 
         try {
             await archiveChat(chat.id)
+            if (pending) deps.finishPendingTurn(chat.id)
 
             const remainingChats = chats.filter(
                 (item) => item.id !== chat.id,
@@ -223,12 +240,15 @@ export function createDirectoryActions(deps: Pick<ChatControllerDependencies,
             setChatToArchive(null)
 
             if (activeChatRef.current?.id === chat.id) {
+                deps.setChatError('')
+                deps.setSendError('')
                 setActiveChat(null)
                 const nextChat = remainingChats[0]
                 if (nextChat) {
                     await openChat(nextChat.id)
                 }
             }
+            return true
         } catch (error) {
             setListError(
                 getApiErrorMessage(
@@ -242,5 +262,5 @@ export function createDirectoryActions(deps: Pick<ChatControllerDependencies,
         }
     }
 
-    return { loadMoreChats, handleRenameChat, handleRenameFromHistory, refreshChatTitle, handleCreateChat, handleArchiveChat }
+    return { loadMoreChats, handleRenameChat, handleRenameFromHistory, refreshChatTitle, ensureAutomaticChatTitle, handleCreateChat, handleArchiveChat }
 }

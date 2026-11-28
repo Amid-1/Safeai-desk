@@ -1,229 +1,325 @@
 // frontend/src/features/usage/ui/AdminUsageWorkspace.tsx
-// Представление отчёта: отображение строк, экспорт, графики и рабочая область.
-
-import ResizableScrollRegion
-    from '../../../shared/ui/ResizableScrollRegion'
-import {
-    AdminUsageControls,
-} from './AdminUsageControls'
-import {
-    UsageReportFooter,
-    UsageRows,
-} from './UsageReportView'
-import {
-    useAdminUsageReport,
-} from '../controller/useAdminUsageReport'
-import { useState } from 'react'
-import { useUsageWorkspace } from '../controller/useUsageWorkspace'
-import type { UsageDailySummary } from '../api/usageApi'
+import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
+import { UsageTableViewport } from './UsageTableViewport'
+import { AdminUsageControls } from './AdminUsageControls'
+import { UsageReportFooter, UsageRows } from './UsageReportView'
+import { useAdminUsageReport } from '../controller/useAdminUsageReport'
+import { reportTitle, reportDescription } from '../lib/adminUsage.helpers'
+import type { UsageDailySummary, UsageOrganizationSummary } from '../api/usageApi'
 import { UsageKpis } from './UsageKpis'
-import { UsageDailyChart } from './UsageDailyChart'
+import { BUDGET_CATEGORIES } from '../lib/usageBudgetStatus'
+import { UsageDailyChart, type UsageDailyMetric } from './UsageDailyChart'
 import { UsageBreakdownChart } from './UsageBreakdownChart'
 import { downloadUsageCsv } from './usageCsv'
+import { EmptyState, ErrorState, LoadingState } from '../../../shared/ui/StateBlock'
+import { trimDecimal } from '../lib/adminUsagePresentation'
+import { UsageOrganizationRows } from './UsageOrganizationRows'
+import { UsagePhysicalReportPanel } from './UsagePhysicalReportPanel'
+import { UsageProviderPanel } from './UsageProviderPanel'
 
 export function AdminUsageWorkspace() {
     const report = useAdminUsageReport()
+    const [providerSelected, setProviderSelected] = useState(false)
+    const [view, setView] = useState<'table' | 'chart'>('table')
+    const [filtersOpen, setFiltersOpen] = useState(false)
+    const [expanded, setExpanded] = useState(false)
+    const [dailyMetric, setDailyMetric] = useState<UsageDailyMetric>('tokens')
     const [exportError, setExportError] = useState('')
-    const showReportRows =
-        !report.loading
-        && !report.error
-        && report.rows.length > 0
+    const [limit, setLimit] = useState(12)
+    const summary = useRef<HTMLDivElement>(null)
+    const summaryContent = useRef<HTMLDivElement>(null)
+    const workspace = useRef<HTMLDivElement>(null)
+    const grip = useRef<HTMLDivElement>(null)
+    const footer = useRef<HTMLElement>(null)
+    const drag = useRef<{ pointerId: number; y: number; height: number } | null>(null)
+    const [summaryHeight, setSummaryHeight] = useState(0)
+    const [maximumSummaryHeight, setMaximumSummaryHeight] = useState(0)
+    const [desktop, setDesktop] = useState(true)
+    // 0 = report expanded to tabs, 1 = natural layout, 2 = report folded to footer.
+    const [summaryFraction, setSummaryFraction] = useState(1)
+    const summaryHidden = summaryFraction === 0
+    useLayoutEffect(() => {
+        const node = summaryContent.current
+        const page = workspace.current
+        const controls = page?.querySelector<HTMLElement>('.usage-page__upper')
+        const handle = grip.current
+        const bottom = footer.current
+        const upper = controls?.parentElement
+        const panel = handle?.parentElement
+        if (!node || !page || !controls || !handle || !bottom || !upper || !panel) return
+        const measure = () => {
+            const isDesktop = window.innerWidth > 900 && window.innerHeight > 620
+            setDesktop(isDesktop)
+            const gap = Number.parseFloat(getComputedStyle(page).rowGap) || 0
+            // Use the normal gap even while the summary is hidden. Budget
+            // drill-down is fixed chrome too; it must not consume the grip/footer.
+            const fixed = [...upper.children].filter((item): item is HTMLElement =>
+                item instanceof HTMLElement && item !== summary.current)
+            const fixedHeight = fixed.reduce((total, item) => {
+                const style = getComputedStyle(item)
+                return total + item.offsetHeight + (Number.parseFloat(style.marginTop) || 0)
+                    + (Number.parseFloat(style.marginBottom) || 0)
+            }, 0)
+            const available = page.clientHeight - fixedHeight - gap * (1 + fixed.length)
+            const maximum = Math.max(0, available - handle.offsetHeight - bottom.offsetHeight - 2)
+            setMaximumSummaryHeight(maximum)
+            const floor = Number.parseFloat(getComputedStyle(panel).getPropertyValue('--usage-report-floor')) || 0
+            // The content can be several screens tall after reconciliation.
+            // The grip operates on available viewport height, not that full content.
+            const naturalLimit = Math.max(0, available - Math.min(floor, page.clientHeight * .6))
+            // With no resolved CSS floor (for example before styles are loaded),
+            // retain the intrinsic height instead of collapsing the resize basis to zero.
+            setSummaryHeight(isDesktop && !filtersOpen && floor > 0
+                ? Math.min(node.offsetHeight, naturalLimit) : node.offsetHeight)
+        }
+        measure()
+        const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+        for (const target of [node, page, controls, handle, bottom, panel, ...upper.children]) observer?.observe(target)
+        window.addEventListener('resize', measure)
+        return () => { observer?.disconnect(); window.removeEventListener('resize', measure) }
+    }, [summaryHidden, filtersOpen, view, providerSelected, report.budgetStatus])
+    function resizeSummary(height: number) {
+        if (summaryHeight <= 0) return
+        if (filtersOpen || height <= summaryHeight || maximumSummaryHeight <= summaryHeight) {
+            setSummaryFraction(Math.min(1, Math.max(0, height / summaryHeight)))
+        } else {
+            setSummaryFraction(height >= maximumSummaryHeight - 2 ? 2
+                : 1 + (height - summaryHeight) / (maximumSummaryHeight - summaryHeight))
+        }
+    }
+    const lowered = desktop && !filtersOpen && summaryFraction > 1
+    const folded = lowered && summaryFraction === 2
+    const displayedSummaryHeight = lowered
+        ? summaryHeight + (maximumSummaryHeight - summaryHeight) * (summaryFraction - 1)
+        : summaryHeight * Math.min(1, summaryFraction)
+    const expansion = Math.round((1 - summaryFraction) * 100)
+    const hasRows = !report.loading && !report.error && report.rows.length > 0
+    const hasMore = report.hasPrevious || report.hasNext
+    const paged = report.tab === 'summary' || report.tab === 'users' || report.tab === 'organizations'
+    const separateTotals = report.tab !== 'daily'
+    const chartExpanded = view === 'chart' && expanded && hasRows
+    const dataKey = JSON.stringify([
+        report.tab, report.page, report.appliedDateFrom, report.appliedDateTo,
+        report.appliedModel, report.appliedUserId, report.appliedOrganizationId, report.budgetStatus, view,
+    ])
 
-    const showEmptyReport =
-        !report.loading
-        && !report.error
-        && report.rows.length === 0
-
-    const {
-        focusedResults, pageRef, resultsRef, showLowerRequest, showUpperRequest,
-        fittedResultsHeight, onWorkspacePointerDownCapture, onWorkspaceKeyDownCapture,
-        expandResults, restoreFilters,
-    } = useUsageWorkspace({ showReportRows, tab: report.tab, rowsLength: report.rows.length })
-
-    const viewportResetKey = [
-        report.tab,
-        report.page,
-        report.appliedDateFrom,
-        report.appliedDateTo,
-        report.appliedModel,
-        report.scopeLabel,
-    ].join('|')
+    function exportCsv() {
+        try {
+            downloadUsageCsv(report.tab, report.rows, 'displayed', report.csvContext)
+            setExportError('')
+        } catch {
+            setExportError('Не удалось создать CSV. Попробуйте повторно.')
+        }
+    }
 
     return (
-        <div
-            ref={pageRef}
-            onPointerDownCapture={onWorkspacePointerDownCapture}
-            onKeyDownCapture={onWorkspaceKeyDownCapture}
-            className={focusedResults
-                ? 'page usage-page usage-page--focused'
-                : 'page usage-page usage-page--flow'}
-        >
-            <ResizableScrollRegion
-                storageKey="safeai:usage-report-height:v4"
-                label="область результатов использования AI"
-                showLowerRequest={showLowerRequest}
-                showUpperRequest={showUpperRequest}
-                viewportResetKey={viewportResetKey}
-                upper={(
-                    <AdminUsageControls
-                        tab={report.tab}
-                        isSuperAdmin={
-                            report.isSuperAdmin
-                        }
-                        scopeLabel={
-                            report.scopeLabel
-                        }
-                        draftDateFrom={
-                            report.draftDateFrom
-                        }
-                        draftDateTo={
-                            report.draftDateTo
-                        }
-                        draftModel={
-                            report.draftModel
-                        }
-                        draftOrganizationId={
-                            report.draftOrganizationId
-                        }
-                        draftOrganizationName={
-                            report.draftOrganizationName
-                        }
-                        organizationOptions={
-                            report.organizationOptions
-                        }
-                        organizationSearchPending={
-                            report.organizationSearchPending
-                        }
-                        organizationSearchError={
-                            report.organizationSearchError
-                        }
-                        modelPickerOptions={
-                            report.modelPickerOptions
-                        }
-                        modelOptionsLoading={
-                            report.modelOptionsLoading
-                        }
-                        modelOptionsError={
-                            report.modelOptionsError
-                        }
-                        filterError={
-                            report.filterError
-                        }
-                        filtersDirty={report.filtersDirty}
-                        appliedModel={report.appliedModel}
-                        appliedDateFrom={report.appliedDateFrom}
-                        appliedDateTo={report.appliedDateTo}
-                        loading={report.loading}
-                        error={report.error}
-                        showEmptyReport={
-                            showEmptyReport
-                        }
-                        onDateFromChange={
-                            report.changeDraftDateFrom
-                        }
-                        onDateToChange={
-                            report.changeDraftDateTo
-                        }
-                        onModelChange={
-                            report.changeDraftModel
-                        }
-                        onOrganizationQueryChange={
-                            report.setOrganizationQuery
-                        }
-                        onOrganizationChange={
-                            report.changeDraftOrganization
-                        }
-                        onApplyFilters={
-                            report.applyFilters
-                        }
-                        onResetFilters={
-                            report.resetFilters
-                        }
-                        onSelectTab={
-                            report.selectTab
-                        }
-                        onReload={report.reload}
-                        canExpandResults={showReportRows}
-                        onExpandResults={expandResults}
-                        onRestoreFilters={restoreFilters}
-                    />
-                )}
-                autoFitHeight={fittedResultsHeight}
-                footer={
-                    showReportRows
-                        ? (
-                            <UsageReportFooter
-                                tab={report.tab}
-                                rowsCount={
-                                    report.rows.length
-                                }
-                                page={report.page}
-                                hasPrevious={
-                                    report.hasPrevious
-                                }
-                                hasNext={
-                                    report.hasNext
-                                }
-                                loading={
-                                    report.loading
-                                }
-                                onPageChange={
-                                    report.goToPage
-                                }
-                            />
-                        )
-                        : null
-                }
-                lowerClassName="card table-card usage-report-card"
-                viewportClassName="usage-table-scroll"
-                defaultHeight={370}
-                minHeight={170}
-                maxHeight={4096}
-                minUpperHeight={92}
-            >
-                {showReportRows ? (
-                    <div ref={resultsRef} className="usage-report-results">
-                        <div className="usage-report-insights">
-
-                                <UsageKpis rows={report.rows} tab={report.tab} />
-                                {report.tab === 'daily' ? (
-                                    <UsageDailyChart rows={report.rows as UsageDailySummary[]} />
-                                ) : (
-                                    <UsageBreakdownChart
-                                        tab={report.tab}
-                                        rows={report.rows}
-                                    />
-                                )}
-                                <div className="usage-export-toolbar">
-                                    <div>
-                                        <strong>Экспорт результатов</strong>
-                                        <small>
-                                            {report.tab === 'summary' || report.tab === 'users'
-                                                ? 'Только загруженная страница (до 50 строк).'
-                                                : 'Все строки текущего ограниченного отчета.'}
-                                            {report.filtersDirty && ' Не применяется измененный черновик фильтров.'}
-                                        </small>
-                                    </div>
-                                    <button type="button" className="secondary-button" onClick={() => {
-                                        try {
-                                            downloadUsageCsv(report.tab, report.rows)
-                                            setExportError('')
-                                        } catch {
-                                            setExportError('Не удалось создать CSV. Попробуйте повторно.')
-                                        }
-                                    }}>
-                                        Скачать CSV
-                                    </button>
-                                </div>
-                                {exportError && <p role="alert" className="usage-export-error">{exportError}</p>}
-                        </div>
-                        <UsageRows
-                            tab={report.tab}
-                            rows={report.rows}
-                        />
+        <div ref={workspace} className={`page usage-page${chartExpanded ? ' usage-page--expanded' : ''}${summaryFraction < 1 ? ' usage-page--resized' : ''}${summaryFraction === 0 ? ' usage-page--summary-hidden' : ''}${lowered ? ' usage-page--lowered' : ''}${folded ? ' usage-page--folded' : ''}`}
+            style={{ '--usage-summary-height': `${displayedSummaryHeight}px`, '--usage-released-height': `${summaryHeight * Math.max(0, 1 - summaryFraction)}px` } as CSSProperties}
+            onKeyDown={event => {
+                if (event.key === 'Escape' && chartExpanded && !event.defaultPrevented) setExpanded(false)
+            }}>
+            <div className="usage-workspace-upper">
+            <AdminUsageControls
+                tab={report.tab} isSuperAdmin={report.isSuperAdmin} scopeLabel={report.scopeLabel}
+                draftDateFrom={report.draftDateFrom} draftDateTo={report.draftDateTo}
+                draftModel={report.draftModel} draftOrganizationId={report.draftOrganizationId}
+                draftOrganizationName={report.draftOrganizationName}
+                organizationOptions={report.organizationOptions}
+                organizationSearchPending={report.organizationSearchPending}
+                organizationSearchError={report.organizationSearchError}
+                modelPickerOptions={report.modelPickerOptions}
+                modelOptionsLoading={report.modelOptionsLoading} modelOptionsError={report.modelOptionsError}
+                filterError={report.filterError} filtersDirty={report.filtersDirty}
+                appliedModel={report.appliedModel} appliedDateFrom={report.appliedDateFrom}
+                appliedDateTo={report.appliedDateTo} loading={report.loading}
+                appliedUserId={report.appliedUserId} appliedUserLabel={report.appliedUserLabel}
+                appliedOrganizationId={report.appliedOrganizationId} onClearFilter={report.clearFilter}
+                filtersOpen={filtersOpen}
+                onToggleFilters={() => { if (summaryFraction > 1) setSummaryFraction(1); setFiltersOpen(open => !open) }}
+                onDateFromChange={report.changeDraftDateFrom}
+                onDateToChange={report.changeDraftDateTo}
+                onModelChange={report.changeDraftModel}
+                onOrganizationQueryChange={report.setOrganizationQuery}
+                onOrganizationChange={report.changeDraftOrganization}
+                onApplyFilters={() => { setExportError(''); report.applyFilters() }}
+                onResetFilters={() => { setExportError(''); report.resetFilters() }}
+                providerSelected={providerSelected}
+                onSelectProviders={() => { setProviderSelected(true); setExpanded(false); setSummaryFraction(0) }}
+                onSelectTab={tab => {
+                    if (providerSelected) setSummaryFraction(1)
+                    setProviderSelected(false); setExportError(''); report.selectTab(tab)
+                }}
+            />
+            {report.budgetStatus && <section className="usage-budget-drilldown" aria-label="Фильтр бюджета">
+                <div><strong>Бюджет: {BUDGET_CATEGORIES.find(item => item.status === report.budgetStatus)?.label}</strong>
+                    <p>Текущий календарный месяц UTC, независимо от периода отчёта. Общие KPI скрыты: они не учитывают этот фильтр.</p></div>
+                <button type="button" className="secondary-button" onClick={report.clearBudgetStatus}>Снять фильтр бюджета</button>
+            </section>}
+            <div className="usage-summary-viewport" id="usage-summary-viewport" ref={summary}
+                role="region" aria-label="Итоги и сверка расходов" tabIndex={summaryHidden && desktop ? -1 : 0}>
+            <div className="usage-summary-content" ref={summaryContent}>
+            {!report.budgetStatus && <UsageKpis rows={separateTotals ? report.totals.rows : hasRows ? report.rows : []} tab={report.tab}
+                hasMore={false} appliedModel={report.appliedModel}
+                dailyTotals
+                status={separateTotals && report.totals.loading ? 'Загрузка общих итогов…'
+                    : separateTotals && report.totals.error ? 'Общие итоги недоступны' : undefined} />}
+            <UsagePhysicalReportPanel
+                key={JSON.stringify([report.reportIdentity, report.isSuperAdmin, report.csvContext.organizationId,
+                    report.appliedDateFrom, report.appliedDateTo, report.appliedUserId, report.appliedModel,
+                    report.budgetStatus, report.reloadToken, report.filtersDirty])}
+                dateFrom={report.appliedDateFrom} dateTo={report.appliedDateTo}
+                organizationId={report.csvContext.organizationId}
+                userId={report.reportIdentity} superAdmin={report.isSuperAdmin}
+                scopedFilters={Boolean(report.appliedModel || report.appliedUserId || report.budgetStatus)}
+                filtersDirty={report.filtersDirty}
+            />
+            {report.budget.scoped && <section className="usage-filter-summary" aria-label="Бюджет организации">
+                <strong>Месячный бюджет организации: </strong>
+                {report.budget.loading ? 'Загрузка…' : report.budget.error || !report.budget.policy ? <>Недоступен{' '}
+                    {report.budget.errorMessage && <span role="status">{report.budget.errorMessage}{' '}</span>}
+                    <button type="button" className="secondary-button" onClick={report.reload}>Повторить</button></>
+                    : report.budget.policy.monthlyBudgetUsd === null ? 'Не задан'
+                        : `${trimDecimal(report.budget.policy.monthlyBudgetUsd)} USD`}
+                {report.budget.policy && <> · {report.budget.policy.policyEnabled ? 'Правила включены' : 'Правила отключены'} ·
+                    {' '}версия {report.budget.policy.policyVersion}. Календарный месяц UTC, независимо от периода отчёта.
+                    <div>Известные затраты: {trimDecimal(report.budget.policy.knownActualUsd)} USD · Резерв: {trimDecimal(report.budget.policy.reservedUsd)} USD ·
+                        {' '}Остаток: {report.budget.policy.remainingUsd === null
+                            ? report.budget.policy.status === 'UNKNOWN' || report.budget.policy.status === 'EXCEEDED_LOWER_BOUND'
+                                ? 'Неизвестен — есть обязательства без цены' : 'Не рассчитывается'
+                            : `${trimDecimal(report.budget.policy.remainingUsd)} USD`}
+                        {['EXCEEDED', 'EXCEEDED_LOWER_BOUND'].includes(report.budget.policy.status) && ' · Бюджет превышен'}
                     </div>
-                ) : null}
-            </ResizableScrollRegion>
+                    <small>На {report.budget.policy.asOf} · контроль: {report.budget.policy.enforcement === 'HARD' ? 'жёсткий' : 'мягкий'}. Остаток учитывает резервы, а не только списания.</small>
+                </>}
+            </section>}
+            </div>
+            </div>
+            </div>
+            <section id="usage-results-panel" className={`usage-results-panel usage-results-panel--${view}`} aria-labelledby="usage-report-title">
+                <div ref={grip} className="usage-report-resizer" role="separator" tabIndex={0}
+                    aria-label="Высота области отчёта" aria-orientation="horizontal" aria-controls="usage-results-panel"
+                    aria-valuemin={-100} aria-valuemax={100} aria-valuenow={expansion}
+                    aria-valuetext={folded ? 'Отчёт свёрнут до итогов' : expansion < 0 ? `Сворачивание отчёта: ${-expansion}%` : `Расширение отчёта: ${expansion}%`}
+                    title="Потяните до вкладок или итогов · двойной клик / Home — восстановить · End — расширить · PageDown — свернуть"
+                    onDoubleClick={() => setSummaryFraction(1)}
+                    onPointerDown={event => {
+                        if (event.button !== 0 || !summary.current || drag.current) return
+                        event.preventDefault()
+                        event.currentTarget.focus({ preventScroll: true })
+                        event.currentTarget.setPointerCapture(event.pointerId)
+                        drag.current = { pointerId: event.pointerId, y: event.clientY, height: summary.current.clientHeight }
+                    }}
+                    onPointerMove={event => {
+                        const start = drag.current
+                        if (start?.pointerId === event.pointerId) resizeSummary(start.height + event.clientY - start.y)
+                    }}
+                    onLostPointerCapture={() => { drag.current = null }}
+                    onPointerUp={() => { drag.current = null }}
+                    onPointerCancel={() => { drag.current = null }}
+                    onKeyDown={event => {
+                        if (event.key === 'Home' || event.key === 'End' || event.key === 'PageDown') {
+                            event.preventDefault()
+                            if (event.key !== 'PageDown' || !filtersOpen) setSummaryFraction(event.key === 'Home' ? 1 : event.key === 'End' ? 0 : 2)
+                        } else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+                            event.preventDefault()
+                            resizeSummary((summary.current?.clientHeight ?? 0) + (event.key === 'ArrowUp' ? -32 : 32))
+                        }
+                    }}>
+                    <span aria-hidden="true" />
+                </div>
+                <div className="usage-results-body" inert={folded}>
+                {providerSelected ? <UsageProviderPanel
+                    key={JSON.stringify([report.reportIdentity, report.csvContext, report.reloadToken])}
+                    scopeKey={JSON.stringify([report.reportIdentity, report.csvContext, report.reloadToken])}
+                    filter={{kind: 'providers', dateFrom: report.appliedDateFrom, dateTo: report.appliedDateTo,
+                        organizationId: report.csvContext.organizationId, model: report.appliedModel,
+                        userId: report.appliedUserId}}
+                    blocked={Boolean(report.budgetStatus) || !report.reportIdentity}
+                    dirty={report.filtersDirty} /> : <>
+                <div className="usage-results-toolbar">
+                    <div className="usage-results-heading">
+                        <h2 id="usage-report-title">{reportTitle(report.tab)}</h2>
+                        <p>{reportDescription(report.tab)}</p>
+                    </div>
+                    <div className="usage-results-actions">
+                        <div className="usage-view-switch" role="group" aria-label="Представление отчёта">
+                            <button type="button" aria-pressed={view === 'table'}
+                                onClick={() => { setView('table'); setExpanded(false) }}>Таблица</button>
+                            <button type="button" aria-pressed={view === 'chart'}
+                                onClick={() => { setView('chart'); if (paged && report.page > 0) report.goToPage(0) }}>График</button>
+                        </div>
+                        {report.tab !== 'daily' && (view === 'chart' || report.tab === 'organizations') &&
+                            <label className="usage-chart-select">Показатель / сортировка
+                                <select value={report.order} onChange={event => report.changeOrder(event.target.value as typeof report.order)}>
+                                    <option value="tokens">Входные / выходные токены</option>
+                                    <option value="total">Всего токенов</option>
+                                    <option value="cost">Известная стоимость, USD</option>
+                                    <option value="responses">Попытки ответа AI</option>
+                                    <option value="coverage">Полнота учёта</option>
+                                </select>
+                            </label>}
+                        {view === 'chart' && report.tab !== 'daily' && <label className="usage-chart-select">Строк на графике
+                            <select value={limit} onChange={event => setLimit(Number(event.target.value))}>
+                                <option value={12}>12</option><option value={10}>10</option>
+                                <option value={20}>20</option><option value={50}>50</option>
+                            </select>
+                        </label>}
+                        <button type="button" className="secondary-button" disabled={!hasRows}
+                            title={paged ? 'До 50 строк текущей страницы' : 'Все строки текущего ограниченного отчёта'}
+                            onClick={exportCsv}>{paged ? 'Скачать CSV страницы' : 'Скачать CSV отчёта'}</button>
+                        <button type="button" className="secondary-button"
+                            disabled={!hasRows || report.filtersDirty || report.exportPending}
+                            onClick={report.exportFiltered}>Подготовить CSV по фильтрам</button>
+                        {report.exportReady && <button type="button" className="secondary-button"
+                            disabled={report.filtersDirty || report.exportPending}
+                            onClick={report.downloadExport}>Скачать готовый CSV</button>}
+                        {view === 'chart' && <button type="button" className="secondary-button"
+                            disabled={!hasRows} title={chartExpanded ? 'Обычный размер графика' : 'Увеличить область графика'}
+                            aria-pressed={chartExpanded} onClick={() => setExpanded(value => !value)}>
+                            {chartExpanded ? 'Свернуть' : 'Развернуть'}
+                        </button>}
+                    </div>
+                </div>
+                {exportError && <p role="alert" className="usage-export-error">{exportError}</p>}
+                {report.filteredExportError && <p role="alert" className="usage-export-error">{report.filteredExportError}</p>}
+                {report.exportPending && <p role="status">Подготовка CSV на сервере…</p>}
+                <UsageTableViewport key={dataKey} table={view === 'table'} hasRows={hasRows} loading={report.loading}>
+                    {report.loading ? <LoadingState message="Загрузка отчёта…" />
+                        : report.error ? <ErrorState title="Ошибка загрузки" message={report.error}
+                            action={<button type="button" onClick={report.reload}>Повторить</button>} />
+                        : !hasRows ? <EmptyState title={report.budgetStatus ? 'Нет организаций в этой категории' : 'За этот период использования нет'}
+                            message={report.budgetStatus ? 'В текущем месяце нет организаций с таким состоянием бюджета. Можно снять фильтр бюджета.' : 'Данные появятся после завершённых обращений к AI. Выберите другой период.'} />
+                        : view === 'table' && report.tab === 'organizations' ? <UsageOrganizationRows
+                            rows={report.rows as UsageOrganizationSummary[]} onInspect={report.inspectRow}
+                            userId={report.reportIdentity} reloadToken={report.reloadToken}
+                            disabled={report.filtersDirty || report.loading} />
+                        : view === 'table' ? <UsageRows tab={report.tab} rows={report.rows}
+                            onInspectModel={report.inspectModel} onInspectDay={report.inspectDay}
+                            onInspectUser={report.inspectUser} appliedModel={report.appliedModel}
+                            appliedUserId={report.appliedUserId}
+                            relatedLinks={report.isSuperAdmin} organizationId={report.appliedOrganizationId}
+                            drilldownDisabled={report.filtersDirty || report.loading} />
+                        : report.tab === 'daily' ? <UsageDailyChart rows={report.rows as UsageDailySummary[]}
+                            dateFrom={report.appliedDateFrom} dateTo={report.appliedDateTo}
+                            metric={dailyMetric} onMetricChange={setDailyMetric}
+                            onInspectRange={report.filtersDirty ? undefined : report.inspectRange} />
+                        : <UsageBreakdownChart tab={report.tab} rows={report.rows} hasMore={hasMore}
+                            limit={limit} metric={report.order} globallyRanked={paged && report.page === 0} serverSorted={paged}
+                            onInspect={report.filtersDirty ? undefined : report.inspectRow}
+                            relatedLinks={report.isSuperAdmin} organizationId={report.appliedOrganizationId}
+                            reportIdentity={report.reportIdentity} reloadToken={report.reloadToken} />}
+                </UsageTableViewport>
+                </>}
+                </div>
+                <footer ref={footer} className="usage-results-footer">
+                    {providerSelected ? <span className="usage-footer-status">Физические вызовы провайдеров</span>
+                        : !report.loading && !report.error && (hasRows || hasMore)
+                        ? <UsageReportFooter tab={report.tab} rowsCount={report.rows.length}
+                            page={report.page} hasPrevious={report.hasPrevious} hasNext={report.hasNext}
+                            loading={report.loading} onPageChange={page => { setExportError(''); report.goToPage(page) }} />
+                        : <span className="usage-footer-status">{report.loading ? 'Загрузка…' : report.error ? 'Отчёт недоступен' : 'Нет записей'}</span>}
+                </footer>
+            </section>
         </div>
     )
 }

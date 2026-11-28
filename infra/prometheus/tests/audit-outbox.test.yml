@@ -1,0 +1,63 @@
+# SafeAI-Desk/infra/prometheus/tests/audit-outbox.test.yml
+rule_files:
+  - ../rules/safeai-audit-outbox.yml
+
+evaluation_interval: 1m
+tests:
+  - name: conflict-fires-without-delay
+    interval: 1m
+    input_series:
+      - series: 'safeai_audit_outbox_integrity_conflicts_total{instance="backend"}'
+        values: '0 0 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: SafeAiAuditEvidenceConflict
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: SafeAiAuditEvidenceConflict
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: safeai-backend
+            exp_annotations:
+              summary: "Conflicting audit evidence detected"
+              description: "Preserve both records; investigate the incident before attempting recovery."
+
+  - name: stale-heartbeat-per-replica
+    interval: 1m
+    input_series:
+      - series: 'safeai_audit_outbox_metrics_last_success_timestamp_seconds{instance="stale"}'
+        values: '0 60 120 120 120 120 120'
+      - series: 'safeai_audit_outbox_metrics_last_success_timestamp_seconds{instance="healthy"}'
+        values: '0+60x6'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: SafeAiAuditOutboxMetricsStale
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: SafeAiAuditOutboxMetricsStale
+        exp_alerts:
+          - exp_labels:
+              instance: stale
+              severity: critical
+              service: safeai-backend
+            exp_annotations:
+              summary: "Audit backlog heartbeat is stale"
+              description: "Check scheduler execution and database connectivity on the affected backend."
+
+  - name: missing-heartbeat
+    interval: 1m
+    input_series: []
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: SafeAiAuditOutboxHeartbeatMissing
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: SafeAiAuditOutboxHeartbeatMissing
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: safeai-backend
+            exp_annotations:
+              summary: "Audit backlog heartbeat is missing"
+              description: "Check backend version, metrics registration and scrape configuration."

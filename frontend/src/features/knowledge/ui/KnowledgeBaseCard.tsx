@@ -1,4 +1,5 @@
 // frontend/src/features/knowledge/ui/KnowledgeBaseCard.tsx
+import ErasureRequestLink from '../../../shared/ui/ErasureRequestLink'
 import type {
     KnowledgeBase,
 } from '../../../entities/knowledge/api/knowledgeApi'
@@ -7,11 +8,13 @@ import {
 } from '../../../shared/lib/format'
 import { Link } from 'react-router-dom'
 import { useEffect, useState } from 'react'
+import { KnowledgeBaseDeleteAction } from './KnowledgeBaseDeleteAction'
 import { getKnowledgeHealth } from '../../../entities/knowledge/api/knowledgeDocumentApi'
 
 type KnowledgeBaseCardProps = {
     knowledgeBase: KnowledgeBase
     canManage: boolean
+    onDeletionAccepted?: () => void
     onEdit:
         (knowledgeBase: KnowledgeBase) => void
     onMembers:
@@ -21,14 +24,17 @@ type KnowledgeBaseCardProps = {
 function KnowledgeBaseCard({
     knowledgeBase,
     canManage,
+    onDeletionAccepted,
     onEdit,
     onMembers,
 }: KnowledgeBaseCardProps) {
-    const [stats, setStats] = useState<{
-        total: number
-        ready: number
-        processing: number
+    const [observation, setObservation] = useState<{
+        key: string
+        stats: { total: number; ready: number; processing: number } | null
     } | null>(null)
+    const observationKey = `${knowledgeBase.id}:${knowledgeBase.version}`
+    const current = observation?.key === observationKey ? observation : null
+    const stats = current?.stats
 
     useEffect(() => {
         const controller = new AbortController()
@@ -37,19 +43,21 @@ function KnowledgeBaseCard({
             knowledgeBase.id,
             controller.signal,
         ).then((health) => {
-            setStats({
-                total: health.totalDocuments,
-                ready: health.searchableDocuments,
-                processing:
-                    health.pendingDocuments
-                    + health.processingDocuments,
+            if (controller.signal.aborted) return
+            setObservation({
+                key: observationKey,
+                stats: {
+                    total: health.totalDocuments,
+                    ready: health.searchableDocuments,
+                    processing: health.pendingDocuments + health.processingDocuments,
+                },
             })
         }).catch(() => {
-            if (!controller.signal.aborted) setStats(null)
+            if (!controller.signal.aborted) setObservation({ key: observationKey, stats: null })
         })
 
         return () => controller.abort()
-    }, [knowledgeBase.id])
+    }, [knowledgeBase.id, observationKey])
     return (
         <article
             className={
@@ -74,7 +82,9 @@ function KnowledgeBaseCard({
 
                     <span
                         className={
-                            knowledgeBase.enabled
+                            knowledgeBase.lifecycleState === 'DELETING'
+                                ? 'knowledge-status knowledge-status--disabled'
+                                : knowledgeBase.enabled
                                 ? (
                                     'knowledge-status '
                                     + 'knowledge-status--enabled'
@@ -86,9 +96,9 @@ function KnowledgeBaseCard({
                         }
                     >
                         {
-                            knowledgeBase.enabled
-                                ? 'Активна'
-                                : 'Отключена'
+                            knowledgeBase.lifecycleState === 'DELETING'
+                                ? 'Удаляется'
+                                : knowledgeBase.enabled ? 'Активна' : 'Отключена'
                         }
                     </span>
                 </div>
@@ -139,6 +149,9 @@ function KnowledgeBaseCard({
                 <div><dt>Готовы к поиску</dt><dd>{stats?.ready ?? '—'}</dd></div>
                 <div><dt>Обрабатываются</dt><dd>{stats?.processing ?? '—'}</dd></div>
             </dl>
+            {!stats && <p className="muted">
+                {current ? 'Сведения о документах пока недоступны.' : 'Загружаем сведения о документах…'}
+            </p>}
 
             {canManage && (
                 <div className="knowledge-card__actions">
@@ -166,6 +179,7 @@ function KnowledgeBaseCard({
 
                     <button
                         type="button"
+                        disabled={knowledgeBase.lifecycleState === 'DELETING'}
                         className="knowledge-card__management-action knowledge-card__management-action--settings"
                         title="Изменить настройки базы знаний"
                         onClick={() =>
@@ -185,8 +199,11 @@ function KnowledgeBaseCard({
                             →
                         </span>
                     </button>
+                    <KnowledgeBaseDeleteAction base={knowledgeBase}
+                        onAccepted={() => onDeletionAccepted?.()}/>
                 </div>
             )}
+            {canManage && <ErasureRequestLink target={{ type: 'KNOWLEDGE_BASE', id: knowledgeBase.id }} />}
             <Link className="knowledge-card__open" to={`/knowledge/${knowledgeBase.id}`}>Открыть базу</Link>
         </article>
     )

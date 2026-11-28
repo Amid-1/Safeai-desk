@@ -1,3 +1,4 @@
+// SafeAI-Desk/backend/src/test/java/ru/safeai/gateway/knowledge/rag/AnswerPassportServiceBoundaryTest.java
 package ru.safeai.gateway.knowledge.rag;
 
 import org.junit.jupiter.api.Tag;
@@ -64,6 +65,25 @@ class AnswerPassportServiceBoundaryTest {
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("modelRouteDecisionId");
         verifyNoInteractions(jdbc, audit);
+    }
+
+    @Test
+    void deletingBaseRejectsPassportBeforeAnyWrite() {
+        var prepared = preparation(KnowledgeMode.KNOWLEDGE_ONLY, 1);
+        var completion = new KnowledgeCitationValidator().validate(prepared, response("Fact [C1]"));
+
+        // Пустая выборка базы означает, что она больше не AVAILABLE.
+        assertThatThrownBy(() -> new AnswerPassportService(jdbc, audit).persist(
+                context(UUID.randomUUID(), KnowledgeMode.KNOWLEDGE_ONLY),
+                UUID.randomUUID(), "openai", completion, principal(), NOW))
+                .isInstanceOf(KnowledgeRagContextRevokedException.class);
+
+        org.mockito.Mockito.verify(jdbc).queryForList(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.eq(String.class),
+                org.mockito.ArgumentMatchers.eq(KB_ID),
+                org.mockito.ArgumentMatchers.eq(ORG_ID));
+        org.mockito.Mockito.verifyNoMoreInteractions(jdbc, audit);
     }
 
     @Test

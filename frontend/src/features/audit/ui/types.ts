@@ -2,16 +2,21 @@
 import {
     createRecentDateRange,
 } from '../../../shared/lib/date'
+import type { AuditCategory, AuditMetric } from '../api/adminAuditApi'
 
 export type DatePreset =
     | 'today'
     | 'yesterday'
     | 'last7Days'
     | 'last30Days'
+    | 'last90Days'
     | 'last365Days'
 
 export type AuditDraftFilter = {
     eventType: string
+    correlationId?: string
+    category?: AuditCategory
+    metric?: AuditMetric
 
     actorUserId: string
     actorEmail: string
@@ -51,6 +56,9 @@ export function auditDraftFiltersEqual(
 ): boolean {
     return first.eventType
         === second.eventType
+        && first.category === second.category
+        && first.metric === second.metric
+        && (first.correlationId ?? '') === (second.correlationId ?? '')
         && first.actorUserId
             === second.actorUserId
         && first.actorEmail

@@ -1,9 +1,12 @@
 // frontend/src/features/auth/ui/LoginPageView.tsx
 // Форма входа и состояния аутентификации; семантика и доступность сохранены.
 import { ErrorState, LoadingState } from '../../../shared/ui/StateBlock'
+import { useState } from 'react'
 import { useLoginPageController } from '../controller/useLoginPageController'
+import './LoginPageView.css'
 
 export function LoginPageView() {
+    const [passwordVisible, setPasswordVisible] = useState(false)
     const { authStatus, authError, emailInputRef, passwordInputRef, email, setEmail,
         password, setPassword, error, invalidField, loading, retryAfterSeconds,
         handleSubmit, retryLogout, preventSubmitOnRetry } = useLoginPageController()
@@ -54,12 +57,16 @@ export function LoginPageView() {
         || invalidField === 'credentials'
 
     return (
-        <div className="page narrow-page">
+        <div className="page narrow-page login-page">
             <h1>Вход в SafeAI Desk</h1>
+            <p className="login-page__hint">Войдите с рабочей учётной записью организации.</p>
 
             <form
                 className="card form"
-                onSubmit={handleSubmit}
+                onSubmit={event => {
+                    setPasswordVisible(false)
+                    void handleSubmit(event)
+                }}
                 noValidate
             >
                 <label htmlFor="login-email">
@@ -94,29 +101,27 @@ export function LoginPageView() {
                     Пароль
                 </label>
 
-                <input
-                    ref={passwordInputRef}
-                    id="login-password"
-                    type="password"
-                    value={password}
-                    onChange={(event) =>
-                        setPassword(
-                            event.target.value,
-                        )
-                    }
-                    autoComplete="current-password"
-                    maxLength={100}
-                    required
-                    disabled={loading}
-                    aria-invalid={
-                        passwordInvalid
-                    }
-                    aria-describedby={
-                        hasError
-                            ? 'login-error'
-                            : undefined
-                    }
-                />
+                <div className="login-page__password">
+                    <input
+                        ref={passwordInputRef}
+                        id="login-password"
+                        type={passwordVisible ? 'text' : 'password'}
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                        autoComplete="current-password"
+                        maxLength={100}
+                        required
+                        disabled={loading}
+                        aria-invalid={passwordInvalid}
+                        aria-describedby={hasError ? 'login-error' : undefined}
+                    />
+                    <button type="button" className="secondary-button"
+                        disabled={loading} aria-controls="login-password"
+                        aria-pressed={passwordVisible}
+                        onClick={() => setPasswordVisible(visible => !visible)}>
+                        {passwordVisible ? 'Скрыть пароль' : 'Показать пароль'}
+                    </button>
+                </div>
 
                 {hasError && (
                     <div
@@ -153,6 +158,7 @@ export function LoginPageView() {
                         ? 'Вход...'
                         : 'Войти'}
                 </button>
+                <p className="login-page__hint">Нет доступа? Обратитесь к администратору своей организации.</p>
             </form>
         </div>
     )

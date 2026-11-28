@@ -4,6 +4,7 @@ import org.springframework.jdbc.core.RowMapper;
 import ru.safeai.gateway.usage.dto.UsageCostSummary;
 import ru.safeai.gateway.usage.dto.UsageDailySummaryResponse;
 import ru.safeai.gateway.usage.dto.UsageModelSummaryResponse;
+import ru.safeai.gateway.usage.dto.UsageOrganizationSummaryResponse;
 import ru.safeai.gateway.usage.dto.UsageProblemModelResponse;
 import ru.safeai.gateway.usage.dto.UsageResponseSummary;
 import ru.safeai.gateway.usage.dto.UsageSummaryResponse;
@@ -61,6 +62,12 @@ final class UsageRowMapperSupport {
 
     static RowMapper<UsageModelSummaryResponse> modelSummaryMapper() {
         return MODEL_SUMMARY_MAPPER;
+    }
+
+    static RowMapper<UsageOrganizationSummaryResponse> organizationSummaryMapper() {
+        return rowMapper(rs -> new UsageOrganizationSummaryResponse(
+                rs.getObject("organization_id", UUID.class),
+                rs.getString("organization_name"), mapResponses(rs), mapUsage(rs), mapCost(rs)));
     }
 
     static RowMapper<UsageDailySummaryResponse> dailySummaryMapper() {

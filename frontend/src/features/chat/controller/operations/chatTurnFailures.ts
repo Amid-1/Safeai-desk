@@ -1,133 +1,119 @@
 // frontend/src/features/chat/controller/operations/chatTurnFailures.ts
-// ============================================================
-// frontend/src/features/chat/controller/operations/chatTurnFailures.ts
-// Операции контроллера чата. Исходные сценарии сохранены.
-// ============================================================
-import type { PendingTurn } from '../../lib/chatPage.helpers'
-import { ApiError, getApiErrorMessage } from '../../../../shared/api/http'
+import type { PendingTurn, PendingTurnStatus } from '../../lib/chatPage.helpers'
+import { ApiError, getApiErrorMessage, rateLimitRetrySeconds } from '../../../../shared/api/http'
 import type { ChatControllerDependencies } from './chatControllerTypes'
+import { withPendingState } from './chatPendingState'
+import { parsePublicModelRouteDenial } from '../../../../shared/lib/modelRouteDenial'
 
-export function createTurnFailureHandler(deps: Pick<ChatControllerDependencies,
-    | 'setSendError'
-    | 'setClock'
-    | 'reconcilePendingTurn'
-    | 'putPendingTurn'
->) {
-    const { setSendError, setClock, reconcilePendingTurn, putPendingTurn } = deps
+type FailureDeps = Pick<ChatControllerDependencies,
+    'setSendError' | 'setClock' | 'reconcilePendingTurn' | 'putPendingTurn' | 'activeChatRef'
+>
 
-    async function handleSendFailure(
-        pending: PendingTurn,
-        error: unknown,
-    ) {
-        if (error instanceof ApiError) {
-            switch (error.errorCode) {
-                case 'AI_QUOTA_EXCEEDED':
-                case 'CHAT_QUOTA_EXCEEDED':
-                case 'QUOTA_EXCEEDED':
-                    putPendingTurn({
-                        ...pending,
-                        status: 'QUOTA_BLOCKED',
-                        error: error.message
-                            || 'Квота AI исчерпана.',
-                        retryAfterUntil: null,
-                    })
-                    setSendError(
-                        error.message
-                        || 'Квота AI исчерпана.',
-                    )
-                    return
+type FailureDecision = {
+    status: PendingTurnStatus
+    pendingMessage: string | null
+    visibleMessage?: string
+    retryAfterUntil?: number
+    reconcile?: boolean
+}
 
-                case 'AI_OUTCOME_AMBIGUOUS':
-                case 'CHAT_PROCESSOR_FENCED':
-                    putPendingTurn({
-                        ...pending,
-                        status: 'AMBIGUOUS',
-                        error:
-                            'Результат AI-вызова неоднозначен. '
-                            + 'Повтор с новым clientRequestId запрещён.',
-                        retryAfterUntil: null,
-                    })
-                    setSendError(
-                        'Проверьте состояние исходной операции. '
-                        + 'Новый запрос автоматически не создаётся.',
-                    )
-                    return
+const QUOTA_CODES = new Set([
+    'AI_QUOTA_EXCEEDED', 'CHAT_QUOTA_EXCEEDED', 'QUOTA_EXCEEDED',
+])
+const AMBIGUOUS_CODES = new Set(['AI_OUTCOME_AMBIGUOUS', 'CHAT_PROCESSOR_FENCED'])
+const IN_PROGRESS_CODES = new Set(['CHAT_TURN_IN_PROGRESS', 'CHAT_BUSY'])
 
-                case 'CHAT_ACCESS_REVOKED_DURING_PROCESSING':
-                    putPendingTurn({
-                        ...pending,
-                        status: 'ACCESS_REVOKED',
-                        error:
-                            'Доступ был отозван во время обработки.',
-                        retryAfterUntil: null,
-                    })
-                    setSendError(
-                        'Доступ к чату или организации отозван.',
-                    )
-                    return
+/** Преобразует известный HTTP-отказ в действие, не инициируя новый AI-запрос. */
+function resolveFailure(error: ApiError, now: number): FailureDecision | null {
+    const code = error.errorCode ?? ''
+    const denied = parsePublicModelRouteDenial(error.status, code, error.message)
+    if (denied) {
+        const message = denied.message + ' Обратитесь к администратору. Номер решения: ' + denied.decisionId
+        return { status: 'FAILED', pendingMessage: message, visibleMessage: message }
+    }
+    if (QUOTA_CODES.has(code)) {
+        const message = 'Лимит использования AI исчерпан. Обратитесь к администратору.'
+        return { status: 'QUOTA_BLOCKED', pendingMessage: message, visibleMessage: message }
+    }
+    if (code === 'AI_EXECUTION_RECONCILIATION_REQUIRED') {
+        return {
+            status: 'RECONCILIATION_REQUIRED',
+            pendingMessage: 'Не удалось подтвердить результат. Проверьте состояние отправленного запроса.',
+            reconcile: true,
+        }
+    }
+    if (AMBIGUOUS_CODES.has(code)) {
+        return {
+            status: 'AMBIGUOUS',
+            pendingMessage: 'Не удалось подтвердить результат отправленного запроса.',
+            visibleMessage: 'Проверьте состояние запроса перед новой отправкой.',
+        }
+    }
+    if (code === 'CHAT_ACCESS_REVOKED_DURING_PROCESSING') {
+        return {
+            status: 'ACCESS_REVOKED',
+            pendingMessage: 'Доступ был отозван во время обработки.',
+            visibleMessage: 'Доступ к чату или организации отозван.',
+        }
+    }
+    if (code === 'IDEMPOTENCY_KEY_REUSED') {
+        return {
+            status: 'IDEMPOTENCY_CONFLICT',
+            pendingMessage: 'Не удалось повторить отправку: запрос связан с другим сообщением.',
+            visibleMessage: 'Скопируйте текст или закройте предупреждение без повторной отправки.',
+        }
+    }
+    if (IN_PROGRESS_CODES.has(code)) {
+        return { status: 'PROCESSING', pendingMessage: null, reconcile: true }
+    }
+    if ([400, 401, 403, 404].includes(error.status)) {
+        const message = getApiErrorMessage(
+            error, 'Сервер отклонил запрос. Проверьте настройки доступа и модели.',
+        )
+        return { status: 'FAILED', pendingMessage: message, visibleMessage: message }
+    }
+    if (error.status === 429) {
+        return {
+            status: 'RATE_LIMITED',
+            pendingMessage: code === 'AI_PROVIDER_RATE_LIMITED'
+                ? 'AI временно перегружен.'
+                : 'Слишком много запросов.',
+            retryAfterUntil: now + rateLimitRetrySeconds(error) * 1_000,
+        }
+    }
+    return null
+}
 
-                case 'IDEMPOTENCY_KEY_REUSED':
-                    putPendingTurn({
-                        ...pending,
-                        status: 'IDEMPOTENCY_CONFLICT',
-                        error:
-                            'Этот clientRequestId уже связан с другим содержимым. '
-                            + 'Повторять запрос автоматически нельзя.',
-                        retryAfterUntil: null,
-                    })
-                    setSendError(
-                        'Обнаружен конфликт идемпотентности.',
-                    )
-                    return
+export function createTurnFailureHandler(deps: FailureDeps) {
+    const { putPendingTurn, setSendError, setClock, reconcilePendingTurn } = deps
 
-                case 'CHAT_TURN_IN_PROGRESS':
-                case 'CHAT_BUSY':
-                    putPendingTurn({
-                        ...pending,
-                        status: 'PROCESSING',
-                        error: null,
-                        retryAfterUntil: null,
-                    })
-                    await reconcilePendingTurn(pending)
-                    return
-
-                default:
-                    break
+    async function handleSendFailure(pending: PendingTurn, error: unknown): Promise<void> {
+        const now = Date.now()
+        const decision = error instanceof ApiError ? resolveFailure(error, now) : null
+        if (decision) {
+            const updated = withPendingState(
+                pending, decision.status, decision.pendingMessage,
+                decision.retryAfterUntil ?? null,
+            )
+            putPendingTurn(updated)
+            if (decision.visibleMessage && deps.activeChatRef.current?.id === pending.chatId) {
+                setSendError(decision.visibleMessage)
             }
-
-            if (error.status === 429) {
-                const retryAfterSeconds =
-                    error.retryAfterSeconds ?? 1
-
-                putPendingTurn({
-                    ...pending,
-                    status: 'RATE_LIMITED',
-                    error:
-                        'Лимит запросов временно исчерпан.',
-                    retryAfterUntil:
-                        Date.now()
-                        + retryAfterSeconds * 1_000,
-                })
-                setClock(Date.now())
-                setSendError(
-                    'После Retry-After будет выполнен только повтор '
-                    + 'с тем же clientRequestId.',
+            if (decision.status === 'RATE_LIMITED') setClock(now)
+            if (decision.reconcile) {
+                await reconcilePendingTurn(
+                    decision.status === 'RECONCILIATION_REQUIRED' ? updated : pending,
                 )
-                return
             }
+            return
         }
 
-        putPendingTurn({
-            ...pending,
-            status: 'SEND_UNKNOWN',
-            error: getApiErrorMessage(
-                error,
-                'Статус отправки неизвестен.',
-            ),
-            retryAfterUntil: null,
-        })
-
-        await reconcilePendingTurn(pending)
+        // Transport/unknown: не отправляем повторный POST, а сверяем исходный turn.
+        const unknown = withPendingState(
+            pending, 'SEND_UNKNOWN', getApiErrorMessage(error, 'Статус отправки неизвестен.'),
+        )
+        putPendingTurn(unknown)
+        await reconcilePendingTurn(unknown)
     }
 
     return { handleSendFailure }

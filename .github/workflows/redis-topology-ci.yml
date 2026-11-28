@@ -1,0 +1,68 @@
+# SafeAI-Desk/.github/workflows/redis-topology-ci.yml
+# Опасный тест Sentinel инициирует настоящий failover. Только тестовое окружение!
+name: Redis Cluster и Sentinel / изолированные испытания
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: safeai-redis-topology-test
+  cancel-in-progress: false
+
+jobs:
+  topology:
+    name: Redis Cluster и Sentinel failover
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: redis-topology-test
+    steps:
+      - name: Получение исходного кода
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Java 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+
+      - name: Подтверждение тестового контура Redis
+        env:
+          CLUSTER: ${{ vars.SAFEAI_TEST_REDIS_CLUSTER_NODES }}
+          SENTINELS: ${{ vars.SAFEAI_TEST_REDIS_SENTINELS }}
+          MASTER: ${{ vars.SAFEAI_TEST_REDIS_SENTINEL_MASTER }}
+          TEST_ONLY: ${{ vars.SAFEAI_REDIS_TOPOLOGY_ISOLATED }}
+        run: |
+          test "$TEST_ONLY" = 'true' || { echo 'Не подтверждена изоляция Redis' >&2; exit 1; }
+          test -n "$CLUSTER" && test -n "$SENTINELS" && test -n "$MASTER" || {
+            echo 'Не заданы адреса тестовых Redis Cluster/Sentinel' >&2
+            exit 1
+          }
+
+      - name: Выполнение настоящих Cluster и Sentinel тестов
+        working-directory: backend
+        env:
+          SAFEAI_TEST_REDIS_CLUSTER_NODES: ${{ vars.SAFEAI_TEST_REDIS_CLUSTER_NODES }}
+          SAFEAI_TEST_REDIS_SENTINELS: ${{ vars.SAFEAI_TEST_REDIS_SENTINELS }}
+          SAFEAI_TEST_REDIS_SENTINEL_MASTER: ${{ vars.SAFEAI_TEST_REDIS_SENTINEL_MASTER }}
+          SAFEAI_TEST_REDIS_PASSWORD: ${{ secrets.SAFEAI_TEST_REDIS_PASSWORD }}
+        run: ./mvnw --batch-mode --no-transfer-progress -Prate-limit-topology-it verify
+
+      - name: Не допускать пропусков внешних тестов
+        run: python3 .github/scripts/check-redis-topology-reports.py .
+
+      - name: Диагностические отчёты
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: redis-topology-reports-${{ github.sha }}
+          path: backend/target/failsafe-reports/
+          if-no-files-found: warn
+          retention-days: 14

@@ -6,6 +6,7 @@ import {
 import {
     fetchKnowledgeDocumentBlob,
     reindexKnowledgeDocument,
+    updateKnowledgeDocument,
 } from '../../../entities/knowledge/api/knowledgeDocumentApi'
 import type {
     KnowledgeDocument,
@@ -38,6 +39,9 @@ export function useKnowledgeDocumentActions({
     ] = useState('')
     const reindexInFlightRef = useRef(false)
     const [reindexNotice, setReindexNotice] = useState('')
+    const [enabledTarget, setEnabledTarget] = useState<KnowledgeDocument | null>(null)
+    const [changingEnabledId, setChangingEnabledId] = useState('')
+    const enableMutationInFlightRef = useRef(false)
     const [
         openingDocumentId,
         setOpeningDocumentId,
@@ -150,6 +154,63 @@ export function useKnowledgeDocumentActions({
         }
     }
 
+    function requestEnabledChange(document: KnowledgeDocument) {
+        if (!canEditDocuments || enableMutationInFlightRef.current) {
+            return
+        }
+        setEnabledTarget(document)
+    }
+
+    function cancelEnabledChange() {
+        if (!enableMutationInFlightRef.current) {
+            setEnabledTarget(null)
+        }
+    }
+
+    async function confirmEnabledChange() {
+        const target = enabledTarget
+        if (!canEditDocuments || !target || enableMutationInFlightRef.current) {
+            return
+        }
+
+        enableMutationInFlightRef.current = true
+        setChangingEnabledId(target.id)
+        setError('')
+
+        try {
+            await updateKnowledgeDocument(knowledgeBaseId, target.id, {
+                name: target.name,
+                enabled: !target.enabled,
+                expectedVersion: target.version,
+            })
+            // Success refers to acknowledged PATCH, not to subsequent GETs.
+            setEnabledTarget(null)
+            const refresh = await Promise.allSettled([
+                loadOverview(),
+                loadDocuments(documentPage),
+            ])
+            if (refresh.some((result) => result.status === 'rejected')) {
+                setError(
+                    'Сервер подтвердил изменение состояния документа, '
+                    + 'но список не обновился. Обновите статусы вручную.',
+                )
+            }
+        } catch (failure) {
+            setError(
+                getApiErrorMessage(
+                    failure,
+                    'Не удалось подтвердить изменение состояния. '
+                    + 'Обновите список перед повторной попыткой.',
+                ),
+            )
+            // ConfirmDialog must not close on an unconfirmed PATCH.
+            throw failure
+        } finally {
+            enableMutationInFlightRef.current = false
+            setChangingEnabledId('')
+        }
+    }
+
     async function requestReindex(
         document: KnowledgeDocument,
     ) {
@@ -204,6 +265,11 @@ export function useKnowledgeDocumentActions({
     }
 
     return {
+        enabledTarget,
+        changingEnabledId,
+        requestEnabledChange,
+        cancelEnabledChange,
+        confirmEnabledChange,
         reindexingDocumentId,
         reindexNotice,
         openingDocumentId,

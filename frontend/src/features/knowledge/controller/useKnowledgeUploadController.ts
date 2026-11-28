@@ -11,6 +11,7 @@ import type {
     KnowledgeDocument,
 } from '../../../entities/knowledge/api/knowledgeDocumentApi'
 import {
+    ApiError,
     getApiErrorPresentation,
 } from '../../../shared/api/http'
 
@@ -27,7 +28,7 @@ type UseKnowledgeUploadOptions = {
     documentPage: number
     setDocumentPage: (page: number) => void
     refreshAfterSuccessfulUpload:
-        (page: number) => Promise<void>
+        (page: number, confirmed?: boolean) => Promise<void>
 }
 
 export function useKnowledgeUploadController({
@@ -37,6 +38,9 @@ export function useKnowledgeUploadController({
     refreshAfterSuccessfulUpload,
 }: UseKnowledgeUploadOptions) {
     const [busy, setBusy] =
+        useState(false)
+    // Transport/5xx errors do not prove the POST was rolled back.
+    const [uploadOutcomeUncertain, setUploadOutcomeUncertain] =
         useState(false)
     const uploadInFlightRef = useRef(false)
     const [uploadTarget, setUploadTarget] =
@@ -62,6 +66,7 @@ export function useKnowledgeUploadController({
         target: Exclude<UploadTarget, null>,
     ) {
         setUploadTarget(target)
+        setUploadOutcomeUncertain(false)
         setUploadFile(null)
         resetUploadError()
         setUploadName(
@@ -77,6 +82,7 @@ export function useKnowledgeUploadController({
         }
 
         setUploadTarget(null)
+        setUploadOutcomeUncertain(false)
         setUploadFile(null)
         resetUploadError()
     }
@@ -84,13 +90,15 @@ export function useKnowledgeUploadController({
     function changeUploadName(value: string) {
         setUploadName(value)
 
-        if (uploadError) {
+        if (uploadError && !uploadOutcomeUncertain) {
             resetUploadError()
         }
     }
 
     function selectFile(file: File | null) {
-        resetUploadError()
+        if (!uploadOutcomeUncertain) {
+            resetUploadError()
+        }
         setUploadFile(file)
 
         if (
@@ -118,7 +126,7 @@ export function useKnowledgeUploadController({
     }
 
     async function submitUpload() {
-        if (uploadInFlightRef.current) return
+        if (uploadInFlightRef.current || uploadOutcomeUncertain) return
 
         if (!uploadFile || !uploadTarget) {
             setUploadError('Выберите файл.')
@@ -172,12 +180,46 @@ export function useKnowledgeUploadController({
                     'Не удалось загрузить файл.',
                 )
 
-            setUploadError(
-                presentation.message,
-            )
-            setUploadRequestId(
-                presentation.requestId ?? '',
-            )
+            // 4xx validation/conflict is definitive, except timeout (408).
+            // For transport errors, malformed success responses or 5xx,
+            // a document might already have been committed by the server.
+            const outcomeUncertain =
+                !(uploadFailure instanceof ApiError)
+                || uploadFailure.status === 0
+                || uploadFailure.status === 408
+                || uploadFailure.status >= 500
+
+            if (outcomeUncertain) {
+                const targetPage =
+                    submittedTarget === 'new'
+                        ? 0
+                        : documentPage
+
+                if (submittedTarget === 'new') {
+                    setDocumentPage(0)
+                }
+
+                // Read only. Never repeat the non-idempotent POST automatically.
+                // The list may still lag behind the committed operation.
+                try {
+                    await refreshAfterSuccessfulUpload(targetPage, false)
+                } catch {
+                    // Preserve the original upload uncertainty.
+                }
+
+                setUploadOutcomeUncertain(true)
+                setUploadError(
+                    'Не удалось подтвердить результат загрузки. '
+                    + 'Документ мог сохраниться на сервере. '
+                    + 'Закройте окно, проверьте обновлённый список '
+                    + 'документов и при необходимости обновите страницу. '
+                    + 'Не отправляйте тот же файл повторно до проверки.',
+                )
+            } else {
+                setUploadError(presentation.message)
+            }
+
+            setUploadRequestId(presentation.requestId ?? '')
             setRequestIdCopied(false)
             uploadInFlightRef.current = false
             setBusy(false)
@@ -222,6 +264,7 @@ export function useKnowledgeUploadController({
 
     const uploadSubmitDisabled =
         busy
+        || uploadOutcomeUncertain
         || !uploadFile
         || uploadFile.size
             > MAX_KNOWLEDGE_FILE_SIZE

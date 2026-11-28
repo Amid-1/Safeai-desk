@@ -2,9 +2,10 @@
 /* frontend/src/features/models/ui/modelControlPlaneSupport.ts */
 // Совместимая публичная точка входа: прежние импорты остаются действительными.
 export type { CatalogDraft, PolicyDraft } from './modelControlPlane/modelTypes'
+export type { CatalogSection } from './modelControlPlane/catalogDraft'
 export {
     createCatalogDraft, normalizeDraftForPricingStatus, buildCatalogRequest,
-    runtimeCapabilities,
+    runtimeCapabilities, CatalogDraftValidationError,
 } from './modelControlPlane/catalogDraft'
 export { createPolicyDraft, buildPolicyRequest } from './modelControlPlane/policyDraft'
 export { normalizeModelKey, parseModelKeyList } from './modelControlPlane/modelKeys'

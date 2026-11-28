@@ -1,0 +1,366 @@
+rule_files:
+  - ../rules/safeai-model-ai.yml
+evaluation_interval: 1m
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'up{job="safeai-backend",instance="a"}'
+        values: '1x12'
+      - series: 'up{job="safeai-backend",instance="b"}'
+        values: '1x12'
+      - series: 'safeai_ai_provider_attempts_total{job="safeai-backend",instance="a",provider="openai",result="success"}'
+        values: '0x12'
+      - series: 'safeai_model_route_decisions_total{job="safeai-backend",instance="a",outcome="allowed",reason="requested_model"}'
+        values: '0x12'
+      - series: 'safeai_ai_provider_attempts_total{job="safeai-backend",instance="b",provider="openai",result="success"}'
+        values: '0x12'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: SafeAiModelAiInstrumentationMissing
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: SafeAiModelAiInstrumentationMissing
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: safeai-backend
+              job: safeai-backend
+              instance: b
+            exp_annotations:
+              summary: 'Models or AI adapter counters missing'
+  - interval: 1m
+    input_series:
+      - series: 'up{job="safeai-backend",instance="a"}'
+        values: '1x12'
+      - series: 'up{job="safeai-backend",instance="b"}'
+        values: '1x12'
+      - series: 'safeai_ai_attempt_observation_healthy{job="safeai-backend",instance="a"}'
+        values: '1x12'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: SafeAiAiAttemptObservationMissing
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: SafeAiAiAttemptObservationMissing
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: safeai-backend
+              instance: b
+              job: safeai-backend
+            exp_annotations:
+              summary: 'Physical attempt observation metric missing'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_ai_attempt_observation_healthy{job="safeai-backend",instance="a"}'
+        values: '0x12'
+      - series: 'safeai_ai_attempt_last_observation_timestamp{job="safeai-backend",instance="a"}'
+        values: '0x12'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: SafeAiAiAttemptObservationUnhealthy
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: SafeAiAiAttemptObservationUnhealthy
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: safeai-backend
+              instance: a
+              job: safeai-backend
+            exp_annotations:
+              summary: 'Physical attempt observation unavailable or stale'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_ai_attempt_observation_healthy{job="safeai-backend",instance="a"}'
+        values: '1x12'
+      - series: 'safeai_ai_attempt_last_observation_timestamp{job="safeai-backend",instance="a"}'
+        values: '0x12'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: SafeAiAiAttemptObservationUnhealthy
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: SafeAiAiAttemptObservationUnhealthy
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: safeai-backend
+              instance: a
+              job: safeai-backend
+            exp_annotations:
+              summary: 'Physical attempt observation unavailable or stale'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_ai_attempt_observation_healthy{job="safeai-backend",instance="a"}'
+        values: '1x12'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: SafeAiAiAttemptObservationUnhealthy
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: SafeAiAiAttemptObservationUnhealthy
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: safeai-backend
+              instance: a
+              job: safeai-backend
+            exp_annotations:
+              summary: 'Physical attempt observation unavailable or stale'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_ai_attempt_stalled{job="safeai-backend",instance="a"}'
+        values: '1x12'
+      - series: 'safeai_ai_attempt_stalled{job="safeai-backend",instance="b"}'
+        values: '1x12'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: SafeAiAiPhysicalStalled
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: SafeAiAiPhysicalStalled
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: safeai-backend
+            exp_annotations:
+              summary: 'Physical attempt remains STARTED for over 15 minutes'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_ai_attempt_ambiguous{job="safeai-backend"}'
+        values: '1x12'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: SafeAiAiPhysicalAmbiguous
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: SafeAiAiPhysicalAmbiguous
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: safeai-backend
+            exp_annotations:
+              summary: 'Ambiguous physical execution in the last 24 hours'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_ai_attempt_unknown_cost{job="safeai-backend"}'
+        values: '1x12'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: SafeAiAiPhysicalUnknownCost
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: SafeAiAiPhysicalUnknownCost
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: safeai-backend
+            exp_annotations:
+              summary: 'Terminal physical attempts have unknown cost'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_model_route_decisions_total{job="safeai-backend",outcome="denied",reason="monthly_budget_unverifiable"}'
+        values: '0+1x12'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: SafeAiModelMonthlyBudgetUnverifiable
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: safeai-backend
+            exp_annotations:
+              summary: 'Model route denied because monthly commitment is unverifiable'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_model_route_decisions_total{job="safeai-backend",outcome="denied",reason="monthly_budget_exceeded"}'
+        values: '0+2x12'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: SafeAiModelBudgetDenialsElevated
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: safeai-backend
+            exp_annotations:
+              summary: 'Elevated model budget denials'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_ai_provider_attempts_total{job="safeai-backend",provider="openai",result="authentication"}'
+        values: '0+1x12'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: SafeAiAiProviderCredentialsOrBilling
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: safeai-backend
+              provider: openai
+            exp_annotations:
+              summary: 'AI provider credential, permission or billing failure'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_ai_provider_attempts_total{job="safeai-backend",provider="openai",result="rate_limited"}'
+        values: '0+2x12'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: SafeAiAiProviderRateLimited
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: safeai-backend
+              provider: openai
+            exp_annotations:
+              summary: 'Repeated AI provider rate limiting'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_ai_provider_attempts_total{job="safeai-backend",provider="openai",result="timeout"}'
+        values: '0+2x12'
+      - series: 'safeai_ai_provider_attempts_total{job="safeai-backend",provider="openai",result="success"}'
+        values: '0+3x12'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: SafeAiAiProviderErrorRatio
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: SafeAiAiProviderErrorRatio
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: safeai-backend
+              provider: openai
+            exp_annotations:
+              summary: 'AI provider adapter error ratio above 20 percent'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_ai_provider_duration_seconds_bucket{job="safeai-backend",provider="openai",le="10"}'
+        values: '0x12'
+      - series: 'safeai_ai_provider_duration_seconds_bucket{job="safeai-backend",provider="openai",le="30"}'
+        values: '0x12'
+      - series: 'safeai_ai_provider_duration_seconds_bucket{job="safeai-backend",provider="openai",le="60"}'
+        values: '0+5x12'
+      - series: 'safeai_ai_provider_duration_seconds_bucket{job="safeai-backend",provider="openai",le="+Inf"}'
+        values: '0+5x12'
+      - series: 'safeai_ai_provider_duration_seconds_count{job="safeai-backend",provider="openai"}'
+        values: '0+5x12'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: SafeAiAiProviderSlow
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: SafeAiAiProviderSlow
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: safeai-backend
+              provider: openai
+            exp_annotations:
+              summary: 'AI provider adapter p95 exceeds 30 seconds'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_ai_provider_gate_failures_total{job="safeai-backend",provider="openai"}'
+        values: '0+1x12'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: SafeAiAiDispatchGateFailures
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: safeai-backend
+              provider: openai
+            exp_annotations:
+              summary: 'Repeated physical admission or deadline failures'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_ai_provider_retries_total{job="safeai-backend",provider="openai"}'
+        values: '0+2x12'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: SafeAiAiProviderRetryElevated
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: safeai-backend
+              provider: openai
+            exp_annotations:
+              summary: 'Elevated AI provider retry attempts'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_ai_provider_recording_failures_total{job="safeai-backend",provider="openai"}'
+        values: '0+1x12'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: SafeAiAiTerminalRecordingFailed
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: safeai-backend
+              provider: openai
+            exp_annotations:
+              summary: 'AI terminal attempt evidence recording failed'
+  - interval: 1m
+    input_series:
+      - series: 'up{job="safeai-backend",instance="a"}'
+        values: '1x12'
+      - series: 'safeai_ai_attempt_observation_healthy{job="safeai-backend",instance="a"}'
+        values: '1x12'
+      - series: 'safeai_ai_attempt_last_observation_timestamp{job="safeai-backend",instance="a"}'
+        values: '0+60x12'
+      - series: 'safeai_ai_attempt_unknown_cost{job="safeai-backend"}'
+        values: '0x12'
+      - series: 'safeai_ai_attempt_stalled{job="safeai-backend"}'
+        values: '0x12'
+      - series: 'safeai_ai_attempt_ambiguous{job="safeai-backend"}'
+        values: '0x12'
+      - series: 'safeai_ai_provider_attempts_total{job="safeai-backend",instance="a",provider="openai",result="success"}'
+        values: '0+10x12'
+      - series: 'safeai_ai_provider_attempts_total{job="safeai-backend",instance="a",provider="openai",result="timeout"}'
+        values: '0+1x12'
+      - series: 'safeai_model_route_decisions_total{job="safeai-backend",instance="a",outcome="allowed",reason="requested_model"}'
+        values: '0+10x12'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: SafeAiModelAiInstrumentationMissing
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: SafeAiAiAttemptObservationMissing
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: SafeAiAiAttemptObservationUnhealthy
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: SafeAiAiPhysicalStalled
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: SafeAiAiPhysicalAmbiguous
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: SafeAiAiPhysicalUnknownCost
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: SafeAiModelMonthlyBudgetUnverifiable
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: SafeAiModelBudgetDenialsElevated
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: SafeAiAiProviderCredentialsOrBilling
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: SafeAiAiProviderRateLimited
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: SafeAiAiProviderErrorRatio
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: SafeAiAiProviderSlow
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: SafeAiAiDispatchGateFailures
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: SafeAiAiProviderRetryElevated
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: SafeAiAiTerminalRecordingFailed
+        exp_alerts: []

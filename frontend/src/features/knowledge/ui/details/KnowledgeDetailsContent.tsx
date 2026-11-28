@@ -13,6 +13,11 @@ import { EmptyState, ErrorState, LoadingState } from '../../../../shared/ui/Stat
 import ResizableScrollRegion from '../../../../shared/ui/ResizableScrollRegion'
 import KnowledgePagination from '../KnowledgePagination'
 import { formatBytes } from './knowledgeDocumentFormat'
+import ErasureRequestLink from '../../../../shared/ui/ErasureRequestLink'
+import { KnowledgeDocumentDeleteAction } from './KnowledgeDocumentDeleteAction'
+import type {KnowledgeDocumentDeletion} from '../../../../entities/knowledge/api/knowledgeDocumentDeletionApi'
+import {KnowledgeDeletionProgress} from '../KnowledgeDeletionProgress'
+import {isUnfinishedDeletion} from '../../lib/knowledgeDeletionStatus'
 
 const STATUS_LABEL:
     Record<KnowledgeIngestionStatus, string> = {
@@ -56,6 +61,16 @@ export type KnowledgeDetailsContentProps = {
     reindexNotice: string
     openingDocumentId: string
     downloadingDocumentId: string
+    changingEnabledId: string
+    canDeleteDocuments: boolean
+    canShowDeleteAction: boolean
+    deleteUnavailableReason: string
+    recheckDeletion?: () => void
+    requestDeletion: (document: KnowledgeDocument) => void
+    openDeletionOperation: (document: KnowledgeDocument, operation: KnowledgeDocumentDeletion) => void
+    deletionOperations: KnowledgeDocumentDeletion[]
+    deletionHistoryError: boolean
+    requestEnabledChange: (document: KnowledgeDocument) => void
     setDocumentPage: (page: number) => void
     openUpload: (target: KnowledgeDocument | 'new') => void
     openDocumentPreview: (document: KnowledgeDocument) => void | Promise<void>
@@ -81,6 +96,16 @@ export function KnowledgeDetailsContent({
     reindexNotice,
     openingDocumentId,
     downloadingDocumentId,
+    changingEnabledId,
+    canDeleteDocuments,
+    canShowDeleteAction,
+    deleteUnavailableReason,
+    recheckDeletion,
+    requestDeletion,
+    openDeletionOperation,
+    deletionOperations,
+    deletionHistoryError,
+    requestEnabledChange,
     setDocumentPage,
     openUpload,
     openDocumentPreview,
@@ -155,7 +180,7 @@ export function KnowledgeDetailsContent({
                                     {access && !access.canEditDocuments && (
                                         <span
                                             className="knowledge-details__base-state"
-                                            title={`Уровень доступа: ${access.accessLevel}`}
+                                            title="Можно просматривать документы, но нельзя изменять их"
                                         >
                                             Только чтение
                                         </span>
@@ -200,16 +225,21 @@ export function KnowledgeDetailsContent({
                                 <div>
                                     <span className="knowledge-health__eyebrow">Готовность базы к поиску</span>
                                     <strong>{healthStateLabel(health.state)}</strong>
-                                    <small>
-                                        {embeddingModelLabel(health.activeEmbeddingModel)}
-                                        {' · '}
-                                        <code>{health.activeEmbeddingModel}</code>
-                                    </small>
+                                    {health.activeEmbeddingModel === 'safeai-feature-hash-v1' && (
+                                        <small>Демонстрационный поиск</small>
+                                    )}
                                     <p>{healthStateDescription(health.state)}</p>
+                                    {access?.canEditDocuments && (
+                                        <details className="knowledge-health__technical">
+                                            <summary>Технические сведения</summary>
+                                            <p>Модель поиска: <code>{health.activeEmbeddingModel}</code></p>
+                                            <p>Фрагменты для AI: {health.activeChunks}</p>
+                                            <p>Последняя проверка: {formatDateTime(health.checkedAt)}</p>
+                                        </details>
+                                    )}
                                 </div>
                                 <dl>
                                     <HealthMetric label="Готовы к поиску" value={`${health.searchableDocuments} из ${health.enabledDocuments}`} hint="документов" />
-                                    <HealthMetric label="Фрагменты для AI" value={health.activeChunks} hint="частей документов" />
                                     <HealthMetric label="Обрабатываются" value={health.pendingDocuments + health.processingDocuments} hint="документов" />
                                     <HealthMetric label="Ошибки обработки" value={health.failedDocuments + health.staleEmbeddingDocuments} hint="нужна проверка" />
                                 </dl>
@@ -296,6 +326,33 @@ export function KnowledgeDetailsContent({
                 maxHeight={760}
                 minUpperHeight={128}
             >
+                {canShowDeleteAction && !canDeleteDocuments && (
+                    <p role="status" className="knowledge-documents__notice">
+                        {deleteUnavailableReason}
+                        {recheckDeletion && <button type="button" className="secondary-button"
+                            onClick={recheckDeletion}>Проверить снова</button>}
+                    </p>
+                )}
+                {deletionHistoryError && (
+                    <p role="alert" className="knowledge-documents__notice">
+                        История удаления временно недоступна. Не повторяйте удаление до проверки статуса на сервере.
+                    </p>
+                )}
+                {deletionOperations.length > 0 && (
+                    <section id="knowledge-document-deletion-history" className="knowledge-documents__notice"
+                        aria-label="Операции удаления документов">
+                        <details open={deletionOperations.some(operation => isUnfinishedDeletion(operation.state))}>
+                            <summary><strong>История удаления документов ({deletionOperations.length})</strong></summary>
+                            <div className="knowledge-erasure-history">
+                                {deletionOperations.map(operation => (
+                                    <KnowledgeDeletionProgress key={operation.operationId}
+                                        operation={operation}/>
+                                ))}
+                            </div>
+                        </details>
+                    </section>
+                )}
+
                 {reindexNotice && (
                     <div className="knowledge-documents__notice" role="status">
                         {reindexNotice}
@@ -436,13 +493,18 @@ export function KnowledgeDetailsContent({
                                                     >
                                                         {STATUS_LABEL[status]}
                                                     </span>
+                                                    {!document.enabled && (
+                                                        <small className="knowledge-document-status-cell__published">
+                                                            Отключён — не участвует в AI-поиске
+                                                        </small>
+                                                    )}
                                                     {status === 'FAILED' && (
                                                         <small className="knowledge-document-status-cell__issue">
                                                             Обработка завершилась ошибкой.
                                                             {access?.canEditDocuments
                                                                 ? ' Проверьте файл и запустите повторную обработку.'
                                                                 : ' Обратитесь к администратору базы.'}
-                                                            {' '}Точная причина не передаётся этим API.
+                                                            {' '}Если ошибка повторяется, обратитесь в поддержку.
                                                         </small>
                                                     )}
                                                     {status !== 'READY' && (
@@ -482,6 +544,7 @@ export function KnowledgeDetailsContent({
                                                             ? 'Скачиваем…'
                                                             : 'Скачать'}
                                                     </button>
+                                                    <ErasureRequestLink target={{ type: 'KNOWLEDGE_DOCUMENT', id: document.id, baseId: document.knowledgeBaseId }} />
                                                     {access?.canEditDocuments && (
                                                         <details className="knowledge-document-more">
                                                             <summary aria-label={`Действия с документом ${document.name}`}>
@@ -505,6 +568,30 @@ export function KnowledgeDetailsContent({
                                                                 >
                                                                     Версии
                                                                 </button>
+                                                                <button
+                                                                    type="button"
+                                                                    className="secondary-button"
+                                                                    disabled={busy || changingEnabledId !== ''}
+                                                                    onClick={() => requestEnabledChange(document)}
+                                                                >
+                                                                    {changingEnabledId === document.id
+                                                                        ? 'Сохраняем…'
+                                                                        : document.enabled
+                                                                            ? 'Отключить'
+                                                                            : 'Включить'}
+                                                                </button>
+                                                                {canShowDeleteAction && (
+                                                                    <KnowledgeDocumentDeleteAction
+                                                                        document={document}
+                                                                        canDelete={canDeleteDocuments}
+                                                                        busy={busy}
+                                                                        unavailableReason={deleteUnavailableReason}
+                                                                        onDelete={requestDeletion}
+                                                                        activeOperation={deletionOperations.find(operation =>
+                                                                            operation.documentId === document.id)}
+                                                                        onOpenOperation={openDeletionOperation}
+                                                                    />
+                                                                )}
                                                                 <button
                                                                     type="button"
                                                                     className="secondary-button document-reindex-button"
@@ -561,18 +648,12 @@ function healthStateDescription(state: KnowledgeHealth['state']): string {
 
 function healthStateLabel(state: KnowledgeHealth['state']): string {
     switch (state) {
-        case 'HEALTHY': return 'База готова к ответам'
+        case 'HEALTHY': return 'Документы готовы к поиску'
         case 'INDEXING': return 'Документы подготавливаются'
         case 'DEGRADED': return 'Некоторые документы требуют внимания'
         case 'DISABLED': return 'База отключена'
         default: return 'Документов пока нет'
     }
-}
-
-function embeddingModelLabel(model: string): string {
-    return model === 'safeai-feature-hash-v1'
-        ? 'Демонстрационная векторизация'
-        : 'Модель смыслового поиска'
 }
 
 function HealthMetric({
@@ -681,4 +762,3 @@ function documentTypeLabel(
 
     return ''
 }
-

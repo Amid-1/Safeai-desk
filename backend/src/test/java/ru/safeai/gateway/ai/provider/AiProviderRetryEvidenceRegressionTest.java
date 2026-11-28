@@ -21,11 +21,16 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -52,6 +57,42 @@ class AiProviderRetryEvidenceRegressionTest {
         assertThat(seen).extracting(AiProviderAttemptContext::attemptNumber).containsExactly(1, 2);
         assertThat(seen).extracting(AiProviderAttemptContext::attemptId).doesNotHaveDuplicates();
         verify(observer, times(2)).started(org.mockito.ArgumentMatchers.any(AiProviderAttemptContext.class));
+    }
+
+    @Test
+    void retryableErrorFromDispatchGateCannotTriggerNewAttempt() {
+        var observer = mock(AiExecutionAttemptObserver.class);
+        var denied = rateLimit();
+        doThrow(denied).when(observer).beforeNetworkDispatch(org.mockito.ArgumentMatchers.any());
+        AtomicInteger networkCalls = new AtomicInteger();
+        assertThatThrownBy(() -> governedRetry(3, observer, () -> retry(3).execute(
+                "openai", "gpt-4.1", OPERATION, Duration.ZERO, ctx -> {
+                    networkCalls.incrementAndGet(); return AiTestFixtures.freeResponse();
+                }))).isInstanceOf(ru.safeai.gateway.ai.execution.PhysicalAttemptReconciliationRequiredException.class)
+                .hasCause(denied);
+        assertThat(networkCalls).hasValue(0);
+        verify(observer, times(1)).started(org.mockito.ArgumentMatchers.any());
+        verify(observer, times(1)).beforeNetworkDispatch(org.mockito.ArgumentMatchers.any());
+        verify(observer, times(1)).abortedBeforeDispatch(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.same(denied));
+        verify(observer, never()).failed(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        verify(observer, never()).succeeded(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void retryableErrorFromSuccessObserverCannotTriggerNewAttempt() {
+        var observer = mock(AiExecutionAttemptObserver.class);
+        var denied = rateLimit();
+        var response = AiTestFixtures.freeResponse();
+        doThrow(denied).when(observer).succeeded(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.same(response));
+        AtomicInteger networkCalls = new AtomicInteger();
+        assertThatThrownBy(() -> governedRetry(3, observer, () -> retry(3).execute(
+                "openai", "gpt-4.1", OPERATION, Duration.ZERO, ctx -> {
+                    networkCalls.incrementAndGet(); return response;
+                }))).isSameAs(denied);
+        assertThat(networkCalls).hasValue(1);
+        verify(observer, times(1)).started(org.mockito.ArgumentMatchers.any());
+        verify(observer, never()).failed(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        verify(observer, never()).ambiguous(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -118,6 +159,30 @@ class AiProviderRetryEvidenceRegressionTest {
                     actions.incrementAndGet(); return AiTestFixtures.freeResponse();
                 }))).isInstanceOf(IllegalStateException.class);
         assertThat(actions).hasValue(0);
+    }
+
+    @Test
+    void expiredDeadlineAfterDurableDispatchCheckNeverEntersAdapter() {
+        var observer = mock(AiExecutionAttemptObserver.class);
+        // Model a bounded but slow durable admission callback. No busy-wait.
+        doAnswer(invocation -> {
+            new CountDownLatch(1).await(1200, TimeUnit.MILLISECONDS);
+            return null;
+        }).when(observer).beforeNetworkDispatch(org.mockito.ArgumentMatchers.any());
+        AtomicInteger actions = new AtomicInteger();
+        assertThatThrownBy(() -> AiProviderDispatchDeadline.within(
+                System.nanoTime() + Duration.ofSeconds(1).toNanos(),
+                () -> governedRetry(2, observer, () -> retry(2).execute(
+                        "openai", "gpt-4.1", OPERATION, Duration.ZERO, context -> {
+                            actions.incrementAndGet();
+                            return AiTestFixtures.freeResponse();
+                        }))))
+                .isInstanceOf(ru.safeai.gateway.ai.exception.AiProviderTimeoutException.class);
+        assertThat(actions).hasValue(0);
+        verify(observer, times(1)).started(org.mockito.ArgumentMatchers.any());
+        verify(observer, times(1)).beforeNetworkDispatch(org.mockito.ArgumentMatchers.any());
+        verify(observer, times(1)).failed(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        verify(observer, never()).succeeded(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 
     private static AiChatResponse governedRetry(int maxAttempts,

@@ -20,6 +20,7 @@ export function PolicyFormSelectors({control, catalog, effectiveCatalog, runtime
         <>
                 <div
                     id={`${formId}-access`}
+                    tabIndex={-1}
                     data-policy-block="access"
                     className={
                         'models-policy-form__access-grid'

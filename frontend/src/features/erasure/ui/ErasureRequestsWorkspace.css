@@ -1,0 +1,111 @@
+/* frontend/src/features/erasure/ui/ErasureRequestsWorkspace.css */
+.erasure-workspace { max-width: 1500px; margin-inline: auto; padding: 24px 32px 48px; }
+.erasure-hero { margin-bottom: 20px; }
+.erasure-eyebrow { color: var(--text-secondary,#64748b); font-size: .75rem;
+    letter-spacing: .12em; font-weight: 700; margin-bottom: 6px; }
+.erasure-hero h1 { margin: 0 0 8px; font-size: clamp(1.65rem,3vw,2.25rem); }
+.erasure-hero p { margin: 0; color: var(--text-secondary,#64748b); max-width: 74ch; }
+.erasure-warning { padding: 14px 18px; margin-bottom: 22px; border: 1px solid var(--border-color,#cbd5e1);
+    border-radius: 12px; background: var(--surface-muted,#f8fafc); line-height: 1.5; }
+.erasure-columns { display:grid; grid-template-columns: minmax(320px, .85fr) minmax(0,1.35fr);
+    gap:20px; align-items:start; }
+.erasure-panel { padding: 22px; border: 1px solid var(--border-color,#dce2ea);
+    border-radius: 14px; background: var(--surface,#fff); box-shadow: 0 6px 24px rgb(0 0 0 / .035); }
+.erasure-panel h2 {font-size:1.16rem; margin:0 0 8px;}
+.erasure-muted { color: var(--text-secondary,#64748b); margin:0 0 16px; }
+.erasure-panel label {display:block; font-weight:600; margin:16px 0 6px;}
+.erasure-panel select,.erasure-panel input {width:100%; max-width:100%; box-sizing:border-box;
+    border-radius:9px; min-height:42px; padding:8px 12px; border:1px solid var(--border-color,#cbd5e1);
+    background:var(--surface,#fff); color:inherit;}
+.erasure-intent {margin:18px 0; display:flex; flex-direction:column; gap:6px;
+    background:var(--surface-muted,#f8fafc); padding:14px; border-radius:10px;}
+.erasure-intent span,.erasure-confirm p {font-size:.9rem; line-height:1.5;}
+.erasure-confirm {margin-top:12px;}
+.erasure-panel button {min-height:38px;}
+.erasure-panel button:focus-visible {outline:3px solid #64748b; outline-offset:3px;}
+.erasure-secondary {background:transparent; border:1px solid var(--border-color,#cbd5e1);
+    border-radius:9px; padding:7px 13px; color:inherit;}
+.erasure-panel-heading,.erasure-case-head,.erasure-actions {display:flex; flex-wrap:wrap; gap:12px;
+    justify-content:space-between; align-items:center;}
+.erasure-list {list-style:none; margin:14px 0 0; padding:0; display:grid; gap:12px;}
+.erasure-list li {border:1px solid var(--border-color,#e2e8f0); border-radius:12px; padding:16px;}
+.erasure-state {font-size:.83rem; font-weight:650;}
+.erasure-list small {display:block; overflow-wrap:anywhere; margin:10px 0 12px;
+    color:var(--text-secondary,#64748b);}
+.erasure-actions {justify-content:flex-start;}
+.erasure-error,.erasure-notice {padding:14px 18px; border-radius:10px; margin-top:14px;
+    background:var(--surface-muted,#f8fafc);}
+.erasure-error {border:1px solid #d97777;}
+.erasure-footer {margin-top:20px; color:var(--text-secondary,#64748b);}
+@media(max-width:860px){.erasure-columns{grid-template-columns:1fr;}
+ .erasure-workspace{padding:20px 14px 40px;}.erasure-panel{padding:18px 14px;}}
+/* R2: guided request flow without altering R1a API or role checks. */
+.erasure-steps { list-style:none; margin:0 0 20px; padding:17px; display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; background:white;
+    border:1px solid #dae5f3; border-radius:14px; }
+.erasure-steps li { display:flex; gap:12px; align-items:start; min-width:0; }
+.erasure-steps li > span { width:29px; height:29px; flex:0 0 29px; border-radius:50%;
+    display:grid; place-items:center; background:#e5eeff; color:#2053ae; font-weight:800; font-size:13px; }
+.erasure-steps strong { color:#273654; font-size:13px; display:block; }
+.erasure-steps small { display:block; color:#73839b; font-size:12px; margin-top:5px; line-height:1.4; }
+.erasure-history-filter { display:flex !important; flex-wrap:wrap; align-items:center; gap:10px;
+    margin:10px 0 !important; font-size:13px; color:#55647b; }
+.erasure-history-filter select { width:auto; min-width:160px; min-height:36px !important; }
+.erasure-state { display:inline-flex; align-items:center; background:#eef3ff; color:#315caa;
+    padding:5px 10px; border-radius:999px; font-size:12px; }
+.erasure-state--withdrawn { background:#edf1f5; color:#65738a; }
+.erasure-state--draft { background:#fff2df; color:#955e1c; }
+.erasure-state--submitted { background:#e8f1ff; color:#2b5eac; }
+@media(max-width:730px){.erasure-steps { grid-template-columns:1fr; }}
+
+/* R2.5.1: keep the personal request form reachable in the fixed-height app shell.
+   Scope to the personal workspace; the legacy administrative queue shares this CSS. */
+.content--workspace:not(.content--chat) > .page.erasure-workspace:has(#new-case-title) {
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    min-width: 0;
+}
+.erasure-workspace:has(#new-case-title) {
+    padding: 12px 24px 24px;
+}
+.erasure-workspace:has(#new-case-title) .erasure-hero { margin-bottom: 14px; }
+.erasure-workspace:has(#new-case-title) .erasure-eyebrow { margin-bottom: 4px; }
+.erasure-workspace:has(#new-case-title) .erasure-hero h1 {
+    font-size: clamp(1.5rem, 2.6vw, 2rem);
+    margin-bottom: 5px;
+}
+.erasure-workspace:has(#new-case-title) .erasure-hero p { max-width: none; }
+.erasure-workspace:has(#new-case-title) .erasure-warning { padding: 10px 14px; margin-bottom: 14px; }
+.erasure-workspace:has(#new-case-title) .erasure-steps { padding: 10px 14px; margin-bottom: 14px; }
+.erasure-workspace:has(#new-case-title) .erasure-steps small { margin-top: 2px; }
+.erasure-workspace:has(#new-case-title) .erasure-columns {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+    gap: 16px;
+}
+.erasure-workspace:has(#new-case-title) .erasure-panel { min-width: 0; padding: 16px; overflow-wrap: anywhere; }
+.erasure-workspace:has(#new-case-title) .erasure-muted { margin: 0 0 8px; }
+.erasure-workspace:has(#new-case-title) .erasure-panel label { margin: 10px 0 5px; }
+.erasure-workspace:has(#new-case-title) .erasure-panel select + .erasure-muted { margin-top: 4px; }
+.erasure-workspace:has(#new-case-title) .erasure-intent { margin: 12px 0; padding: 10px 12px; gap: 4px; }
+.erasure-workspace:has(#new-case-title) .erasure-confirm { margin-top: 8px; }
+.erasure-workspace:has(#new-case-title) .erasure-confirm p { margin: 0 0 8px; }
+.erasure-workspace:has(#new-case-title) .erasure-panel-heading h2 { margin-bottom: 0; }
+.erasure-workspace:has(#new-case-title) .erasure-list { margin-top: 10px; gap: 10px; }
+.erasure-workspace:has(#new-case-title) .erasure-footer { margin-top: 14px; }
+@media (max-width: 860px) {
+    .erasure-workspace:has(#new-case-title) { padding: 10px 12px 20px; }
+    .erasure-workspace:has(#new-case-title) .erasure-columns { grid-template-columns: minmax(0, 1fr); }
+    .erasure-workspace:has(#new-case-title) .erasure-panel { padding: 14px; }
+}
+
+/* R3a: personal case identity, bounded disclosure and visible capability state. */
+.erasure-workspace .erasure-case-identifiers { margin: 8px 0 12px; min-width: 0; font-size: 13px; }
+.erasure-workspace .erasure-case-identifiers summary { cursor: pointer; color: #315caa; width: fit-content; }
+.erasure-workspace .erasure-case-identifiers small { margin: 5px 0; user-select: text; overflow-wrap: anywhere; }
+.erasure-workspace .erasure-review-unavailable { margin: 8px 0 12px; color: #52647b; font-size: 13px; line-height: 1.5; }
+.erasure-workspace .erasure-history-link { display: inline-flex; align-items: center; min-height: 38px; padding: 6px 12px; border: 1px solid #bed1f4; border-radius: 9px; color: #225bd9; font-weight: 650; font-size: 13px; text-decoration: none; }
+.erasure-workspace .erasure-history-link:hover { text-decoration: underline; }
+.erasure-workspace .erasure-history-link:focus-visible, .erasure-workspace .erasure-case-identifiers summary:focus-visible { outline: 3px solid #9ab8ff; outline-offset: 2px; }
+.erasure-workspace .erasure-notice { border: 1px solid #dbe4f3; }
+.erasure-workspace .erasure-case-target { margin: 7px 0; color: #334762; font-size: 14px; overflow-wrap: anywhere; }

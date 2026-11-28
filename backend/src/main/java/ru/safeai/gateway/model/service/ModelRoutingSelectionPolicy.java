@@ -156,16 +156,18 @@ final class ModelRoutingSelectionPolicy {
         }
 
         if (policyEnabled && policy.requireNoTraining()) {
-            if (entry.trainingUseStatus() != ModelTrainingUseStatus.NOT_USED
+            if ((entry.trainingUseStatus() != ModelTrainingUseStatus.NOT_USED
                     && entry.trainingUseStatus()
-                    != ModelTrainingUseStatus.CONTRACTUAL_NO_TRAINING) {
+                    != ModelTrainingUseStatus.CONTRACTUAL_NO_TRAINING)
+                    || !runtime.dataAssurance().noTraining()) {
                 return ModelRouteReason.TRAINING_POLICY_UNSATISFIED;
             }
         }
 
         if (policyEnabled
                 && policy.requireZeroDataRetention()
-                && entry.retentionStatus() != ModelRetentionStatus.ZERO_DATA_RETENTION) {
+                && (entry.retentionStatus() != ModelRetentionStatus.ZERO_DATA_RETENTION
+                    || !runtime.dataAssurance().zeroDataRetention())) {
             return ModelRouteReason.RETENTION_POLICY_UNSATISFIED;
         }
 

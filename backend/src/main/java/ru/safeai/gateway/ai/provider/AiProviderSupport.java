@@ -326,33 +326,28 @@ public final class AiProviderSupport {
             return null;
         }
 
-        String value =
-                headers.getFirst(
-                        HttpHeaders.RETRY_AFTER
-                );
-
-        if (value == null
-                || value.isBlank()) {
-
+        List<String> values = headers.get(HttpHeaders.RETRY_AFTER);
+        if (values == null || values.size() != 1 || values.getFirst().isBlank()) {
             return null;
         }
 
         String normalizedValue =
-                value.trim();
+                values.getFirst().trim();
 
         Duration deltaSeconds =
                 parseRetryAfterSeconds(
                         normalizedValue
                 );
 
-        if (deltaSeconds != null) {
-            return deltaSeconds;
-        }
+        Duration parsed = deltaSeconds != null ? deltaSeconds : parseRetryAfterDate(normalizedValue, clock);
+        // Larger delays are not actionable and must not overflow API serialization.
+        return parsed != null && parsed.compareTo(Duration.ofDays(1)) <= 0 ? parsed : null;
+    }
 
-        return parseRetryAfterDate(
-                normalizedValue,
-                clock
-        );
+    /** An absent hint permits local backoff; a supplied but unusable hint never does. */
+    public static boolean retryAfterPermitsRetry(RestClientResponseException exception, Duration parsed) {
+        HttpHeaders headers = exception.getResponseHeaders();
+        return parsed != null || headers == null || headers.get(HttpHeaders.RETRY_AFTER) == null;
     }
 
     public static ProviderErrorDetails extractProviderError(
@@ -512,6 +507,9 @@ public final class AiProviderSupport {
     private static Duration parseRetryAfterSeconds(
             String value
     ) {
+        if (value.isEmpty() || !value.chars().allMatch(c -> c >= '0' && c <= '9')) {
+            return null;
+        }
         try {
             long seconds =
                     Long.parseLong(

@@ -82,14 +82,6 @@ safeai:
       enabled: false
       max-attempts: 1
       total-timeout: 5s
-    pricing:
-      models:
-        - model: mock-safeai
-          input-usd-per-1m-tokens: 0
-          output-usd-per-1m-tokens: 0
-          currency: USD
-          version: mock-2026-01
-
   auth:
     cookies:
       secure: false

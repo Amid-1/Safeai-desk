@@ -12,26 +12,38 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-/** Creates bounded audit evidence for immutable tenant policy versions. */
+/**
+ * Creates bounded audit evidence for immutable tenant policy versions.
+ */
 final class OrganizationModelPolicyAuditDetailsFactory {
 
     private static final int MAX_INLINE_MODEL_KEY_CHARACTERS =
-            16_000;
+        16_000;
 
     private OrganizationModelPolicyAuditDetailsFactory() {
     }
 
-    static AuditDetails createAuditDetails(OrganizationModelPolicy policy) {
-        Map<String, Object> snapshot = create(policy);
-        return () -> snapshot;
+    static AuditDetails createConfirmedAuditDetails(
+        OrganizationModelPolicy policy,
+        boolean lockoutAcknowledged
+    ) {
+        Map<String, Object> snapshot =
+            new LinkedHashMap<>(create(policy));
+
+        snapshot.put("previewConfirmed", true);
+        snapshot.put("lockoutAcknowledged", lockoutAcknowledged);
+
+        Map<String, Object> immutableSnapshot = Map.copyOf(snapshot);
+
+        return () -> immutableSnapshot;
     }
 
     static Map<String, Object> create(
-            OrganizationModelPolicy policy
+        OrganizationModelPolicy policy
     ) {
         Objects.requireNonNull(
-                policy,
-                "policy не должен быть null"
+            policy,
+            "policy не должен быть null"
         );
 
         Map<String, Object> details = new LinkedHashMap<>();
@@ -40,132 +52,147 @@ final class OrganizationModelPolicyAuditDetailsFactory {
         details.put("version", policy.version());
         details.put("enabled", policy.enabled());
         addModelKeySnapshot(
-                details,
-                policy.allowModelKeys(),
-                policy.denyModelKeys()
+            details,
+            policy.allowModelKeys(),
+            policy.denyModelKeys()
         );
 
         if (policy.defaultModelKey() != null) {
             details.put(
-                    "defaultModelKey",
-                    policy.defaultModelKey()
+                "defaultModelKey",
+                policy.defaultModelKey()
             );
         }
         if (policy.maxInputTokens() != null) {
             details.put(
-                    "maxInputTokens",
-                    policy.maxInputTokens()
+                "maxInputTokens",
+                policy.maxInputTokens()
             );
         }
         if (policy.maxOutputTokens() != null) {
             details.put(
-                    "maxOutputTokens",
-                    policy.maxOutputTokens()
+                "maxOutputTokens",
+                policy.maxOutputTokens()
             );
         }
         if (policy.maxRequestCostUsd() != null) {
             details.put(
-                    "maxRequestCostUsd",
-                    policy.maxRequestCostUsd()
-                            .toPlainString()
+                "maxRequestCostUsd",
+                policy.maxRequestCostUsd()
+                    .toPlainString()
             );
         }
         if (policy.monthlyBudgetUsd() != null) {
             details.put(
-                    "monthlyBudgetUsd",
-                    policy.monthlyBudgetUsd()
-                            .toPlainString()
+                "monthlyBudgetUsd",
+                policy.monthlyBudgetUsd()
+                    .toPlainString()
             );
+        }
+        if (policy.rubBudget() != null) {
+            var rub = policy.rubBudget();
+            details.put("budgetInputCurrency", "RUB");
+            details.put("budgetRateSource", "CBR");
+            details.put("budgetRubPerUsd", rub.rubPerUsd().toPlainString());
+            details.put("budgetRateQuoteDate", rub.quoteDate().toString());
+            details.put("budgetRateEffectiveDate", rub.effectiveDate().toString());
+            details.put("budgetRateFetchedAt", rub.fetchedAt().toString());
+            if (rub.maxRequestCostRub() != null) {
+                details.put("maxRequestCostRub", rub.maxRequestCostRub().toPlainString());
+            }
+            if (rub.monthlyBudgetRub() != null) {
+                details.put("monthlyBudgetRub", rub.monthlyBudgetRub().toPlainString());
+            }
         }
 
         details.put(
-                "budgetEnforcement",
-                policy.budgetEnforcement()
+            "budgetEnforcement",
+            policy.budgetEnforcement()
         );
         details.put(
-                "requireCompletePricing",
-                policy.requireCompletePricing()
+            "requireCompletePricing",
+            policy.requireCompletePricing()
         );
         details.put(
-                "requireNoTraining",
-                policy.requireNoTraining()
+            "requireNoTraining",
+            policy.requireNoTraining()
         );
         details.put(
-                "requireZeroDataRetention",
-                policy.requireZeroDataRetention()
+            "requireZeroDataRetention",
+            policy.requireZeroDataRetention()
         );
 
         return Map.copyOf(details);
     }
 
     private static void addModelKeySnapshot(
-            Map<String, Object> details,
-            Set<String> allowModelKeys,
-            Set<String> denyModelKeys
+        Map<String, Object> details,
+        Set<String> allowModelKeys,
+        Set<String> denyModelKeys
     ) {
         details.put(
-                "allowModelKeyCount",
-                allowModelKeys.size()
+            "allowModelKeyCount",
+            allowModelKeys.size()
         );
         details.put(
-                "denyModelKeyCount",
-                denyModelKeys.size()
+            "denyModelKeyCount",
+            denyModelKeys.size()
         );
         details.put(
-                "allowModelKeysSha256",
-                sha256ModelKeys(allowModelKeys)
+            "allowModelKeysSha256",
+            sha256ModelKeys(allowModelKeys)
         );
         details.put(
-                "denyModelKeysSha256",
-                sha256ModelKeys(denyModelKeys)
+            "denyModelKeysSha256",
+            sha256ModelKeys(denyModelKeys)
         );
 
         long characterCount = allowModelKeys.stream()
-                .mapToLong(String::length)
-                .sum()
-                + denyModelKeys.stream()
-                .mapToLong(String::length)
-                .sum();
+            .mapToLong(String::length)
+            .sum()
+            + denyModelKeys.stream()
+            .mapToLong(String::length)
+            .sum();
         boolean includeFullLists =
-                characterCount <= MAX_INLINE_MODEL_KEY_CHARACTERS;
+            characterCount <= MAX_INLINE_MODEL_KEY_CHARACTERS;
 
         details.put(
-                "modelKeyListsIncluded",
-                includeFullLists
+            "modelKeyListsIncluded",
+            includeFullLists
         );
 
         if (includeFullLists) {
             details.put(
-                    "allowModelKeys",
-                    allowModelKeys
+                "allowModelKeys",
+                allowModelKeys
             );
             details.put(
-                    "denyModelKeys",
-                    denyModelKeys
+                "denyModelKeys",
+                denyModelKeys
             );
         }
     }
 
     private static String sha256ModelKeys(
-            Set<String> values
+        Set<String> values
     ) {
         String canonical = String.join(
-                "\n",
-                values
+            "\n",
+            values
         );
         try {
             byte[] digest = MessageDigest
-                    .getInstance("SHA-256")
-                    .digest(
-                            canonical.getBytes(
-                                    StandardCharsets.UTF_8
-                            )
-                    );
+                .getInstance("SHA-256")
+                .digest(
+                    canonical.getBytes(
+                        StandardCharsets.UTF_8
+                    )
+                );
             return HexFormat.of().formatHex(digest);
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException(
-                    "SHA-256 is unavailable",
-                    exception
+                "SHA-256 is unavailable",
+                exception
             );
         }
     }

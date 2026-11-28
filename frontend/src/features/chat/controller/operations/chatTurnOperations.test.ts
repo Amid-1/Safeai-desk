@@ -6,6 +6,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatDetails } from '../../api/chatApi'
 import type { PendingTurn } from '../../lib/chatPage.helpers'
+import { createPendingTurn } from '../../lib/chatPage.helpers'
+import { applyReactStateUpdate } from '../../../../test/fixtures/applyReactStateUpdate'
 import { ApiError } from '../../../../shared/api/http'
 import { chat, userMessage, assistantMessage, succeeded, IDS } from '../../../../test/fixtures/chatApiFixtures'
 import { createTurnUpdates } from './chatTurnUpdates'
@@ -24,17 +26,8 @@ vi.mock('../../../../shared/lib/secureUuid', () => ({
 }))
 
 const sendMock = vi.mocked(sendMessage)
-const pending = (): PendingTurn => ({
-    chatId: IDS.chat,
-    clientRequestId: IDS.request,
-    optimisticMessageId: `pending-${IDS.request}`,
-    content: 'hello',
-    status: 'SENDING',
-    error: null,
-    retryAfterUntil: null,
-    knowledgeBaseId: null,
-    knowledgeMode: 'GENERAL',
-})
+const pending = (): PendingTurn =>
+    createPendingTurn(IDS.chat, 'hello', IDS.request)
 
 function harness() {
     let currentChat: ChatDetails | null = { ...chat(), messages: [] }
@@ -54,43 +47,48 @@ function harness() {
         scrollIntentRef,
         pendingTurnsRef,
         setChats: (next: Parameters<ChatControllerDependencies['setChats']>[0]) => {
-            currentChats = typeof next === 'function' ? next(currentChats) : next
+            currentChats = applyReactStateUpdate(currentChats, next)
         },
         setActiveChat: (next: Parameters<ChatControllerDependencies['setActiveChat']>[0]) => {
-            currentChat = typeof next === 'function' ? next(currentChat) : next
+            currentChat = applyReactStateUpdate(currentChat, next)
             activeChatRef.current = currentChat
         },
         setAnswerPassports: (next: Parameters<ChatControllerDependencies['setAnswerPassports']>[0]) => {
-            passports = typeof next === 'function' ? next(passports) : next
+            passports = applyReactStateUpdate(passports, next)
         },
         setDrafts: (next: Parameters<ChatControllerDependencies['setDrafts']>[0]) => {
-            drafts = typeof next === 'function' ? next(drafts) : next
+            drafts = applyReactStateUpdate(drafts, next)
         },
         setPendingTurns: (next: Parameters<ChatControllerDependencies['setPendingTurns']>[0]) => {
-            currentPending = typeof next === 'function' ? next(currentPending) : next
+            currentPending = applyReactStateUpdate(currentPending, next)
         },
         setSendError: (value: string | ((previous: string) => string)) => {
-            sendError = typeof value === 'function' ? value(sendError) : value
+            sendError = applyReactStateUpdate(sendError, value)
         },
     } satisfies Parameters<typeof createTurnUpdates>[0]
 
     const updates = createTurnUpdates(deps)
     const refreshChatTitle = vi.fn(async () => undefined)
+    const ensureAutomaticChatTitle = vi.fn(async () => undefined)
     const reconcilePendingTurn = vi.fn(async () => undefined)
     const failure = createTurnFailureHandler({
+        activeChatRef,
         setSendError: deps.setSendError,
         setClock: vi.fn(),
         reconcilePendingTurn,
         putPendingTurn: updates.putPendingTurn,
     })
     const makeSubmission = (overrides: Partial<Pick<ChatControllerDependencies,
-        'knowledgeMode' | 'knowledgeBaseId' | 'capabilities'
+        'knowledgeMode' | 'knowledgeBaseId' | 'knowledgeBases' | 'knowledgeBasesStatus'
+        | 'capabilities' | 'activePendingTurn'
     >> = {}) => createTurnSubmission({
         capabilities: { maxMessageChars: 16_000, maxChatPageSize: 100,
             maxMessagePageSize: 100, detailsMessageLimit: 50 },
         activeChat: currentChat,
         knowledgeMode: 'GENERAL',
         knowledgeBaseId: '',
+        knowledgeBases: [],
+        knowledgeBasesStatus: 'ready',
         drafts,
         clock: Date.now(),
         pendingTurnsRef,
@@ -100,16 +98,18 @@ function harness() {
         activePendingTurn: undefined,
         activeChatHasPending: false,
         refreshChatTitle,
+        ensureAutomaticChatTitle,
         handleSendFailure: failure.handleSendFailure,
         applySendSuccess: updates.applySendSuccess,
         finishPendingTurn: updates.finishPendingTurn,
         setDraft: updates.setDraft,
         putPendingTurn: updates.putPendingTurn,
         sendInFlightRef,
+        reconciliationControllersRef,
         ...overrides,
     })
     return {
-        updates, failure, makeSubmission, reconcilePendingTurn,
+        updates, failure, makeSubmission, reconcilePendingTurn, ensureAutomaticChatTitle,
         pendingTurnsRef, sendInFlightRef,
         get activeChat() { return currentChat },
         get chats() { return currentChats },
@@ -154,7 +154,8 @@ describe('Контракт отправки и idempotency', () => {
         const h = harness()
         await h.makeSubmission({ knowledgeMode: 'KNOWLEDGE_ONLY' }).handleSendMessage()
         expect(sendMock).not.toHaveBeenCalled()
-        expect(h.sendError).toContain('Выберите базу знаний')
+        expect(h.sendError).toContain('Выберите доступную базу знаний')
+        expect(h.drafts[IDS.chat]).toBe('hello')
     })
 
     it('отклоняет сообщения за пределом maxMessageChars', async () => {
@@ -189,6 +190,28 @@ describe('Контракт отправки и idempotency', () => {
 })
 
 describe('Классификация ошибок отправки', () => {
+    it('показывает понятную причину блокировки и номер решения без повтора POST', async () => {
+        const h = harness()
+        const id = 'e933230e-1ef2-47e5-ab06-4b67adb82393'
+        await h.failure.handleSendFailure(pending(), new ApiError(
+            'AI model route отклонён политикой SafeAI: MODEL_NOT_ALLOWED. decisionId=' + id,
+            { code: 'FORBIDDEN' }, 403,
+        ))
+        expect(h.sendError).toContain('Модель не разрешена для вашей организации')
+        expect(h.sendError).toContain(id)
+        expect(h.pendingTurns[IDS.chat]?.status).toBe('FAILED')
+        expect(h.reconcilePendingTurn).not.toHaveBeenCalled()
+        expect(sendMock).not.toHaveBeenCalled()
+    })
+    it('явный отказ авторизации не маскируется как неопределённая отправка', async () => {
+        const h = harness()
+        await h.failure.handleSendFailure(
+            pending(), new ApiError('Нет доступа к модели', { code: 'FORBIDDEN' }, 403),
+        )
+        expect(h.pendingTurnsRef.current[IDS.chat]?.status).toBe('FAILED')
+        expect(h.reconcilePendingTurn).not.toHaveBeenCalled()
+    })
+
     it.each([
         ['AI_OUTCOME_AMBIGUOUS', 'AMBIGUOUS'],
         ['CHAT_PROCESSOR_FENCED', 'AMBIGUOUS'],
@@ -219,6 +242,60 @@ describe('Классификация ошибок отправки', () => {
         await h.failure.handleSendFailure(pending(), new Error('network'))
         expect(h.pendingTurnsRef.current[IDS.chat]?.clientRequestId).toBe(IDS.request)
         expect(h.pendingTurnsRef.current[IDS.chat]?.status).toBe('SEND_UNKNOWN')
-        expect(h.reconcilePendingTurn).toHaveBeenCalledTimes(1)
+        expect(h.reconcilePendingTurn).toHaveBeenCalledExactlyOnceWith(
+            h.pendingTurnsRef.current[IDS.chat],
+        )
+    })
+
+    it('возвращает RATE_LIMITED и сохраняет исходный clientRequestId', async () => {
+        const h = harness()
+        await h.failure.handleSendFailure(
+            pending(), new ApiError('Too many requests', { code: 'RATE_LIMIT_EXCEEDED', retryAfterSeconds: 3 }, 429),
+        )
+        expect(h.pendingTurnsRef.current[IDS.chat]).toEqual(expect.objectContaining({
+            clientRequestId: IDS.request, status: 'RATE_LIMITED',
+        }))
+        expect(h.reconcilePendingTurn).not.toHaveBeenCalled()
+        expect(sendMock).not.toHaveBeenCalled()
+    })
+
+    it('при требовании сверки выполняет только GET исходного запроса', async () => {
+        const h = harness()
+        await h.failure.handleSendFailure(pending(), new ApiError(
+            'internal attempt details', { code: 'AI_EXECUTION_RECONCILIATION_REQUIRED' }, 409,
+        ))
+        const current = h.pendingTurnsRef.current[IDS.chat]
+        expect(current.status).toBe('RECONCILIATION_REQUIRED')
+        expect(current.clientRequestId).toBe(IDS.request)
+        expect(current.error).not.toContain('internal')
+        expect(h.reconcilePendingTurn).toHaveBeenCalledWith(current)
+        const actions = h.makeSubmission({ activePendingTurn: current })
+        await actions.retryPendingTurn()
+        actions.prepareNewRequestFromPending()
+        actions.dismissUnsafePending()
+        expect(sendMock).not.toHaveBeenCalled()
+        expect(h.pendingTurnsRef.current[IDS.chat]).toEqual(current)
+    })
+
+    it('не доверяет старому обработчику кнопки после изменения состояния', async () => {
+        const h = harness()
+        const previous = { ...pending(), status: 'SEND_UNKNOWN' as const }
+        h.updates.putPendingTurn(previous)
+        const actions = h.makeSubmission({ activePendingTurn: previous })
+        h.updates.putPendingTurn({ ...previous, status: 'RECONCILIATION_REQUIRED' })
+        await actions.retryPendingTurn()
+        expect(sendMock).not.toHaveBeenCalled()
+    })
+
+    it('429 без Retry-After запрещает ранний повтор и новый идентификатор', async () => {
+        const h = harness()
+        await h.failure.handleSendFailure(pending(), new ApiError('private', {}, 429))
+        const current = h.pendingTurnsRef.current[IDS.chat]
+        expect(current.retryAfterUntil).toBeGreaterThan(Date.now() + 28_000)
+        const actions = h.makeSubmission({ activePendingTurn: current })
+        await actions.retryPendingTurn()
+        actions.prepareNewRequestFromPending()
+        expect(sendMock).not.toHaveBeenCalled()
+        expect(h.pendingTurnsRef.current[IDS.chat]).toEqual(current)
     })
 })

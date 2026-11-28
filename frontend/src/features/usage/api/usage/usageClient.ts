@@ -8,7 +8,18 @@ import { buildQueryString, normalizePage, normalizePageSize, uuidPathSegment } f
 import { contractError, expectRecord, parsePageResponse } from '../../../../shared/api/runtime'
 import type { PageResponse } from '../../../../shared/lib/page'
 import type { UsageSummaryFilter, RequestOptions, UsageSummary, UsageUserSummary, UsageModelSummary, UsageDailySummary } from './usageTypes'
-import { parseUsageSummary, parseUsageUserSummary, parseUsageModelSummary, parseUsageDailySummary } from './usageParsers'
+import { parseUsageSummary, parseUsageUserSummary, parseUsageModelSummary, parseUsageDailySummary, parseUsageOrganizationSummary } from './usageParsers'
+import type { UsageOrganizationSummary } from './usageTypes'
+
+export function getUsageByOrganizations(
+    page = 0,
+    size = 50,
+    filter: UsageSummaryFilter = {},
+    options: RequestOptions = {},
+): Promise<PageResponse<UsageOrganizationSummary>> {
+    return getUsagePage('/api/admin/usage/organizations', page, size, filter,
+        parseUsageOrganizationSummary, options)
+}
 
 export function getUsageSummary(
     page = 0,
@@ -137,9 +148,14 @@ async function getUsagePage<T>(
     const query = buildQueryString({
         page: normalizePage(page),
         size: normalizePageSize(size, 50, 100),
+        order: filter.order,
+        organizationQuery: normalizeOptionalString(filter.organizationQuery),
+        usedOnly: filter.usedOnly,
+        budgetStatus: path === '/api/admin/usage/organizations' ? filter.budgetStatus : undefined,
         dateFrom: normalizeOptionalString(filter.dateFrom),
         dateTo: normalizeOptionalString(filter.dateTo),
         model: normalizeOptionalString(filter.model),
+        userId: filter.userId ? uuidPathSegment(filter.userId) : undefined,
     })
 
     const response = await apiRequest<unknown>(
@@ -218,6 +234,7 @@ async function getUsageArray<T>(
         dateFrom: normalizeOptionalString(filter.dateFrom),
         dateTo: normalizeOptionalString(filter.dateTo),
         model: normalizeOptionalString(filter.model),
+        userId: filter.userId ? uuidPathSegment(filter.userId) : undefined,
     })
 
     const response = await apiRequest<unknown>(

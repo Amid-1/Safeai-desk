@@ -5,6 +5,7 @@
 import {
     useEffect,
     useMemo,
+    useRef,
     useState,
 } from 'react'
 import {
@@ -22,6 +23,7 @@ import {
 } from '../../../shared/api/http'
 import {
     formatDateTime,
+    formatUsd,
 } from '../../../shared/lib/format'
 import Modal from '../../../shared/ui/Modal'
 import type {
@@ -309,23 +311,23 @@ function buildVersionDiff(
         },
         {
             label: 'Input $/1M',
-            before: nullableValue(previous.inputUsdPer1mTokens),
-            after: nullableValue(current.inputUsdPer1mTokens),
+            before: formatUsd(previous.inputUsdPer1mTokens),
+            after: formatUsd(current.inputUsdPer1mTokens),
         },
         {
             label: 'Cached input $/1M',
-            before: nullableValue(previous.cachedInputUsdPer1mTokens),
-            after: nullableValue(current.cachedInputUsdPer1mTokens),
+            before: formatUsd(previous.cachedInputUsdPer1mTokens),
+            after: formatUsd(current.cachedInputUsdPer1mTokens),
         },
         {
             label: 'Cache write $/1M',
-            before: nullableValue(previous.cacheWriteInputUsdPer1mTokens),
-            after: nullableValue(current.cacheWriteInputUsdPer1mTokens),
+            before: formatUsd(previous.cacheWriteInputUsdPer1mTokens),
+            after: formatUsd(current.cacheWriteInputUsdPer1mTokens),
         },
         {
             label: 'Output $/1M',
-            before: nullableValue(previous.outputUsdPer1mTokens),
-            after: nullableValue(current.outputUsdPer1mTokens),
+            before: formatUsd(previous.outputUsdPer1mTokens),
+            after: formatUsd(current.outputUsdPer1mTokens),
         },
         {
             label: 'Pricing version',
@@ -353,13 +355,16 @@ export function ModelCatalogHistoryModal({
     modelKey,
     displayName,
     runtime,
+    targetVersionId,
     onClose,
 }: {
     modelKey: string
     displayName: string
     runtime: RuntimeModelStatus
+    targetVersionId?: string
     onClose: () => void
 }) {
+    const targetVersionRef = useRef<HTMLLIElement>(null)
     const [versions, setVersions] =
         useState<ModelCatalogEntry[]>([])
     const [effectiveEntry, setEffectiveEntry] =
@@ -455,6 +460,12 @@ export function ModelCatalogHistoryModal({
     const latestEntry =
         sortedVersions[0] ?? null
 
+    useEffect(() => {
+        if (loading || error || !targetVersionId) return
+        targetVersionRef.current?.focus({ preventScroll: true })
+        targetVersionRef.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+    }, [loading, error, targetVersionId])
+
     return (
         <Modal
             title={`История версий: ${displayName}`}
@@ -499,6 +510,12 @@ export function ModelCatalogHistoryModal({
                 </div>
             )}
 
+            {!loading && !error && targetVersionId && !sortedVersions.some(entry => entry.id === targetVersionId) && (
+                <div className="models-history-modal__warning" role="status">
+                    Версия из ссылки не найдена в истории модели. Другие версии показаны без выбора.
+                </div>
+            )}
+
             {!loading && !error && sortedVersions.length === 0 && (
                 <div className="models-history-modal__empty">
                     История для этой модели пока пуста.
@@ -533,6 +550,9 @@ export function ModelCatalogHistoryModal({
                                 <li
                                     key={entry.id}
                                     className="models-history-card"
+                                    data-navigation-target={entry.id === targetVersionId ? 'true' : undefined}
+                                    ref={entry.id === targetVersionId ? targetVersionRef : undefined}
+                                    tabIndex={entry.id === targetVersionId ? -1 : undefined}
                                 >
                                     <div className="models-history-card__rail" />
 
@@ -549,6 +569,7 @@ export function ModelCatalogHistoryModal({
                                         </div>
 
                                         <div className="models-history-card__badges">
+                                            {entry.id === targetVersionId && <span className="models-history-state models-history-state--selected">Версия из диагностики</span>}
                                             {states.map((state) => (
                                                 <StateBadge
                                                     key={state}

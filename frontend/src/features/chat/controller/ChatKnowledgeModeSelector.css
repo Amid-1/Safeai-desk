@@ -1,0 +1,20 @@
+/* frontend/src/features/chat/controller/ChatKnowledgeModeSelector.css */
+.chat-knowledge-status {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    flex: 1 1 100%;
+    min-width: 0;
+    width: 100%;
+    gap: 8px;
+    color: var(--safeai-muted);
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.chat-knowledge-status:empty { display: none; }
+
+.chat-knowledge-status > button {
+    min-height: 36px;
+    white-space: normal;
+}

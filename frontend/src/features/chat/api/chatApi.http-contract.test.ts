@@ -100,11 +100,11 @@ describe('chatApi: полный HTTP-контракт', () => {
         })
     })
 
-    it('DELETE archiveChat: не возвращает придуманного DTO', async () => {
+    it('POST archiveChat: не возвращает придуманного DTO', async () => {
         request.mockResolvedValue(undefined)
         expect(await archiveChat(IDS.chat)).toBeUndefined()
-        expect(request).toHaveBeenCalledWith(`/api/chats/${IDS.chat}`, {
-            method: 'DELETE', signal: undefined, timeoutMs: API_TIMEOUTS.default,
+        expect(request).toHaveBeenCalledWith(`/api/chats/${IDS.chat}/archive`, {
+            method: 'POST', signal: undefined, timeoutMs: API_TIMEOUTS.default,
         })
     })
 

@@ -43,6 +43,7 @@ export function useModalResize(resize: ModalResizeOptions | undefined, topmost: 
         resize?.maxScale
     const resizeMaximizable =
         resize?.maximizable
+    const resizeResizable = resize?.resizable
 
     const resizeState =
         useMemo<ResolvedModalResize>(
@@ -81,6 +82,7 @@ export function useModalResize(resize: ModalResizeOptions | undefined, topmost: 
                             resizeMaxScale,
                         maximizable:
                             resizeMaximizable,
+                        resizable: resizeResizable,
                     },
                 }
             },
@@ -95,6 +97,7 @@ export function useModalResize(resize: ModalResizeOptions | undefined, topmost: 
                 resizeMinScale,
                 resizeMaxScale,
                 resizeMaximizable,
+                resizeResizable,
             ],
         )
 
@@ -236,7 +239,9 @@ export function useModalResize(resize: ModalResizeOptions | undefined, topmost: 
                     'none',
 
                 maxHeight:
-                    'none',
+                    resizeState.enabled && resizeState.options.resizable === false && !maximized
+                        ? Math.max(1, window.innerHeight - resizeBounds.top - RESIZE_VIEWPORT_MARGIN)
+                        : 'none',
 
                 '--modal-resize-scale':
                     String(

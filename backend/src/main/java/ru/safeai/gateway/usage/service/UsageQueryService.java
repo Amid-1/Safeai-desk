@@ -1,10 +1,11 @@
 package ru.safeai.gateway.usage.service;
 
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.domain.Slice;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import ru.safeai.gateway.common.exception.BadRequestException;
@@ -14,8 +15,10 @@ import ru.safeai.gateway.usage.config.UsageProperties;
 import ru.safeai.gateway.usage.dto.UsageDailySummaryResponse;
 import ru.safeai.gateway.usage.dto.UsageDataQualityResponse;
 import ru.safeai.gateway.usage.dto.UsageModelSummaryResponse;
+import ru.safeai.gateway.usage.dto.UsageOrganizationSummaryResponse;
 import ru.safeai.gateway.usage.dto.UsageSummaryResponse;
 import ru.safeai.gateway.usage.dto.UsageUserSummaryResponse;
+import ru.safeai.gateway.usage.dto.UsageExportRequest;
 import ru.safeai.gateway.usage.repository.UsageInstantRange;
 import ru.safeai.gateway.usage.repository.UsageQueryCriteria;
 import ru.safeai.gateway.usage.repository.UsageQueryPlan;
@@ -27,7 +30,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
+import java.time.YearMonth;
+import ru.safeai.gateway.common.budget.PlatformBudgetClassification.Status;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -72,6 +76,49 @@ public class UsageQueryService {
                 range.from(), range.to(), scope(currentUser), null, normalizeModel(model));
         return reportExecutor.execute("summary", () ->
                 usageQueryRepository.findSummary(criteria, buildPlan(range), pageable));
+    }
+
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    public Slice<UsageOrganizationSummaryResponse> getUsageByOrganizations(
+            Instant dateFrom, Instant dateTo, String model, UUID userId,
+            Pageable pageable, SafeAiUserPrincipal currentUser
+    ) {
+        return getUsageByOrganizations(dateFrom, dateTo, model, userId, pageable, currentUser, null, false);
+    }
+
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    public Slice<UsageOrganizationSummaryResponse> getUsageByOrganizations(
+            Instant dateFrom, Instant dateTo, String model, UUID userId,
+            Pageable pageable, SafeAiUserPrincipal currentUser, String organizationQuery, boolean usedOnly
+    ) {
+        return getUsageByOrganizations(dateFrom, dateTo, model, userId, pageable, currentUser, organizationQuery, usedOnly, null);
+    }
+
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    public Slice<UsageOrganizationSummaryResponse> getUsageByOrganizations(
+            Instant dateFrom, Instant dateTo, String model, UUID userId,
+            Pageable pageable, SafeAiUserPrincipal currentUser, String organizationQuery, boolean usedOnly,
+            Status budgetStatus
+    ) {
+        requireCurrentUser(currentUser);
+        if (!isSuperAdmin(currentUser)) {
+            throw new ForbiddenOperationException("Сравнение организаций недоступно");
+        }
+        requirePageable(pageable);
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
+        if (organizationQuery != null && (organizationQuery.length() > 255
+                || organizationQuery.chars().anyMatch(Character::isISOControl))) {
+            throw new BadRequestException("Некорректная строка поиска организаций");
+        }
+        String query = organizationQuery == null || organizationQuery.isBlank() ? null : organizationQuery.strip();
+        var month = YearMonth.from(clock.instant().atOffset(ZoneOffset.UTC));
+        var budget = budgetStatus == null ? null : new UsageQueryCriteria.BudgetFilter(budgetStatus,
+                month.atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant(),
+                month.plusMonths(1).atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant());
+        UsageQueryCriteria criteria = new UsageQueryCriteria(
+                range.from(), range.to(), null, userId, normalizeModel(model), query, usedOnly, budget);
+        return reportExecutor.execute("organizations", () ->
+                usageQueryRepository.findOrganizations(criteria, buildPlan(range), pageable));
     }
 
     public Slice<UsageUserSummaryResponse> getUsageByUsers(
@@ -286,6 +333,65 @@ public class UsageQueryService {
                 usageQueryRepository.findSummary(criteria, buildPlan(range), pageable));
     }
 
+    private UsageQueryCriteria userCriteria(
+            UUID organizationId, UUID userId, UsageDateRange range, String model,
+            SafeAiUserPrincipal currentUser
+    ) {
+        requireCurrentUser(currentUser);
+        Objects.requireNonNull(userId, "userId не должен быть null");
+        if (organizationId != null) {
+            requireOrganizationAccess(organizationId, currentUser);
+        }
+        return new UsageQueryCriteria(range.from(), range.to(),
+                organizationId == null ? scope(currentUser) : organizationId,
+                userId, normalizeModel(model));
+    }
+
+    public Slice<UsageSummaryResponse> getUsageSummaryForUser(
+            UUID organizationId, UUID userId, Instant dateFrom, Instant dateTo, String model,
+            Pageable pageable, SafeAiUserPrincipal currentUser
+    ) {
+        requirePageable(pageable);
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
+        UsageQueryCriteria criteria = userCriteria(organizationId, userId, range, model, currentUser);
+        return reportExecutor.execute("summary", () ->
+                usageQueryRepository.findSummary(criteria, buildPlan(range), pageable));
+    }
+
+    public Slice<UsageUserSummaryResponse> getUsageUsersForUser(
+            UUID organizationId, UUID userId, Instant dateFrom, Instant dateTo, String model,
+            Pageable pageable, SafeAiUserPrincipal currentUser
+    ) {
+        requirePageable(pageable);
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
+        UsageQueryCriteria criteria = userCriteria(organizationId, userId, range, model, currentUser);
+        return reportExecutor.execute("users", () ->
+                usageQueryRepository.findUsers(criteria, buildPlan(range), pageable));
+    }
+
+    public List<UsageModelSummaryResponse> getUsageModelsForUser(
+            UUID organizationId, UUID userId, Instant dateFrom, Instant dateTo, String model,
+            SafeAiUserPrincipal currentUser
+    ) {
+        requireCurrentUser(currentUser);
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
+        UsageQueryCriteria criteria = userCriteria(organizationId, userId, range, model, currentUser);
+        return reportExecutor.execute("models", () ->
+                usageQueryRepository.findModels(criteria, buildPlan(range)));
+    }
+
+    public List<UsageDailySummaryResponse> getUsageDailyForUser(
+            UUID organizationId, UUID userId, Instant dateFrom, Instant dateTo, String model,
+            SafeAiUserPrincipal currentUser
+    ) {
+        requireCurrentUser(currentUser);
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
+        requireBoundedDailyRange(range);
+        UsageQueryCriteria criteria = userCriteria(organizationId, userId, range, model, currentUser);
+        return reportExecutor.execute("daily", () ->
+                usageQueryRepository.findDaily(criteria, buildPlan(range)));
+    }
+
     public UsageDataQualityResponse getDataQuality(
             Instant dateFrom, Instant dateTo, SafeAiUserPrincipal currentUser
     ) {
@@ -315,6 +421,54 @@ public class UsageQueryService {
                     + properties.maxRange().toDays() + " дней");
         }
         return new UsageDateRange(from, to);
+    }
+
+    /** Один снимок БД на весь экспорт; без повторных запросов по изменяющимся страницам. */
+    public List<?> exportRows(UsageExportRequest request, SafeAiUserPrincipal user, Instant generatedAt) {
+        requireCurrentUser(user);
+        if (request.kind() == null || request.dateFrom() == null || request.dateTo() == null) {
+            throw new BadRequestException("Не указаны параметры экспорта");
+        }
+        var range = normalizeRange(request.dateFrom(), request.dateTo());
+        boolean organizations = request.kind() == UsageExportRequest.Kind.ORGANIZATIONS;
+        if (organizations && (!isSuperAdmin(user) || request.organizationId() != null)) {
+            throw new ForbiddenOperationException("Сравнение организаций недоступно");
+        }
+        if (request.organizationId() != null) {
+            requireOrganizationAccess(request.organizationId(), user);
+        }
+        if (request.budgetStatus() != null && !organizations) {
+            throw new BadRequestException("Фильтр бюджета доступен только для сравнения организаций");
+        }
+        if (request.kind() == UsageExportRequest.Kind.DAILY) requireBoundedDailyRange(range);
+        String order = request.order() == null ? "tokens" : request.order();
+        if (!java.util.Set.of("tokens", "total", "cost", "responses", "coverage").contains(order)) {
+            throw new BadRequestException("Некорректная сортировка экспорта");
+        }
+        UUID tenant = request.organizationId() == null ? scope(user) : request.organizationId();
+        var month = YearMonth.from(generatedAt.atOffset(ZoneOffset.UTC));
+        var budget = request.budgetStatus() == null ? null : new UsageQueryCriteria.BudgetFilter(
+                request.budgetStatus(), month.atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant(),
+                month.plusMonths(1).atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant());
+        var criteria = new UsageQueryCriteria(range.from(), range.to(), tenant, request.userId(),
+                normalizeModel(request.model()), null, false, budget);
+        var page = PageRequest.of(0, UsageExportCsv.MAX_ROWS, Sort.by(Sort.Direction.DESC, order));
+        return reportExecutor.execute("export", () -> {
+            var plan = buildPlan(range);
+            return switch (request.kind()) {
+                case SUMMARY -> complete(usageQueryRepository.findSummary(criteria, plan, page));
+                case USERS -> complete(usageQueryRepository.findUsers(criteria, plan, page));
+                case ORGANIZATIONS -> complete(usageQueryRepository.findOrganizations(criteria, plan, page));
+                case MODELS -> usageQueryRepository.findModels(criteria, plan);
+                case DAILY -> usageQueryRepository.findDaily(criteria, plan);
+                case PROVIDERS -> throw new BadRequestException("Отдельный физический отчёт");
+            };
+        });
+    }
+
+    private static List<?> complete(Slice<?> slice) {
+        if (slice.hasNext()) throw new UsageExportCsv.LimitExceeded();
+        return slice.getContent();
     }
 
     private UsageQueryCriteria organizationCriteria(UsageDateRange range, UUID organizationId) {
@@ -349,24 +503,10 @@ public class UsageQueryService {
         if (!rollupStartInstant.isBefore(rollupEndInstant)) {
             return liveOnlyPlan(range);
         }
-        return validateLiveFallback(new UsageQueryPlan(
-                LocalDate.ofInstant(rollupStartInstant, ZoneOffset.UTC),
-                LocalDate.ofInstant(rollupEndInstant, ZoneOffset.UTC),
-                buildLiveRanges(range, rollupStartInstant, rollupEndInstant)
-        ));
-    }
-
-    private List<UsageInstantRange> buildLiveRanges(
-            UsageDateRange range, Instant rollupStartInstant, Instant rollupEndInstant
-    ) {
-        List<UsageInstantRange> live = new ArrayList<>(2);
-        if (range.from().isBefore(rollupStartInstant)) {
-            live.add(new UsageInstantRange(range.from(), rollupStartInstant));
-        }
-        if (rollupEndInstant.isBefore(range.to())) {
-            live.add(new UsageInstantRange(rollupEndInstant, range.to()));
-        }
-        return live;
+        LocalDate start = LocalDate.ofInstant(rollupStartInstant, ZoneOffset.UTC);
+        LocalDate end = LocalDate.ofInstant(rollupEndInstant, ZoneOffset.UTC);
+        return validateLiveFallback(UsageQueryPlan.hybrid(range.from(), range.to(), start, end,
+                rollupStateRepository.findDirtyDates(start, end)));
     }
 
     private UsageQueryPlan liveOnlyPlan(UsageDateRange range) {
@@ -382,7 +522,7 @@ public class UsageQueryService {
         if (liveDuration.compareTo(properties.maxLiveRange()) > 0) {
             throw new ResponseStatusException(
                     HttpStatus.SERVICE_UNAVAILABLE,
-                    "Usage rollup backfill ещё не покрывает запрошенный диапазон. Максимальный live fallback: "
+                    "Usage rollup не готов или требует пересчёта. Максимальный live fallback: "
                             + properties.maxLiveRange().toDays() + " дней");
         }
         return plan;
@@ -414,7 +554,7 @@ public class UsageQueryService {
     }
 
     private void requireCurrentUser(SafeAiUserPrincipal currentUser) {
-        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+        UsageAccessPolicy.requireReader(currentUser);
     }
 
     private void requirePageable(Pageable pageable) {
@@ -426,7 +566,9 @@ public class UsageQueryService {
             throw new BadRequestException("size должен находиться в диапазоне 1.."
                     + properties.maxPageSize());
         }
-        if (pageable.getSort().isSorted()) {
+        if (pageable.getSort().isSorted() && (pageable.getSort().stream().count() != 1
+                || pageable.getSort().stream().anyMatch(order -> !order.isDescending()
+                || !java.util.Set.of("tokens", "total", "cost", "responses", "coverage").contains(order.getProperty())))) {
             throw new BadRequestException("Произвольная сортировка usage-отчётов запрещена");
         }
         if (pageable.getOffset() > MAX_REPORT_OFFSET) {
@@ -437,8 +579,7 @@ public class UsageQueryService {
     }
 
     private boolean isSuperAdmin(SafeAiUserPrincipal user) {
-        return user.getAuthorities().stream().map(GrantedAuthority::getAuthority)
-                .anyMatch("ROLE_SUPER_ADMIN"::equals);
+        return UsageAccessPolicy.isSuperAdmin(user);
     }
 
     private record UsageDateRange(Instant from, Instant to) {

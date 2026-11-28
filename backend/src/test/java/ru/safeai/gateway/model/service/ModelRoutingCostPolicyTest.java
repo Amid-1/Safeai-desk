@@ -130,7 +130,6 @@ class ModelRoutingCostPolicyTest {
         ModelRoutingCostPolicy.PricingEstimate estimate =
                 policy.estimateCost(
                         ModelTestFixtures.freeEntry(),
-                        ModelTestFixtures.freeRuntime(),
                         1_000,
                         500
                 );
@@ -151,7 +150,6 @@ class ModelRoutingCostPolicyTest {
         ModelRoutingCostPolicy.PricingEstimate estimate =
                 policy.estimateCost(
                         verifiedFlatPricingEntry(ModelTestFixtures.configuredEntry()),
-                        ModelTestFixtures.configuredRuntime(),
                         1_000,
                         500
                 );
@@ -184,7 +182,6 @@ class ModelRoutingCostPolicyTest {
 
         ModelRoutingCostPolicy.PricingEstimate estimate = policy.estimateCost(
                 verifiedEntry,
-                ModelTestFixtures.configuredRuntime(),
                 1L,
                 0L
         );
@@ -210,7 +207,6 @@ class ModelRoutingCostPolicyTest {
         ModelRoutingCostPolicy.PricingEstimate estimate =
                 policy.estimateCost(
                         entry,
-                        ModelTestFixtures.configuredRuntime(),
                         10,
                         10
                 );
@@ -225,20 +221,27 @@ class ModelRoutingCostPolicyTest {
     }
 
     @Test
-    void legacyConfiguredRuntimeCanEstimateButNeverClaimsCompletePricing() {
+    void falselyCompleteCatalogPriceWithMissingRateIsRejected() {
+        ModelCatalogEntry entry = org.mockito.Mockito.mock(ModelCatalogEntry.class);
+        when(entry.pricingScheme()).thenReturn(ModelPricingScheme.FLAT_TOKEN_V1);
+        when(entry.pricingComplete()).thenReturn(true);
+        var estimate = policy.estimateCost(entry, 1, 1);
+        assertThat(estimate.cost()).isNull();
+        assertThat(estimate.complete()).isFalse();
+    }
+
+    @Test
+    void missingCatalogHasNoEstimate() {
         ModelRoutingCostPolicy.PricingEstimate estimate =
                 policy.estimateCost(
                         null,
-                        ModelTestFixtures.configuredRuntime(),
                         1_000,
                         500
                 );
 
         assertThat(
                 estimate.cost()
-        ).isEqualByComparingTo(
-                "0.003000000000"
-        );
+        ).isNull();
 
         assertThat(
                 estimate.complete()

@@ -8,6 +8,7 @@ import { useAdminOrganizationMutations } from '../features/admin-organizations/l
 import '../features/admin-organizations/styles/AdminOrganizationsPage.css'
 import '../features/admin-organizations/styles/AdminOrganizationsWorkspace.css'
 import '../features/admin-organizations/styles/AdminOrganizationsClarity.css'
+import '../entities/organization/ui/OrganizationDirectoryFilter.css'
 
 function AdminOrganizationsPage() {
     return <PageErrorBoundary><AdminOrganizationsPageContent /></PageErrorBoundary>
@@ -27,14 +28,21 @@ function AdminOrganizationsPageContent() {
         <AdminOrganizationsView
             organizations={directory.organizations}
             loadError={directory.loadError}
+            detailsError={directory.detailsError}
             mutationError={mutations.mutationError}
             createError={create.createError}
             success={mutations.success}
             loading={directory.loading}
             creating={create.creating}
-            hasPendingAction={mutations.hasPendingAction}
+            hasPendingAction={mutations.hasPendingDirectoryAction}
             page={directory.page}
             totalPages={directory.totalPages}
+            totalOrganizations={directory.totalOrganizations}
+            totalMatched={directory.totalMatched}
+            query={directory.query}
+            type={directory.type}
+            status={directory.status}
+            onFiltersChange={directory.changeFilters}
             name={create.name}
             detailsLoadingId={directory.detailsLoadingId}
             impactLoadingId={mutations.impactLoadingId}
@@ -50,6 +58,7 @@ function AdminOrganizationsPageContent() {
         <AdminOrganizationDialogs
             detailsOrganization={directory.detailsOrganization}
             detailsError={directory.detailsError}
+            mutationError={mutations.mutationError}
             renameOrganization={mutations.renameOrganization}
             renameValue={mutations.renameValue}
             renameError={mutations.renameError}

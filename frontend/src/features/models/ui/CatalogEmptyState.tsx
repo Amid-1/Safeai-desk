@@ -3,6 +3,7 @@
 type CatalogEmptyStateProps = {
     isSuperAdmin: boolean
     mutationPending: boolean
+    importBlocked?: boolean
     onImportRuntime: () => void
     onCreateModel: () => void
 }
@@ -10,6 +11,7 @@ type CatalogEmptyStateProps = {
 function CatalogEmptyState({
     isSuperAdmin,
     mutationPending,
+    importBlocked = false,
     onImportRuntime,
     onCreateModel,
 }: CatalogEmptyStateProps) {
@@ -72,7 +74,8 @@ function CatalogEmptyState({
                     <div className="models-empty-catalog__actions">
                         <button
                             type="button"
-                            disabled={mutationPending}
+                            disabled={mutationPending || importBlocked}
+                            aria-describedby={importBlocked ? 'models-runtime-import-hint' : undefined}
                             onClick={onImportRuntime}
                         >
                             Добавить подключённую модель в каталог

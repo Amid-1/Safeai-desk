@@ -1,6 +1,8 @@
 // frontend/src/features/chat/ui/ChatMessageViews.tsx
 /* frontend/src/features/chat/ui/ChatMessageViews.tsx */
 import type { KnowledgeMode } from '../api/chatApi'
+import { useState } from 'react'
+import { describeModelRouteDenial, MODEL_DECISION_ID_PATTERN } from '../../../shared/lib/modelRouteDenial'
 import type { AnswerPassport } from '../api/chatApi'
 import type { DisplayMessage, PendingTurn } from '../lib/chatPage.helpers'
 import {
@@ -11,6 +13,7 @@ import {
     getVisibleMessageContent,
     isMockModel,
     isSafeToPrepareNewRequest,
+    canRetryPendingStatus,
 } from '../lib/chatPage.helpers'
 import { getPendingLabel, getPendingShortLabel } from '../lib/chatPageSupport'
 
@@ -56,9 +59,9 @@ export function MessageView({
                 {message.role === 'ASSISTANT' && mockModel && (
                     <span
                         className="message__demo-badge"
-                        title="Тестовый mock-провайдер, не внешняя языковая модель"
+                        title="Демонстрационный режим, не внешний AI"
                     >
-                        Тестовый ответ · mock
+                        Тестовый ответ
                     </span>
                 )}
             </div>
@@ -104,12 +107,9 @@ export function MessageView({
                             <div>
                                 <dt>Модель AI</dt>
                                 <dd>{getModelDisplayName(message.model)}</dd>
-                                {message.model && (
-                                    <code>{message.model}</code>
-                                )}
                                 <small>
                                     {mockModel
-                                        ? 'Тестовый провайдер для демонстрации интерфейса. Это не ответ внешней LLM.'
+                                        ? 'Демонстрационный ответ. Это не ответ внешней AI-модели.'
                                         : 'Модель, которая фактически сформировала этот ответ.'}
                                 </small>
                             </div>
@@ -132,34 +132,32 @@ export function MessageView({
                     {answerPassport && (
                         <details className="answer-passport">
                             <summary>
-                                Паспорт ответа · источников: {answerPassport.citations.length}
+                                Источники ответа ({answerPassport.citations.length})
                             </summary>
                             <p>
                                 Режим: {getKnowledgeModeLabel(answerPassport.knowledgeMode)}
                                 {' · '}Ссылки: {answerPassport.citationsValid ? 'проверены' : 'требуют проверки'}
-                                {' · '}Доказательств: {answerPassport.evidenceSufficient ? 'достаточно' : 'недостаточно'}
+                                {' · '}Источников: {answerPassport.evidenceSufficient ? 'достаточно' : 'недостаточно'}
                             </p>
                             <ul>
                                 {answerPassport.citations.map((citation) => (
                                     <li key={citation.chunkId}>
                                         <strong>[{citation.label}]</strong>
                                         {' '}{citation.documentName}
-                                        {' · v'}{citation.versionNumber}
+                                        {' · версия '}{citation.versionNumber}
                                         {citation.pageFrom != null
                                             ? ` · стр. ${citation.pageFrom}`
                                             : ''}
-                                        {' · chunk '}{citation.chunkOrdinal}
                                     </li>
                                 ))}
                             </ul>
-                            <small>
-                                Идентификатор поиска: {answerPassport.retrievalRunId}
-                            </small>
-                            {answerPassport.modelRouteDecisionId && (
-                                <small>
-                                    {' · '}Route decision: {answerPassport.modelRouteDecisionId}
-                                </small>
-                            )}
+                            <details className="answer-passport__technical">
+                                <summary>Сведения для поддержки</summary>
+                                <p>Номер поиска: <code>{answerPassport.retrievalRunId}</code></p>
+                                {answerPassport.modelRouteDecisionId && (
+                                    <p>Номер решения: <code>{answerPassport.modelRouteDecisionId}</code></p>
+                                )}
+                            </details>
                         </details>
                     )}
                 </>
@@ -188,6 +186,8 @@ type PendingTurnStateProps = {
     onPrepareNew: () => void
     onCopy: () => void
     onDismissUnsafe: () => void
+    onNewChat?: () => void
+    newChatBusy?: boolean
 }
 
 export function PendingTurnState({
@@ -199,21 +199,43 @@ export function PendingTurnState({
     onPrepareNew,
     onCopy,
     onDismissUnsafe,
+    onNewChat,
+    newChatBusy,
 }: PendingTurnStateProps) {
-    const canRetrySameId =
-        pending.status === 'SEND_UNKNOWN'
-        || pending.status === 'RATE_LIMITED'
+    const [copyStatus, setCopyStatus] = useState('')
+    const support = /^(.*) (Номер решения|Номер обращения): ([A-Za-z0-9][A-Za-z0-9_.:-]{0,127})$/s
+        .exec(pending.error ?? '')
+    const reason = support?.[1] ?? ''
+    const supportLabel = support?.[2] ?? ''
+    const decisionId = support?.[3] ?? ''
+    const hasDecision = supportLabel === 'Номер решения' && MODEL_DECISION_ID_PATTERN.test(decisionId)
+    const hasSupportId = hasDecision || supportLabel === 'Номер обращения'
+    const inputLimit = hasDecision && reason.startsWith(describeModelRouteDenial('INPUT_LIMIT_EXCEEDED'))
+    const message = inputLimit
+        ? 'Общий объём запроса превышает допустимый лимит. Сократите сообщение или начните новый чат. '
+            + 'Если документы не нужны, выберите обычный AI. Если отказ повторяется, обратитесь к администратору.'
+        : hasSupportId ? reason : pending.error
+
+    async function copyDecision() {
+        try {
+            await navigator.clipboard.writeText(decisionId)
+            setCopyStatus('Номер скопирован.')
+        } catch {
+            setCopyStatus('Не удалось скопировать. Выделите номер вручную.')
+        }
+    }
+    const canRetrySameId = canRetryPendingStatus(pending.status)
 
     const canCheck =
         pending.status === 'PROCESSING'
         || pending.status === 'SEND_UNKNOWN'
         || pending.status === 'AMBIGUOUS'
+        || pending.status === 'RECONCILIATION_REQUIRED'
 
     const canPrepareNew =
         isSafeToPrepareNewRequest(
             pending.status,
         )
-        && pending.status !== 'RATE_LIMITED'
 
     const unsafeTerminal =
         pending.status === 'AMBIGUOUS'
@@ -221,10 +243,11 @@ export function PendingTurnState({
 
     return (
         <div
-            className="card"
+            className="chat-turn-notice"
             role={
                 pending.status === 'FAILED'
                 || pending.status === 'AMBIGUOUS'
+                || pending.status === 'RECONCILIATION_REQUIRED'
                 || pending.status === 'ACCESS_REVOKED'
                 || pending.status === 'IDEMPOTENCY_CONFLICT'
                     ? 'alert'
@@ -238,24 +261,24 @@ export function PendingTurnState({
             }
         >
             <strong>
-                {getPendingLabel(
+                {inputLimit ? 'Не удалось обработать запрос' : getPendingLabel(
                     pending,
                     now,
                 )}
             </strong>
 
-            {pending.error && (
-                <p>{pending.error}</p>
+            {message && (
+                <p>{message}</p>
             )}
 
-            <div className="modal-actions">
+            <div className="chat-turn-notice__actions">
                 {canRetrySameId && (
                     <button
                         type="button"
                         disabled={retryAfterSeconds > 0}
                         onClick={onRetry}
                     >
-                        Повторить с тем же ID
+                        Повторить отправку
                     </button>
                 )}
 
@@ -275,11 +298,15 @@ export function PendingTurnState({
                         className="secondary-button"
                         onClick={onPrepareNew}
                     >
-                        Вернуть текст как новый запрос
+                        Редактировать сообщение
                     </button>
                 )}
+                {canPrepareNew && onNewChat && <button type="button"
+                    className="secondary-button" disabled={newChatBusy} onClick={onNewChat}>
+                    Создать новый чат
+                </button>}
 
-                {unsafeTerminal && (
+                {(unsafeTerminal || pending.status === 'RECONCILIATION_REQUIRED') && (
                     <>
                         <button
                             type="button"
@@ -288,16 +315,24 @@ export function PendingTurnState({
                         >
                             Скопировать текст
                         </button>
-                        <button
+                        {unsafeTerminal && <button
                             type="button"
                             className="secondary-button"
                             onClick={onDismissUnsafe}
                         >
                             Закрыть без повтора
-                        </button>
+                        </button>}
                     </>
                 )}
             </div>
+            {hasSupportId && <details className="chat-turn-notice__details">
+                <summary>Сведения для поддержки</summary>
+                <p>{supportLabel}: <code>{decisionId}</code></p>
+                <button type="button" className="secondary-button" onClick={() => void copyDecision()}>
+                    {supportLabel === 'Номер решения' ? 'Копировать номер решения' : 'Копировать номер обращения'}
+                </button>
+                {copyStatus && <p role="status">{copyStatus}</p>}
+            </details>}
         </div>
     )
 }

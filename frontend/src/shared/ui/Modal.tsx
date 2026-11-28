@@ -7,6 +7,7 @@ import { createPortal } from 'react-dom'
 import { useModalLifecycle } from './modal/useModalLifecycle'
 import { useModalResize } from './modal/useModalResize'
 import type { ModalResizeOptions, ResizeDirection } from './modal/modalGeometry'
+import './ModalWindowControls.css'
 
 export type { ModalResizeOptions } from './modal/modalGeometry'
 
@@ -97,6 +98,9 @@ function Modal({
                     `modal-card--${size}`,
                     resizeState.enabled
                         ? 'modal-card--resizable'
+                        : '',
+                    resizeState.enabled && resizeState.options.resizable === false
+                        ? 'modal-card--content-fit'
                         : '',
                     maximized
                         ? 'modal-card--maximized'
@@ -250,6 +254,7 @@ function Modal({
                     )}
 
                 {resizeState.enabled
+                    && resizeState.options.resizable !== false
                     && resizeBounds
                     && !maximized
                     && (

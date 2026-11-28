@@ -1,5 +1,7 @@
 package ru.safeai.gateway.knowledge.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import ru.safeai.gateway.knowledge.entity.KnowledgeDocumentEntity;
 import ru.safeai.gateway.knowledge.entity.KnowledgeDocumentVersionEntity;
 import ru.safeai.gateway.knowledge.model.KnowledgeIngestionStatus;
@@ -13,7 +15,7 @@ public record KnowledgeDocumentResponse(
         boolean enabled,
         long version,
         UUID currentVersionId,
-        UUID searchableVersionId,
+        @JsonInclude(JsonInclude.Include.ALWAYS) UUID searchableVersionId,
         Integer versionNumber,
         String originalFilename,
         String mediaType,

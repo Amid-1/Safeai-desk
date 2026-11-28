@@ -8,7 +8,7 @@ import type {
 type FilterButtonProps = {
     active: boolean
     label: string
-    count: number
+    count: number | string
     disabled: boolean
     onClick: () => void
 }

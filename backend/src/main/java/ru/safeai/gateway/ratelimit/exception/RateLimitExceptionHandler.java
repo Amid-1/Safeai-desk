@@ -37,9 +37,7 @@ public class RateLimitExceptionHandler {
     ) {
         rateLimitLogger.log(
                 log,
-                exception,
-                request,
-                responses.requestId(request)
+                exception
         );
 
         return responses.build(

@@ -33,6 +33,19 @@ class UsageTenantIsolationIntegrationTest
     private UsageQueryRepository repository;
 
     @Test
+    void userFilterAppliesToModelAndDailyReportsRatherThanEntireTenant() {
+        insertTenantUsage();
+        var plan = livePlan(RANGE_FROM, RANGE_TO);
+        var own = criteria(ORGANIZATION_A_ID, USER_A_ID, MODEL, RANGE_FROM, RANGE_TO);
+        var foreign = criteria(ORGANIZATION_A_ID, USER_B_ID, MODEL, RANGE_FROM, RANGE_TO);
+        assertThat(repository.findModels(own, plan)).hasSize(1);
+        assertThat(repository.findDaily(own, plan)).hasSize(1);
+        assertThat(repository.findModels(foreign, plan)).isEmpty();
+        assertThat(repository.findDaily(foreign, plan)).isEmpty();
+        assertThat(repository.findUsers(foreign, plan, PAGEABLE).getContent()).isEmpty();
+    }
+
+    @Test
     void organizationScopedReportContainsOnlyOwnTenant() {
         insertTenantUsage();
 

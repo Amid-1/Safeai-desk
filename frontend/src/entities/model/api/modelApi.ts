@@ -24,6 +24,9 @@ export type {
     RuntimeModelProbeStatus,
     RuntimeModelProbe,
     OrganizationModelPolicy,
+    RubBudgetQuote,
+    RubBudgetInput,
+    RubBudgetSnapshot,
     ModelRouteDecision,
     CreateModelCatalogVersionRequest,
     CreateOrganizationModelPolicyVersionRequest,
@@ -59,10 +62,13 @@ export {
     createModelCatalogVersion,
     importRuntimeModelCatalog,
     getOrganizationModelPolicy,
+    getRubBudgetQuote,
     createOrganizationModelPolicyVersion,
     previewOrganizationModelPolicy,
     getModelRouteDecision,
 } from './model/modelClient'
+
+export {rubToUsd, usdToRub, budgetMoneyEqual, moscowBudgetDate} from './model/modelBudgetFx'
 
 export {
     parseRuntimeModelStatus,

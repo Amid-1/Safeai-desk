@@ -1,0 +1,23 @@
+# # SafeAI-Desk/backend/docs/config/application-security-example.yml
+# Windows path: D:\Java projects\Safeai-desk\backend\docs\config\application-security-example.yml
+# Documentation ONLY, not a production config file.
+# Examples must never be copied into the live application.yml without review.
+safeai:
+  security:
+    client-ip:
+      # Only the single trusted container-edge proxy is allowed.
+      trusted-proxy-cidrs:
+        - 172.28.0.10/32
+  cors:
+    allowed-origins:
+      - https://desk.example.com
+      - https://admin.example.com
+
+# Production JWT signing keys MUST come from /run/secrets/jwt-keys.yml,
+# not from a checked-in file or plain-text environment variables.
+app:
+  security:
+    jwt:
+      expiration-minutes: ${SAFEAI_JWT_EXPIRATION_MINUTES:15}
+      issuer: ${SAFEAI_JWT_ISSUER}
+      audience: ${SAFEAI_JWT_AUDIENCE:safeai-desk-api}

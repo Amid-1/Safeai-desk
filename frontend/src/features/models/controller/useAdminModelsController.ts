@@ -21,11 +21,12 @@ import type {
     OrganizationModelPolicy,
     RuntimeModelStatus,
 } from '../../../entities/model/api/modelApi'
-import { getApiErrorMessage } from '../../../shared/api/http'
+import { ApiError, getApiErrorMessage } from '../../../shared/api/http'
 import { useAdminModelsOrganizationSearch } from './useAdminModelsOrganizationSearch'
 import { useAdminModelsDiagnostics } from './useAdminModelsDiagnostics'
 import { getOrganizationDetails } from '../../../entities/organization/api/organizationApi'
 import { useAuth } from '../../auth/state/useAuth'
+import { directoryUuid } from '../../../shared/lib/adminDirectoryUrl'
 
 export function useAdminModelsController() {
     const {
@@ -57,7 +58,8 @@ export function useAdminModelsController() {
         targetOrganizationId,
         setTargetOrganizationId,
     ] = useState(
-        currentUser?.organizationId ?? '',
+        (isSuperAdmin ? directoryUuid(new URLSearchParams(window.location.search).get('organizationId')) : '')
+        || currentUser?.organizationId || '',
     )
 
     const [
@@ -121,9 +123,9 @@ export function useAdminModelsController() {
 
     const {
         routeDecisionId, handleRouteDecisionIdChange, routeDecision,
-        routePending, routeError, runtimeProbe, runtimeProbePending,
-        handleRuntimeProbe, handleRouteLookup,
-    } = useAdminModelsDiagnostics(isSuperAdmin, setError)
+        routePending, routeError, runtimeProbe, runtimeProbePending, runtimeHealthUnconfirmed,
+        handleRuntimeProbe, handleRouteLookup, lookupRouteDecision,
+    } = useAdminModelsDiagnostics(isSuperAdmin, setError, runtime)
 
 
     useEffect(() => {
@@ -132,10 +134,11 @@ export function useAdminModelsController() {
         }
 
         setTargetOrganizationId(
-            currentUser.organizationId,
+            (isSuperAdmin ? directoryUuid(new URLSearchParams(window.location.search).get('organizationId')) : '')
+            || currentUser.organizationId,
         )
         setSelectedOrganization(null)
-    }, [currentUser])
+    }, [currentUser, isSuperAdmin])
 
     /*
      * Название tenant — presentation metadata. Его отдельная загрузка
@@ -194,6 +197,7 @@ export function useAdminModelsController() {
 
         setLoading(true)
         setError('')
+        setNotice('')
 
         void Promise.all([
             getRuntimeModelStatus(
@@ -266,6 +270,15 @@ export function useAdminModelsController() {
                 ),
             ), [catalog])
 
+    // Import uses the canonical runtime key, not only effective/active entries.
+    // A scheduled, archived or manually managed version also reserves that key.
+    const runtimeCatalogKey = runtime
+        ? `${runtime.provider.trim()}:${runtime.model.trim()}`.toLowerCase()
+        : null
+    const runtimeCatalogEntry = runtimeCatalogKey
+        ? catalogByKey.get(runtimeCatalogKey) : undefined
+    const runtimeImportBlocked = !runtime?.enabled || Boolean(runtimeCatalogEntry)
+
     const refreshCatalog =
         useCallback(async () => {
             // Оба среза должны быть успешно прочитаны. Нельзя отображать
@@ -276,11 +289,12 @@ export function useAdminModelsController() {
             ])
             setCatalog(latest)
             setEffectiveCatalog(effective)
+            return latest
         }, [])
 
     const handleImportRuntime =
         useCallback(async () => {
-            if (mutationInFlightRef.current || !isSuperAdmin) {
+            if (mutationInFlightRef.current || !isSuperAdmin || runtimeImportBlocked) {
                 return
             }
             mutationInFlightRef.current = true
@@ -294,12 +308,26 @@ export function useAdminModelsController() {
                 imported =
                     await importRuntimeModelCatalog()
             } catch (failure) {
-                setImportError(getApiErrorMessage(
-                    failure,
-                    'Не удалось добавить подключённую модель в каталог.',
-                ))
-                mutationInFlightRef.current = false
-                setMutationPending(false)
+                try {
+                    // Another administrator may have registered the model since
+                    // the last GET. Never expose internal conflict diagnostics.
+                    if (failure instanceof ApiError && failure.status === 409) {
+                        const latest = await refreshCatalog()
+                        if (latest.some(entry => entry.modelKey === runtimeCatalogKey)) {
+                            return
+                        }
+                        setImportError('Каталог или настройки подключения изменились. Проверьте подключение модели и обновите страницу.')
+                    } else if (failure instanceof ApiError && failure.status === 403) {
+                        setImportError('Недостаточно прав для добавления модели в каталог.')
+                    } else {
+                        setImportError('Не удалось выполнить добавление. Обновите страницу и проверьте, появилась ли модель в каталоге, прежде чем повторить.')
+                    }
+                } catch {
+                    setImportError('Каталог мог измениться. Не удалось обновить список моделей. Перезагрузите страницу перед повторной попыткой.')
+                } finally {
+                    mutationInFlightRef.current = false
+                    setMutationPending(false)
+                }
                 return
             }
 
@@ -317,7 +345,7 @@ export function useAdminModelsController() {
                 mutationInFlightRef.current = false
                 setMutationPending(false)
             }
-        }, [refreshCatalog, isSuperAdmin])
+        }, [refreshCatalog, isSuperAdmin, runtimeImportBlocked, runtimeCatalogKey])
 
     const handleCreateCatalogVersion =
         useCallback(async (
@@ -414,7 +442,8 @@ export function useAdminModelsController() {
     return {
         currentUser,
         isSuperAdmin,
-        runtime,
+        // Do not present an older server observation as the result of a failed or pending recheck.
+        runtime: runtime && runtimeHealthUnconfirmed ? {...runtime, healthStatus: 'NOT_PROBED' as const} : runtime,
         catalog,
         effectiveCatalog,
         policy,
@@ -427,6 +456,8 @@ export function useAdminModelsController() {
         error,
         notice,
         importError,
+        runtimeCatalogEntry,
+        runtimeImportBlocked,
         catalogPermissionNotice,
         setCatalogPermissionNotice,
         catalogModal,
@@ -460,6 +491,7 @@ export function useAdminModelsController() {
         handleOrganizationSearch,
         handleRuntimeProbe,
         handleRouteLookup,
+        lookupRouteDecision,
     }
 }
 

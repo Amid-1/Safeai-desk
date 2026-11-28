@@ -19,10 +19,13 @@ import java.util.Objects;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
 class RateLimitExceptionHandlerTest {
 
     private static final Instant FIXED_TIME =
-            Instant.parse("2026-06-12T12:00:00Z");
+        Instant.parse("2026-06-12T12:00:00Z");
     private static final String REQUEST_ID = "test-request-id";
 
     private RateLimitExceptionHandler handler;
@@ -30,101 +33,164 @@ class RateLimitExceptionHandlerTest {
     @BeforeEach
     void setUp() {
         handler = new RateLimitExceptionHandler(
-                new ApiErrorResponseFactory(
-                        Clock.fixed(FIXED_TIME, ZoneOffset.UTC)
-                )
+            new ApiErrorResponseFactory(
+                Clock.fixed(FIXED_TIME, ZoneOffset.UTC)
+            )
         );
     }
 
     @Test
     void handleRateLimitUnavailableReturnsSafe503() {
         ResponseEntity<ApiErrorResponse> response =
-                handler.handleRateLimitUnavailable(
-                        new RateLimitUnavailableException(
-                                "Redis недоступен",
-                                new RuntimeException(
-                                        "redis.internal:6379"
-                                )
-                        ),
-                        request("/api/chats")
-                );
+            handler.handleRateLimitUnavailable(
+                new RateLimitUnavailableException(
+                    "Redis недоступен",
+                    new RuntimeException(
+                        "redis.internal:6379"
+                    )
+                ),
+                request("/api/chats")
+            );
 
         ApiErrorResponse body = assertError(
-                response,
-                HttpStatus.SERVICE_UNAVAILABLE,
-                ApiErrorCode.RATE_LIMIT_UNAVAILABLE,
-                "Сервис ограничения запросов временно недоступен",
-                "/api/chats"
+            response,
+            HttpStatus.SERVICE_UNAVAILABLE,
+            ApiErrorCode.RATE_LIMIT_UNAVAILABLE,
+            "Сервис ограничения запросов временно недоступен",
+            "/api/chats"
         );
 
         assertThat(body.message())
-                .doesNotContain(
-                        "Redis",
-                        "redis.internal"
-                );
+            .doesNotContain(
+                "Redis",
+                "redis.internal"
+            );
     }
 
     @Test
     void handleRateLimitExceededReturns429AndRetryAfterHeader() {
         ResponseEntity<ApiErrorResponse> response =
-                handler.handleRateLimitExceeded(
-                        new RateLimitExceededException(
-                                "Превышен лимит",
-                                Duration.ofSeconds(60)
-                        ),
-                        request("/api/chats")
-                );
+            handler.handleRateLimitExceeded(
+                new RateLimitExceededException(
+                    "Превышен лимит",
+                    Duration.ofSeconds(60)
+                ),
+                request("/api/chats")
+            );
 
         assertError(
-                response,
-                HttpStatus.TOO_MANY_REQUESTS,
-                ApiErrorCode.RATE_LIMIT_EXCEEDED,
-                "Превышен лимит",
-                "/api/chats"
+            response,
+            HttpStatus.TOO_MANY_REQUESTS,
+            ApiErrorCode.RATE_LIMIT_EXCEEDED,
+            "Превышен лимит",
+            "/api/chats"
         );
 
         assertThat(response.getHeaders().getFirst(
-                HttpHeaders.RETRY_AFTER
+            HttpHeaders.RETRY_AFTER
         )).isEqualTo("60");
     }
 
-    @Test
-    void handleRateLimitExceededOmitsRetryAfterForZeroDuration() {
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "/api/chats",
+        "/api/auth/login",
+        "/api/auth/refresh"
+    })
+    void handleRateLimitUnavailableReturnsSafe503(String path) {
         ResponseEntity<ApiErrorResponse> response =
-                handler.handleRateLimitExceeded(
-                        new RateLimitExceededException(
-                                "Превышен лимит",
-                                Duration.ZERO
-                        ),
-                        request("/api/chats")
-                );
+            handler.handleRateLimitUnavailable(
+                new RateLimitUnavailableException(
+                    "Redis недоступен",
+                    new RuntimeException("redis.internal:6379")
+                ),
+                request(path)
+            );
 
-        assertError(
-                response,
-                HttpStatus.TOO_MANY_REQUESTS,
-                ApiErrorCode.RATE_LIMIT_EXCEEDED,
-                "Превышен лимит",
-                "/api/chats"
+        ApiErrorResponse body = assertError(
+            response,
+            HttpStatus.SERVICE_UNAVAILABLE,
+            ApiErrorCode.RATE_LIMIT_UNAVAILABLE,
+            "Сервис ограничения запросов временно недоступен",
+            path
         );
 
-        assertThat(response.getHeaders().getFirst(
-                HttpHeaders.RETRY_AFTER
-        )).isNull();
+        assertThat(body.message())
+            .doesNotContain(
+                "Redis",
+                "redis.internal"
+            );
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "/api/chats",
+        "/api/auth/login",
+        "/api/auth/refresh"
+    })
+    void handleRateLimitExceededReturns429AndRetryAfterHeader(String path) {
+        ResponseEntity<ApiErrorResponse> response =
+            handler.handleRateLimitExceeded(
+                new RateLimitExceededException(
+                    "Превышен лимит",
+                    Duration.ofSeconds(60)
+                ),
+                request(path)
+            );
+
+        assertError(
+            response,
+            HttpStatus.TOO_MANY_REQUESTS,
+            ApiErrorCode.RATE_LIMIT_EXCEEDED,
+            "Превышен лимит",
+            path
+        );
+
+        assertThat(response.getHeaders().getFirst(HttpHeaders.RETRY_AFTER))
+            .isEqualTo("60");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "/api/chats",
+        "/api/auth/login",
+        "/api/auth/refresh"
+    })
+    void handleRateLimitExceededOmitsRetryAfterForZeroDuration(String path) {
+        ResponseEntity<ApiErrorResponse> response =
+            handler.handleRateLimitExceeded(
+                new RateLimitExceededException(
+                    "Превышен лимит",
+                    Duration.ZERO
+                ),
+                request(path)
+            );
+
+        assertError(
+            response,
+            HttpStatus.TOO_MANY_REQUESTS,
+            ApiErrorCode.RATE_LIMIT_EXCEEDED,
+            "Превышен лимит",
+            path
+        );
+
+        assertThat(response.getHeaders().getFirst(HttpHeaders.RETRY_AFTER))
+            .isNull();
     }
 
     private ApiErrorResponse assertError(
-            ResponseEntity<ApiErrorResponse> response,
-            HttpStatus expectedStatus,
-            ApiErrorCode expectedCode,
-            String expectedMessage,
-            String expectedPath
+        ResponseEntity<ApiErrorResponse> response,
+        HttpStatus expectedStatus,
+        ApiErrorCode expectedCode,
+        String expectedMessage,
+        String expectedPath
     ) {
         assertThat(response.getStatusCode()).isEqualTo(expectedStatus);
         assertThat(response.getHeaders().getFirst(HttpHeaders.CACHE_CONTROL))
-                .isEqualTo("no-store");
+            .isEqualTo("no-store");
 
         ApiErrorResponse body = Objects.requireNonNull(
-                response.getBody(), "ApiErrorResponse body must not be null"
+            response.getBody(), "ApiErrorResponse body must not be null"
         );
         assertThat(body.timestamp()).isEqualTo(FIXED_TIME);
         assertThat(body.status()).isEqualTo(expectedStatus.value());

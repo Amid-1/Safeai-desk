@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.user.dto.UserResponse;
 import ru.safeai.gateway.user.service.UserDirectorySearchService;
+import java.util.UUID;
 
 /** Keeps the existing /api/users read and mutation contracts unchanged. */
 @RestController
@@ -29,8 +30,19 @@ public class UserDirectorySearchController {
             @RequestParam(required = false) Boolean enabled,
             @RequestParam(required = false) String query,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size
+            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(required = false) UUID organizationId
     ) {
-        return service.search(currentUser, role, enabled, query, page, size);
+        return organizationId == null
+                ? service.search(currentUser, role, enabled, query, page, size)
+                : service.search(currentUser, role, enabled, query, page, size, organizationId);
+    }
+
+    @GetMapping("/statistics")
+    public UserDirectorySearchService.DirectoryStatistics statistics(
+            @AuthenticationPrincipal(errorOnInvalidType = true) SafeAiUserPrincipal currentUser,
+            @RequestParam(required = false) UUID organizationId
+    ) {
+        return service.statistics(currentUser, organizationId);
     }
 }

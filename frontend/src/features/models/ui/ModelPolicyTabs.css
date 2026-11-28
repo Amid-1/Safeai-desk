@@ -165,6 +165,12 @@
 .modal-card.models-policy-modal .models-policy-tabs__dot--ready {background: #128851;}
 .modal-card.models-policy-modal .models-policy-tabs__dot--stale {background: #c68e24;}
 .modal-card.models-policy-modal .models-policy-tabs__panel[hidden] {display: none !important;}
+.modal-card.models-policy-modal [data-policy-block][tabindex="-1"]:focus-visible {
+    outline: 2px solid #526bea;
+    outline-offset: 3px;
+    border-radius: 10px;
+    scroll-margin-block: 10px;
+}
 .modal-card.models-policy-modal .models-policy-tabs__panel {
     min-width: 0;
     padding: 18px;
@@ -199,7 +205,39 @@
 .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__settings-grid--access {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    margin-top: 12px;
+    margin-bottom: 12px;
+}
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__settings-grid--budget {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.modal-card.models-policy-modal .models-policy-form__full-row {grid-column: 1 / -1; margin: 0;}
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__setting-field,
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__access-grid > *,
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__requirements {
+    background: #f9fbfe;
+    border-color: #dbe4f2;
+}
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__requirements legend {color: #435575;}
+.modal-card.models-policy-modal .models-policy-form__setting-field small {color: #526581; font-weight: 500;}
+.modal-card.models-policy-modal .models-policy-form__setting-field--numeric {
+    display: grid;
+    align-content: start;
+    gap: 6px;
+}
+.modal-card.models-policy-modal .models-policy-form__setting-field--numeric small {
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+.modal-card.models-policy-modal .models-policy-form__setting-field input[aria-invalid="true"] {
+    border-color: #b42318;
+}
+.modal-card.models-policy-modal .models-policy-form__setting-field small.models-policy-form__numeric-error {
+    display: block;
+    color: #b42318;
+}
+.modal-card.models-policy-modal .models-policy-form__setting-field small.models-policy-form__numeric-warning {
+    display: block;
+    color: #925b05;
 }
 .modal-card.models-policy-modal .models-policy-form__setting-field,
 .modal-card.models-policy-modal .models-policy-form__access-grid > * {

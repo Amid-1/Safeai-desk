@@ -1,5 +1,6 @@
 package ru.safeai.gateway.model.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import ru.safeai.gateway.model.domain.BudgetEnforcement;
 import ru.safeai.gateway.model.domain.OrganizationModelPolicy;
 
@@ -27,7 +28,8 @@ public record OrganizationModelPolicyResponse(
         boolean requireNoTraining,
         boolean requireZeroDataRetention,
         UUID createdByUserId,
-        Instant createdAt
+        Instant createdAt,
+        @JsonInclude(JsonInclude.Include.NON_NULL) RubBudgetResponse rubBudget
 ) {
     public static OrganizationModelPolicyResponse from(
             OrganizationModelPolicy policy
@@ -50,7 +52,8 @@ public record OrganizationModelPolicyResponse(
                 policy.requireNoTraining(),
                 policy.requireZeroDataRetention(),
                 policy.createdByUserId(),
-                policy.createdAt()
+                policy.createdAt(),
+                RubBudgetResponse.from(policy.rubBudget())
         );
     }
 
@@ -74,6 +77,7 @@ public record OrganizationModelPolicyResponse(
                 false,
                 false,
                 false,
+                null,
                 null,
                 null
         );

@@ -2,6 +2,7 @@
 import type {
     ModelCapability, ModelLifecycle, ModelModality, ModelPricingStatus,
     ModelRetentionStatus, ModelTrainingUseStatus, BudgetEnforcement,
+    RubBudgetQuote,
 } from '../../../../entities/model/api/modelApi'
 
 export type CatalogDraft = {
@@ -39,6 +40,8 @@ export type PolicyDraft = {
     maxOutputTokens: string
     maxRequestCostUsd: string
     monthlyBudgetUsd: string
+    /** Editor values use RUB when a quote is present; wire USD fields stay canonical. */
+    rubQuote?: RubBudgetQuote
     budgetEnforcement: BudgetEnforcement
     requireCompletePricing: boolean
     requireNoTraining: boolean

@@ -15,7 +15,7 @@ export function AdminUsersView(props: AdminUsersViewProps) {
     return (
         <>
             <ResizableScrollRegion
-                storageKey="safeai:users-table-height:v2"
+                storageKey="safeai:users-table-height:v4"
                 label="список пользователей"
                 preserveUpperContent
                 upper={<UsersDirectoryUpper {...props} />}
@@ -56,16 +56,10 @@ export function AdminUsersView(props: AdminUsersViewProps) {
                 viewportClassName={
                     'users-table-scroll'
                 }
-                defaultHeight={430}
-                autoFitHeight={
-                    !loading && !loadError
-                        ? users.length > 0
-                            ? 15 + 59 + users.length * 73 + 56
-                            : 175
-                        : undefined
-                }
+                defaultHeight={1600}
+                autoFitHeight={1600}
                 minHeight={72}
-                maxHeight={760}
+                maxHeight={1600}
                 minUpperHeight={112}
             >
                 <UsersDirectoryContent {...props} onShowRoleInfo={setRoleInfoUser} />

@@ -1,0 +1,68 @@
+# SafeAI-Desk/infra/prometheus/rules/safeai-knowledge-erasure.yml
+# Canonical production AND local alert rules. Loaded by infra/prometheus/prometheus.yml
+# via /etc/prometheus/rules/*.yml; infra/docker-compose*.yml bind-mounts this directory.
+# Do not copy into backend/deploy/prometheus or ops/prometheus (not mounted).
+# Generic audit dead-letter alerts live only in infra/prometheus/rules/safeai-audit-outbox.yml.
+# Alertmanager routing is a separate deployment requirement.
+groups:
+  - name: safeai-knowledge-erasure
+    rules:
+      - alert: SafeAIKnowledgeErasureNeedsReview
+        expr: max(safeai_knowledge_erasure_operations{state="NEEDS_REVIEW"}) > 0
+        for: 5m
+        labels:
+          severity: warning
+          service: safeai-backend
+        annotations:
+          summary: "Knowledge erasure requires operator review"
+          description: "Inspect the ADMIN diagnostics and recovery runbook. Do not manually change deletion state in PostgreSQL."
+
+      - alert: SafeAIKnowledgeErasureRetentionBlocked
+        expr: max(safeai_knowledge_erasure_operations{state="BLOCKED_BY_RETENTION"}) > 0
+        for: 5m
+        labels:
+          severity: warning
+          service: safeai-backend
+        annotations:
+          summary: "Knowledge erasure is blocked by verified retention"
+          description: "Investigate S3 Object Lock / legal hold. Original blocked evidence must remain immutable."
+
+      - alert: SafeAIKnowledgeErasureStuck
+        expr: max(safeai_knowledge_erasure_oldest_age_seconds{state="DELETING"}) > 3600
+        for: 10m
+        labels:
+          severity: warning
+          service: safeai-backend
+        annotations:
+          summary: "Knowledge erasure has remained in DELETING for over an hour"
+          description: "Investigate worker progress, leases, retries and DB state. Age is measured from operation creation."
+
+      - alert: SafeAIKnowledgeErasureMetricsStale
+        expr: (time() - safeai_knowledge_erasure_metrics_last_success_epoch_seconds > 300) or (safeai_knowledge_erasure_metrics_last_success_epoch_seconds == 0)
+        for: 5m
+        labels:
+          severity: warning
+          service: safeai-backend
+        annotations:
+          summary: "Knowledge erasure metrics are stale"
+          description: "Metrics have not refreshed successfully for at least five minutes. Do not interpret stale zero values as a healthy queue."
+
+      - alert: SafeAIKnowledgeErasureMetricsAbsent
+        expr: absent(safeai_knowledge_erasure_metrics_last_success_epoch_seconds)
+        for: 5m
+        labels:
+          severity: warning
+          service: safeai-backend
+        annotations:
+          summary: "Knowledge erasure metrics are absent"
+          description: "Verify the backend revision, Actuator metrics and Prometheus scrape target."
+
+      - alert: SafeAIKnowledgeErasureMetricsRefreshFailed
+        expr: sum(increase(safeai_knowledge_erasure_metrics_refresh_failures_total[10m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+          service: safeai-backend
+        annotations:
+          summary: "Knowledge erasure metrics refresh failed"
+          description: "Investigate PostgreSQL availability and knowledge erasure metrics scheduler errors."

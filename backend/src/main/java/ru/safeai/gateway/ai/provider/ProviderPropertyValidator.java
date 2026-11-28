@@ -150,14 +150,8 @@ public final class ProviderPropertyValidator {
         String normalized =
                 value.trim();
 
-        boolean hasControlCharacters =
-                normalized.chars()
-                        .anyMatch(
-                                Character::isISOControl
-                        );
-
         if (normalized.length() > 4_096
-                || hasControlCharacters) {
+                || !normalized.matches("[A-Za-z0-9._=+/~-]+")) {
             throw new IllegalStateException(
                     propertyName
                             + " имеет недопустимый формат"
@@ -189,6 +183,9 @@ public final class ProviderPropertyValidator {
                             + " символов"
             );
         }
+        if (normalized.chars().anyMatch(Character::isISOControl)) {
+            throw new IllegalStateException(propertyName + " содержит управляющие символы");
+        }
 
         return normalized;
     }
@@ -200,14 +197,11 @@ public final class ProviderPropertyValidator {
         URI uri;
 
         try {
-            uri = URI.create(
-                    value.trim()
-            ).normalize();
-        } catch (IllegalArgumentException exception) {
+            uri = URI.create(value.trim());
+        } catch (IllegalArgumentException ignored) {
             throw new IllegalStateException(
                     propertyName
-                            + " содержит некорректный URL",
-                    exception
+                            + " содержит некорректный URL"
             );
         }
 
@@ -217,7 +211,10 @@ public final class ProviderPropertyValidator {
                         || uri.getUserInfo() != null
                         || uri.getFragment() != null
                         || uri.getQuery() != null
-                        || hasCustomPort(uri);
+                        || hasCustomPort(uri)
+                        || !uri.getRawPath().matches("/?[A-Za-z0-9/_-]*")
+                        || !uri.getRawPath().equals(uri.normalize().getRawPath())
+                        || !validAuthority(uri);
 
         if (invalidUrl) {
             throw new IllegalStateException(
@@ -234,10 +231,15 @@ public final class ProviderPropertyValidator {
 
         String path =
                 normalizePath(
-                        uri.getPath()
+                        uri.getRawPath()
                 );
 
         return "https://" + host + path;
+    }
+
+    private static boolean validAuthority(URI uri) {
+        String expected = uri.getHost() + (uri.getPort() == -1 ? "" : ":443");
+        return expected.equalsIgnoreCase(uri.getRawAuthority());
     }
 
     private static boolean hasCustomPort(

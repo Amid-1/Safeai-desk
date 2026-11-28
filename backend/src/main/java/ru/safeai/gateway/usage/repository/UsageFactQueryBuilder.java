@@ -11,6 +11,14 @@ import static ru.safeai.gateway.usage.repository.UsageSqlFragments.*;
 
 final class UsageFactQueryBuilder {
 
+    private static void excludeDirtyDates(StringBuilder where, MapSqlParameterSource parameters,
+                                          UsageQueryPlan plan) {
+        if (!plan.excludedRollupDates().isEmpty()) {
+            where.append(" and r.usage_date not in (:excludedRollupDates)");
+            parameters.addValue("excludedRollupDates", plan.excludedRollupDates());
+        }
+    }
+
     UsageFactSql userFacts(
             UsageQueryCriteria criteria,
             UsageQueryPlan plan
@@ -35,6 +43,7 @@ final class UsageFactQueryBuilder {
                       and r.usage_date < :rollupToExclusive
                     """);
 
+            excludeDirtyDates(where, parameters, plan);
             appendRollupScope(
                     where,
                     criteria,
@@ -89,6 +98,18 @@ final class UsageFactQueryBuilder {
             UsageQueryPlan plan,
             boolean includeDate
     ) {
+        return organizationFacts(criteria, plan, includeDate, false);
+    }
+
+    UsageFactSql organizationFacts(
+            UsageQueryCriteria criteria,
+            UsageQueryPlan plan,
+            boolean includeDate,
+            boolean includeOrganization
+    ) {
+        // Organization rollups have no user dimension. When a user is selected,
+        // use user-model rollups and the same tenant restriction for live facts.
+        boolean includeUser = criteria.userId() != null;
         MapSqlParameterSource parameters =
                 baseParameters(criteria);
 
@@ -109,14 +130,16 @@ final class UsageFactQueryBuilder {
                       and r.usage_date < :rollupToExclusive
                     """);
 
+            excludeDirtyDates(where, parameters, plan);
             appendRollupScope(
                     where,
                     criteria,
-                    false
+                    includeUser
             );
 
             fragments.add(
                     "select "
+                            + (includeOrganization ? "r.organization_id, " : "")
                             + (includeDate
                             ? "r.usage_date, "
                             : "")
@@ -141,8 +164,10 @@ final class UsageFactQueryBuilder {
                             r.unpriced_message_count,
                             r.pricing_failed_message_count,
                             r.pricing_not_applicable_message_count
-                            from usage_daily_org_model_rollups r
                             """
+                            + (includeUser
+                            ? "from usage_daily_user_model_rollups r join users u on u.id = r.user_id\n"
+                            : "from usage_daily_org_model_rollups r\n")
                             + where
             );
         }
@@ -152,7 +177,8 @@ final class UsageFactQueryBuilder {
                 parameters,
                 criteria,
                 plan.liveRanges(),
-                includeDate
+                includeDate,
+                includeOrganization
         );
 
         return facts(
@@ -185,6 +211,7 @@ final class UsageFactQueryBuilder {
                       and r.usage_date < :rollupToExclusive
                     """);
 
+            excludeDirtyDates(where, parameters, plan);
             if (criteria.organizationId() != null) {
                 where.append(
                         " and r.organization_id = :organizationId"
@@ -410,7 +437,8 @@ final class UsageFactQueryBuilder {
             MapSqlParameterSource parameters,
             UsageQueryCriteria criteria,
             List<UsageInstantRange> ranges,
-            boolean includeDate
+            boolean includeDate,
+            boolean includeOrganization
     ) {
         int index = 0;
 
@@ -444,7 +472,7 @@ final class UsageFactQueryBuilder {
             appendLiveScope(
                     where,
                     criteria,
-                    false
+                    criteria.userId() != null
             );
 
             String usageDate = includeDate
@@ -476,6 +504,7 @@ final class UsageFactQueryBuilder {
 
             fragments.add(
                     "select "
+                            + (includeOrganization ? "m.organization_id, " : "")
                             + usageDate
                             + """
                             coalesce(
@@ -487,9 +516,13 @@ final class UsageFactQueryBuilder {
                             + """
                              from chat_messages m
                             """
+                            + (criteria.userId() != null
+                            ? "join chat_sessions s on s.id = m.session_id\njoin users u on u.id = s.user_id\n"
+                            : "")
                             + where
                             + "\n"
                             + groupBy
+                            + (includeOrganization ? ", m.organization_id" : "")
             );
 
             index++;

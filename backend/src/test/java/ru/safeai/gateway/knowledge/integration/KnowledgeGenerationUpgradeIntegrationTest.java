@@ -1,6 +1,7 @@
 // backend/src/test/java/ru/safeai/gateway/knowledge/integration/KnowledgeGenerationUpgradeIntegrationTest.java
 package ru.safeai.gateway.knowledge.integration;
 
+import ru.safeai.gateway.testsupport.PostgresTestMigrationBootstrap;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -61,6 +62,8 @@ class KnowledgeGenerationUpgradeIntegrationTest {
                         )
         ) {
             postgres.start();
+            PostgresTestMigrationBootstrap.prepare(postgres);
+            DataSource migrationDataSource = PostgresTestMigrationBootstrap.migrationDataSource(postgres);
 
             DriverManagerDataSource dataSource =
                     new DriverManagerDataSource(
@@ -75,7 +78,7 @@ class KnowledgeGenerationUpgradeIntegrationTest {
                     );
 
             migrateBaseline(
-                    dataSource
+                    migrationDataSource
             );
 
             seedPopulatedV56(
@@ -92,7 +95,7 @@ class KnowledgeGenerationUpgradeIntegrationTest {
              */
             Flyway v57Upgrade =
                     flyway(
-                            dataSource,
+                            migrationDataSource,
                             GENERATION_VERSION
                     );
 
@@ -123,11 +126,12 @@ class KnowledgeGenerationUpgradeIntegrationTest {
              */
             Flyway latest =
                     flyway(
-                            dataSource
+                            migrationDataSource
                     );
 
             latest.migrate();
             latest.validate();
+            PostgresTestMigrationBootstrap.verifyMigratedSchema(jdbcTemplate, false);
 
             assertV57Backfill(
                     chunksBeforeUpgrade
@@ -170,6 +174,7 @@ class KnowledgeGenerationUpgradeIntegrationTest {
                 .dataSource(
                         dataSource
                 )
+                .locations(PostgresTestMigrationBootstrap.productionLocation())
                 .target(
                         targetVersion
                 )
@@ -189,6 +194,7 @@ class KnowledgeGenerationUpgradeIntegrationTest {
                 .dataSource(
                         dataSource
                 )
+                .locations(PostgresTestMigrationBootstrap.productionLocation())
                 .load();
     }
 

@@ -33,8 +33,13 @@ import org.springframework.test.context.bean.override.mockito
         .MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.AuditEventClassification.Category;
+import ru.safeai.gateway.audit.AuditEventClassification.Metric;
 import ru.safeai.gateway.audit.dto.AuditEventCursorResponse;
 import ru.safeai.gateway.audit.dto.AuditEventFilter;
+import ru.safeai.gateway.audit.dto.AuditEventSummary;
+import ru.safeai.gateway.audit.dto.AuditIntegrityStatus;
+import ru.safeai.gateway.audit.service.AuditIntegrityService;
 import ru.safeai.gateway.audit.service.AuditEventCursorService;
 import ru.safeai.gateway.audit.service.AuditEventQueryService;
 import ru.safeai.gateway.auth.security.UserStatusFilter;
@@ -69,7 +74,7 @@ import static org.springframework.test.web.servlet.result
         .MockMvcResultMatchers.status;
 
 @WebMvcTest(
-        controllers = AuditController.class,
+        controllers = {AuditController.class, AuditIntegrityController.class},
         excludeFilters = @ComponentScan.Filter(
                 type = FilterType.ASSIGNABLE_TYPE,
                 classes = UserStatusFilter.class
@@ -120,6 +125,54 @@ class AuditControllerSecurityTest {
 
     @MockitoBean
     private AuditEventCursorService cursorService;
+
+    @MockitoBean
+    private AuditIntegrityService integrityService;
+
+    @Test
+    void integrityReportIsExclusiveToSuperAdminAndNeverCached() throws Exception {
+        String path = "/api/admin/audit-events/integrity";
+        mockMvc.perform(get(path)).andExpect(status().isUnauthorized());
+        mockMvc.perform(get(path).with(authentication(authToken(userPrincipal())))).andExpect(status().isForbidden());
+        mockMvc.perform(get(path).with(authentication(authToken(adminPrincipal())))).andExpect(status().isForbidden());
+        verifyNoInteractions(integrityService);
+        when(integrityService.current()).thenReturn(AuditIntegrityStatus.unknown(AuditIntegrityStatus.State.NOT_CONFIGURED, null));
+        mockMvc.perform(get(path).with(authentication(authToken(superAdminPrincipal()))))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.state").value("NOT_CONFIGURED"))
+                .andExpect(jsonPath("$.archiveStatus").value("UNKNOWN"))
+                .andExpect(jsonPath("$.checkedEvents").doesNotExist());
+        verify(integrityService).current();
+    }
+
+    @Test
+    void summaryRejectsUnauthenticatedAndOrdinaryUsers() throws Exception {
+        mockMvc.perform(get("/api/admin/audit-events/summary"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/admin/audit-events/summary")
+                .with(authentication(authToken(userPrincipal()))))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(queryService, cursorService);
+    }
+
+    @Test
+    void summaryBindsDateCategoryAndMetricThroughExistingFilter() throws Exception {
+        SafeAiUserPrincipal principal = adminPrincipal();
+        Instant from = Instant.parse("2026-06-01T00:00:00Z");
+        Instant to = Instant.parse("2026-06-02T00:00:00Z");
+        AuditEventFilter filter = new AuditEventFilter(null, null, null, from, to,
+                null, Category.SECURITY, Metric.DENIED);
+        when(queryService.summarize(principal, filter)).thenReturn(new AuditEventSummary(10, 5, 2, 0));
+        mockMvc.perform(get("/api/admin/audit-events/summary")
+                .param("dateFrom", from.toString()).param("dateTo", to.toString())
+                .param("category", "SECURITY").param("metric", "DENIED")
+                .with(authentication(authToken(principal))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(10))
+                .andExpect(jsonPath("$.denied").value(2));
+        verify(queryService).summarize(principal, filter);
+    }
 
     @TestConfiguration(proxyBeanMethods = false)
     @EnableWebSecurity

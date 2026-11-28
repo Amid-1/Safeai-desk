@@ -1570,6 +1570,18 @@ class SecurityConfigIntegrationTest {
     }
 
     @Test
+    void invalidBearerCannotFallBackToValidAccessCookieWithoutCsrf() throws Exception {
+        mockMvc.perform(post(ORGANIZATION_ENDPOINT)
+                        .header(HttpHeaders.AUTHORIZATION, bearer("invalid.jwt.token"))
+                        .cookie(accessCookie(validToken(Set.of("SUPER_ADMIN")))))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE,
+                        org.hamcrest.Matchers.containsString("Bearer")));
+
+        verifyNoInteractions(authService, userStatusCacheService);
+    }
+
+    @Test
     void adminBearerCannotCreateOrganization()
             throws Exception {
 

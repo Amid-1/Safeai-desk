@@ -68,6 +68,37 @@ class OrganizationPostgresIntegrationTest
     }
 
     @Test
+    void searchCombinesLiteralNameTypeAndEnabledBeforePaging() {
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        insertOrganization(first, "Stage2 50%_ Alpha", true);
+        insertOrganization(second, "Stage2 50%_ Beta", true);
+        insertOrganization(UUID.randomUUID(), "Stage2 50%_ Disabled", false);
+        insertOrganization(UUID.randomUUID(), "Stage2 50xA Other", true);
+        var page = organizationService.search(superAdminPrincipal(), "50%_", OrganizationType.TENANT, true,
+                org.springframework.data.domain.PageRequest.of(0, 1, org.springframework.data.domain.Sort.by("name")));
+        assertThat(page.getTotalElements()).isEqualTo(2);
+        assertThat(page.getContent()).extracting(OrganizationResponse::id).containsExactly(first);
+        var next = organizationService.search(superAdminPrincipal(), "50%_", OrganizationType.TENANT, true,
+                org.springframework.data.domain.PageRequest.of(1, 1, org.springframework.data.domain.Sort.by("name")));
+        assertThat(next.getContent()).extracting(OrganizationResponse::id).containsExactly(second);
+        var platform = organizationService.search(superAdminPrincipal(), null, OrganizationType.PLATFORM, null,
+                org.springframework.data.domain.PageRequest.of(0, 5));
+        assertThat(platform.getContent()).extracting(OrganizationResponse::id).containsExactly(PLATFORM_ORGANIZATION_ID);
+    }
+
+    @Test
+    void ranksExactThenPrefixThenSubstringRegardlessOfCase() {
+        UUID exact = UUID.randomUUID(), prefix = UUID.randomUUID(), contains = UUID.randomUUID();
+        insertOrganization(contains, "ООО Сокол", true);
+        insertOrganization(prefix, "Сокол Сервис", true);
+        insertOrganization(exact, "Сокол", true);
+        var page = organizationService.search(superAdminPrincipal(), " СОКОЛ ", null, null,
+                org.springframework.data.domain.PageRequest.of(0, 10));
+        assertThat(page.getContent()).extracting(OrganizationResponse::id).containsExactly(exact, prefix, contains);
+    }
+
+    @Test
     void createReturnsCompleteDatabaseBackedContract() {
         OrganizationResponse response =
                 organizationService.create(

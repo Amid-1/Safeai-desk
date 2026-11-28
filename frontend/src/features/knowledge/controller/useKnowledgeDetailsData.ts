@@ -2,6 +2,7 @@
 import {
     useCallback,
     useEffect,
+    useRef,
     useState,
 } from 'react'
 import {
@@ -62,35 +63,40 @@ export function useKnowledgeDetailsData(
         useState(true)
     const [documentsError, setDocumentsError] =
         useState('')
+    const overviewSequence = useRef(0)
+    const documentsSequence = useRef(0)
 
     const loadOverview = useCallback(
         async (signal?: AbortSignal) => {
-            const [
-                knowledgeBase,
-                knowledgeHealth,
-                knowledgeAccess,
-            ] = await Promise.all([
-                getKnowledgeBase(
-                    knowledgeBaseId,
-                    {
-                        signal,
-                    },
-                ),
-                getKnowledgeHealth(
-                    knowledgeBaseId,
-                    signal,
-                ),
-                getKnowledgeBaseAccess(
-                    knowledgeBaseId,
-                    {
-                        signal,
-                    },
-                ),
-            ])
+            const sequence = ++overviewSequence.current
+            try {
+                const [knowledgeBase, knowledgeHealth, knowledgeAccess] = await Promise.all([
+                    getKnowledgeBase(knowledgeBaseId, { signal }),
+                    getKnowledgeHealth(knowledgeBaseId, signal),
+                    getKnowledgeBaseAccess(knowledgeBaseId, { signal }),
+                ])
 
-            setBase(knowledgeBase)
-            setHealth(knowledgeHealth)
-            setAccess(knowledgeAccess)
+                if (signal?.aborted || sequence !== overviewSequence.current) return
+                if (knowledgeBase.id !== knowledgeBaseId
+                    || knowledgeHealth.knowledgeBaseId !== knowledgeBaseId
+                    || knowledgeAccess.knowledgeBaseId !== knowledgeBaseId) {
+                    throw new Error('Не удалось подтвердить сведения о базе знаний.')
+                }
+                setBase(knowledgeBase)
+                setHealth(knowledgeHealth)
+                setAccess(knowledgeAccess)
+            } catch (error) {
+                if (signal?.aborted || sequence !== overviewSequence.current) return
+                // Не оставляем доступ и содержимое предыдущего успешного ответа при отказе сервера.
+                setBase(null)
+                setHealth(null)
+                setAccess(null)
+                documentsSequence.current++
+                setDocumentsPage(EMPTY_DOCUMENT_PAGE)
+                setDocumentsLoading(false)
+                setDocumentsError('Не удалось подтвердить доступ к документам.')
+                throw error
+            }
         },
         [knowledgeBaseId],
     )
@@ -100,7 +106,9 @@ export function useKnowledgeDetailsData(
             targetPage: number,
             signal?: AbortSignal,
         ) => {
-            const response =
+            const sequence = ++documentsSequence.current
+            try {
+                const response =
                 await getKnowledgeDocuments(
                     knowledgeBaseId,
                     targetPage,
@@ -108,25 +116,24 @@ export function useKnowledgeDetailsData(
                     signal,
                 )
 
-            if (
-                response.totalPages > 0
-                && targetPage
-                    >= response.totalPages
-            ) {
-                setDocumentPage(
-                    response.totalPages - 1,
-                )
-                return
+                if (signal?.aborted || sequence !== documentsSequence.current) return
+                if (response.totalPages > 0 && targetPage >= response.totalPages) {
+                    setDocumentPage(response.totalPages - 1)
+                    return
+                }
+                setDocumentsPage(response)
+            } catch (error) {
+                if (signal?.aborted || sequence !== documentsSequence.current) return
+                setDocumentsPage(EMPTY_DOCUMENT_PAGE)
+                throw error
             }
-
-            setDocumentsPage(response)
         },
         [knowledgeBaseId],
     )
 
     const refreshAfterSuccessfulUpload =
         useCallback(
-            async (targetPage: number) => {
+            async (targetPage: number, confirmed = true) => {
                 setError('')
                 setDocumentsError('')
 
@@ -145,7 +152,9 @@ export function useKnowledgeDetailsData(
                     setError(
                         getApiErrorMessage(
                             overviewResult.reason,
-                            'Документ загружен, но не удалось обновить состояние базы знаний.',
+                            confirmed
+                                ? 'Документ загружен, но не удалось обновить состояние базы знаний.'
+                                : 'Не удалось проверить состояние базы после попытки загрузки.',
                         ),
                     )
                 }
@@ -157,7 +166,9 @@ export function useKnowledgeDetailsData(
                     setDocumentsError(
                         getApiErrorMessage(
                             documentsResult.reason,
-                            'Документ загружен, но не удалось обновить список документов.',
+                            confirmed
+                                ? 'Документ загружен, но не удалось обновить список документов.'
+                                : 'Не удалось проверить список документов после попытки загрузки.',
                         ),
                     )
                 }
@@ -257,12 +268,11 @@ export function useKnowledgeDetailsData(
 
     async function retryOverview() {
         setError('')
+        if (!base) setLoading(true)
 
         try {
-            await Promise.all([
-                loadOverview(),
-                loadDocuments(documentPage),
-            ])
+            await loadOverview()
+            if (!base) await retryDocuments()
         } catch (loadError) {
             setError(
                 getApiErrorMessage(
@@ -270,6 +280,8 @@ export function useKnowledgeDetailsData(
                     'Не удалось обновить данные базы знаний.',
                 ),
             )
+        } finally {
+            setLoading(false)
         }
     }
 

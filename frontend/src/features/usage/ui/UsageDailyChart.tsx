@@ -2,76 +2,115 @@
 import { useMemo, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { UsageDailySummary } from '../api/usageApi'
-import { formatIsoDate } from '../lib/adminUsagePresentation'
+import { trimDecimal } from '../lib/adminUsagePresentation'
+import { buildDailySeries, type DailyGrouping } from './usageDailyChartData'
+import { compactTick } from './usageBreakdownChartData'
 
-type Metric = 'tokens' | 'total' | 'cost'
+export type UsageDailyMetric = 'tokens' | 'total' | 'cost' | 'responses' | 'coverage'
 
-function chartNumber(value: string): number | null {
-    const number = Number(value)
-    // Recharts uses IEEE-754. Never draw a false precise value beyond its range.
-    return Number.isFinite(number) && number >= 0 && number <= Number.MAX_SAFE_INTEGER
-        ? number : null
-}
-
-export function UsageDailyChart({ rows }: { rows: UsageDailySummary[] }) {
-    const [metric, setMetric] = useState<Metric>('tokens')
-    const sorted = useMemo(() => [...rows].sort((a, b) => a.usageDate.localeCompare(b.usageDate)), [rows])
-    const valid = sorted.every(row => [row.inputTokens, row.outputTokens, row.totalTokens]
-        .every(value => chartNumber(value) !== null))
-    const allCostsKnown = sorted.every(row => row.costUsd !== null)
-    const data = sorted.map(row => ({
-        date: formatIsoDate(row.usageDate),
-        input: chartNumber(row.inputTokens),
-        output: chartNumber(row.outputTokens),
-        total: chartNumber(row.totalTokens),
-        cost: row.costUsd === null ? null : chartNumber(row.costUsd),
-        exactCost: row.costUsd,
-    }))
-    const costCanRender = data.every(row => row.cost !== null || row.exactCost === null)
-    const unavailable = !valid || (metric === 'cost' && !costCanRender)
+export function UsageDailyChart({ rows, dateFrom, dateTo, metric, onMetricChange, onInspectRange, compactPeriodPicker = false, expandable = false }: {
+    rows: UsageDailySummary[]
+    dateFrom?: string
+    dateTo?: string
+    metric: UsageDailyMetric
+    onMetricChange: (value: UsageDailyMetric) => void
+    onInspectRange?: (from: string, to: string) => void
+    compactPeriodPicker?: boolean
+    expandable?: boolean
+}) {
+    const [grouping, setGrouping] = useState<DailyGrouping>('day')
+    const [zoom, setZoom] = useState(1)
+    const [expanded, setExpanded] = useState(false)
+    const data = useMemo(() => buildDailySeries(rows, dateFrom, dateTo, grouping), [rows, dateFrom, dateTo, grouping])
+    const allCostsKnown = rows.every(row => row.costUsd !== null && row.coverage.pricingComplete === true)
+    const unavailable = data.some(row => metric === 'cost' ? row.exactCost !== null && row.cost === null
+        : metric === 'responses' ? row.exactResponses !== null && row.responses === null
+        : metric === 'coverage' ? false
+        : metric === 'total' ? row.exactTotal !== null && row.total === null
+        : (row.exactInput !== null && row.input === null) || (row.exactOutput !== null && row.output === null))
+    const inspect = (index: number) => {
+        const entry = data[index]
+        if (entry) onInspectRange?.(entry.start, entry.end)
+    }
     return (
-        <section className="usage-chart-card" aria-label="График использования AI по дням">
+        <section className={`usage-chart-card${expanded ? ' usage-chart-card--dashboard-expanded' : ''}`} aria-label="График использования AI по дням">
             <div className="usage-chart-heading">
                 <div>
-                    <h3>Динамика по дням UTC</h3>
-                    <p>График дополняет таблицу. Значения по календарным дням не изменяются.</p>
+                    <h3>Динамика {grouping === 'day' ? 'по дням' : grouping === 'week' ? 'по неделям' : 'по месяцам'} UTC</h3>
+                    <p>Расход по календарным дням UTC. Дни без записей оставлены пустыми.</p>
                 </div>
+                <div className="usage-chart-actions">
                 <label className="usage-chart-select">
                     Показатель
-                    <select value={metric} onChange={event => setMetric(event.target.value as Metric)}>
+                    <select value={metric} onChange={event => onMetricChange(event.target.value as UsageDailyMetric)}>
                         <option value="tokens">Входные / выходные токены</option>
                         <option value="total">Всего подтвержденных токенов</option>
                         <option value="cost">Известная стоимость, USD</option>
+                        <option value="responses">Попытки ответа AI</option>
+                        <option value="coverage">Полнота учёта, %</option>
                     </select>
                 </label>
+                <label className="usage-chart-select">Группировка
+                    <select value={grouping} onChange={event => setGrouping(event.target.value as DailyGrouping)}>
+                        <option value="day">Дни</option><option value="week">Недели</option><option value="month">Месяцы</option>
+                    </select>
+                </label>
+                <label className="usage-chart-select">Масштаб времени
+                    <select value={zoom} onChange={event => setZoom(Number(event.target.value))}>
+                        <option value={1}>1×</option><option value={2}>2×</option><option value={4}>4×</option>
+                    </select>
+                </label>
+                {expandable && <button type="button" className="secondary-button" aria-expanded={expanded}
+                    aria-controls="usage-daily-chart-content" onClick={() => setExpanded(value => !value)}>
+                    <span aria-hidden="true">{expanded ? '↙' : '↗'}</span>{' '}{expanded ? 'Свернуть график' : 'Развернуть график'}
+                </button>}
+                </div>
             </div>
+            <div id="usage-daily-chart-content">
             {unavailable ? (
                 <p role="status">Значения слишком велики для точного изображения на графике. Все исходные числа сохранены в таблице и CSV без округления.</p>
             ) : (
-                <div className="usage-chart-viewport">
+                <div className="usage-daily-scroll"><div className="usage-chart-viewport" style={{minWidth: Math.max(360, data.length * (compactPeriodPicker && zoom === 1 && data.length <= 30 ? 24 : 42) * zoom)}}>
                     <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={data} margin={{top: 8, right: 18, bottom: 4, left: 0}} barGap={3}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                            <XAxis dataKey="date" tick={{fontSize: 11}} />
-                            <YAxis width={64} tick={{fontSize: 11}} />
-                            <Tooltip />
+                        <BarChart data={data} margin={{top: 14, right: 18, bottom: 4, left: 0}}
+                            barGap={4} maxBarSize={24}>
+                            <CartesianGrid stroke="#dce5f2" strokeDasharray="3 3" vertical={false} />
+                            <XAxis dataKey="date" tick={{fontSize: 14, fill: '#405572',
+                                className: onInspectRange ? 'usage-chart-action-tick' : undefined}} minTickGap={28}
+                                onClick={onInspectRange ? event => { const index = data.findIndex(row => row.date === event.value); if (index >= 0) inspect(index) } : undefined} />
+                            <YAxis width={82} tick={{fontSize: 14, fill: '#405572'}} tickFormatter={compactTick}
+                                domain={metric === 'coverage' ? [0, 100] : [0, 'auto']} allowDecimals={metric === 'cost'} />
+                            <Tooltip cursor={{fill: '#eef3ff'}}
+                                contentStyle={{borderRadius: 10, borderColor: '#dbe5f4'}}
+                                formatter={(value, name, item) => [
+                                    metric === 'cost' && typeof item.payload?.exactCost === 'string'
+                                        ? trimDecimal(item.payload.exactCost) : value, name
+                                ]} />
                             <Legend />
                             {metric === 'tokens' && <>
-                                <Bar dataKey="input" name="Входные токены" fill="#4d92ef" radius={[5, 5, 0, 0]} isAnimationActive={false} />
-                                <Bar dataKey="output" name="Выходные токены" fill="#57bc7b" radius={[5, 5, 0, 0]} isAnimationActive={false} />
+                                <Bar dataKey="input" name="Входные токены" onClick={(_, i) => inspect(i)} cursor={onInspectRange ? 'pointer' : undefined} fill="#356de8" radius={[5, 5, 0, 0]} isAnimationActive={false} />
+                                <Bar dataKey="output" name="Выходные токены" onClick={(_, i) => inspect(i)} cursor={onInspectRange ? 'pointer' : undefined} fill="#169f8d" radius={[5, 5, 0, 0]} isAnimationActive={false} />
                             </>}
-                            {metric === 'total' && <Bar dataKey="total" name="Всего токенов" fill="#4d92ef" radius={[5, 5, 0, 0]} isAnimationActive={false} />}
-                            {metric === 'cost' && <Bar dataKey="cost" name="Известная стоимость, USD" fill="#57bc7b" radius={[5, 5, 0, 0]} isAnimationActive={false} />}
+                            {metric === 'total' && <Bar dataKey="total" name="Всего токенов" onClick={(_, i) => inspect(i)} cursor={onInspectRange ? 'pointer' : undefined} fill="#356de8" radius={[5, 5, 0, 0]} isAnimationActive={false} />}
+                            {metric === 'cost' && <Bar dataKey="cost" name="Известная стоимость, USD" onClick={(_, i) => inspect(i)} cursor={onInspectRange ? 'pointer' : undefined} fill="#7955d7" radius={[5, 5, 0, 0]} isAnimationActive={false} />}
+                            {metric === 'responses' && <Bar dataKey="responses" name="Попытки ответа AI" onClick={(_, i) => inspect(i)} fill="#356de8" isAnimationActive={false} />}
+                            {metric === 'coverage' && <Bar dataKey="coverage" name="Полнота учёта, %" onClick={(_, i) => inspect(i)} fill="#169f8d" isAnimationActive={false} />}
                         </BarChart>
                     </ResponsiveContainer>
-                </div>
+                </div></div>
             )}
             <p className="usage-chart-note">
                 {metric === 'cost' && !allCostsKnown
-                    ? 'Часть дней не имеет известной стоимости; отсутствие столбца не означает 0 USD.'
-                    : 'На графике представлены те же строки, что и в дневной таблице.'}
-                {' '}Ось и подсказки графика визуализируют числа приближенно; точные значения сохранены в таблице и CSV.
+                    ? 'Не все цены известны. Нулевой известный итог не означает бесплатное использование.'
+                    : 'Значения взяты из дневного отчёта.'}
+                {' '}Точные значения доступны в таблице и CSV.
             </p>
+            {onInspectRange && <details className={`usage-chart-links${compactPeriodPicker ? ' usage-chart-links--compact-period' : ''}`}><summary>{compactPeriodPicker ? 'Открыть период отчёта' : 'Открыть период · доступно с клавиатуры'}</summary>
+                <div>{data.map((entry, index) => <button type="button" key={entry.start} className="usage-chart-choice" data-has-records={entry.records > 0} onClick={() => inspect(index)}>
+                    {compactPeriodPicker ? <><span>{entry.date}</span>{' '}<small>{entry.records === 0 ? 'Нет записей' : entry.days === 1 ? 'Есть записи' : `${entry.records} из ${entry.days} дней с записями`}</small></> : `${entry.date} · ${entry.records} из ${entry.days} дней с записями`}
+                </button>)}</div>
+            </details>}
+            </div>
         </section>
     )
 }

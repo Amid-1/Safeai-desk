@@ -401,7 +401,7 @@ class KnowledgeGenerationLifecycleIntegrationTest
                 "select query_sha256 from public.knowledge_retrieval_runs where id = ?",
                 String.class,
                 run
-        )).isEqualTo(sha256("evidence"));
+        )).isEqualTo(sha256());
         insertRetrievalHitEvidence(
                 run,
                 fixture.claim(),
@@ -572,7 +572,7 @@ class KnowledgeGenerationLifecycleIntegrationTest
                     statement.setObject(4, actor);
                     // V76 CHECK requires this exact non-null privacy sentinel.
                     statement.setString(5, "[REDACTED:SHA256_ONLY]");
-                    statement.setString(6, sha256("evidence"));
+                    statement.setString(6, sha256());
                     statement.setString(7, embedding.model());
                     statement.setString(8, "simple+russian-v2");
                     statement.setInt(9, 1);
@@ -584,11 +584,11 @@ class KnowledgeGenerationLifecycleIntegrationTest
         );
     }
 
-    private static String sha256(String value) {
+    private static String sha256() {
         try {
             return java.util.HexFormat.of().formatHex(
                     MessageDigest.getInstance("SHA-256")
-                            .digest(value.getBytes(StandardCharsets.UTF_8))
+                            .digest("evidence".getBytes(StandardCharsets.UTF_8))
             );
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 is unavailable", exception);

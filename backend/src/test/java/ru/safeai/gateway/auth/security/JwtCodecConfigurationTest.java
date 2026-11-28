@@ -350,6 +350,35 @@ class JwtCodecConfigurationTest {
         assertRejected(rawToken);
     }
 
+    @Test
+    void keyRotationVerifiesPreviousTokensAndRejectsRemovedKey() {
+        String newKeyId = "safeai-test-new";
+        KeyPair newKeyPair = generateRsaKeyPair();
+        var newKey = new JwtProperties.KeyEntry(
+                newKeyId, toPublicPem(newKeyPair), toPrivatePem(newKeyPair));
+        var previousKey = new JwtProperties.KeyEntry(
+                ACTIVE_KEY_ID, toPublicPem(ACTIVE_KEY_PAIR), null);
+        var rotatedProperties = new JwtProperties(
+                15L, ISSUER, AUDIENCE, newKeyId, List.of(newKey, previousKey));
+        var rotatedRing = new JwtRsaKeyRing(rotatedProperties);
+        var rotatedDecoder = configuration.jwtDecoder(rotatedRing, rotatedProperties, CLOCK);
+
+        var subject = new AccessTokenSubject(
+                UUID.randomUUID(), UUID.randomUUID(), 4L, 9L, Set.of("USER"));
+        String previousToken = new JwtService(encoder, properties, CLOCK).generateToken(subject);
+        String newToken = new JwtService(
+                configuration.jwtEncoder(rotatedRing), rotatedProperties, CLOCK).generateToken(subject);
+
+        assertThat(rotatedDecoder.decode(previousToken).getHeaders()).containsEntry("kid", ACTIVE_KEY_ID);
+        assertThat(rotatedDecoder.decode(newToken).getHeaders()).containsEntry("kid", newKeyId);
+        assertRejected(newToken);
+
+        var retiredProperties = new JwtProperties(15L, ISSUER, AUDIENCE, newKeyId, List.of(newKey));
+        var retiredDecoder = configuration.jwtDecoder(
+                new JwtRsaKeyRing(retiredProperties), retiredProperties, CLOCK);
+        assertThatThrownBy(() -> retiredDecoder.decode(previousToken)).isInstanceOf(JwtException.class);
+    }
+
     private JwtClaimsSet baseClaims() {
         return JwtClaimsSet.builder()
                 .issuer(

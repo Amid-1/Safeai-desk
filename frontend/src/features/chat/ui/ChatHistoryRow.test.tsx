@@ -15,6 +15,9 @@ import type {
     Chat,
 } from '../api/chatApi'
 import ChatHistoryRow from './ChatHistoryRow'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { ErasureEntryContext } from '../../../shared/ui/erasureEntryContext'
+import {createPendingTurn} from '../lib/chatPage.helpers'
 
 const chat: Chat = {
     id: 'cb145d98-55be-4ee1-a38a-1bded69520c1',
@@ -68,13 +71,39 @@ describe('ChatHistoryRow', () => {
         expect(menu).toHaveAttribute('aria-expanded', 'false')
     })
 
+    it('does not show request entry before server permission is confirmed', () => {
+        renderRow()
+        fireEvent.click(screen.getByRole('button', { name: `Действия с чатом «${chat.title}»` }))
+        expect(screen.queryByRole('link', { name: 'Запросить удаление' })).not.toBeInTheDocument()
+    })
+
+    it('navigates to the selected chat without opening, archiving or invoking legacy erasure', () => {
+        const onOpen = vi.fn(), onArchive = vi.fn(), onErase = vi.fn(), onRename = vi.fn()
+        function Destination() {
+            const location = useLocation()
+            return <p>{location.state?.erasureTarget?.id} {location.state?.from}</p>
+        }
+        render(<ErasureEntryContext.Provider value={true}><MemoryRouter initialEntries={['/chat']}><Routes>
+            <Route path="/chat" element={<ChatHistoryRow chat={chat} active now={Date.now()} opening={false} archiving={false}
+                onOpen={onOpen} onRename={onRename} onArchive={onArchive} onErase={onErase} />} />
+            <Route path="/my/erasure-requests" element={<Destination />} />
+        </Routes></MemoryRouter></ErasureEntryContext.Provider>)
+        fireEvent.click(screen.getByRole('button', { name: `Действия с чатом «${chat.title}»` }))
+        fireEvent.click(screen.getByRole('link', { name: 'Запросить удаление' }))
+        expect(screen.getByText(`${chat.id} /chat`)).toBeInTheDocument()
+        expect(onOpen).not.toHaveBeenCalled()
+        expect(onRename).not.toHaveBeenCalled()
+        expect(onArchive).not.toHaveBeenCalled()
+        expect(onErase).not.toHaveBeenCalled()
+    })
+
     it('does not archive until the user chooses the archive action', () => {
         const { onArchive } = renderRow()
         fireEvent.click(screen.getByRole('button', {
             name: `Действия с чатом «${chat.title}»`,
         }))
         expect(onArchive).not.toHaveBeenCalled()
-        fireEvent.click(screen.getByRole('button', { name: 'Убрать из списка' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Архивировать' }))
         expect(onArchive).toHaveBeenCalledWith(chat)
     })
 
@@ -89,4 +118,21 @@ describe('ChatHistoryRow', () => {
         expect(onRename).not.toHaveBeenCalled()
         expect(onArchive).not.toHaveBeenCalled()
     })
+
+    it.each([['FAILED', false], ['AMBIGUOUS', true], ['PROCESSING', true]] as const)(
+        'сохраняет ограничения архивации для %s', (status, disabled) => {
+            const onErase = vi.fn()
+            render(<ChatHistoryRow chat={chat} active now={Date.now()} opening={false} archiving={false}
+                pending={{...createPendingTurn(chat.id, 'text', 'request'), status}}
+                onOpen={vi.fn()} onRename={vi.fn()} onArchive={vi.fn()} onErase={onErase}/>)
+            fireEvent.click(screen.getByRole('button', {name: `Действия с чатом «${chat.title}»`}))
+            const erase = screen.getByRole('button', {name: 'Удалить содержимое…'})
+            expect(erase).toHaveProperty('disabled', disabled)
+            expect(screen.getByRole('button', {name: 'Архивировать'})).toHaveProperty('disabled', disabled)
+            if (!disabled) {
+                fireEvent.click(erase)
+                expect(onErase).toHaveBeenCalledWith(chat)
+            } else expect(onErase).not.toHaveBeenCalled()
+        },
+    )
 })

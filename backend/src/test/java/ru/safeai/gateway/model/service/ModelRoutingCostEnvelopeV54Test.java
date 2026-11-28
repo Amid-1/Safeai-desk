@@ -68,7 +68,6 @@ class ModelRoutingCostEnvelopeV54Test {
         ModelRoutingCostPolicy.PricingEstimate estimate =
                 policy.estimateCost(
                         entry,
-                        ModelTestFixtures.configuredRuntime(),
                         20_000L,
                         1_000L
                 );

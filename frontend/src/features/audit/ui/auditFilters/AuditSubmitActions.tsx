@@ -61,7 +61,7 @@ export function AuditSubmitActions({ directoriesLoading, filterError, filtersDir
                             onReset()
                         }}
                     >
-                        Последние 30 дней
+                        Сбросить фильтры
                     </button>
                     </div>
                 </div>

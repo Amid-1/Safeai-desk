@@ -1,13 +1,20 @@
 // frontend/src/features/knowledge/ui/KnowledgeDetailsWorkspace.tsx
 // Композиция карточки базы знаний, предпросмотра документов и диалогов версий.
+import ErasureRequestLink from '../../../shared/ui/ErasureRequestLink'
+import { useNavigate } from 'react-router-dom'
+import { KnowledgeBaseDeleteAction } from './KnowledgeBaseDeleteAction'
 import { ErrorState, LoadingState } from '../../../shared/ui/StateBlock'
+import ConfirmDialog from '../../../shared/ui/ConfirmDialog'
 import { KnowledgeDetailsContent } from './details/KnowledgeDetailsContent'
 import { KnowledgeUploadDialog } from './details/KnowledgeUploadDialog'
 import { KnowledgeVersionsDialog } from './details/KnowledgeVersionsDialog'
+import { KnowledgeDeleteDialog } from './details/KnowledgeDeleteDialog'
+import { KnowledgeErasureDialog } from './KnowledgeErasureDialog'
 import { useKnowledgeDetailsPageController } from '../controller/useKnowledgeDetailsPageController'
 
 export function KnowledgeDetailsWorkspace() {
-    const { data, upload, documentActions, versions, documentsSectionRef } =
+    const navigate = useNavigate()
+    const { data, upload, documentActions, versions, deletion, documentsSectionRef } =
         useKnowledgeDetailsPageController()
 
     if (data.loading) {
@@ -23,12 +30,23 @@ export function KnowledgeDetailsWorkspace() {
                     data.error
                     || 'База знаний не найдена.'
                 }
+                action={<>
+                    <button type="button" onClick={() => void data.retryOverview()}>Повторить</button>
+                    <button type="button" className="secondary-button" onClick={() => navigate('/knowledge')}>
+                        К базам знаний
+                    </button>
+                </>}
             />
         )
     }
 
     return (
         <div className="page knowledge-details knowledge-details-page">
+            {data.access?.administrator && <div className="knowledge-base-delete-toolbar">
+                <KnowledgeBaseDeleteAction base={data.base}
+                    onAccepted={() => navigate('/knowledge')}/>
+            </div>}
+            {(data.access?.administrator || data.access?.accessLevel === 'OWNER') && <ErasureRequestLink target={{ type: 'KNOWLEDGE_BASE', id: data.base.id }} />}
             <KnowledgeDetailsContent
                 base={data.base}
                 health={data.health}
@@ -56,6 +74,16 @@ export function KnowledgeDetailsWorkspace() {
                 downloadingDocumentId={
                     documentActions.downloadingDocumentId
                 }
+                changingEnabledId={documentActions.changingEnabledId}
+                canDeleteDocuments={deletion.available}
+                canShowDeleteAction={deletion.canShowAction}
+                deleteUnavailableReason={deletion.unavailableReason}
+                recheckDeletion={deletion.recheck}
+                requestDeletion={deletion.requestDeletion}
+                openDeletionOperation={deletion.openOperation}
+                deletionOperations={deletion.operations}
+                deletionHistoryError={deletion.historyError}
+                requestEnabledChange={documentActions.requestEnabledChange}
                 setDocumentPage={
                     data.setDocumentPage
                 }
@@ -79,6 +107,47 @@ export function KnowledgeDetailsWorkspace() {
                     data.retryDocuments
                 }
             />
+
+            {data.access?.canEditDocuments
+                && documentActions.enabledTarget && (
+                <ConfirmDialog
+                    title={documentActions.enabledTarget.enabled
+                        ? 'Отключить документ'
+                        : 'Включить документ'}
+                    message={documentActions.enabledTarget.enabled
+                        ? `Документ «${documentActions.enabledTarget.name}» перестанет использоваться `
+                            + 'в ответах AI. Он останется в базе знаний, и его можно будет включить снова.'
+                        : `Документ «${documentActions.enabledTarget.name}» снова станет доступен `
+                            + 'для поиска и ответов AI, если он обработан и готов к использованию.'}
+                    confirmText={documentActions.enabledTarget.enabled
+                        ? 'Отключить'
+                        : 'Включить'}
+                    danger={documentActions.enabledTarget.enabled}
+                    onCancel={documentActions.cancelEnabledChange}
+                    onConfirm={documentActions.confirmEnabledChange}
+                />
+            )}
+
+            {deletion.target && (
+                <KnowledgeDeleteDialog
+                    key={deletion.target.document.id}
+                    document={deletion.target.document}
+                    busy={deletion.busy}
+                    onCancel={deletion.cancelDeletion}
+                    onConfirm={deletion.confirmDeletion}
+                />
+            )}
+
+            {deletion.operationTarget && deletion.visibleOperation && (
+                <KnowledgeErasureDialog key={deletion.visibleOperation.operationId}
+                    kind="document" mode="operation"
+                    entityName={deletion.operationTarget.documentName}
+                    operation={deletion.visibleOperation}
+                    statusError={deletion.historyError
+                        ? 'Не удалось обновить историю операций.' : ''}
+                    historyHref="#knowledge-document-deletion-history"
+                    onClose={deletion.closeOperation}/>
+            )}
 
             {data.access?.canEditDocuments
                 && upload.uploadTarget && (

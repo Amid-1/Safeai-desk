@@ -27,6 +27,9 @@ public class KnowledgeIngestionJobEntity {
     @Column(nullable = false)
     private UUID id;
 
+    @Column(name = "correlation_id", updatable = false)
+    private UUID correlationId;
+
     @Column(name = "organization_id", nullable = false, updatable = false)
     private UUID organizationId;
 

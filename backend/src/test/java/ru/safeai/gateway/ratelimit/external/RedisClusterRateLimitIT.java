@@ -115,6 +115,15 @@ class RedisClusterRateLimitIT {
             assertThat(login.allowed())
                     .isTrue();
 
+            // Guard and individual IP counters can be on different primaries;
+            // refresh must preserve the existing distributed key layout.
+            String firstRefresh = keys.refreshIp("192.0.2.10");
+            String secondRefresh = keys.refreshIp("192.0.2.11");
+            Duration refreshWindow = Duration.ofMinutes(1);
+            assertThat(limiter.incrementRefreshAndGet(firstRefresh, refreshWindow).count()).isEqualTo(1);
+            assertThat(limiter.incrementRefreshAndGet(secondRefresh, refreshWindow).count()).isEqualTo(1);
+            assertThat(limiter.incrementRefreshAndGet(firstRefresh, refreshWindow).count()).isEqualTo(2);
+
             UUID organizationId =
                     UUID.randomUUID();
 

@@ -9,6 +9,7 @@ import type {
     ChatMessage, ChatTurnStatus, KnowledgeMode, SendMessageResponse,
 } from '../../api/chatApi'
 import type { PendingTurn } from '../../lib/chatPage.helpers'
+import type { KnowledgeBase } from '../../../../entities/knowledge/api/knowledgeApi'
 
 export type ScrollIntent =
     | { type: 'BOTTOM' }
@@ -21,6 +22,8 @@ export type ChatControllerDependencies = {
     activeChat: ChatDetails | null
     knowledgeMode: KnowledgeMode
     knowledgeBaseId: string
+    knowledgeBases: KnowledgeBase[]
+    knowledgeBasesStatus: 'loading' | 'ready' | 'error'
     drafts: Record<string, string>
     pendingTurns: Record<string, PendingTurn>
     moreChatsLoading: boolean
@@ -79,6 +82,7 @@ export type ChatControllerDependencies = {
         expectedOpenSequence?: number,
     ) => Promise<void>
     refreshChatTitle: (chatId: string) => Promise<void>
+    ensureAutomaticChatTitle: (chatId: string, content: string) => Promise<void>
     applySendSuccess: (pending: PendingTurn, result: SendMessageResponse) => void
     applyTurnSuccess: (pending: PendingTurn, turn: ChatTurnStatus) => void
     applyReloadedSuccess: (pending: PendingTurn, details: ChatDetails) => void

@@ -2,6 +2,13 @@ package ru.safeai.gateway.knowledge.storage;
 
 import io.minio.BucketExistsArgs;
 import io.minio.GetObjectArgs;
+import io.minio.GetObjectRetentionArgs;
+import io.minio.IsObjectLegalHoldEnabledArgs;
+import io.minio.ListObjectsArgs;
+import io.minio.Result;
+import io.minio.messages.Item;
+import io.minio.messages.Retention;
+import io.minio.messages.RetentionMode;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.RemoveObjectArgs;
@@ -18,6 +25,7 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.NoSuchFileException;
+import java.time.Instant;
 import java.util.Objects;
 import java.util.Set;
 
@@ -36,6 +44,11 @@ public class S3ObjectStorage implements ObjectStorage {
 
     private static final long MULTIPART_PART_SIZE =
             10L * 1024L * 1024L;
+
+    // These codes are only candidates. A version-specific metadata check is
+    // mandatory before an S3 refusal may be classified as Object Lock.
+    private static final Set<String> POSSIBLE_OBJECT_LOCK_DENIAL_CODES =
+            Set.of("InvalidRequest", "AccessDenied", "ObjectLocked", "InvalidObjectState");
 
     private static final Set<String> OBJECT_NOT_FOUND_CODES =
             Set.of(
@@ -176,6 +189,143 @@ public class S3ObjectStorage implements ObjectStorage {
                     "Не удалось удалить объект из S3 storage",
                     exception
             );
+        }
+    }
+
+    /**
+     * Removes every enumerated version and delete marker; never bypasses Object Lock.
+     * A storage failure or ambiguous result is NOT success. Caller must keep the
+     * durable deletion operation pending for reconciliation.
+     *
+     * Only call when document publication and late uploads are fenced elsewhere.
+     */
+    @Override
+    public void purgeAllVersionsVerified(String key) throws IOException {
+        purgeAllVersionsVerified(key, () -> { });
+    }
+
+    /**
+     * Removes all versions and delete markers in bounded batches. The listing
+     * is restarted after each batch, so deleting a page cannot invalidate a
+     * provider continuation marker. JVM memory is bounded independently of the
+     * number of versions for one key. A final fresh listing plus HEAD verifies
+     * absence; ambiguous network outcomes are retried by the durable executor.
+     */
+    @Override
+    public void purgeAllVersionsVerified(String key, Runnable heartbeat) throws IOException {
+        requireKey(key);
+        Objects.requireNonNull(heartbeat, "heartbeat");
+        final int batchSize = 128;
+        try {
+            int iterations = 0;
+            while (true) {
+                if (++iterations > 10000) {
+                    throw new IOException("S3 erasure exceeded safe iteration limit");
+                }
+                heartbeat.run();
+                java.util.List<Item> batch = new java.util.ArrayList<>(batchSize);
+                Iterable<Result<Item>> results = client.listObjects(
+                        ListObjectsArgs.builder().bucket(bucket).prefix(key)
+                                .recursive(true).includeVersions(true).build());
+                for (Result<Item> result : results) {
+                    heartbeat.run();
+                    Item item = result.get(); // Lazy provider/network errors must propagate.
+                    if (key.equals(item.objectName())) {
+                        batch.add(item);
+                        if (batch.size() >= batchSize) break;
+                    }
+                }
+
+                if (batch.isEmpty()) {
+                    // The version listing is authoritative for historical versions;
+                    // HEAD independently detects an unversioned current object.
+                    if (!objectExists(key)) return;
+                    client.removeObject(RemoveObjectArgs.builder()
+                            .bucket(bucket).object(key).build());
+                    continue;
+                }
+
+                for (Item item : batch) {
+                    heartbeat.run();
+                    RemoveObjectArgs.Builder builder = RemoveObjectArgs.builder()
+                            .bucket(bucket).object(key);
+                    String versionId = item.versionId();
+                    if (versionId != null && !versionId.isBlank()) {
+                        builder.versionId(versionId);
+                    }
+                    // Never bypass Governance/Compliance retention or legal holds.
+                    try {
+                        client.removeObject(builder.build());
+                    } catch (ErrorResponseException refused) {
+                        if (versionId != null && !versionId.isBlank()
+                                && isPossibleObjectLockRefusal(refused)
+                                && isVersionProtectedByObjectLock(key, versionId, refused)) {
+                            throw new VerifiedObjectLockException(
+                                    "S3 Object Lock verified for the refused object version", refused);
+                        }
+                        throw refused;
+                    }
+                }
+            }
+        } catch (VerifiedObjectLockException exception) {
+            throw exception;
+        } catch (IOException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new IOException("S3 physical erasure cannot be verified", exception);
+        }
+    }
+
+    private static boolean isPossibleObjectLockRefusal(ErrorResponseException refused) {
+        return refused.errorResponse() != null
+                && POSSIBLE_OBJECT_LOCK_DENIAL_CODES.contains(refused.errorResponse().code());
+    }
+
+    /**
+     * Classifies ONLY a failed version-specific DELETE. Confirm protection on
+     * that exact version; a generic S3 error must never imply legal retention.
+     * If metadata reads are denied or fail, classification fails closed:
+     * the caller retains its durable operation for retry/review, never DELETED.
+     */
+    private boolean isVersionProtectedByObjectLock(
+            String key, String versionId, ErrorResponseException deleteError) {
+        try {
+            Retention retention = client.getObjectRetention(
+                    GetObjectRetentionArgs.builder()
+                            .bucket(bucket).object(key).versionId(versionId).build());
+            if (retention != null
+                    && (retention.mode() == RetentionMode.COMPLIANCE
+                            || retention.mode() == RetentionMode.GOVERNANCE)
+                    && retention.retainUntilDate() != null
+                    && retention.retainUntilDate().toInstant().isAfter(Instant.now())) {
+                return true;
+            }
+        } catch (Exception metadataError) {
+            // Some providers return an error when no retention is configured.
+            // Legal hold is independent, so query it even if this read fails.
+            deleteError.addSuppressed(metadataError);
+        }
+        try {
+            return Boolean.TRUE.equals(client.isObjectLegalHoldEnabled(
+                    IsObjectLegalHoldEnabledArgs.builder()
+                            .bucket(bucket).object(key).versionId(versionId).build()));
+        } catch (Exception metadataError) {
+            // Inability to verify is not evidence of a hold or of its absence.
+            deleteError.addSuppressed(metadataError);
+            return false;
+        }
+    }
+
+    private boolean objectExists(String key) throws Exception {
+        try {
+            client.statObject(StatObjectArgs.builder()
+                    .bucket(bucket).object(key).build());
+            return true;
+        } catch (ErrorResponseException exception) {
+            if (isObjectNotFound(exception)) return false;
+            throw exception;
         }
     }
 

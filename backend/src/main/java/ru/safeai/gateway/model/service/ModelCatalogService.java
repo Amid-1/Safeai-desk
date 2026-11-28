@@ -322,9 +322,10 @@ public class ModelCatalogService {
      * Bootstraps the catalog from the physical runtime without overstating
      * retention/training/specialized pricing metadata.
      *
-     * <p>The operation is idempotent for an unchanged latest RUNTIME_IMPORT:
+     * <p>The operation is create-only and idempotent for the latest RUNTIME_IMPORT:
      * repeated button clicks/API retries return the existing immutable
-     * snapshot instead of manufacturing v2/v3/v4 copies.</p>
+     * snapshot instead of manufacturing v2/v3/v4 copies. Further governance
+     * or tariff changes require an explicitly audited new version.</p>
      */
     @Transactional
     public ModelCatalogEntryResponse importRuntime(
@@ -365,43 +366,12 @@ public class ModelCatalogService {
                                 + runtimeModel
                 );
 
-        String runtimePricingStatus =
-                Objects.requireNonNull(
-                        runtime.pricingStatus(),
-                        "runtime.pricingStatus не должен быть null"
-                );
-
-        ModelPricingStatus pricingStatus;
-        boolean pricingComplete;
-
-        switch (runtimePricingStatus) {
-            case "FREE" -> {
-                pricingStatus =
-                        ModelPricingStatus.FREE;
-                pricingComplete =
-                        true;
-            }
-            case "CONFIGURED" -> {
-                /*
-                 * The legacy runtime exposes only ordinary input/output prices.
-                 * Cached input, cache-write and extra dimensions are not proven.
-                 */
-                pricingStatus =
-                        ModelPricingStatus.INCOMPLETE;
-                pricingComplete =
-                        false;
-            }
-            case "UNPRICED" -> {
-                pricingStatus =
-                        ModelPricingStatus.UNPRICED;
-                pricingComplete =
-                        false;
-            }
-            default -> throw new IllegalStateException(
-                    "Unsupported runtime pricing status: "
-                            + runtimePricingStatus
-            );
-        }
+        // A runtime card is a projection, never a source of catalog prices.
+        // Only the intrinsic local, non-production mock is provably free at import.
+        boolean pricingComplete = "mock".equals(runtimeProvider)
+                && "mock-safeai".equals(runtimeModel);
+        ModelPricingStatus pricingStatus = pricingComplete
+                ? ModelPricingStatus.FREE : ModelPricingStatus.UNPRICED;
 
         EnumSet<ModelCapability> capabilities =
                 EnumSet.noneOf(
@@ -442,22 +412,9 @@ public class ModelCatalogService {
                         ModelModality.TEXT
                 );
 
-        BigDecimal runtimeInputPrice =
-                ModelCatalogRules.normalizeMoney(
-                        runtime.inputUsdPer1mTokens(),
-                        "runtime.inputUsdPer1mTokens"
-                );
-
-        BigDecimal runtimeOutputPrice =
-                ModelCatalogRules.normalizeMoney(
-                        runtime.outputUsdPer1mTokens(),
-                        "runtime.outputUsdPer1mTokens"
-                );
-
-        String runtimePricingVersion =
-                ModelCatalogRules.normalizePricingVersion(
-                        runtime.pricingVersion()
-                );
+        BigDecimal runtimeInputPrice = pricingComplete ? BigDecimal.ZERO : null;
+        BigDecimal runtimeOutputPrice = pricingComplete ? BigDecimal.ZERO : null;
+        String runtimePricingVersion = pricingComplete ? "mock-local-v1" : null;
 
         ModelCatalogRules.validateCatalogSemantics(
                 ModelLifecycle.ACTIVE,
@@ -502,30 +459,15 @@ public class ModelCatalogService {
             );
         }
 
-        if (latest != null
-                && sameRuntimeSnapshot(
-                latest,
-                runtimeProvider,
-                runtimeModel,
-                runtime,
-                capabilities,
-                inputModalities,
-                outputModalities,
-                pricingStatus,
-                pricingComplete,
-                runtimeInputPrice,
-                runtimeOutputPrice,
-                runtimePricingVersion
-        )) {
-            return ModelCatalogEntryResponse.from(
-                    latest
-            );
+        if (latest != null) {
+            if (!latest.provider().equals(runtimeProvider)
+                    || !latest.providerModelId().equals(runtimeModel)) {
+                throw new ConflictException("Runtime identity differs from existing catalog entry");
+            }
+            // Reimport is idempotent; any governance change requires an explicit
+            // new version. Never recreate an old price from the current runtime.
+            return ModelCatalogEntryResponse.from(latest);
         }
-
-        int previousVersion =
-                latest == null
-                        ? 0
-                        : latest.version();
 
         Instant now =
                 DatabaseTimestampNormalizer.normalize(clock.instant());
@@ -534,7 +476,7 @@ public class ModelCatalogService {
                 new ModelCatalogEntry(
                         UUID.randomUUID(),
                         modelKey,
-                        ModelControlPlaneNumericValidation.nextVersion(previousVersion),
+                        1,
                         runtimeProvider,
                         runtimeModel,
                         runtimeModel,
@@ -596,95 +538,6 @@ public class ModelCatalogService {
             );
         }
         return expected;
-    }
-
-    private static boolean sameRuntimeSnapshot(
-            ModelCatalogEntry latest,
-            String provider,
-            String providerModelId,
-            RuntimeModelStatusResponse runtime,
-            Set<ModelCapability> capabilities,
-            Set<ModelModality> inputModalities,
-            Set<ModelModality> outputModalities,
-            ModelPricingStatus pricingStatus,
-            boolean pricingComplete,
-            BigDecimal inputPrice,
-            BigDecimal outputPrice,
-            String pricingVersion
-    ) {
-        return latest.modelKey().equals(
-                normalizeModelKey(
-                        provider
-                                + ":"
-                                + providerModelId
-                )
-        )
-                && latest.provider().equals(
-                provider
-        )
-                && latest.providerModelId().equals(
-                providerModelId
-        )
-                && latest.displayName().equals(
-                providerModelId
-        )
-                && latest.lifecycle()
-                == ModelLifecycle.ACTIVE
-                && latest.maxInputTokens()
-                == runtime.maxInputTokens()
-                && latest.maxOutputTokens()
-                == runtime.maxOutputTokens()
-                && latest.capabilities().equals(
-                capabilities
-        )
-                && latest.inputModalities().equals(
-                inputModalities
-        )
-                && latest.outputModalities().equals(
-                outputModalities
-        )
-                && latest.retentionStatus()
-                == ModelRetentionStatus.NOT_DECLARED
-                && latest.retentionDays()
-                == null
-                && latest.trainingUseStatus()
-                == ModelTrainingUseStatus.NOT_DECLARED
-                && latest.pricingStatus()
-                == pricingStatus
-                && latest.pricingComplete()
-                == pricingComplete
-                && moneyEquals(
-                latest.inputUsdPer1mTokens(),
-                inputPrice
-        )
-                && latest.cachedInputUsdPer1mTokens()
-                == null
-                && latest.cacheWriteInputUsdPer1mTokens()
-                == null
-                && moneyEquals(
-                latest.outputUsdPer1mTokens(),
-                outputPrice
-        )
-                && "{}".equals(
-                latest.extraPricingJson()
-        )
-                && Objects.equals(
-                latest.pricingVersion(),
-                pricingVersion
-        );
-    }
-
-    private static boolean moneyEquals(
-            BigDecimal left,
-            BigDecimal right
-    ) {
-        if (left == null || right == null) {
-            return left == right;
-        }
-
-        return left.compareTo(
-                right
-        ) == 0;
     }
 
     private void recordCatalogAudit(

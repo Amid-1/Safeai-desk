@@ -1,0 +1,154 @@
+groups:
+  - name: safeai-model-ai
+    rules:
+      - alert: SafeAiModelAiInstrumentationMissing
+        expr: |
+          ((up{job="safeai-backend"} == 1) unless on(job, instance)
+            safeai_ai_provider_attempts_total{job="safeai-backend"})
+          or
+          ((up{job="safeai-backend"} == 1) unless on(job, instance)
+            safeai_model_route_decisions_total{job="safeai-backend"})
+        for: 3m
+        labels:
+          severity: critical
+          service: safeai-backend
+        annotations:
+          summary: "Models or AI adapter counters missing"
+      - alert: SafeAiAiAttemptObservationMissing
+        expr: |
+          (up{job="safeai-backend"} == 1)
+          unless on(job, instance)
+          safeai_ai_attempt_observation_healthy{job="safeai-backend"}
+        for: 3m
+        labels:
+          severity: critical
+          service: safeai-backend
+        annotations:
+          summary: "Physical attempt observation metric missing"
+      - alert: SafeAiAiAttemptObservationUnhealthy
+        expr: |
+          (safeai_ai_attempt_observation_healthy{job="safeai-backend"} != 1)
+          or
+          (time() - safeai_ai_attempt_last_observation_timestamp{job="safeai-backend"} > 180)
+          or
+          (safeai_ai_attempt_observation_healthy{job="safeai-backend"}
+            unless on(job, instance) safeai_ai_attempt_last_observation_timestamp{job="safeai-backend"})
+        for: 3m
+        labels:
+          severity: critical
+          service: safeai-backend
+        annotations:
+          summary: "Physical attempt observation unavailable or stale"
+      - alert: SafeAiAiPhysicalStalled
+        expr: max(safeai_ai_attempt_stalled{job="safeai-backend"}) > 0
+        for: 5m
+        labels:
+          severity: critical
+          service: safeai-backend
+        annotations:
+          summary: "Physical attempt remains STARTED for over 15 minutes"
+      - alert: SafeAiAiPhysicalAmbiguous
+        expr: max(safeai_ai_attempt_ambiguous{job="safeai-backend"}) > 0
+        for: 2m
+        labels:
+          severity: warning
+          service: safeai-backend
+        annotations:
+          summary: "Ambiguous physical execution in the last 24 hours"
+      - alert: SafeAiAiPhysicalUnknownCost
+        expr: max(safeai_ai_attempt_unknown_cost{job="safeai-backend"}) > 0
+        for: 5m
+        labels:
+          severity: critical
+          service: safeai-backend
+        annotations:
+          summary: "Terminal physical attempts have unknown cost"
+      - alert: SafeAiModelMonthlyBudgetUnverifiable
+        expr: |
+          sum(increase(safeai_model_route_decisions_total{
+            job="safeai-backend",outcome="denied",reason="monthly_budget_unverifiable"}[5m])) > 0
+        labels:
+          severity: critical
+          service: safeai-backend
+        annotations:
+          summary: "Model route denied because monthly commitment is unverifiable"
+      - alert: SafeAiModelBudgetDenialsElevated
+        expr: |
+          sum(increase(safeai_model_route_decisions_total{
+            job="safeai-backend",outcome="denied",reason=~"monthly_budget_exceeded|request_cost_limit_exceeded"}[5m])) >= 5
+        labels:
+          severity: warning
+          service: safeai-backend
+        annotations:
+          summary: "Elevated model budget denials"
+      - alert: SafeAiAiProviderCredentialsOrBilling
+        expr: |
+          sum by (provider) (increase(safeai_ai_provider_attempts_total{
+            job="safeai-backend",result=~"authentication|permission_denied|billing_error|quota_exhausted"}[5m])) > 0
+        labels:
+          severity: critical
+          service: safeai-backend
+        annotations:
+          summary: "AI provider credential, permission or billing failure"
+      - alert: SafeAiAiProviderRateLimited
+        expr: |
+          sum by (provider) (increase(safeai_ai_provider_attempts_total{
+            job="safeai-backend",result="rate_limited"}[5m])) >= 5
+        labels:
+          severity: warning
+          service: safeai-backend
+        annotations:
+          summary: "Repeated AI provider rate limiting"
+      - alert: SafeAiAiProviderErrorRatio
+        expr: |
+          (
+            sum by (provider) (increase(safeai_ai_provider_attempts_total{
+              job="safeai-backend",result!="success"}[5m]))
+            /
+            sum by (provider) (increase(safeai_ai_provider_attempts_total{
+              job="safeai-backend"}[5m]))
+          ) > 0.2
+          and on(provider)
+          sum by (provider) (increase(safeai_ai_provider_attempts_total{job="safeai-backend"}[5m])) >= 10
+        for: 5m
+        labels:
+          severity: warning
+          service: safeai-backend
+        annotations:
+          summary: "AI provider adapter error ratio above 20 percent"
+      - alert: SafeAiAiProviderSlow
+        expr: |
+          histogram_quantile(0.95, sum by (provider, le) (
+            rate(safeai_ai_provider_duration_seconds_bucket{job="safeai-backend"}[5m]))) > 30
+          and on(provider)
+          sum by (provider) (increase(safeai_ai_provider_duration_seconds_count{job="safeai-backend"}[5m])) >= 10
+        for: 5m
+        labels:
+          severity: warning
+          service: safeai-backend
+        annotations:
+          summary: "AI provider adapter p95 exceeds 30 seconds"
+      - alert: SafeAiAiDispatchGateFailures
+        expr: |
+          sum by (provider) (increase(safeai_ai_provider_gate_failures_total{job="safeai-backend"}[5m])) >= 3
+        labels:
+          severity: warning
+          service: safeai-backend
+        annotations:
+          summary: "Repeated physical admission or deadline failures"
+      - alert: SafeAiAiProviderRetryElevated
+        expr: |
+          sum by (provider) (increase(safeai_ai_provider_retries_total{job="safeai-backend"}[5m])) >= 5
+        labels:
+          severity: warning
+          service: safeai-backend
+        annotations:
+          summary: "Elevated AI provider retry attempts"
+      - alert: SafeAiAiTerminalRecordingFailed
+        expr: |
+          sum by (provider) (increase(safeai_ai_provider_recording_failures_total{job="safeai-backend"}[5m])) > 0
+        labels:
+          severity: critical
+          service: safeai-backend
+        annotations:
+          summary: "AI terminal attempt evidence recording failed"

@@ -11,8 +11,7 @@ import ru.safeai.gateway.ai.execution.AiExecutionAttemptScope;
 import ru.safeai.gateway.ai.metadata.AiResponseStatus;
 import ru.safeai.gateway.ai.metadata.PricingStatus;
 import ru.safeai.gateway.ai.metadata.UsageStatus;
-import ru.safeai.gateway.ai.pricing.ModelPricingProperties;
-import ru.safeai.gateway.ai.pricing.ModelPricingService;
+import ru.safeai.gateway.ai.testsupport.CatalogPricingFixture;
 import ru.safeai.gateway.ai.provider.AiProviderRetryExecutor;
 import ru.safeai.gateway.ai.provider.AiRetryProperties;
 import ru.safeai.gateway.ai.provider.mock.MockAiProvider;
@@ -184,19 +183,6 @@ class MockAiProviderTest {
     }
 
     private MockProviderHarness provider() {
-        ModelPricingProperties properties =
-                new ModelPricingProperties(
-                        List.of(
-                                new ModelPricingProperties.ModelPrice(
-                                        "mock-safeai",
-                                        BigDecimal.ZERO,
-                                        BigDecimal.ZERO,
-                                        "USD",
-                                        "mock-2026-01"
-                                )
-                        )
-                );
-
         AiExecutionAttemptScope attemptScope =
                 new AiExecutionAttemptScope();
 
@@ -220,13 +206,9 @@ class MockAiProviderTest {
 
         MockAiProvider provider =
                 new MockAiProvider(
-                        new ModelPricingService(
-                                properties,
-                                Clock.fixed(
-                                        NOW,
-                                        ZoneOffset.UTC
-                                )
-                        ),
+                        CatalogPricingFixture.resolver("mock", "mock-safeai", PROVIDER_OPERATION_ID,
+                                List.of(new CatalogPricingFixture.Price("mock-safeai", BigDecimal.ZERO,
+                                        BigDecimal.ZERO, "USD", null)), Clock.fixed(NOW, ZoneOffset.UTC)),
                         retryExecutor
                 );
 

@@ -8,7 +8,7 @@ import type {
     OrganizationModelPolicy,
     RuntimeModelStatus,
 } from '../../../entities/model/api/modelApi'
-import { modelConfigurationReadiness } from './modelConfigurationReadiness'
+import { modelConfigurationReadiness, runtimeDataGuarantees } from './modelConfigurationReadiness'
 
 // Complete contract fixtures: missing required fields must fail TypeScript
 // compilation rather than being hidden by assertions or unknown casts.
@@ -84,9 +84,33 @@ const policy: OrganizationModelPolicy = {
 }
 
 describe('Model Control Plane configuration summary (non-authoritative)', () => {
+    it('does not confirm guarantees with missing, expired or incompatible evidence', () => {
+        const now = Date.parse('2026-11-19T12:00:00Z')
+        const dataAssurance = {noTraining: true, zeroDataRetention: true, source: 'CONTRACT-42',
+            verifiedAt: '2026-11-01T00:00:00Z', expiresAt: '2026-12-01T00:00:00Z'}
+        const external = {...runtime, provider: 'openai', dataAssurance}
+        expect(runtimeDataGuarantees(external, now)).toEqual({noTraining: true, zeroDataRetention: true})
+        expect(runtimeDataGuarantees(external, Date.parse('2026-12-01T00:00:00Z'))).toEqual({noTraining: false, zeroDataRetention: false})
+        expect(runtimeDataGuarantees({...external, dataAssurance: {...dataAssurance, source: null}}, now).noTraining).toBe(false)
+        expect(runtimeDataGuarantees({...external, dataAssurance: {...dataAssurance, source: 'LOCAL_MOCK'}}, now).zeroDataRetention).toBe(false)
+        expect(runtimeDataGuarantees({...runtime, dataAssurance: {...dataAssurance, source: 'LOCAL_MOCK', verifiedAt: null, expiresAt: null}}, now).noTraining).toBe(true)
+        expect(runtimeDataGuarantees(runtime, now).zeroDataRetention).toBe(false)
+    })
+    it('reports unconfirmed catalog assurances and incomplete pricing even with local evidence', () => {
+        const result = modelConfigurationReadiness({...runtime, dataAssurance: {
+            noTraining: true, zeroDataRetention: true, source: 'LOCAL_MOCK', verifiedAt: null, expiresAt: null,
+        }}, [{...model, pricingComplete: false}], {...policy, requireNoTraining: true,
+            requireZeroDataRetention: true, requireCompletePricing: true})
+        expect(result.blockers).toEqual(expect.arrayContaining([
+            'В действующих записях каталога не подтверждён запрет обучения.',
+            'В действующих записях каталога не подтверждено нулевое хранение.',
+            'В действующих записях каталога отсутствуют полные сведения о стоимости.',
+        ]))
+    })
     it('does not claim a model is executable just because runtime and catalog match', () => {
         expect(modelConfigurationReadiness(runtime, [model], policy)).toEqual({
             compatibleCount: 1,
+            allowedCount: 1,
             policyEnabled: true,
             runtimeEnabled: true,
             blockers: [],

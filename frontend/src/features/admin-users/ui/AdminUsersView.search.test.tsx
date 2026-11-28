@@ -87,6 +87,35 @@ describe('Users directory search UI', () => {
         expect(callbacks.onSelectSearchSuggestion).toHaveBeenCalledWith(row)
     })
 
+    it('preserves inline suggestions until an outside pointer click reaches the row', () => {
+        view([row], 'Иван')
+        const search = screen.getByRole('searchbox')
+        const button = screen.getByRole('button', {
+            name: `Информация о роли пользователя ${row.email}`,
+        })
+        fireEvent.focus(search)
+        fireEvent.pointerDown(button)
+        fireEvent.blur(search, { relatedTarget: button })
+        expect(screen.getByText('Совпадения · выберите пользователя')).toBeInTheDocument()
+        fireEvent.pointerUp(button)
+        fireEvent.click(button)
+        expect(screen.getByRole('dialog', { name: 'Системная роль пользователя' })).toBeInTheDocument()
+        expect(screen.queryByText('Совпадения · выберите пользователя')).not.toBeInTheDocument()
+    })
+
+    it('still closes inline suggestions when keyboard focus leaves the form', () => {
+        view([row], 'Иван')
+        const search = screen.getByRole('searchbox')
+        const button = screen.getByRole('button', {
+            name: `Информация о роли пользователя ${row.email}`,
+        })
+        fireEvent.focus(search)
+        expect(screen.getByText('Совпадения · выберите пользователя')).toBeInTheDocument()
+        fireEvent.keyDown(search, { key: 'Tab' })
+        fireEvent.blur(search, { relatedTarget: button })
+        expect(screen.queryByText('Совпадения · выберите пользователя')).not.toBeInTheDocument()
+    })
+
     it('keeps role read-only for ADMIN, opens the real security explanation and closes it', () => {
         const { callbacks } = view([row], '')
         expect(screen.queryByRole('button', {
@@ -129,7 +158,7 @@ describe('Users directory search UI', () => {
         ])
     })
 
-    it('не применяет поисковый фильтр автоматически при вводе или фокусе', () => {
+    it('передаёт ввод контроллеру живого поиска и сохраняет ручную отправку', () => {
         const { callbacks } = view([row], '')
         const search = screen.getByRole('searchbox')
         fireEvent.focus(search)
@@ -144,7 +173,6 @@ describe('Users directory search UI', () => {
     it.each([
         { reason: 'идёт загрузка', overrides: { loading: true } },
         { reason: 'есть ошибка загрузки', overrides: { loadError: 'Ошибка' } },
-        { reason: 'введён один символ', overrides: { searchDraft: 'И', appliedSearch: 'И' } },
         { reason: 'поиск ещё не применён', overrides: { appliedSearch: 'Другое' } },
     ])('не раскрывает подсказки, если $reason', ({ overrides }) => {
         const { rerenderWith } = view([row], 'Иван')
@@ -152,6 +180,12 @@ describe('Users directory search UI', () => {
         fireEvent.focus(screen.getByRole('searchbox'))
         expect(screen.queryByText('Совпадения · выберите пользователя'))
             .not.toBeInTheDocument()
+    })
+
+    it('показывает подсказку после серверного поиска по одному символу', () => {
+        view([row], 'И')
+        fireEvent.focus(screen.getByRole('searchbox'))
+        expect(screen.getByText('Совпадения · выберите пользователя')).toBeInTheDocument()
     })
 
     it('закрывает подсказки клавишей Escape без отправки запроса', () => {

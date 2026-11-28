@@ -598,7 +598,7 @@ class ModelCatalogServiceTest {
     }
 
     @Test
-    void importFreeRuntimeCreatesTruthfulCompleteFreeSnapshot() {
+    void importDoesNotCopyFreeTariffFromRuntimeProjection() {
         when(runtimeStatusService.current())
                 .thenReturn(ModelTestFixtures.freeRuntime());
         when(repository.findLatest("openai:gpt-test"))
@@ -614,15 +614,17 @@ class ModelCatalogServiceTest {
         ModelCatalogEntry entry = captor.getValue();
 
         assertThat(entry.pricingStatus())
-                .isEqualTo(ModelPricingStatus.FREE);
+                .isEqualTo(ModelPricingStatus.UNPRICED);
         assertThat(entry.pricingComplete())
-                .isTrue();
+                .isFalse();
+        assertThat(entry.inputUsdPer1mTokens()).isNull();
+        assertThat(entry.outputUsdPer1mTokens()).isNull();
         assertThat(entry.source())
                 .isEqualTo(ModelCatalogSource.RUNTIME_IMPORT);
     }
 
     @Test
-    void importConfiguredLegacyRuntimeDoesNotOverstatePricingCompleteness() {
+    void importConfiguredRuntimeDoesNotCopyTariff() {
         when(runtimeStatusService.current())
                 .thenReturn(ModelTestFixtures.configuredRuntime());
         when(repository.findLatest("openai:gpt-test"))
@@ -637,7 +639,7 @@ class ModelCatalogServiceTest {
         verify(repository).insert(captor.capture());
 
         assertThat(captor.getValue().pricingStatus())
-                .isEqualTo(ModelPricingStatus.INCOMPLETE);
+                .isEqualTo(ModelPricingStatus.UNPRICED);
         assertThat(captor.getValue().pricingComplete())
                 .isFalse();
     }
@@ -672,35 +674,30 @@ class ModelCatalogServiceTest {
     }
 
     @Test
-    void importRuntimeRejectsUnknownPricingStatusFailClosed() {
-        RuntimeModelStatusResponse runtime =
-                new RuntimeModelStatusResponse(
-                        "openai",
-                        "gpt-test",
-                        true,
-                        "SINGLE_PROVIDER_STATIC",
-                        32_000,
-                        4_096,
-                        false,
-                        false,
-                        false,
-                        "NOT_DECLARED",
-                        "NOT_PROBED",
-                        "UNKNOWN",
-                        null,
-                        null,
-                        null
-                );
+    void repeatImportDoesNotCreateOrOverwriteExistingTariff() {
+        var existing = ru.safeai.gateway.ai.testsupport.CatalogPricingFixture.entry("openai",
+                new ru.safeai.gateway.ai.testsupport.CatalogPricingFixture.Price("gpt-test",
+                        BigDecimal.ONE, BigDecimal.TEN, "USD", "historical-v1"), ModelTestFixtures.CLOCK);
         when(runtimeStatusService.current())
-                .thenReturn(runtime);
-
-        assertThatThrownBy(() -> service.importRuntime(
-                ModelTestFixtures.superAdminPrincipal()
-        ))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("Unsupported runtime pricing status");
-
+                .thenReturn(ModelTestFixtures.freeRuntime());
+        when(repository.findLatest("openai:gpt-test")).thenReturn(Optional.of(existing));
+        var returned = service.importRuntime(ModelTestFixtures.superAdminPrincipal());
+        assertThat(returned).isEqualTo(ru.safeai.gateway.model.dto.ModelCatalogEntryResponse.from(existing));
         verify(repository, never()).insert(any());
+    }
+
+    @Test
+    void localMockImportCreatesExplicitFreeCatalogVersion() {
+        when(runtimeStatusService.current()).thenReturn(new RuntimeModelStatusResponse(
+                "mock", "mock-safeai", true, "SINGLE_PROVIDER_STATIC", 64000, 2048,
+                false, false, false, "NOT_DECLARED", "NOT_PROBED", "UNPRICED",
+                null, null, null));
+        when(repository.findLatest("mock:mock-safeai")).thenReturn(Optional.empty());
+        service.importRuntime(ModelTestFixtures.superAdminPrincipal());
+        var captor = ArgumentCaptor.forClass(ModelCatalogEntry.class);
+        verify(repository).insert(captor.capture());
+        assertThat(captor.getValue().pricingStatus()).isEqualTo(ModelPricingStatus.FREE);
+        assertThat(captor.getValue().pricingScheme()).isEqualTo(ModelPricingScheme.FLAT_TOKEN_V1);
     }
 
     @Test

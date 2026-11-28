@@ -15,6 +15,7 @@ import type {
 import type {
     PendingTurn,
 } from '../lib/chatPage.helpers'
+import { isSafeToPrepareNewRequest } from '../lib/chatPage.helpers'
 import {
     getPendingLabel,
     getPendingShortLabel,
@@ -22,6 +23,7 @@ import {
 import {
     formatDateTime,
 } from '../../../shared/lib/format'
+import ErasureRequestLink from '../../../shared/ui/ErasureRequestLink'
 import './ChatHistoryRow.css'
 
 type ChatHistoryRowProps = {
@@ -34,6 +36,7 @@ type ChatHistoryRowProps = {
     onOpen: (chatId: string) => void
     onRename: (chat: Chat) => void
     onArchive: (chat: Chat) => void
+    onErase?: (chat: Chat) => void
 }
 
 /**
@@ -50,7 +53,9 @@ export default function ChatHistoryRow({
     onOpen,
     onRename,
     onArchive,
+    onErase,
 }: ChatHistoryRowProps) {
+    const blocked = Boolean(pending && !isSafeToPrepareNewRequest(pending.status))
     const [actionsOpen, setActionsOpen] = useState(false)
     const rowRef = useRef<HTMLDivElement | null>(null)
     const toggleRef = useRef<HTMLButtonElement | null>(null)
@@ -145,17 +150,32 @@ export default function ChatHistoryRow({
                     </button>
                     <button
                         type="button"
-                        disabled={Boolean(pending) || archiving}
-                        title={pending
+                        disabled={blocked || archiving}
+                        title={blocked
                             ? 'Дождитесь завершения запроса'
-                            : 'Убрать из списка, сохранив историю'}
+                            : 'Архивировать, сохранив историю'}
                         onClick={() => {
                             setActionsOpen(false)
                             onArchive(chat)
                         }}
                     >
-                        Убрать из списка
+                        Архивировать
                     </button>
+                    {!blocked && !archiving && !opening && <ErasureRequestLink target={{ type: 'CHAT', id: chat.id }} />}
+                    {onErase && <button
+                        type="button"
+                        className="chat-delete-action"
+                        disabled={blocked || archiving}
+                        onClick={() => {
+                            setActionsOpen(false)
+                            onErase(chat)
+                        }}
+                    >
+                        Удалить содержимое…
+                    </button>}
+                    {blocked && (
+                        <small>Архивировать чат можно, когда определится результат запроса.</small>
+                    )}
                 </div>
             )}
         </div>

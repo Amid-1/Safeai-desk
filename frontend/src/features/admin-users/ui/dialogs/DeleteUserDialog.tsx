@@ -23,6 +23,7 @@ export function DeleteUserDialog(props: DeleteUserDialogProps) {
         <>
             {deleteUser && (
                 <Modal
+                    className="admin-details-dialog"
                     title={
                         'Удалить пользователя навсегда?'
                     }
@@ -41,10 +42,9 @@ export function DeleteUserDialog(props: DeleteUserDialogProps) {
                     >
                         Пользователь должен быть
                         предварительно отключён.
-                        Backend дополнительно проверяет
-                        зависимости, retention policy,
-                        last-admin invariant и защиту
-                        платформенной организации.
+                        Система проверит, истёк ли срок хранения, отозваны ли сеансы
+                        и остались ли связанные данные. Защищённые учётные записи
+                        и последнего действующего администратора удалять нельзя.
                     </div>
 
                     <form

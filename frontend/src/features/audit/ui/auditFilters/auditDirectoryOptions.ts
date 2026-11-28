@@ -153,7 +153,7 @@ export function formatActorOption(
             : (
                 email
                 ?? displayName
-                ?? 'Инициатор без имени'
+                ?? 'Пользователь без имени'
             )
 
     return (

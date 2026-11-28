@@ -3,7 +3,7 @@ package ru.safeai.gateway.ai.provider.mock;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
-import ru.safeai.gateway.ai.pricing.ModelPricingService;
+import ru.safeai.gateway.ai.pricing.PricingResolver;
 import ru.safeai.gateway.ai.provider.AiProviderRetryExecutor;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -14,8 +14,8 @@ class MockAiProviderProductionConditionTest {
     private final ApplicationContextRunner contextRunner =
             new ApplicationContextRunner()
                     .withBean(
-                            ModelPricingService.class,
-                            () -> mock(ModelPricingService.class)
+                            PricingResolver.class,
+                            () -> mock(PricingResolver.class)
                     )
                     .withBean(
                             AiProviderRetryExecutor.class,

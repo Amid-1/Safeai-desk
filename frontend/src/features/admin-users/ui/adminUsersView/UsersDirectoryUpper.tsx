@@ -1,13 +1,17 @@
 // frontend/src/features/admin-users/ui/adminUsersView/UsersDirectoryUpper.tsx
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { User } from '../../../../entities/user/api/userApi'
 import { ErrorState, LoadingState } from '../../../../shared/ui/StateBlock'
 import { FilterButton } from '../AdminUsersUi'
 import type { AdminUsersViewProps } from '../adminUsersViewTypes'
+import { OrganizationDirectoryFilter } from '../../../../entities/organization/ui/OrganizationDirectoryFilter'
+import { AdminPageHeader } from '../../../../shared/ui/AdminPageHeader'
 
 export function UsersDirectoryUpper({
     users,
     statistics,
+    statisticsAvailable = true,
+    linkedDetailsError,
     loadError,
     mutationError,
     success,
@@ -28,11 +32,15 @@ export function UsersDirectoryUpper({
     onCreate,
     onFilterChange,
     onReload,
+    organizationId,
+    onOrganizationChange,
 }: AdminUsersViewProps) {
     const [suggestionsOpen, setSuggestionsOpen] = useState(false)
+    const searchForm = useRef<HTMLFormElement>(null)
+    const outsidePointer = useRef(false)
     const showSuggestions = suggestionsOpen
         && !loading && !loadError
-        && searchDraft.trim().length >= 2
+        && searchDraft.trim().length >= 1
         && searchDraft.trim() === appliedSearch
         && users.length > 0
     const suggestionRank = (user: User): number => {
@@ -44,13 +52,39 @@ export function UsersDirectoryUpper({
     }
     const suggestions = [...users].sort((a, b) =>
         suggestionRank(a) - suggestionRank(b)).slice(0, 8)
+    useEffect(() => {
+        if (!showSuggestions) return
+        const isOutside = (event: Event) =>
+            event.target instanceof Node && !searchForm.current?.contains(event.target)
+        const onPointerDown = (event: PointerEvent) => {
+            outsidePointer.current = isOutside(event)
+        }
+        const onClick = (event: MouseEvent) => {
+            outsidePointer.current = false
+            if (isOutside(event)) setSuggestionsOpen(false)
+        }
+        const resetPointer = () => { outsidePointer.current = false }
+        // Keep the inline list in place until the outside click has reached
+        // its target. Blur during pointerdown must not move a table row.
+        document.addEventListener('pointerdown', onPointerDown, true)
+        document.addEventListener('click', onClick)
+        document.addEventListener('pointercancel', resetPointer, true)
+        document.addEventListener('keydown', resetPointer, true)
+        return () => {
+            document.removeEventListener('pointerdown', onPointerDown, true)
+            document.removeEventListener('click', onClick)
+            document.removeEventListener('pointercancel', resetPointer, true)
+            document.removeEventListener('keydown', resetPointer, true)
+            resetPointer()
+        }
+    }, [showSuggestions])
     return (
                     <div
                         className={
                             'users-page__upper'
                         }
                     >
-                        <div
+                        <AdminPageHeader
                             className={
                                 'users-page-header'
                             }
@@ -90,7 +124,7 @@ export function UsersDirectoryUpper({
 
                                 Создать пользователя
                             </button>
-                        </div>
+                        </AdminPageHeader>
 
                         {mutationError && (
                             <div
@@ -127,7 +161,7 @@ export function UsersDirectoryUpper({
                                 }
                                 label="Все"
                                 count={
-                                    statistics.total
+                                    loading || loadError || !statisticsAvailable ? '—' : statistics.total
                                 }
                                 disabled={
                                     hasPendingMutation
@@ -139,13 +173,18 @@ export function UsersDirectoryUpper({
                                 }
                             />
 
+                            {currentUserIsSuperAdmin && <FilterButton active={filter === 'SUPER_ADMIN'}
+                                label="Суперадминистраторы"
+                                count={loading || loadError || !statisticsAvailable
+                                    ? '—' : statistics.superAdministrators ?? '—'}
+                                disabled={hasPendingMutation} onClick={() => onFilterChange('SUPER_ADMIN')} />}
                             <FilterButton
                                 active={
                                     filter === 'ADMIN'
                                 }
                                 label="Администраторы"
                                 count={
-                                    statistics.administrators
+                                    loading || loadError || !statisticsAvailable ? '—' : statistics.administrators
                                 }
                                 disabled={
                                     hasPendingMutation
@@ -163,7 +202,7 @@ export function UsersDirectoryUpper({
                                 }
                                 label="Пользователи"
                                 count={
-                                    statistics.users
+                                    loading || loadError || !statisticsAvailable ? '—' : statistics.users
                                 }
                                 disabled={
                                     hasPendingMutation
@@ -176,11 +215,15 @@ export function UsersDirectoryUpper({
                             />
                         </div>
 
+                        {currentUserIsSuperAdmin && onOrganizationChange && <OrganizationDirectoryFilter
+                            value={organizationId ?? ''} onChange={onOrganizationChange} disabled={hasPendingMutation} />}
+
                         <form
+                            ref={searchForm}
                             className="users-directory-search"
                             role="search"
                             onBlur={(event) => {
-                                if (!event.currentTarget.contains(event.relatedTarget)) {
+                                if (!outsidePointer.current && !event.currentTarget.contains(event.relatedTarget)) {
                                     setSuggestionsOpen(false)
                                 }
                             }}
@@ -266,12 +309,11 @@ export function UsersDirectoryUpper({
                                 </div>
                             )}
                             <span className="users-directory-search__summary" role="status">
-                                Найдено по фильтрам: {totalMatched}
-                                {' · Всего пользователей: '}{statistics.total}
+                                Найдено по фильтрам: {loading || loadError ? '—' : totalMatched}
+                                {' · Всего пользователей: '}
+                                {loading || loadError || !statisticsAvailable ? '—' : statistics.total}
                                 {searchDraft.trim() !== appliedSearch && (
-                                    <> · {searchDraft.trim().length === 1
-                                        ? 'Введите ещё символ или нажмите «Найти»'
-                                        : 'Обновляем результаты поиска…'}</>
+                                    <> · Обновляем результаты поиска…</>
                                 )}
                                 {' · Сначала недавно созданные'}
                             </span>
@@ -285,6 +327,14 @@ export function UsersDirectoryUpper({
                             aria-hidden="true"
                         />
 
+                        {linkedDetailsError && <p role="alert" className="error">{linkedDetailsError}</p>}
+                        {!loading && !loadError && !statisticsAvailable && (
+                            <p role="status">Не удалось получить общие итоги. Список доступен.{' '}
+                                <button type="button" className="secondary-button" onClick={onReload}>
+                                    Обновить итоги
+                                </button>
+                            </p>
+                        )}
                         {loading && (
                             <LoadingState
                                 message={

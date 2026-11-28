@@ -1,0 +1,350 @@
+/* frontend/src/features/erasure/review/ErasureReview.css */
+/* SafeAI Desk R2: scoped UI styling, no global element resets. */
+.er2-page { max-width: 1260px; margin-inline: auto; padding-bottom: 48px; }
+.er2-heading { margin: 12px 0 22px; }
+.er2-heading--row { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.er2-heading h1 { margin: 6px 0 7px; font-size: clamp(27px, 3vw, 35px); font-weight: 760; color: #17223b; line-height: 1.2; }
+.er2-heading p { max-width: 780px; color: #55637b; margin: 0; line-height: 1.65; }
+.er2-eyebrow { color: #466cbb; font-size: 11px; font-weight: 800; letter-spacing: .10em; }
+.er2-card { background: #fff; border: 1px solid #dbe4f3; border-radius: 17px; padding: 24px; box-shadow: 0 7px 18px rgb(28 49 81 / 3%); min-width: 0; }
+.er2-card h2 { margin: 0 0 16px; color: #1c2943; font-size: 20px; }
+.er2-card p { color: #53657d; line-height: 1.62; }
+.er2-card a { color: #225bd9; }
+.er2-warning { margin-bottom: 22px; background: #fff9ee; color: #754c16; border-color: #efd6a4; line-height: 1.65; }
+.er2-warning strong { color: #62410f; }
+.er2-settings-layout { display: grid; grid-template-columns: 290px minmax(0,1fr); gap: 22px; }
+.er2-settings-menu { display: flex; flex-direction: column; gap: 9px; align-self: start; }
+.er2-menu-item { padding: 13px 16px; background: #f5f7fa; border-radius: 10px; color: #263754; }
+.er2-menu-item--active { background: #e4eef1; font-weight: 750; }
+.er2-settings-main { padding: 28px; }
+.er2-data-row { padding: 22px 0; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e7edf7; gap: 18px; }
+.er2-data-row p { margin: 5px 0 0; }
+.er2-info { background: #f3f7ff; margin-top: 22px; border-color: #e0e9fb; }
+.er2-muted { color: #617089; font-size: 14px; line-height: 1.5; }
+.er2-pill { display: inline-flex; max-width: max-content; align-items: center; background: #edf2fc; color: #304d82; border: 1px solid #dce6fa; padding: 5px 11px; border-radius: 999px; font-size: 12px; font-weight: 750; }
+.er2-action, .er2-primary { display: inline-flex; justify-content: center; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 10px; font: inherit; font-weight: 700; font-size: 13px; text-decoration: none; cursor: pointer; }
+.er2-action { background: #fff; color: #225bd9; border: 1px solid #bed1f4; }
+.er2-primary { background: #215ddb; border: 1px solid #215ddb; color: white !important; }
+.er2-action:hover:not(:disabled), .er2-primary:hover:not(:disabled) { filter: brightness(.96); }
+.er2-action:disabled, .er2-primary:disabled { opacity: .6; cursor: not-allowed; }
+.er2-action:focus-visible, .er2-primary:focus-visible, .er2-page :focus-visible { outline: 3px solid #9ab8ff; outline-offset: 2px; }
+.er2-stats { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 15px; margin: 0 0 22px; }
+.er2-stats .er2-card { display: flex; flex-direction: column; gap: 10px; }
+.er2-stats span { color: #52637a; font-size: 13px; }
+.er2-stats strong { color: #1b2d4b; font-size: 32px; }
+.er2-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px; }
+.er2-grid-2 .er2-card { display: flex; flex-direction: column; align-items: start; }
+.er2-grid-2 a { margin-top: auto; }
+.er2-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.er2-filter { display: flex; gap: 10px; align-items: center; font-size: 13px; color: #475c77; }
+.er2-filter select, .er2-label select { border: 1px solid #ccd9ed; border-radius: 10px; padding: 9px 12px; background: white; color: #243452; font: inherit; }
+.er2-table-wrap { overflow-x: auto; }
+.er2-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.er2-table th { color: #677790; text-align: left; font-size: 12px; padding: 15px 12px; background: #f7f9fd; white-space: nowrap; }
+.er2-table td { color: #253653; border-top: 1px solid #eaf0f8; padding: 17px 12px; vertical-align: middle; }
+.er2-table td small { display: block; color: #7a879b; margin-top: 4px; font-size: 11px; }
+.er2-table td a { font-weight: 700; text-decoration: none; }
+.er2-table td a:hover { text-decoration: underline; }
+.er2-back { display: inline-block; color: #3d5a83; text-decoration: none; margin: 7px 0 12px; font-size: 13px; font-weight: 650; }
+.er2-details-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(250px, 1fr); gap: 18px; align-items: start; }
+.er2-details-main, .er2-details-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.er2-details, .er2-summary { display: grid; gap: 0; margin: 0; }
+.er2-details div, .er2-summary div { display: grid; grid-template-columns: 40% 1fr; padding: 12px 0; border-bottom: 1px solid #edf1f8; gap: 12px; }
+.er2-details dt, .er2-summary dt { color: #65758e; }
+.er2-details dd, .er2-summary dd { margin: 0; font-weight: 650; overflow-wrap: anywhere; color: #1c2e4c; }
+.er2-technical { margin-top: 20px; font-size: 13px; color: #64738b; }
+.er2-technical p { overflow-wrap: anywhere; margin: 10px 0; }
+.er2-label { display: grid; gap: 8px; margin: 14px 0; color: #425573; font-size: 13px; }
+.er2-decision-options { display: flex; flex-wrap: wrap; gap: 16px; padding: 12px 0; border: 0; }
+.er2-decision-options legend { font-weight: 700; font-size: 13px; }
+.er2-decision-options label { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; }
+.er2-timeline { list-style: none; margin: 0; padding-left: 22px; border-left: 2px solid #e1e8f5; }
+.er2-timeline li { position: relative; display: flex; flex-direction: column; gap: 3px; padding: 4px 0 23px 16px; color: #2c3d58; font-size: 13px; }
+.er2-timeline li::before { content: ''; position: absolute; background: #5b78d9; width: 10px; height: 10px; border-radius: 50%; left: -28px; top: 8px; border: 2px solid white; }
+.er2-timeline small { color: #7d8a9f; }
+.er2-error { background: #fdf0f0; color: #9b2020; border: 1px solid #f3c3c3; padding: 14px; border-radius: 10px; margin-top: 16px; }
+.er2-notice { background: #f0f9f4; color: #236441; border: 1px solid #c3ead1; padding: 14px; border-radius: 10px; margin-top: 16px; }
+@media (max-width: 980px) { .er2-stats { grid-template-columns: repeat(2,minmax(0,1fr)); } .er2-settings-layout { grid-template-columns: 1fr; } .er2-details-grid { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .er2-heading--row { align-items: start; flex-direction: column; } .er2-stats, .er2-grid-2 { grid-template-columns: 1fr; } .er2-card { padding: 17px; } .er2-data-row { align-items: start; flex-direction: column; } .er2-details div, .er2-summary div { grid-template-columns: 1fr; gap: 5px; } }
+
+/* R2 workflow refinement: only scoped er2 classes; retain the app's existing shell. */
+.er2-center { padding-bottom: 68px; }
+.er2-hero { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(220px, .65fr);
+    align-items: center; gap: 28px; padding: 30px 34px; margin: 12px 0 22px;
+    background: linear-gradient(110deg,#ffffff 0%,#f5f8ff 60%,#edf2ff 100%);
+    border: 1px solid #d9e4f8; border-radius: 20px; overflow: hidden; }
+.er2-hero h1 { color: #172340; font-weight: 790; font-size: clamp(28px,3vw,38px); margin: 8px 0; }
+.er2-hero p { color:#52647e; margin: 0; line-height: 1.65; max-width: 680px; }
+.er2-hero-actions { display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin-top:24px; }
+.er2-hero-aside { background: #fff; border:1px solid #dfe7f5; border-radius: 16px;
+    padding: 20px; display:flex; flex-direction:column; gap:10px; box-shadow: 0 8px 20px #192c5110; }
+.er2-hero-aside-label { font-size:11px; font-weight:800; color:#647697; letter-spacing:.07em; }
+.er2-hero-aside strong { font-size:19px; color:#8f531c; }
+.er2-hero-aside > span:last-child { font-size:13px; color:#64738b; line-height:1.55; }
+.er2-banner { border-radius:13px; border:1px solid; padding:17px 19px; display:flex;
+    align-items:flex-start; gap:13px; line-height:1.5; margin-bottom:22px; }
+.er2-banner-mark { flex:0 0 25px; display:grid; place-items:center; height:25px;
+    border-radius:50%; font-size:14px; font-weight:800; background:#fff0d4; color:#8a5b14; }
+.er2-banner p { margin:4px 0 0; font-size:13px; line-height:1.55; }
+.er2-banner--warning { background:#fff9ef; border-color:#f4d6a1; color:#67481a; }
+.er2-banner--danger { background:#fff7f7; border-color:#f1bfc7; color:#9b2b43; }
+.er2-banner--danger .er2-banner-mark { background:#ffe3e7; color:#ba3043; }
+.er2-banner--neutral { background:#f3f7ff; border-color:#dbe6fb; color:#344a70; }
+.er2-banner--neutral .er2-banner-mark { background:#e2ecff; color:#315bb0; }
+.er2-section-heading { display:flex; gap:18px; align-items:center; justify-content:space-between; margin:26px 0 15px; }
+.er2-section-heading h2 { margin:4px 0 4px; color:#202d49; font-size:23px; }
+.er2-section-heading p { margin:0; color:#64748b; font-size:13px; }
+.er2-metrics-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:15px; margin-bottom:24px; }
+.er2-metric { background:#fff; border:1px solid #dbe5f5; border-radius:16px;
+    border-top:3px solid #5989e7; padding:19px 20px; display:flex; flex-direction:column;
+    min-height:143px; box-shadow:0 7px 20px #28476d08; }
+.er2-metric span { font-size:13px; color:#566983; font-weight:700; }
+.er2-metric strong { font-size:36px; color:#203454; margin:8px 0 5px; line-height:1.12; font-variant-numeric:tabular-nums; }
+.er2-metric small { color:#75859b; font-size:11px; line-height:1.5; }
+.er2-metric--amber { border-top-color:#e9ae4c; }
+.er2-metric--violet { border-top-color:#9870db; }
+.er2-metric--rose { border-top-color:#d57883; }
+.er2-dashboard-grid { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(265px,.9fr); gap:18px; align-items:start; }
+.er2-operations h2,.er2-readiness h2 { margin-top:5px; }
+.er2-operation-row { border-top:1px solid #e9eef6; padding:20px 0; display:flex; gap:14px; align-items:center; }
+.er2-operation-symbol { width:40px; height:40px; flex:0 0 40px; display:grid; place-items:center; color:#3966c2;
+    background:#edf3ff; border-radius:12px; font-weight:800; font-size:13px; }
+.er2-operation-row > div { flex:1; min-width:0; }
+.er2-operation-row strong { font-size:15px; color:#263956; }
+.er2-operation-row p { margin:4px 0 0; font-size:12px; color:#6c7c92; }
+.er2-operation-row a { font-size:12px; font-weight:750; white-space:nowrap; text-decoration:none; }
+.er2-readiness ul { list-style:none; padding:0; margin:0 0 16px; }
+.er2-readiness li { display:flex; align-items:start; gap:11px; padding:13px 0; border-top:1px solid #e9eef6; }
+.er2-readiness-dot { width:11px; height:11px; flex:0 0 11px; border-radius:50%; margin-top:5px; background:#5e8ee9; }
+.er2-readiness-dot--amber { background:#efbd67; }
+.er2-readiness-dot--rose { background:#da7b8c; }
+.er2-readiness li strong { display:block; color:#283855; font-size:13px; }
+.er2-readiness li small { display:block; margin-top:3px; color:#75839a; font-size:12px; line-height:1.5; }
+.er2-queue-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; margin-bottom:19px; }
+.er2-queue-metrics > div { background:white; border:1px solid #dbe5f5; border-radius:14px; padding:16px 20px; }
+.er2-queue-metrics span { display:block; color:#5c6c84; font-size:12px; }
+.er2-queue-metrics strong { display:block; color:#223654; font-size:29px; margin-top:7px; }
+.er2-queue-card { padding:0; overflow:hidden; }
+.er2-queue-heading { padding:23px 24px 16px; }
+.er2-queue-heading h2 { margin:0 0 4px; }
+.er2-queue-heading p { margin:0; font-size:12px; }
+.er2-queue-heading .er2-filter { display:grid; gap:6px; }
+.er2-filter input { width:min(320px,75vw); border:1px solid #cad7eb; padding:10px 13px;
+    border-radius:9px; color:#283855; background:#fff; font:inherit; }
+.er2-filter-tabs { display:flex; align-items:center; overflow-x:auto; padding:0 23px; gap:5px; border-bottom:1px solid #e9eef6; }
+.er2-tab { white-space:nowrap; font:inherit; font-size:12px; font-weight:700; color:#536783;
+    background:transparent; border:0; border-bottom:3px solid transparent; padding:14px 13px 11px; cursor:pointer; }
+.er2-tab--active { color:#225bd9; border-bottom-color:#3769df; }
+.er2-tab:hover { color:#225bd9; }
+.er2-queue-card .er2-table th:first-child,.er2-queue-card .er2-table td:first-child { padding-left:24px; }
+.er2-queue-card .er2-table th:last-child,.er2-queue-card .er2-table td:last-child { padding-right:24px; }
+.er2-queue-card .er2-table th { background:#fff; }
+.er2-queue-card .er2-table tr:hover td { background:#fafcff; }
+.er2-status { display:inline-flex; align-items:center; border-radius:999px; padding:6px 11px;
+    font-size:12px; line-height:1.3; font-weight:750; background:#eef2fc; color:#34548c; }
+.er2-status--pending { background:#edf3ff; color:#2e5cae; }
+.er2-status--needs_information { background:#fff2dc; color:#985c10; }
+.er2-status--approved_review_only { background:#e4f6ec; color:#276b43; }
+.er2-status--rejected,.er2-status--held { background:#fdebed; color:#a43648; }
+.er2-status--withdrawn { background:#eef1f5; color:#63738b; }
+.er2-table-secondary { color:#8592a4; font-size:12px; }
+.er2-row-link { font-size:12px; font-weight:800; white-space:nowrap; }
+.er2-table-footnote { margin:0; padding:15px 24px; border-top:1px solid #e9eef6; }
+.er2-unavailable { display:flex; align-items:start; flex-direction:column; gap:8px; }
+.er2-case-topline { background:#fff; border:1px solid #dbe5f5; border-radius:15px; padding:18px 23px;
+    display:flex; align-items:center; justify-content:space-between; gap:20px; margin-bottom:17px; }
+.er2-case-topline h2 { margin:5px 0; font-size:22px; }
+.er2-progress { list-style:none; background:#fff; border:1px solid #dbe5f5; border-radius:15px;
+    padding:22px 19px; margin:0 0 20px; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:4px; }
+.er2-progress li { display:flex; align-items:start; gap:10px; padding:0 7px; min-width:0; }
+.er2-progress li > span { flex:0 0 27px; display:grid; place-items:center; height:27px;
+    border-radius:50%; background:#e9edf5; color:#76849b; font-weight:800; font-size:12px; }
+.er2-progress li.er2-progress--done > span { background:#ddf4e6; color:#216f43; }
+.er2-progress li.er2-progress--active > span { background:#e1ebff; color:#225bd9; }
+.er2-progress strong { display:block; color:#273a56; font-size:12px; }
+.er2-progress small { display:block; color:#7b8ba0; line-height:1.5; margin-top:3px; font-size:11px; }
+.er2-choice-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; border:0; padding:0; margin:22px 0; }
+.er2-choice-grid legend { font-size:12px; font-weight:750; color:#4f607c; padding-bottom:11px; }
+.er2-choice { display:flex; align-items:flex-start; gap:8px; border:1px solid #d9e3f3; border-radius:12px;
+    padding:13px 12px; background:#fff; cursor:pointer; }
+.er2-choice--selected { border-color:#6995ed; background:#f1f6ff; }
+.er2-choice input { margin-top:3px; accent-color:#285fd5; }
+.er2-choice strong { display:block; color:#253956; font-size:12px; }
+.er2-choice small { display:block; color:#75839b; font-size:11px; margin-top:5px; }
+.er2-decision-footer { display:flex; gap:15px; align-items:center; justify-content:space-between;
+    margin-top:20px; padding-top:18px; border-top:1px solid #e7edf6; }
+.er2-decision-footer span { color:#70809a; font-size:12px; }
+.er2-decision-card { border-top:3px solid #416ee0; }
+.er2-aside-info { background:#f6f9fe; }
+.er2-settings-content { display:flex; flex-direction:column; gap:17px; min-width:0; }
+.er2-menu-caption { font-size:11px; letter-spacing:.08em; color:#7484a0; font-weight:800; padding:6px 12px; }
+.er2-menu-item--inactive { opacity:.65; cursor:default; }
+.er2-menu-item small { display:block; font-size:11px; font-weight:400; margin-top:5px; }
+.er2-privacy-cta { margin-top:20px; background:#f0f5ff; border:1px solid #dce6fb;
+    border-radius:15px; padding:24px; }
+.er2-privacy-cta h3 { color:#1e3050; font-size:20px; margin:7px 0; }
+.er2-privacy-cta p { margin:5px 0 18px; }
+.er2-privacy-process { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+.er2-privacy-process-item { border:1px solid #dce6f5; border-radius:13px; padding:15px 18px; background:white; }
+.er2-privacy-process-item span { display:block; color:#567bc2; font-weight:850; font-size:11px; margin-bottom:8px; }
+.er2-privacy-process-item strong { display:block; color:#233452; font-size:12px; }
+.er2-privacy-process-item small { display:block; color:#74829a; line-height:1.5; margin-top:4px; font-size:11px; }
+@media(max-width:1000px) {
+    .er2-hero { grid-template-columns:1fr; }
+    .er2-metrics-grid, .er2-queue-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .er2-dashboard-grid { grid-template-columns:1fr; }
+    .er2-choice-grid { grid-template-columns:1fr; }
+}
+@media(max-width:640px) {
+    .er2-hero { padding:21px; }
+    .er2-queue-metrics,.er2-metrics-grid,.er2-privacy-process,.er2-progress { grid-template-columns:1fr; }
+    .er2-operation-row { flex-wrap:wrap; }
+    .er2-operation-row a { margin-left:54px; }
+    .er2-section-heading,.er2-decision-footer,.er2-queue-heading { flex-direction:column; align-items:stretch; }
+    .er2-queue-heading { padding:18px; }
+    .er2-filter-tabs { padding:0 14px; }
+    .er2-filter input { width:100%; }
+    .er2-case-topline { flex-wrap:wrap; }
+    .er2-data-row { gap:13px; }
+}
+
+.er2-search-form { justify-content: flex-start; flex-wrap: wrap; }
+.er2-filter-tabs { flex-wrap: wrap; overflow: visible; }
+.er2-registry-detail dd { overflow-wrap: anywhere; }
+
+.er2-filter-group { display: flex; flex-wrap: wrap; gap: 4px; border-inline-end: 1px solid #e9eef6; padding-inline-end: 5px; }
+.er2-filter-group:last-child { border-inline-end: 0; padding-inline-end: 0; }
+
+/* R2.5.4 registry: compact controls, actual server metrics and isolated overflow. */
+.er2-registry-workspace { min-width: 0; }
+.er2-registry-metrics { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; }
+.er2-registry-metric { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0;
+    text-align: left; background: #fff; border: 1px solid #dbe4f3; border-radius: 12px; padding: 14px 16px; color: #253653; cursor: pointer; }
+.er2-registry-metric[aria-pressed="true"] { border-color: #7298ed; background: #f4f7ff; }
+.er2-registry-metric span { font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; }
+.er2-registry-metric strong { font-size: 28px; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.er2-registry-caption { color: #52647b; font-size: 12px; margin: 8px 0 18px; line-height: 1.5; }
+.er2-registry-search,.er2-registry-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 0; }
+.er2-registry-search { padding-top: 0; }
+.er2-registry-search .er2-filter { flex: 1 1 260px; min-width: 0; }
+.er2-registry-search input { flex: 1; min-width: 0; width: 100%; }
+.er2-registry-filters { justify-content: space-between; border-bottom: 1px solid #e9eef6; }
+.er2-registry-filters .er2-filter { flex-wrap: wrap; min-width: 0; }
+.er2-registry-filters select { max-width: 100%; }
+.er2-registry-quick { display: flex; flex-wrap: wrap; gap: 5px; }
+.er2-registry-quick .er2-tab { padding: 9px 10px; border-radius: 7px; border-bottom: 0; }
+.er2-registry-quick .er2-tab--active { background: #e7eeff; }
+.er2-registry-workspace .er2-table td,.er2-registry-workspace .er2-table th { padding: 12px; }
+.er2-registry-workspace .er2-table th { background: #f5f7fb; }
+.er2-registry-workspace .er2-table td { overflow-wrap: anywhere; }
+.er2-registry-workspace .er2-status { white-space: normal; min-width: 0; }
+.er2-registry-workspace .er2-status--pending { background: #fff2dc; color: #80520e; }
+.er2-registry-id { overflow-wrap: anywhere; }
+.er2-registry-footer { border-top: 1px solid #e9eef6; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; padding-top: 14px; color: #52647b; font-size: 13px; }
+.er2-registry-footer > div { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.er2-registry-notice { border: 1px solid #dbe4f3; border-radius: 12px; background: #edf2fa; color: #334762; padding: 15px 18px; margin-top: 16px; }
+.er2-registry-notice p { font-size: 13px; line-height: 1.5; margin: 6px 0 0; }
+.er2-registry-feedback { padding: 14px 0; overflow-wrap: anywhere; }
+.er2-registry-feedback details { font-size: 13px; margin: 8px 0; }
+.er2-registry-feedback p { margin: 6px 0 12px; }
+@media (max-width: 1100px) { .er2-registry-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 640px) {
+    .er2-registry-metrics { gap: 8px; }
+    .er2-registry-metric { padding: 11px; }
+    .er2-registry-metric strong { font-size: 23px; }
+    .er2-registry-search .er2-filter { flex-wrap: wrap; flex-basis: 100%; }
+    .er2-registry-filters .er2-filter,.er2-registry-filters select { width: 100%; }
+    .er2-registry-workspace .er2-table { min-width: 650px; }
+    .er2-registry-footer > div { gap: 6px; }
+    .er2-registry-footer .er2-action { padding: 8px 10px; }
+}
+
+.er2-registry-lifecycle { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); list-style: none; gap: 10px; padding: 0; margin: 0 0 14px; }
+.er2-registry-lifecycle li { min-width: 0; padding: 12px; background: #f5f7fb; border: 1px solid #dbe4f3; border-radius: 10px; }
+.er2-registry-lifecycle span { display: block; font-size: 12px; color: #53657d; margin-bottom: 5px; }
+.er2-registry-lifecycle strong { display: block; font-size: 14px; color: #253653; overflow-wrap: anywhere; }
+.er2-registry-detail .er2-registry-notice { margin: 0 0 14px; }
+.er2-registry-detail .er2-summary + .er2-action { margin-top: 16px; }
+@media (max-width: 640px) { .er2-registry-lifecycle { grid-template-columns: minmax(0,1fr); } }
+
+/* R2.5.5: registry polish, consistent icons, keyboard and motion accessibility. */
+.er2-registry-metric-label { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.er2-registry-metric-icon { display: inline-flex; flex: 0 0 auto; }
+.er2-registry-metric-icon--blue { color: #225bd9; }
+.er2-registry-metric-icon--amber { color: #986213; }
+.er2-registry-metric-icon--violet { color: #7751ba; }
+.er2-registry-metric-icon--rose { color: #b43d54; }
+.er2-registry-metric:focus-visible { outline: 3px solid #9ab8ff; outline-offset: 2px; }
+@media (hover: hover) and (pointer: fine) {
+    .er2-registry-metric:hover { border-color: #7298ed; box-shadow: 0 3px 12px rgba(37, 70, 130, .10); }
+}
+@media (prefers-reduced-motion: no-preference) {
+    .er2-registry-metric { transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease; }
+}
+.er2-id-copy { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 9px; max-width: 100%; min-width: 0; }
+.er2-id-value { min-width: 0; user-select: text; overflow-wrap: anywhere; font-size: .9em; }
+.er2-id-copy-button { display: inline-flex; align-items: center; gap: 5px; border: 1px solid #bed1f4; background: #fff; color: #225bd9; border-radius: 7px; padding: 5px 9px; font: inherit; font-size: 12px; cursor: pointer; }
+.er2-id-copy-button:disabled { opacity: .65; cursor: wait; }
+.er2-id-copy-button:hover:not(:disabled) { background: #edf2ff; }
+.er2-id-copy-status { flex-basis: 100%; font-size: 12px; font-weight: 400; color: #52647b; overflow-wrap: anywhere; }
+.er2-id-copy-status:empty { flex-basis: 0; width: 0; height: 0; overflow: hidden; }
+.er2-registry-workspace td details[open] .er2-id-copy { display: flex; margin-top: 6px; }
+
+/* R2.5.6: reserve column widths before opening a request identifier.
+ * The three projections have different columns; only this registry table is affected.
+ * On narrow screens scrolling stays inside the existing table wrapper. */
+.er2-registry-workspace .er2-registry-table {
+    table-layout: fixed;
+    min-width: 990px;
+}
+.er2-registry-workspace .er2-registry-table--tenant { min-width: 820px; }
+.er2-registry-workspace .er2-registry-table--review { min-width: 1120px; }
+.er2-registry-workspace .er2-registry-table th,
+.er2-registry-workspace .er2-registry-table td { padding-inline: 10px; }
+.er2-registry-workspace .er2-registry-table th:first-child { width: 150px; }
+.er2-registry-workspace .er2-registry-table th:nth-last-child(1) { width: 155px; }
+.er2-registry-workspace .er2-registry-table th:nth-last-child(2) { width: 151px; }
+.er2-registry-workspace .er2-registry-table--tenant th:nth-last-child(3),
+.er2-registry-workspace .er2-registry-table--platform th:nth-last-child(5),
+.er2-registry-workspace .er2-registry-table--review th:nth-last-child(5) { width: 154px; }
+.er2-registry-workspace .er2-registry-table--platform th:nth-last-child(4),
+.er2-registry-workspace .er2-registry-table--review th:nth-last-child(4) { width: 166px; }
+.er2-registry-workspace .er2-registry-table--platform th:nth-last-child(3),
+.er2-registry-workspace .er2-registry-table--review th:nth-last-child(3) { width: 94px; }
+.er2-registry-workspace .er2-registry-table td:first-child details { min-width: 0; max-width: 100%; }
+.er2-registry-workspace .er2-registry-table td:first-child .er2-id-copy {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    align-items: flex-start;
+}
+.er2-registry-workspace .er2-registry-table .er2-id-value {
+    flex: 0 1 100%;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: normal;
+}
+.er2-registry-workspace .er2-registry-table .er2-id-copy-button { white-space: nowrap; }
+.er2-registry-workspace .er2-registry-table .er2-status {
+    display: inline-block;
+    max-width: 100%;
+    padding-inline: 8px;
+    white-space: normal;
+    overflow-wrap: normal;
+    word-break: normal;
+    hyphens: none;
+}
+.er2-registry-workspace .er2-registry-table td:last-child a {
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
+}
+
+/* Keep the short identifier legible without resizing the fixed registry. */
+.er2-registry-workspace .er2-registry-table th:first-child { width: 190px; }
+.er2-registry-workspace .er2-registry-table td:first-child details summary { white-space: nowrap; font-size: 12px; cursor: pointer; }
+.er2-registry-workspace .er2-registry-table td:first-child details summary:focus-visible { outline: 2px solid #7298ed; outline-offset: 2px; }
+.er2-registry-workspace .er2-registry-table .er2-id-value { font-variant-numeric: tabular-nums; }
+.er2-registry-workspace .er2-registry-table { min-width: 1030px; }
+.er2-registry-workspace .er2-registry-table--tenant { min-width: 860px; }
+.er2-registry-workspace .er2-registry-table--review { min-width: 1160px; }

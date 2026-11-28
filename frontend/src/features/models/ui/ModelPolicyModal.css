@@ -1,4 +1,65 @@
 /* frontend/src/features/models/ui/ModelPolicyModal.css */
+.models-policy-fx {
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+    padding: 14px 16px;
+    border: 1px solid var(--border-color, #d7dff1);
+    border-radius: 14px;
+    background: var(--policy-violet-soft, #f7f3ff);
+}
+.models-policy-fx__toolbar, .models-policy-fx__quote {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+.models-policy-fx__toolbar > div:first-child, .models-policy-fx__quote > div {
+    display: grid;
+    gap: 5px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.models-policy-fx__switch {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    padding: 4px;
+    border-radius: 10px;
+    background: var(--policy-blue-soft, #f2f5ff);
+    border: 1px solid var(--border-color, #d7dff1);
+}
+.models-policy-fx__switch button {
+    min-height: 36px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 6px 12px;
+    background: transparent;
+    color: inherit;
+    font-weight: 600;
+}
+.models-policy-fx__switch button[aria-pressed='true'] {
+    border-color: var(--policy-violet, #6f52d9);
+    background: var(--surface-color, #fff);
+    color: var(--policy-violet, #6f52d9);
+    opacity: 1;
+}
+.models-policy-fx__quote {
+    padding: 12px;
+    border: 1px solid var(--border-color, #d7dff1);
+    border-radius: 10px;
+    background: var(--surface-color, #fff);
+}
+.models-policy-fx__quote p { flex-basis: 100%; margin: 0; font-size: .9em; }
+.models-policy-fx__status { font-size: .85em; font-weight: 700; color: var(--policy-violet, #6f52d9); }
+.models-policy-fx__equivalent { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.models-policy-fx__error { color: var(--danger-color, #b42318); margin: 0; }
+.models-policy-fx button:focus-visible { outline: 2px solid var(--policy-violet, #6f52d9); outline-offset: 2px; }
+@container model-policy-modal (max-width: 640px) {
+    .models-policy-fx__switch { width: 100%; }
+    .models-policy-fx__switch button { flex: 1; }
+}
 /* ============================================================
    frontend/src/features/models/ui/ModelPolicyModal.css
 
@@ -420,33 +481,15 @@
     scroll-margin-block: 16px;
 }
 
-.modal-card.models-policy-modal .models-policy-form[data-active-section='access'] [data-policy-block='access'],
-.modal-card.models-policy-modal .models-policy-form[data-active-section='limits'] [data-policy-block='limits'],
-.modal-card.models-policy-modal .models-policy-form[data-active-section='budget'] [data-policy-block='budget'],
-.modal-card.models-policy-modal .models-policy-form[data-active-section='data'] [data-policy-block='data'] {
-    outline: 3px solid var(--policy-section-color);
-    outline-offset: 2px;
-    box-shadow: 0 0 0 6px var(--policy-section-soft);
-}
-
-.modal-card.models-policy-modal [data-policy-block='access'] {
-    --policy-section-color: var(--policy-blue);
-    --policy-section-soft: var(--policy-blue-soft);
-}
-
-.modal-card.models-policy-modal [data-policy-block='limits'] {
-    --policy-section-color: var(--policy-cyan);
-    --policy-section-soft: var(--policy-cyan-soft);
-}
-
-.modal-card.models-policy-modal [data-policy-block='budget'] {
-    --policy-section-color: var(--policy-violet);
-    --policy-section-soft: var(--policy-violet-soft);
-}
-
-.modal-card.models-policy-modal [data-policy-block='data'] {
-    --policy-section-color: var(--policy-green);
-    --policy-section-soft: var(--policy-green-soft);
+.modal-card.models-policy-modal .models-policy-form[data-highlight-target='access'] [id$='-access'][data-policy-block],
+.modal-card.models-policy-modal .models-policy-form[data-highlight-target='default'] [id$='-default'][data-policy-block],
+.modal-card.models-policy-modal .models-policy-form[data-highlight-target='limits'] [id$='-limits'][data-policy-block],
+.modal-card.models-policy-modal .models-policy-form[data-highlight-target='request-cost'] [id$='-request-cost'][data-policy-block],
+.modal-card.models-policy-modal .models-policy-form[data-highlight-target='monthly-budget'] [id$='-monthly-budget'][data-policy-block],
+.modal-card.models-policy-modal .models-policy-form[data-highlight-target='data'] [id$='-data'][data-policy-block] {
+    outline: 2px solid #5368f5;
+    outline-offset: 3px;
+    border-radius: 12px;
 }
 
 .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope-tag[aria-pressed='true'] {
@@ -459,12 +502,6 @@
 .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__requirements input:focus-visible {
     outline: 2px solid var(--policy-green);
     outline-offset: 3px;
-}
-
-@media (forced-colors: active) {
-    .modal-card.models-policy-modal .models-policy-form [data-policy-block] {
-        --policy-section-color: Highlight;
-    }
 }
 
 .modal-card.models-policy-modal .models-policy-form__access-grid[data-policy-block] {

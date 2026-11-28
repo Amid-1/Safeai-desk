@@ -26,8 +26,11 @@ services:
       SPRING_PROFILES_ACTIVE: local
 
       SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/${POSTGRES_DB:-safeai}"
-      SPRING_DATASOURCE_USERNAME: "${POSTGRES_USER:-safeai}"
-      SPRING_DATASOURCE_PASSWORD: "${POSTGRES_PASSWORD:-safeai_password}"
+      # Keep PostgreSQL bootstrap separate from the backend user.
+      SPRING_DATASOURCE_USERNAME: "${SPRING_DATASOURCE_USERNAME:?runtime DB user required}"
+      SPRING_DATASOURCE_PASSWORD: "${SPRING_DATASOURCE_PASSWORD:?runtime DB password required}"
+      SPRING_FLYWAY_USER: "${SPRING_FLYWAY_USER:?migration DB user required}"
+      SPRING_FLYWAY_PASSWORD: "${SPRING_FLYWAY_PASSWORD:?migration DB password required}"
 
       REDIS_HOST: redis
       REDIS_PORT: "6379"
@@ -124,10 +127,18 @@ services:
         exec /usr/local/bin/docker-entrypoint.sh redis-server \
           --requirepass "$${REDIS_PASSWORD}" \
           --save "" \
-          --appendonly no
+          --appendonly yes \
+          --appendfsync always \
+          --no-appendfsync-on-rewrite no \
+          --aof-load-truncated no \
+          --maxmemory 192mb \
+          --maxmemory-policy noeviction
 
     environment:
       REDIS_PASSWORD: "${REDIS_PASSWORD:-safeai_redis_password}"
+
+    volumes:
+      - safeai_redis_local_data:/data
 
     ports:
       - target: 6379
@@ -146,6 +157,9 @@ services:
 
     networks:
       - safeai_local
+
+    mem_limit: 512m
+    mem_reservation: 256m
 
     logging: *default-logging
     restart: unless-stopped
@@ -239,6 +253,8 @@ services:
     restart: unless-stopped
 
 volumes:
+  safeai_redis_local_data:
+    name: safeai_redis_local_data
   safeai_postgres_local_data:
     name: safeai_postgres_local_data
   safeai_minio_local_data:

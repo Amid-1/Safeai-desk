@@ -21,6 +21,17 @@ import {
 import type {
     UsageReportRows,
 } from '../lib/adminUsageReportLoader'
+import type { UsageSummaryFilter } from '../api/usageApi'
+import { ApiError } from '../../../shared/api/httpErrors'
+
+function organizationReportError(error: unknown): string {
+    if (error instanceof ApiError) {
+        if (error.status === 404) return 'Сервер не предоставляет отчёт по организациям. Проверьте версию backend и маршрутизацию API.'
+        if (error.status === 403) return 'Нет доступа к отчёту по организациям.'
+        if (error.status === 429) return 'Слишком много запросов. Повторите позже.'
+    }
+    return 'Сравнение организаций недоступно. Повторите запрос или обратитесь к администратору.'
+}
 
 type QueryState = {
     key: string
@@ -40,9 +51,12 @@ type UseAdminUsageReportQueryInput = {
     dateFrom: string
     dateTo: string
     model: string
+    filterUserId?: string
     organizationId: string
     isSuperAdmin: boolean
     reloadToken: number
+    order?: UsageSummaryFilter['order']
+    budgetStatus?: UsageSummaryFilter['budgetStatus']
 }
 
 export function useAdminUsageReportQuery({
@@ -54,32 +68,42 @@ export function useAdminUsageReportQuery({
     dateFrom,
     dateTo,
     model,
+    filterUserId,
     organizationId,
     isSuperAdmin,
     reloadToken,
+    order,
+    budgetStatus,
 }: UseAdminUsageReportQueryInput) {
     const queryKey = useMemo(
         () => JSON.stringify([
             userId,
             userOrganizationId,
+            isSuperAdmin,
             tab,
             page,
             dateFrom,
             dateTo,
             model,
+            filterUserId,
             isSuperAdmin
                 ? organizationId
                 : '',
             reloadToken,
+            order,
+            budgetStatus,
         ]),
         [
             dateFrom,
             dateTo,
             isSuperAdmin,
             model,
+            filterUserId,
             organizationId,
             page,
             reloadToken,
+            order,
+            budgetStatus,
             tab,
             userId,
             userOrganizationId,
@@ -119,6 +143,7 @@ export function useAdminUsageReportQuery({
                         dateFrom,
                         dateTo,
                         model,
+                        userId: filterUserId,
                         organizationId,
                     },
                     isSuperAdmin,
@@ -127,7 +152,8 @@ export function useAdminUsageReportQuery({
                 const result = await loadUsageReport({
                     tab,
                     page,
-                    filter: normalized.filter,
+                    filter: {...normalized.filter, ...(order ? {order} : {}),
+                        ...(tab === 'organizations' && isSuperAdmin && budgetStatus ? {budgetStatus} : {})},
                     organizationId:
                         normalized.organizationId
                             || null,
@@ -159,7 +185,7 @@ export function useAdminUsageReportQuery({
                 setState({
                     key: queryKey,
                     loading: false,
-                    error: getApiErrorMessage(
+                    error: tab === 'organizations' ? organizationReportError(loadError) : getApiErrorMessage(
                         loadError,
                         'Не удалось загрузить статистику использования.',
                     ),
@@ -179,9 +205,12 @@ export function useAdminUsageReportQuery({
         dateFrom,
         dateTo,
         enabled,
+        filterUserId,
         isSuperAdmin,
         model,
         organizationId,
+        order,
+        budgetStatus,
         page,
         queryKey,
         tab,

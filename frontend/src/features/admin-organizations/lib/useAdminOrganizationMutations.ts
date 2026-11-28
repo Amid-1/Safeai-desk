@@ -72,10 +72,6 @@ export function useAdminOrganizationMutations({
         pendingAction !== null
 
     useEffect(() => {
-        pendingActionRef.current = pendingAction
-    }, [pendingAction])
-
-    useEffect(() => {
         return () => {
             impactControllerRef.current?.abort()
         }
@@ -90,6 +86,7 @@ export function useAdminOrganizationMutations({
     function openRenameModal(
         organization: Organization,
     ) {
+        if (pendingActionRef.current || impactControllerRef.current) return
         if (!canMutateOrganization(organization)) {
             setMutationError(
                 getProtectionError(organization),
@@ -180,6 +177,7 @@ export function useAdminOrganizationMutations({
     async function openDisableDialog(
         organization: Organization,
     ) {
+        if (pendingActionRef.current || impactControllerRef.current) return
         if (!canMutateOrganization(organization)) {
             setMutationError(
                 getProtectionError(organization),
@@ -195,8 +193,6 @@ export function useAdminOrganizationMutations({
             organization.version
         const sequence =
             ++impactSequenceRef.current
-
-        impactControllerRef.current?.abort()
 
         const controller =
             new AbortController()
@@ -225,8 +221,8 @@ export function useAdminOrganizationMutations({
             }
 
             if (
-                impact.organizationVersion
-                !== expectedVersion
+                impact.organizationId !== organization.id
+                || impact.organizationVersion !== expectedVersion
             ) {
                 setMutationError(
                     'Организация изменилась до подтверждения. '
@@ -262,6 +258,7 @@ export function useAdminOrganizationMutations({
                 === impactSequenceRef.current
             ) {
                 setImpactLoadingId(null)
+                impactControllerRef.current = null
             }
         }
     }
@@ -354,6 +351,7 @@ export function useAdminOrganizationMutations({
     function openEnableDialog(
         organization: Organization,
     ) {
+        if (pendingActionRef.current || impactControllerRef.current) return
         if (!canMutateOrganization(organization)) {
             setMutationError(
                 getProtectionError(organization),
@@ -443,7 +441,11 @@ export function useAdminOrganizationMutations({
                     error,
                 )
             ) {
-                setError(
+                setRenameOrganization(null)
+                setDisableDialog(null)
+                setEnableOrganizationTarget(null)
+                setRenameError('')
+                setMutationError(
                     'Организация была изменена другим администратором. '
                     + 'Загружены свежие данные; повторите решение.',
                 )
@@ -468,6 +470,7 @@ export function useAdminOrganizationMutations({
         success,
         setSuccess,
         hasPendingAction,
+        hasPendingDirectoryAction: hasPendingAction || impactLoadingId !== null,
         impactLoadingId,
         renameOrganization,
         renameValue,

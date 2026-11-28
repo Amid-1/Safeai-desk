@@ -11,6 +11,13 @@ public record RecoveredChatTurn(
         UUID clientRequestId,
         ChatTurnState state,
         String failureCode,
-        boolean outcomeAmbiguous
+        boolean outcomeAmbiguous,
+        UUID correlationId
 ) {
+    public RecoveredChatTurn(UUID turnId, UUID organizationId, UUID sessionId,
+                             UUID clientRequestId, ChatTurnState state, String failureCode,
+                             boolean outcomeAmbiguous) {
+        this(turnId, organizationId, sessionId, clientRequestId, state, failureCode,
+                outcomeAmbiguous, null);
+    }
 }

@@ -40,6 +40,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -518,7 +519,7 @@ class ModelControllerContractTest {
                 );
 
         when(
-                service.current()
+                service.currentWithCatalogPricing()
         ).thenReturn(
                 runtime
         );
@@ -562,9 +563,15 @@ class ModelControllerContractTest {
                 4_096
         );
 
+        assertThat(actual.pricingStatus()).isEqualTo("FREE");
+        assertThat(actual.inputUsdPer1mTokens()).isEqualTo("0");
+        assertThat(actual.outputUsdPer1mTokens()).isEqualTo("0");
+        assertThat(actual.pricingVersion()).isNull();
+
         verify(
                 service
-        ).current();
+        ).currentWithCatalogPricing();
+        verify(service, never()).current();
     }
 
     @Test

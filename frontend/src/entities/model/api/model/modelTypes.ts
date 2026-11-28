@@ -127,6 +127,13 @@ export type RuntimeModelStatus = {
     visionSupported: boolean
     structuredOutputSupported: boolean
     dataRetentionStatus: RuntimeDataRetentionStatus
+    dataAssurance?: {
+        noTraining: boolean
+        zeroDataRetention: boolean
+        source: string | null
+        verifiedAt: string | null
+        expiresAt: string | null
+    }
     healthStatus: RuntimeHealthStatus
     pricingStatus: RuntimePricingStatus
     inputUsdPer1mTokens: string | null
@@ -148,6 +155,21 @@ export type RuntimeModelProbe = {
     message: string
 }
 
+export type RubBudgetQuote = {
+    rubPerUsd: string
+    quoteDate: string
+    effectiveDate: string
+    fetchedAt: string
+    source: 'CBR'
+}
+
+export type RubBudgetInput = Pick<RubBudgetQuote, 'rubPerUsd' | 'quoteDate' | 'effectiveDate'> & {
+    maxRequestCostRub: string | null
+    monthlyBudgetRub: string | null
+}
+
+export type RubBudgetSnapshot = RubBudgetQuote & Pick<RubBudgetInput, 'maxRequestCostRub' | 'monthlyBudgetRub'>
+
 export type OrganizationModelPolicy = {
     configured: boolean
     id: string | null
@@ -161,6 +183,7 @@ export type OrganizationModelPolicy = {
     maxOutputTokens: number | null
     maxRequestCostUsd: string | null
     monthlyBudgetUsd: string | null
+    rubBudget?: RubBudgetSnapshot
     budgetEnforcement: BudgetEnforcement
     requireCompletePricing: boolean
     requireNoTraining: boolean
@@ -233,6 +256,8 @@ export type CreateModelCatalogVersionRequest = {
 }
 
 export type CreateOrganizationModelPolicyVersionRequest = {
+    previewConfirmationId?: string
+    acknowledgeLockout?: boolean
     expectedPreviousVersion: number
     enabled: boolean
     allowModelKeys: string[]
@@ -242,6 +267,7 @@ export type CreateOrganizationModelPolicyVersionRequest = {
     maxOutputTokens: number | null
     maxRequestCostUsd: string | null
     monthlyBudgetUsd: string | null
+    rubBudget?: RubBudgetInput
     budgetEnforcement: BudgetEnforcement
     requireCompletePricing: boolean
     requireNoTraining: boolean
@@ -267,6 +293,8 @@ export type ModelPolicyPreviewItem = {
 }
 
 export type ModelPolicyPreview = {
+    previewConfirmationId: string
+    confirmationExpiresAt: string
     organizationId: string
     basePolicyVersion: number
     enabled: boolean

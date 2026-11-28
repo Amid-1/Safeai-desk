@@ -18,14 +18,6 @@ public class AiResponseMetadataService {
         this.pricingResolver = pricingResolver;
     }
 
-    public AiResponseMetadata extract(
-            JsonNode response,
-            ProviderExecutionTarget target,
-            String resolvedPhysicalModel
-    ) {
-        return extract(null, response, target, resolvedPhysicalModel);
-    }
-
     /** Operation identity binds actual billing to the exact immutable route. */
     public AiResponseMetadata extract(
             UUID providerOperationId,
@@ -42,10 +34,8 @@ public class AiResponseMetadataService {
                 tokenUsage.usageStatus();
 
         PricingResult pricing =
-                providerOperationId == null
-                        ? pricingResolver.resolve(target, resolvedPhysicalModel, tokenUsage)
-                        : pricingResolver.resolve(
-                                providerOperationId, target, resolvedPhysicalModel, tokenUsage);
+                pricingResolver.resolve(
+                        providerOperationId, target, resolvedPhysicalModel, tokenUsage);
 
         return new AiResponseMetadata(
                 tokenUsage.inputTokens(),

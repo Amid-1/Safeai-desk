@@ -52,16 +52,9 @@ public abstract class AbstractChatPostgresIntegrationTest
 
     @BeforeEach
     void prepareChatFixture() {
-        jdbcTemplate.execute(
-                """
-                truncate table
-                    public.chat_quota_reservations,
-                    public.chat_turns,
-                    public.usage_daily_quality_rollups
-                cascade
-                """
-        );
-
+        // The parent @BeforeEach already clears these tables through the
+        // organization FK cascade in its atomic, deadlock-aware transaction.
+        // Only seed the chat fixture here.
         insertOrganization(
                 ORGANIZATION_ID,
                 "Chat Organization",
@@ -260,7 +253,8 @@ public abstract class AbstractChatPostgresIntegrationTest
                     outcome_ambiguous,
                     created_at,
                     updated_at,
-                    version
+                    version,
+                    correlation_id
                 ) values (
                     ?,
                     ?,
@@ -278,7 +272,8 @@ public abstract class AbstractChatPostgresIntegrationTest
                     false,
                     ?,
                     ?,
-                    0
+                    0,
+                    ?
                 )
                 """,
                 turnId,
@@ -297,7 +292,8 @@ public abstract class AbstractChatPostgresIntegrationTest
                 ),
                 Timestamp.from(
                         NOW.minusSeconds(10)
-                )
+                ),
+                ru.safeai.gateway.common.security.CorrelationContext.current()
         );
 
         return turnId;

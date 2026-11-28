@@ -8,6 +8,8 @@ import type { ResizableScrollRegionProps, DragState, LayoutMetrics } from './reg
 import { beginBodyResizeStyle, restoreBodyResizeStyle, clamp, readSavedHeight } from './regionStorage'
 
 const KEYBOARD_STEP = 32
+const RESERVED_DRAG_RANGE = 96
+const MIN_PROTECTED_DRAG_RANGE = 2 * KEYBOARD_STEP
 
 export function useResizableScrollRegion({
     storageKey,
@@ -20,6 +22,8 @@ export function useResizableScrollRegion({
     viewportResetKey,
     minUpperHeight = 100,
     preserveUpperContent = false,
+    reserveLowerHeight = false,
+    collapseToFooter = false,
     upperBoundaryPadding = 8,
 }: ResizableScrollRegionProps) {
     const normalizedMinHeight =
@@ -66,6 +70,8 @@ export function useResizableScrollRegion({
     ] =
         useState<LayoutMetrics>({
             containerHeight: 0,
+            preferredUpperHeight: null,
+            collapsedLowerHeight: null,
             protectedUpperHeight:
                 Math.max(
                     0,
@@ -88,7 +94,7 @@ export function useResizableScrollRegion({
             readSavedHeight(
                 storageKey,
                 defaultHeight,
-                normalizedMinHeight,
+                collapseToFooter ? 0 : normalizedMinHeight,
                 normalizedMaxHeight,
             ),
         )
@@ -183,42 +189,36 @@ export function useResizableScrollRegion({
                     0,
                     minUpperHeight,
                 )
+            let nextPreferredUpperHeight: number | null = null
+            let nextCollapsedLowerHeight: number | null = null
+
+            if (collapseToFooter) {
+                const lower = root.querySelector<HTMLElement>('.resizable-scroll-region__lower')
+                const handle = lower?.querySelector<HTMLElement>('.resizable-scroll-region__handle')
+                const footer = lower?.querySelector<HTMLElement>('.resizable-scroll-region__footer')
+                if (lower && handle && footer) {
+                    const style = window.getComputedStyle(lower)
+                    const pixels = (value: string) => Number.parseFloat(value) || 0
+                    const height = handle.getBoundingClientRect().height + footer.getBoundingClientRect().height
+                        + pixels(style.paddingTop) + pixels(style.paddingBottom)
+                        + pixels(style.borderTopWidth) + pixels(style.borderBottomWidth) + pixels(style.rowGap)
+                    if (height > 0) nextCollapsedLowerHeight = Math.ceil(height)
+                }
+            }
 
             if (preserveUpperContent) {
-                const boundary =
-                    upperElement.querySelector<HTMLElement>(
-                        '[data-resizable-upper-boundary]',
-                    )
-
-                if (boundary) {
-                    const upperRect =
-                        upperElement.getBoundingClientRect()
-
-                    const boundaryRect =
-                        boundary.getBoundingClientRect()
-
-                    /**
-                     * Координата boundary в системе самого upper.
-                     * upper.scrollTop добавляется, чтобы измерение
-                     * не зависело от текущего положения внутреннего scroll.
-                     */
-                    const boundaryBottomWithinUpper =
-                        boundaryRect.bottom
-                        - upperRect.top
-                        + upperElement.scrollTop
-
-                    nextProtectedUpperHeight =
-                        Math.max(
-                            nextProtectedUpperHeight,
-                            Math.ceil(
-                                boundaryBottomWithinUpper
-                                + Math.max(
-                                    0,
-                                    upperBoundaryPadding,
-                                ),
-                            ),
-                        )
+                const upperTop = upperElement.getBoundingClientRect().top
+                const measureBoundary = (selector: string) => {
+                    const boundary = upperElement.querySelector<HTMLElement>(selector)
+                    return boundary ? Math.ceil(boundary.getBoundingClientRect().bottom
+                        - upperTop + upperElement.scrollTop + Math.max(0, upperBoundaryPadding)) : null
                 }
+                const primary = measureBoundary('[data-resizable-upper-boundary]')
+                if (primary !== null) nextProtectedUpperHeight = Math.max(nextProtectedUpperHeight, primary)
+                // Optional second marker: initial/reset layout can show all controls,
+                // while the drag limit protects only the primary controls.
+                const preferred = measureBoundary('[data-resizable-upper-preferred-boundary]')
+                if (preferred !== null) nextPreferredUpperHeight = Math.max(nextProtectedUpperHeight, preferred)
             }
 
             setLayoutMetrics(
@@ -228,6 +228,8 @@ export function useResizableScrollRegion({
                             === nextContainerHeight
                         && current.protectedUpperHeight
                             === nextProtectedUpperHeight
+                        && current.preferredUpperHeight === nextPreferredUpperHeight
+                        && current.collapsedLowerHeight === nextCollapsedLowerHeight
                     ) {
                         return current
                     }
@@ -237,6 +239,8 @@ export function useResizableScrollRegion({
                             nextContainerHeight,
                         protectedUpperHeight:
                             nextProtectedUpperHeight,
+                        preferredUpperHeight: nextPreferredUpperHeight,
+                        collapsedLowerHeight: nextCollapsedLowerHeight,
                     }
                 },
             )
@@ -244,6 +248,7 @@ export function useResizableScrollRegion({
             minUpperHeight,
             preserveUpperContent,
             upperBoundaryPadding,
+            collapseToFooter,
         ])
 
     /**
@@ -292,6 +297,11 @@ export function useResizableScrollRegion({
 
         observer.observe(root)
         observer.observe(upperElement)
+        if (upperElement.firstElementChild) observer.observe(upperElement.firstElementChild)
+        if (collapseToFooter) {
+            root.querySelectorAll('.resizable-scroll-region__handle, .resizable-scroll-region__footer')
+                .forEach(element => observer.observe(element))
+        }
 
         const boundary =
             upperElement.querySelector<HTMLElement>(
@@ -327,6 +337,8 @@ export function useResizableScrollRegion({
                 childList: true,
                 subtree: true,
                 characterData: true,
+                attributes: true,
+                attributeFilter: ['open'],
             },
         )
 
@@ -336,19 +348,33 @@ export function useResizableScrollRegion({
         }
     }, [
         measureLayout,
+        collapseToFooter,
     ])
 
     const {
         containerHeight,
         protectedUpperHeight,
+        preferredUpperHeight,
+        collapsedLowerHeight,
     } =
         layoutMetrics
 
+    // Protect the entire primary boundary if the lower panel still has room
+    // for its minimum height and two keyboard steps. Only fall back to the
+    // scrollable upper region's 96 px drag reserve on genuinely cramped screens.
+    const canProtectEntireBoundary = containerHeight - protectedUpperHeight
+        >= normalizedMinHeight + MIN_PROTECTED_DRAG_RANGE
+    const protectedUpperLimit = reserveLowerHeight && !canProtectEntireBoundary
+        ? Math.max(
+            Math.min(minUpperHeight, containerHeight),
+            containerHeight - normalizedMinHeight - RESERVED_DRAG_RANGE,
+        )
+        : containerHeight
     const effectiveProtectedUpperHeight =
         containerHeight > 0
             ? Math.min(
                 protectedUpperHeight,
-                containerHeight,
+                protectedUpperLimit,
             )
             : protectedUpperHeight
 
@@ -374,18 +400,25 @@ export function useResizableScrollRegion({
      */
     const effectiveMinHeight =
         Math.min(
-            normalizedMinHeight,
+            collapsedLowerHeight ?? normalizedMinHeight,
             effectiveMaxHeight,
         )
 
+    const automaticHeight = autoFitHeight != null && preferredUpperHeight !== null && containerHeight > 0
+        ? Math.min(autoFitHeight, containerHeight - preferredUpperHeight)
+        : autoFitHeight
     const renderedHeight =
         clamp(
-            autoFitHeight != null && !manualHeight
-                ? autoFitHeight
+            automaticHeight != null && !manualHeight
+                ? automaticHeight
                 : requestedHeight,
-            effectiveMinHeight,
+            automaticHeight != null && !manualHeight
+                ? Math.min(Math.max(normalizedMinHeight, effectiveMinHeight), effectiveMaxHeight)
+                : effectiveMinHeight,
             effectiveMaxHeight,
         )
+    const collapsed = collapseToFooter && collapsedLowerHeight !== null
+        && renderedHeight <= collapsedLowerHeight
 
     useLayoutEffect(() => {
         renderedHeightRef.current =
@@ -405,12 +438,14 @@ export function useResizableScrollRegion({
                     effectiveMaxHeight,
                 )
 
-            setRequestedHeight(next)
+            setRequestedHeight(collapseToFooter && collapsedLowerHeight !== null && next <= effectiveMinHeight ? 0 : next)
             if (autoFitHeight != null) setManualHeight(true)
         }, [
             effectiveMinHeight,
             effectiveMaxHeight,
             autoFitHeight,
+            collapseToFooter,
+            collapsedLowerHeight,
         ])
 
     useEffect(() => {
@@ -640,7 +675,7 @@ export function useResizableScrollRegion({
     }
 
         return {
-        rootRef, upperRef, viewportRef, manualHeight, renderedHeight,
+        rootRef, upperRef, viewportRef, manualHeight, renderedHeight, collapsed,
         effectiveProtectedUpperHeight, effectiveMinHeight, effectiveMaxHeight,
         beginResize, moveResize, finishResize, restoreBodyState,
         resetHeight, handleKeyDown,

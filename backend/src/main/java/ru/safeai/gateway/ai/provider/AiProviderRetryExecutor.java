@@ -4,13 +4,16 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
+import ru.safeai.gateway.ai.exception.AiProviderErrorType;
 import ru.safeai.gateway.ai.exception.AiProviderException;
+import ru.safeai.gateway.ai.exception.AiProviderTimeoutException;
 import ru.safeai.gateway.ai.execution.AiExecutionAttemptScope;
 import ru.safeai.gateway.ai.execution.OutcomeCertainty;
 import ru.safeai.gateway.ai.execution.ProviderFailureCertainty;
 
 import java.time.Duration;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
@@ -22,11 +25,13 @@ public class AiProviderRetryExecutor {
 
     private final AiRetryProperties properties;
     private final AiExecutionAttemptScope attemptScope;
+    private final Optional<AiProviderMetrics> metrics;
 
     @Autowired
     public AiProviderRetryExecutor(
             AiRetryProperties properties,
-            AiExecutionAttemptScope attemptScope
+            AiExecutionAttemptScope attemptScope,
+            Optional<AiProviderMetrics> metrics
     ) {
         this.properties = Objects.requireNonNull(
                 properties,
@@ -36,6 +41,11 @@ public class AiProviderRetryExecutor {
                 attemptScope,
                 "attemptScope не должен быть null"
         );
+        this.metrics = Objects.requireNonNull(metrics);
+    }
+
+    public AiProviderRetryExecutor(AiRetryProperties properties, AiExecutionAttemptScope attemptScope) {
+        this(properties, attemptScope, Optional.empty());
     }
 
     /**
@@ -63,7 +73,12 @@ public class AiProviderRetryExecutor {
          * no provider attempt and no HTTP I/O may occur without the exact
          * governed execution scope created by AiExecutionService.
          */
-        attemptScope.requireActive(operationId);
+        try {
+            attemptScope.requireActive(operationId);
+        } catch (RuntimeException failure) {
+            metrics.ifPresent(m -> m.gateFailure(provider));
+            throw failure;
+        }
 
         Duration normalizedAttemptTimeout =
                 normalizeAttemptTimeout(attemptTimeout);
@@ -85,12 +100,10 @@ public class AiProviderRetryExecutor {
         );
 
         Duration backoff = properties.effectiveInitialBackoff();
-        long deadlineNanos = safeAdd(
-                System.nanoTime(),
-                saturatedNanos(totalTimeout)
-        );
+        long deadlineNanos = System.nanoTime() + totalTimeout.toNanos();
 
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            requireDispatchTime(provider, model, deadlineNanos);
             AiProviderAttemptContext context =
                     new AiProviderAttemptContext(
                             operationId,
@@ -99,25 +112,38 @@ public class AiProviderRetryExecutor {
                             maxAttempts
                     );
 
+            boolean enteredAdapter = false;
             try {
                 attemptScope.started(context);
 
-                AiChatResponse response = action.apply(context);
+                // Контекст и долговечный lease уже созданы; проверяем отзыв
+                // непосредственно перед входом в адаптер физического I/O.
+                requireDispatchTime(provider, model, deadlineNanos);
+                attemptScope.beforeNetworkDispatch(context);
+                requireDispatchTime(provider, model, deadlineNanos);
+                enteredAdapter = true;
+                Supplier<AiChatResponse> dispatch = () -> AiProviderDispatchDeadline.within(
+                        deadlineNanos, () -> action.apply(context));
+                AiChatResponse response = metrics.isPresent()
+                        ? metrics.get().observe(provider, context.attemptNumber(), dispatch)
+                        : dispatch.get();
 
-                attemptScope.succeeded(context, response);
+                recordTerminal(provider, () -> attemptScope.succeeded(context, response));
                 return response;
             } catch (AiProviderException exception) {
-                if (attemptScope.hasActiveAttempt(context)) {
-                    attemptScope.failed(context, exception);
-                }
+                if (!enteredAdapter) metrics.ifPresent(m -> m.gateFailure(provider));
+                // Neither a rejected STARTED/dispatch gate nor post-success
+                // governance rejection is a retryable provider response.
+                if (!attemptScope.hasActiveAttempt(context)) throw exception;
+                recordTerminal(provider, () -> attemptScope.failed(context, exception));
 
-                if (!shouldRetry(exception, attempt, maxAttempts)) {
+                if (!enteredAdapter || !shouldRetry(exception, attempt, maxAttempts)) {
                     throw exception;
                 }
 
                 Duration delay = retryDelay(exception, backoff);
 
-                if (!fitsDeadline(
+                if (exceedsDeadline(
                         delay,
                         normalizedAttemptTimeout,
                         deadlineNanos
@@ -157,11 +183,16 @@ public class AiProviderRetryExecutor {
                 );
 
                 sleep(delay, provider, model, exception);
+                // Scheduler delays and durable recording may have consumed the budget.
+                if (exceedsDeadline(Duration.ZERO, normalizedAttemptTimeout, deadlineNanos)) {
+                    throw exception;
+                }
                 backoff = nextBackoff(backoff);
             } catch (RuntimeException exception) {
+                if (!enteredAdapter) metrics.ifPresent(m -> m.gateFailure(provider));
                 if (attemptScope.hasActiveAttempt(context)) {
                     try {
-                        attemptScope.ambiguous(context, exception);
+                        recordTerminal(provider, () -> attemptScope.ambiguous(context, exception));
                     } catch (RuntimeException recordingFailure) {
                         exception.addSuppressed(recordingFailure);
                     }
@@ -173,6 +204,15 @@ public class AiProviderRetryExecutor {
         throw new IllegalStateException(
                 "AI retry loop completed unexpectedly"
         );
+    }
+
+    private void recordTerminal(String provider, Runnable recording) {
+        try {
+            recording.run();
+        } catch (RuntimeException failure) {
+            metrics.ifPresent(m -> m.recordingFailure(provider));
+            throw failure;
+        }
     }
 
     /**
@@ -207,8 +247,10 @@ public class AiProviderRetryExecutor {
         if (!properties.isEnabled()
                 || attempt >= maxAttempts
                 || !exception.isRetryable()
+                || exception.getErrorType() != AiProviderErrorType.RATE_LIMITED
+                || !Integer.valueOf(429).equals(exception.getStatusCode())
                 || ProviderFailureCertainty.classify(exception)
-                == OutcomeCertainty.AMBIGUOUS) {
+                != OutcomeCertainty.KNOWN_REJECTED) {
             return false;
         }
 
@@ -229,18 +271,29 @@ public class AiProviderRetryExecutor {
                 : withJitter(backoff);
     }
 
-    private boolean fitsDeadline(
+    private static boolean exceedsDeadline(
             Duration delay,
             Duration attemptTimeout,
             long deadlineNanos
     ) {
-        long now = System.nanoTime();
         long required = safeAdd(
                 saturatedNanos(delay),
                 saturatedNanos(attemptTimeout)
         );
 
-        return safeAdd(now, required) <= deadlineNanos;
+        long remaining = AiProviderDispatchDeadline.remaining(deadlineNanos);
+        return remaining <= 0 || required > remaining;
+    }
+
+    private static void requireDispatchTime(String provider, String model, long deadlineNanos) {
+        if (Thread.currentThread().isInterrupted()) {
+            throw new AiProviderTimeoutException(provider, model, true,
+                    "AI provider dispatch interrupted", null);
+        }
+        if (AiProviderDispatchDeadline.remaining(deadlineNanos) <= 0) {
+            throw new AiProviderTimeoutException(provider, model, true,
+                    "AI provider total deadline exceeded", null);
+        }
     }
 
     private static Duration normalizeAttemptTimeout(
@@ -281,7 +334,7 @@ public class AiProviderRetryExecutor {
         }
 
         try {
-            Thread.sleep(saturatedMillis(duration));
+            Thread.sleep(duration);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
 

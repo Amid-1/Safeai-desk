@@ -11,8 +11,10 @@ import { downloadAuditCsv } from './auditCsv'
 import { AdminAuditPageView } from './AdminAuditPageView'
 
 vi.mock('../../../shared/ui/ResizableScrollRegion', () => ({
-    default: ({ upper, footer, children }: { upper: ReactNode; footer?: ReactNode; children: ReactNode }) => (
-        <section data-testid="audit-scroll-region">
+    default: ({ upper, footer, children, showUpperRequest, showLowerRequest }: {
+        upper: ReactNode; footer?: ReactNode; children: ReactNode; showUpperRequest?: number; showLowerRequest?: number
+    }) => (
+        <section data-testid="audit-scroll-region" data-raise={showLowerRequest} data-lower={showUpperRequest}>
             <div data-testid="audit-upper">{upper}</div>
             <div data-testid="audit-viewport">{children}</div>
             <div data-testid="audit-footer">{footer}</div>
@@ -34,6 +36,7 @@ vi.mock('./auditCsv', async (importOriginal) => ({
     ...await importOriginal<typeof import('./auditCsv')>(),
     downloadAuditCsv: vi.fn(),
 }))
+vi.mock('./AuditIntegrityPanel', () => ({ default: () => <div data-testid="audit-integrity-panel" /> }))
 
 const csvMock = vi.mocked(downloadAuditCsv)
 const EVENT = {
@@ -49,6 +52,8 @@ const EVENT = {
 
 function mount(overrides: Partial<AdminAuditController> = {}) {
     const controller: AdminAuditController = {
+        summary: { total: 130, successful: 100, denied: 8, critical: 2 },
+        summaryLoading: false, summaryError: '', selectAuditMetric: vi.fn(), selectAuditCategory: vi.fn(),
         superAdmin: false,
         selectedEvent: null,
         draftFilter: {
@@ -68,8 +73,9 @@ function mount(overrides: Partial<AdminAuditController> = {}) {
         searchActors: vi.fn().mockResolvedValue(undefined),
         searchOrganizations: vi.fn().mockResolvedValue(undefined),
         setDraftFilter: vi.fn(), setSelectedEvent: vi.fn(),
-        applyDatePreset: vi.fn(), applyFilters: vi.fn(), resetFilters: vi.fn(),
+        applyDatePreset: vi.fn(), applyFilters: vi.fn(), filterByActor: vi.fn(), resetFilters: vi.fn(),
         retryLoad: vi.fn(), changePage: vi.fn(),
+        exportFiltered: vi.fn(), exportPending: false, filteredExportError: '',
         ...overrides,
     }
     render(<AdminAuditPageView controller={controller} />)
@@ -79,9 +85,41 @@ function mount(overrides: Partial<AdminAuditController> = {}) {
 beforeEach(() => vi.clearAllMocks())
 
 describe('AdminAuditPageView — форма и рабочая область', () => {
+    it('не монтирует проверку целостности для администратора организации', () => {
+        mount()
+        expect(screen.queryByTestId('audit-integrity-panel')).not.toBeInTheDocument()
+    })
+    it('монтирует проверку целостности только для суперадминистратора', () => {
+        mount({ superAdmin: true })
+        expect(screen.getByTestId('audit-integrity-panel')).toBeVisible()
+    })
+    it('поднимает таблицу по карточке, показывает период и возвращает форму по кнопке', () => {
+        const controller = mount()
+        const region = screen.getByTestId('audit-scroll-region')
+        fireEvent.click(screen.getByRole('button', { name: 'Успешные 100' }))
+        expect(controller.selectAuditMetric).toHaveBeenCalledWith('SUCCESS')
+        expect(region).toHaveAttribute('data-raise', '1')
+        expect(screen.queryByRole('heading', { name: 'Поиск событий' })).not.toBeInTheDocument()
+        expect(screen.getByText('Период: 01.10.2026 — 20.10.2026')).toBeVisible()
+        expect(screen.getByRole('button', { name: 'Скачать CSV текущей страницы' })).toBeVisible()
+        fireEvent.click(screen.getByRole('button', { name: 'Показать фильтры' }))
+        expect(region).toHaveAttribute('data-lower', '1')
+        expect(screen.getByRole('heading', { name: 'Поиск событий' })).toBeVisible()
+        fireEvent.click(screen.getByRole('button', { name: 'Безопасность' }))
+        expect(controller.selectAuditCategory).toHaveBeenCalledWith('SECURITY')
+        expect(region).toHaveAttribute('data-raise', '2')
+        expect(screen.getByRole('button', { name: 'Показать фильтры' })).toHaveAttribute('aria-expanded', 'false')
+    })
+
+    it('не скрывает неприменённые фильтры быстрым переходом', () => {
+        const controller = mount({ filtersDirty: true })
+        expect(screen.getByRole('button', { name: 'Свернуть фильтры' })).toBeDisabled()
+        expect(screen.getByRole('button', { name: 'Успешные 100' })).toBeDisabled()
+        expect(controller.selectAuditMetric).not.toHaveBeenCalled()
+    })
     it('оставляет фильтры и экспорт в upper, таблицу в viewport и пагинацию в footer', () => {
         mount()
-        expect(within(screen.getByTestId('audit-upper')).getByText('Аудит событий')).toBeInTheDocument()
+        expect(within(screen.getByTestId('audit-upper')).getByText('Журнал событий')).toBeInTheDocument()
         expect(within(screen.getByTestId('audit-upper')).getByRole('button', { name: 'Скачать CSV текущей страницы' })).toBeInTheDocument()
         expect(within(screen.getByTestId('audit-viewport')).getByRole('table')).toBeInTheDocument()
         expect(within(screen.getByTestId('audit-footer')).getByLabelText('Пагинация аудита')).toBeInTheDocument()
@@ -123,6 +161,7 @@ describe('AdminAuditPageView — форма и рабочая область', (
         mount({ events: [], showTable: false })
         expect(screen.getByText('Событий не найдено')).toBeInTheDocument()
         expect(screen.queryByRole('table')).not.toBeInTheDocument()
+        expect(screen.queryByTestId('audit-scroll-region')).not.toBeInTheDocument()
         expect(screen.queryByRole('button', { name: 'Скачать CSV текущей страницы' })).not.toBeInTheDocument()
     })
 
@@ -139,6 +178,35 @@ describe('AdminAuditPageView — форма и рабочая область', (
         expect(data.setSelectedEvent).toHaveBeenCalledWith(EVENT)
     })
 
+    it('фильтрует по историческому UUID инициатора, не открывая карточку пользователя', () => {
+        const actorUserId = '11111111-1111-4111-8111-111111111111'
+        const data = mount({ events: [{ ...EVENT, actorUserId }, { ...EVENT, id: actorUserId }] })
+        expect(screen.getByRole('columnheader', { name: 'Пользователь / система' })).toBeInTheDocument()
+        expect(screen.getByRole('heading', { name: 'Результаты поиска 130' })).toBeInTheDocument()
+        const buttons = screen.getAllByRole('button', { name: 'Показать события: admin@example.com' })
+        expect(buttons).toHaveLength(1)
+        fireEvent.click(buttons[0])
+        expect(data.filterByActor).toHaveBeenCalledWith(actorUserId)
+        expect(data.setSelectedEvent).not.toHaveBeenCalled()
+    })
+
+    it('не позволяет быстрому фильтру потерять неприменённые изменения', () => {
+        const data = mount({ filtersDirty: true, events: [{ ...EVENT, actorUserId: '11111111-1111-4111-8111-111111111111' }] })
+        const button = screen.getByRole('button', { name: 'Показать события: admin@example.com' })
+        expect(button).toBeDisabled()
+        fireEvent.click(button)
+        expect(data.filterByActor).not.toHaveBeenCalled()
+    })
+
+    it('разделяет ссылки на карточки и фильтр событий', () => {
+        const actorUserId = '11111111-1111-4111-8111-111111111111'
+        const data = mount({superAdmin: true, events: [{...EVENT, actorUserId}]})
+        expect(screen.getByRole('link', {name: 'Карточка пользователя'})).toHaveAttribute('href', `/admin/users?userId=${actorUserId}`)
+        expect(screen.getByRole('link', {name: 'Демо'})).toHaveAttribute('href', `/admin/organizations?organizationId=${EVENT.targetOrganizationId}`)
+        fireEvent.click(screen.getByRole('button', {name: 'Показать события: admin@example.com'}))
+        expect(data.filterByActor).toHaveBeenCalledWith(actorUserId)
+    })
+
     it('открывает детали выбранного события и передаёт закрытие контроллеру', () => {
         const data = mount({ selectedEvent: EVENT, selectedOrganizationFallback: 'Контур Б' })
         const dialog = screen.getByRole('dialog', { name: 'Подробности события' })
@@ -149,6 +217,6 @@ describe('AdminAuditPageView — форма и рабочая область', (
 
     it('не отображает организационный фильтр пользователю без SUPER_ADMIN', () => {
         mount({ superAdmin: false })
-        expect(screen.queryByLabelText(/Целевая организация/)).not.toBeInTheDocument()
+        expect(screen.queryByLabelText(/Организация/)).not.toBeInTheDocument()
     })
 })

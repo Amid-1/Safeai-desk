@@ -24,3 +24,9 @@ test('does not confuse feature dependencies with layer dependencies', () => {
     assert.equal(isForbiddenFeatureDependency({ name: 'shared' }, feature('admin')), false)
     assert.equal(isForbiddenFeatureDependency(feature('audit'), { name: 'entities' }), false)
 })
+
+test('keeps chat and knowledge independent in both directions', () => {
+    assert.equal(isForbiddenFeatureDependency(feature('chat'), feature('knowledge')), true)
+    assert.equal(isForbiddenFeatureDependency(feature('knowledge'), feature('chat')), true)
+    assert.equal(isForbiddenFeatureDependency(feature('chat'), { name: 'entities' }), false)
+})

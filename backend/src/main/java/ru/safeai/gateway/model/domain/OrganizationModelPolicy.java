@@ -24,8 +24,20 @@ public record OrganizationModelPolicy(
         boolean requireNoTraining,
         boolean requireZeroDataRetention,
         UUID createdByUserId,
-        Instant createdAt
+        Instant createdAt,
+        RubBudgetSnapshot rubBudget
 ) {
+    public OrganizationModelPolicy(UUID id, UUID organizationId, int version, boolean enabled,
+            Set<String> allowModelKeys, Set<String> denyModelKeys, String defaultModelKey,
+            Integer maxInputTokens, Integer maxOutputTokens, BigDecimal maxRequestCostUsd,
+            BigDecimal monthlyBudgetUsd, BudgetEnforcement budgetEnforcement,
+            boolean requireCompletePricing, boolean requireNoTraining, boolean requireZeroDataRetention,
+            UUID createdByUserId, Instant createdAt) {
+        this(id, organizationId, version, enabled, allowModelKeys, denyModelKeys, defaultModelKey,
+                maxInputTokens, maxOutputTokens, maxRequestCostUsd, monthlyBudgetUsd, budgetEnforcement,
+                requireCompletePricing, requireNoTraining, requireZeroDataRetention, createdByUserId, createdAt, null);
+    }
+
     public OrganizationModelPolicy {
         allowModelKeys = immutableSortedSet(allowModelKeys);
         denyModelKeys = immutableSortedSet(denyModelKeys);

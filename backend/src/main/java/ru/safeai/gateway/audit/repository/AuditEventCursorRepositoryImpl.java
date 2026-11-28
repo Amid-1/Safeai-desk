@@ -1,6 +1,7 @@
 package ru.safeai.gateway.audit.repository;
 
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.Tuple;
 import jakarta.persistence.TypedQuery;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.CriteriaQuery;
@@ -12,6 +13,8 @@ import ru.safeai.gateway.audit.entity.AuditEventEntity;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 @RequiredArgsConstructor
@@ -19,6 +22,23 @@ public class AuditEventCursorRepositoryImpl
         implements AuditEventCursorRepository {
 
     private final EntityManager entityManager;
+
+    @Override
+    public Map<String, Long> countByEventType(UUID organizationId, AuditEventFilter filter) {
+        CriteriaBuilder cb = entityManager.getCriteriaBuilder();
+        CriteriaQuery<Tuple> query = cb.createTupleQuery();
+        Root<AuditEventEntity> root = query.from(AuditEventEntity.class);
+        var type = root.<String>get("eventType");
+        query.multiselect(type, cb.count(root));
+        query.where(AuditEventCriteria.predicates(root, cb, organizationId, filter)
+                .toArray(Predicate[]::new));
+        query.groupBy(type);
+        Map<String, Long> result = new HashMap<>();
+        for (Tuple row : entityManager.createQuery(query).getResultList()) {
+            result.put(row.get(0, String.class), row.get(1, Long.class));
+        }
+        return result;
+    }
 
     @Override
     public List<AuditEventEntity> findByCursor(

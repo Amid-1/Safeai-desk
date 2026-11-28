@@ -46,9 +46,10 @@ public class KnowledgeDocumentQueryRepository {
         );
 
         String enabledPredicate =
-                includeDisabled
+                " and document.lifecycle_state = 'AVAILABLE' "
+                        + (includeDisabled
                         ? ""
-                        : " and document.enabled = true ";
+                        : " and document.enabled = true ");
 
         long total =
                 countDocuments(

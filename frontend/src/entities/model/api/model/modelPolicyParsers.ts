@@ -5,6 +5,7 @@ import type { OrganizationModelPolicy, ModelPolicyPreview, ModelPolicyPreviewIte
 import { MODEL_LIFECYCLES, BUDGET_ENFORCEMENTS, MODEL_ROUTE_OUTCOMES, MODEL_ROUTE_REASONS, ALLOWED_REASONS, DENIED_REASONS } from './modelEnums'
 import { requireObject, requireArray, requireNonBlankString, requireBoolean, requireEnum, requirePositiveInteger, requireNonNegativeInteger, optionalPositiveInteger, optionalDecimalString, requireModelKey, optionalModelKey, requireModelKeyArray, requireUuid, optionalUuid, requireInstant, optionalInstant, optionalEnum } from './modelWire'
 import { validateOrganizationPolicySemantics } from './modelSemantics'
+import {parseRubBudgetSnapshot} from './modelBudgetFx'
 
 export function parseOrganizationModelPolicy(
     value: unknown,
@@ -88,6 +89,9 @@ export function parseOrganizationModelPolicy(
         ),
     }
 
+    if (raw.rubBudget != null) {
+        policy.rubBudget = parseRubBudgetSnapshot(raw.rubBudget, policy.maxRequestCostUsd, policy.monthlyBudgetUsd)
+    }
     validateOrganizationPolicySemantics(policy, path)
     return policy
 }
@@ -171,6 +175,8 @@ export function parseModelPolicyPreview(
         })
 
     const result: ModelPolicyPreview = {
+        previewConfirmationId: requireUuid(raw.previewConfirmationId, `${path}.previewConfirmationId`),
+        confirmationExpiresAt: requireInstant(raw.confirmationExpiresAt, `${path}.confirmationExpiresAt`),
         organizationId: requireUuid(
             raw.organizationId,
             `${path}.organizationId`,

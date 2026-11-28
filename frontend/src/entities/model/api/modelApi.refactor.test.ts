@@ -94,6 +94,8 @@ const POLICY = {
 } as const
 
 const POLICY_PREVIEW = {
+    previewConfirmationId: '12345678-1234-4123-8123-123456789abc',
+    confirmationExpiresAt: '2026-10-21T07:05:00Z',
     organizationId: ORG_ID,
     basePolicyVersion: 0,
     enabled: false,
@@ -161,6 +163,7 @@ describe('modelApi: совместимость после декомпозици
             'getModelCatalog', 'getEffectiveModelCatalog',
             'createModelCatalogVersion', 'importRuntimeModelCatalog',
             'getOrganizationModelPolicy',
+            'getRubBudgetQuote', 'rubToUsd', 'usdToRub', 'budgetMoneyEqual', 'moscowBudgetDate',
             'createOrganizationModelPolicyVersion',
             'previewOrganizationModelPolicy', 'getModelRouteDecision',
             'parseRuntimeModelStatus', 'parseRuntimeModelProbe',

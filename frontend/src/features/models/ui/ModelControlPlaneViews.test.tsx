@@ -3,7 +3,7 @@
    frontend/src/features/models/ui/ModelControlPlaneViews.test.tsx
    ============================================================ */
 
-import {render, screen} from '@testing-library/react'
+import {fireEvent, render, screen} from '@testing-library/react'
 import {describe, expect, it, vi} from 'vitest'
 import {
     CatalogTable,
@@ -21,6 +21,17 @@ const baseEntry = createModelCatalogEntry()
 const policy = createOrganizationModelPolicy()
 
 describe('ModelControlPlaneViews semantics', () => {
+    it('shows source, validity and local history scope in connection diagnostics', () => {
+        render(<RuntimeCard runtime={createRuntimeModelStatus({
+            provider: 'openai', model: 'test-model',
+            dataAssurance: {noTraining: true, zeroDataRetention: false, source: 'CONTRACT-42',
+                verifiedAt: '2026-11-17T12:00:00Z', expiresAt: '2026-12-17T12:00:00Z'},
+        })} effectiveCatalog={[]} probe={null} probePending={false} canProbe={false} onProbe={vi.fn()} />)
+        fireEvent.click(screen.getByRole('button', {name: 'Условия обработки данных'}))
+        expect(screen.getByText(/Подтверждение подключения: CONTRACT-42/)).toBeVisible()
+        expect(screen.getByText(/Действует до:/)).toBeVisible()
+        expect(screen.getByText(/История чатов SafeAI Desk сохраняется/)).toBeVisible()
+    })
     it.each([
         [true, 'NOT_DECLARED', true],
         [false, 'NOT_DECLARED', false],
@@ -164,27 +175,27 @@ describe('ModelControlPlaneViews semantics', () => {
         ).toBeInTheDocument()
 
         expect(
-            screen.getByText('Последняя сохраненная · v1'),
+            screen.getByText('Последняя и действующая · v1'),
         ).toBeInTheDocument()
 
         expect(
-            screen.getByText('Действующая · v1'),
-        ).toBeInTheDocument()
+            screen.queryByText('Действующая · v1'),
+        ).not.toBeInTheDocument()
 
         expect(
-            screen.getByText('Действует сейчас'),
-        ).toBeInTheDocument()
+            screen.queryByText('Действует сейчас'),
+        ).not.toBeInTheDocument()
 
         expect(
             screen.getByText('Активна'),
         ).toBeInTheDocument()
 
         expect(
-            screen.getByText('Хранение: Не заявлено'),
+            screen.getByText('Хранение: Не указано'),
         ).toBeInTheDocument()
 
         expect(
-            screen.getByText('Обучение: Не заявлено'),
+            screen.getByText('Обучение: Не указано'),
         ).toBeInTheDocument()
     })
 

@@ -28,8 +28,17 @@ public record AuditEventResponse(
 
         String eventType,
         Map<String, Object> details,
-        Instant createdAt
+        Instant createdAt,
+        UUID correlationId
 ) {
+
+    public AuditEventResponse(UUID id, UUID userId, UUID actorOrganizationId,
+                              UUID organizationId, String targetOrganizationName, String userEmail,
+                              String userDisplayName, String eventType, Map<String, Object> details,
+                              Instant createdAt) {
+        this(id, userId, actorOrganizationId, organizationId, targetOrganizationName,
+                userEmail, userDisplayName, eventType, details, createdAt, null);
+    }
 
     public AuditEventResponse {
         details = details == null || details.isEmpty()

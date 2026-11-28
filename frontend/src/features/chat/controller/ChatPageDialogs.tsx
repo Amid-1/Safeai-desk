@@ -2,27 +2,27 @@
 // ============================================================
 // frontend/src/features/chat/controller/ChatPageDialogs.tsx
 // ============================================================
-import type { ChatPageController } from './useChatPageController'
+import type {ChatPageController} from './useChatPageController'
 import ChatTitleEditor from '../ui/ChatTitleEditor'
 import Modal from '../../../shared/ui/Modal'
 import ConfirmDialog from '../../../shared/ui/ConfirmDialog'
 
 type ChatPageDialogsProps = {
     controller: Pick<ChatPageController,
-    | 'chatToRename'
-    | 'renamingChatId'
-    | 'setChatToRename'
-    | 'handleRenameFromHistory'
-    | 'chatToArchive'
-    | 'archivingChatId'
-    | 'setChatToArchive'
-    | 'handleArchiveChat'
-    | 'selectedTrustItem'
-    | 'setSelectedTrustItem'
->
+        | 'chatToRename'
+        | 'renamingChatId'
+        | 'setChatToRename'
+        | 'handleRenameFromHistory'
+        | 'chatToArchive'
+        | 'archivingChatId'
+        | 'setChatToArchive'
+        | 'handleArchiveChat'
+        | 'selectedTrustItem'
+        | 'setSelectedTrustItem'
+    >
 }
 
-export default function ChatPageDialogs({ controller }: ChatPageDialogsProps) {
+export default function ChatPageDialogs({controller}: ChatPageDialogsProps) {
     const {
         chatToRename,
         renamingChatId,
@@ -63,16 +63,20 @@ export default function ChatPageDialogs({ controller }: ChatPageDialogsProps) {
 
             {chatToArchive && (
                 <ConfirmDialog
-                    title="Убрать чат из списка?"
+                    title="Архивировать чат?"
                     message={
                         `Чат «${chatToArchive.title}» исчезнет из рабочего списка. `
-                        + 'История, стоимость и доказательная цепочка сохранятся для аудита.'
+                        + 'Сохранённая история останется в архиве. Несохранённые черновики будут удалены.'
                     }
-                    confirmText="Убрать чат"
+                    confirmText="Архивировать"
                     danger
                     loading={archivingChatId === chatToArchive.id}
                     onCancel={() => setChatToArchive(null)}
-                    onConfirm={() => handleArchiveChat(chatToArchive)}
+                    onConfirm={async () => {
+                        if (!await handleArchiveChat(chatToArchive)) {
+                            throw new Error('Дождитесь завершения запроса.')
+                        }
+                    }}
                 />
             )}
 

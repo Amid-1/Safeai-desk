@@ -1,3 +1,4 @@
+// SafeAI-Desk/backend/src/main/java/ru/safeai/gateway/knowledge/rag/AnswerPassportService.java
 package ru.safeai.gateway.knowledge.rag;
 
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -94,6 +95,10 @@ public class AnswerPassportService {
                 context.modelRouteDecisionId(),
                 "V45 knowledge answer требует modelRouteDecisionId"
         );
+
+        // Проверка выполняется внутри транзакции завершения ChatTurn.
+        // FOR SHARE сериализует сохранение ответа с принятием удаления Knowledge.
+        KnowledgeRagErasureGuard.assertAvailable(jdbc, preparation, user.getOrganizationId());
 
         UUID passportId =
                 UUID.randomUUID();
@@ -299,6 +304,13 @@ public class AnswerPassportService {
                         where chat_turn_id = ?
                           and organization_id = ?
                           and user_id = ?
+                          and exists (
+                              select 1 from public.chat_sessions session
+                              where session.id = knowledge_answer_passports.chat_id
+                                and session.organization_id = knowledge_answer_passports.organization_id
+                                and session.user_id = knowledge_answer_passports.user_id
+                                and session.erasure_state = 'AVAILABLE'
+                          )
                         """,
                         this::mapPassport,
                         turnId,
@@ -363,6 +375,13 @@ public class AnswerPassportService {
                           and chat_turn_id = ?
                           and organization_id = ?
                           and user_id = ?
+                          and exists (
+                              select 1 from public.chat_sessions s
+                              where s.id = knowledge_answer_passports.chat_id
+                                and s.organization_id = knowledge_answer_passports.organization_id
+                                and s.user_id = knowledge_answer_passports.user_id
+                                and s.erasure_state = 'AVAILABLE'
+                          )
                         """,
                         this::mapPassport,
                         chatId,

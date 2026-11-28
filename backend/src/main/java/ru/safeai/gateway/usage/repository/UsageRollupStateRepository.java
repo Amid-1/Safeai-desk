@@ -2,6 +2,8 @@ package ru.safeai.gateway.usage.repository;
 
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.stereotype.Repository;
 import ru.safeai.gateway.common.persistence.PostgresAdvisoryLockExecutor;
 import ru.safeai.gateway.usage.config.UsageJdbcClients;
@@ -72,6 +74,7 @@ public class UsageRollupStateRepository {
             """;
 
     private final JdbcTemplate jdbcTemplate;
+    private final NamedParameterJdbcTemplate reportJdbc;
     private final DataSource dataSource;
 
     public UsageRollupStateRepository(
@@ -82,6 +85,7 @@ public class UsageRollupStateRepository {
                 jdbcClients,
                 "jdbcClients"
         ).rollup();
+        this.reportJdbc = jdbcClients.query();
 
         this.dataSource = Objects.requireNonNull(
                 dataSource,
@@ -96,7 +100,7 @@ public class UsageRollupStateRepository {
      *         если watermark ещё не инициализирован
      */
     public LocalDate findLastCompletedDate() {
-        List<LocalDate> dates = jdbcTemplate.query(
+        List<LocalDate> dates = reportJdbc.getJdbcOperations().query(
                 FIND_LAST_COMPLETED_DATE_SQL,
                 (rs, rowNum) -> rs.getObject(
                         "last_completed_date",
@@ -106,6 +110,16 @@ public class UsageRollupStateRepository {
         );
 
         return dates.isEmpty() ? null : dates.getFirst();
+    }
+
+    /** Read in the same repeatable-read snapshot as watermark and report facts. */
+    public List<LocalDate> findDirtyDates(LocalDate from, LocalDate toExclusive) {
+        return reportJdbc.query("""
+                SELECT usage_date FROM public.usage_dirty_dates
+                WHERE usage_date >= :fromDate AND usage_date < :toDate
+                ORDER BY usage_date
+                """, new MapSqlParameterSource("fromDate", from).addValue("toDate", toExclusive),
+                (rs, rowNum) -> rs.getObject("usage_date", LocalDate.class));
     }
 
     /**

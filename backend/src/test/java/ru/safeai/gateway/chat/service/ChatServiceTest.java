@@ -18,8 +18,6 @@ import ru.safeai.gateway.ai.execution.AiExecutionResult;
 import ru.safeai.gateway.ai.execution.AiExecutionService;
 import ru.safeai.gateway.ai.execution.AiOrganizationExecutionDeniedException;
 import ru.safeai.gateway.ai.execution.ProviderExecutionTarget;
-import ru.safeai.gateway.audit.AuditEventType;
-import ru.safeai.gateway.audit.details.AuditDetails;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.chat.config.ChatProperties;
 import ru.safeai.gateway.chat.dto.CreateChatRequest;
@@ -46,9 +44,12 @@ import ru.safeai.gateway.user.repository.UserRepository;
 
 import java.time.Duration;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -58,12 +59,15 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.same;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -230,7 +234,8 @@ class ChatServiceTest {
                 aiExecutionService,
                 lockService,
                 leaseService,
-                finalizationService
+                finalizationService,
+                securityStateService
         );
         order.verify(aiExecutionService).bindExecution(
                 eq(processing.modelRouteDecisionId()),
@@ -243,6 +248,10 @@ class ChatServiceTest {
         );
         order.verify(lockService).ensureValid(redisLock);
         order.verify(leaseService).ensureValid(leaseWatch);
+        order.verify(securityStateService).assertStillActive(
+                eq(processing.chatId()), eq(processing.turnId()), eq(processing.clientRequestId()),
+                any(SafeAiUserPrincipal.class)
+        );
         order.verify(aiExecutionService).targetFor(
                 eq(processing.requestedPhysicalModel())
         );
@@ -252,6 +261,11 @@ class ChatServiceTest {
         order.verify(finalizationService).succeedRag(
                 eq(processing),
                 any(RagCompletion.class),
+                any(SafeAiUserPrincipal.class)
+        );
+
+        order.verify(securityStateService).assertStillActive(
+                eq(processing.chatId()), eq(processing.turnId()), eq(processing.clientRequestId()),
                 any(SafeAiUserPrincipal.class)
         );
 
@@ -274,7 +288,7 @@ class ChatServiceTest {
                 .isEqualTo(processing.modelRouteDecisionId());
         assertThat(physicalCall.chatTurnId()).isEqualTo(processing.turnId());
 
-        verify(securityStateService).assertStillActive(
+        verify(securityStateService, times(2)).assertStillActive(
                 eq(ChatTestFixtures.CHAT_ID),
                 eq(ChatTestFixtures.TURN_ID),
                 eq(ChatTestFixtures.CLIENT_REQUEST_ID),
@@ -792,31 +806,69 @@ class ChatServiceTest {
     }
 
     @Test
-    void responseIsPersistedButNotReturnedAfterSecurityRevocation() {
+    void responseIsPersistedButNotReturnedAfterSecurityRevocation() throws InterruptedException {
         stubOwnedChatAndProcessing();
-        when(aiExecutionService.execute(any()))
-                .thenReturn(execution(ChatTestFixtures.freeResponse()));
+        CountDownLatch providerEntered = new CountDownLatch(1);
+        CountDownLatch releaseProvider = new CountDownLatch(1);
+        AtomicBoolean revoked = new AtomicBoolean();
+
+        when(aiExecutionService.execute(any())).thenAnswer(invocation -> {
+            providerEntered.countDown();
+            assertThat(releaseProvider.await(5, TimeUnit.SECONDS)).isTrue();
+            return execution(ChatTestFixtures.freeResponse());
+        });
         when(finalizationService.succeedRag(
-                eq(processing),
-                any(RagCompletion.class),
-                any(SafeAiUserPrincipal.class)
+                eq(processing), any(RagCompletion.class), any(SafeAiUserPrincipal.class)
         )).thenReturn(successResponse(false));
-        doThrow(new ChatAccessRevokedException(
-                ChatTestFixtures.CHAT_ID,
-                ChatTestFixtures.TURN_ID,
-                ChatTestFixtures.CLIENT_REQUEST_ID
-        )).when(securityStateService).assertStillActive(any(), any(), any(), any());
+        doAnswer(invocation -> {
+            if (revoked.get()) {
+                throw revokedAccess();
+            }
+            return null;
+        }).when(securityStateService).assertStillActive(any(), any(), any(), any());
+
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var request = executor.submit(() -> service.sendMessage(
+                    ChatTestFixtures.CHAT_ID, request(), ChatTestFixtures.principal()
+            ));
+            try {
+                assertThat(providerEntered.await(5, TimeUnit.SECONDS)).isTrue();
+                revoked.set(true);
+            } finally {
+                releaseProvider.countDown();
+            }
+            assertThatThrownBy(() -> request.get(5, TimeUnit.SECONDS))
+                    .isInstanceOf(ExecutionException.class)
+                    .hasCauseInstanceOf(ChatAccessRevokedException.class);
+        }
+
+        var order = inOrder(finalizationService, securityStateService);
+        order.verify(finalizationService).succeedRag(
+                eq(processing), any(RagCompletion.class), any(SafeAiUserPrincipal.class)
+        );
+        order.verify(securityStateService).assertStillActive(any(), any(), any(), any());
+    }
+
+    @Test
+    void revokedAccessBeforeProviderFinalizesWithoutDispatch() {
+        stubOwnedChatAndProcessing();
+        ChatAccessRevokedException revoked = revokedAccess();
+        doThrow(revoked).when(securityStateService).assertStillActive(any(), any(), any(), any());
 
         assertThatThrownBy(() -> service.sendMessage(
-                ChatTestFixtures.CHAT_ID,
-                request(),
-                ChatTestFixtures.principal()
-        )).isInstanceOf(ChatAccessRevokedException.class);
+                ChatTestFixtures.CHAT_ID, request(), ChatTestFixtures.principal()
+        )).isSameAs(revoked);
 
-        verify(finalizationService).succeedRag(
-                eq(processing),
-                any(RagCompletion.class),
+        verify(finalizationService).failBeforeProviderCall(
+                eq(processing), eq("CHAT_ACCESS_RECHECK_FAILED"), eq("CHAT_ACCESS_RECHECK_FAILED"),
                 any(SafeAiUserPrincipal.class)
+        );
+        verify(aiExecutionService, never()).execute(any());
+    }
+
+    private static ChatAccessRevokedException revokedAccess() {
+        return new ChatAccessRevokedException(
+                ChatTestFixtures.CHAT_ID, ChatTestFixtures.TURN_ID, ChatTestFixtures.CLIENT_REQUEST_ID
         );
     }
 
@@ -840,48 +892,18 @@ class ChatServiceTest {
     }
 
     @Test
-    void archiveHidesChatWithoutDeletingItsAuditHistory() {
-        ChatSessionEntity session = ChatTestFixtures.session();
-        when(sessionRepository.findByIdAndUser_IdAndOrganization_IdAndArchivedAtIsNull(
-                ChatTestFixtures.CHAT_ID,
-                ChatTestFixtures.USER_ID,
-                ChatTestFixtures.ORGANIZATION_ID
-        )).thenReturn(Optional.of(session));
-        when(sessionRepository.saveAndFlush(session)).thenReturn(session);
+    void legacyArchiveDelegatesToCanonicalSerializedLifecycleWithoutBypassingGuards() {
+        ChatLifecycleService lifecycle = mock(ChatLifecycleService.class);
+        service.setLifecycleService(lifecycle);
+        service.archive(ChatTestFixtures.CHAT_ID, ChatTestFixtures.principal());
 
-        service.archive(
-                ChatTestFixtures.CHAT_ID,
-                ChatTestFixtures.principal()
-        );
-
-        assertThat(session.getArchivedAt()).isEqualTo(ChatTestFixtures.NOW);
-        assertThat(session.getArchivedByUserId()).isEqualTo(ChatTestFixtures.USER_ID);
-        verify(sessionRepository).saveAndFlush(session);
-        verify(auditEventService).recordPrincipalSnapshot(
-                argThat((SafeAiUserPrincipal principal) ->
-                        principal != null
-                                && ChatTestFixtures.USER_ID.equals(principal.getId())
-                                && ChatTestFixtures.ORGANIZATION_ID.equals(principal.getOrganizationId())),
-                eq(ChatTestFixtures.ORGANIZATION_ID),
-                eq(AuditEventType.CHAT_ARCHIVED),
-                argThat((AuditDetails details) ->
-                        details != null && isArchivedAuditDetails(details.toMap())
-                )
-        );
-    }
-
-    private static boolean isArchivedAuditDetails(
-            Map<String, ?> details
-    ) {
-        return ChatTestFixtures.CHAT_ID.equals(
-                details.get("chatId")
-        )
-                && "AUDIT_PRESERVED".equals(
-                details.get("retentionMode")
-        )
-                && ChatTestFixtures.NOW.toString().equals(
-                details.get("archivedAt")
-        );
+        verify(lifecycle).archive(eq(ChatTestFixtures.CHAT_ID),
+                argThat(principal -> principal != null
+                        && ChatTestFixtures.USER_ID.equals(principal.getId())
+                        && ChatTestFixtures.ORGANIZATION_ID.equals(principal.getOrganizationId())));
+        // The compatibility endpoint must NEVER edit the session independently;
+        // canonical lifecycle owns locking, persisted membership and audit.
+        verifyNoInteractions(sessionRepository, messageRepository, auditEventService);
     }
 
     @Test

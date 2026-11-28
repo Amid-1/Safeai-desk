@@ -3,6 +3,7 @@ package ru.safeai.gateway.model.service;
 import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.model.domain.BudgetEnforcement;
 import ru.safeai.gateway.model.domain.OrganizationModelPolicy;
+import ru.safeai.gateway.model.domain.RubBudgetSnapshot;
 import ru.safeai.gateway.model.dto.CreateOrganizationModelPolicyVersionRequest;
 
 import java.math.BigDecimal;
@@ -27,15 +28,25 @@ final class OrganizationModelPolicyRules {
             UUID createdByUserId,
             Instant createdAt
     ) {
+        return buildPolicy(id, organizationId, version, request, createdByUserId, createdAt, null);
+    }
+
+    static OrganizationModelPolicy buildPolicy(
+            UUID id, UUID organizationId, int version, CreateOrganizationModelPolicyVersionRequest request,
+            UUID createdByUserId, Instant createdAt, RubBudgetSnapshot rubBudget
+    ) {
+        if ((request.rubBudget() != null) != (rubBudget != null)) {
+            throw new BadRequestException("Рублёвый бюджет требует подтверждённой котировки.");
+        }
         Set<String> allow = normalizeModelKeys(request.allowModelKeys());
         Set<String> deny = normalizeModelKeys(request.denyModelKeys());
         String defaultModelKey = normalizeNullableModelKey(request.defaultModelKey());
         BigDecimal maxRequestCostUsd = normalizeMoney(
-                request.maxRequestCostUsd(),
+                rubBudget == null ? request.maxRequestCostUsd() : rubBudget.maxRequestCostUsd(),
                 "maxRequestCostUsd"
         );
         BigDecimal monthlyBudgetUsd = normalizeMoney(
-                request.monthlyBudgetUsd(),
+                rubBudget == null ? request.monthlyBudgetUsd() : rubBudget.monthlyBudgetUsd(),
                 "monthlyBudgetUsd"
         );
 
@@ -67,7 +78,8 @@ final class OrganizationModelPolicyRules {
                 request.requireNoTraining(),
                 request.requireZeroDataRetention(),
                 createdByUserId,
-                createdAt
+                createdAt,
+                rubBudget
         );
     }
 

@@ -3,6 +3,12 @@ import type { KeyboardEvent } from 'react'
 
 import { MODELS_SECTIONS } from './modelsNavigationState'
 import type { ModelsSection } from './modelsNavigationState'
+import { ModelIcon } from './ModelIcon'
+import type { ModelIconName } from './ModelIcon'
+
+const icons: Record<ModelsSection, ModelIconName> = {
+    overview: 'overview', catalog: 'layers', access: 'shield', diagnostics: 'activity',
+}
 
 export function AdminModelsNavigation({ section, onSelect }: {
     section: ModelsSection
@@ -22,7 +28,7 @@ export function AdminModelsNavigation({ section, onSelect }: {
         if (!target) return
         onSelect(target.id)
         const tabs = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
-        tabs?.[nextIndex]?.focus()
+        tabs?.[nextIndex]?.focus({ preventScroll: true })
     }
 
     return (
@@ -37,13 +43,10 @@ export function AdminModelsNavigation({ section, onSelect }: {
                         className={section === item.id ? 'models-sections-nav__tab is-active' : 'models-sections-nav__tab'}
                         onClick={() => onSelect(item.id)}
                         onKeyDown={(event) => handleKeyDown(event, item.id)}>
-                        {item.label}
+                        <ModelIcon name={icons[item.id]} />{item.label}
                     </button>
                 ))}
             </div>
-            <p className="models-sections-nav__description">
-                {MODELS_SECTIONS.find((item) => item.id === section)?.description}
-            </p>
         </nav>
     )
 }

@@ -9,7 +9,11 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 import ru.safeai.gateway.ai.provider.AiRestClientFactory;
+import ru.safeai.gateway.ai.provider.ProviderCredentialEvidence;
+import ru.safeai.gateway.ai.provider.ProviderDataAssuranceProperties;
+import ru.safeai.gateway.ai.provider.ProviderDataEvidence;
 import ru.safeai.gateway.knowledge.config.KnowledgeEmbeddingProperties;
+import ru.safeai.gateway.knowledge.config.KnowledgeProviderDataGuard;
 import tools.jackson.databind.JsonNode;
 
 import java.util.ArrayList;
@@ -17,6 +21,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.time.Clock;
 
 @Component
 @ConditionalOnProperty(
@@ -50,10 +55,14 @@ public class OpenAiKnowledgeEmbeddingProvider
 
     private final KnowledgeEmbeddingProperties properties;
     private final RestClient client;
+    private final ProviderDataEvidence evidence;
+    private final Clock clock;
 
     @Autowired
     public OpenAiKnowledgeEmbeddingProvider(
-            KnowledgeEmbeddingProperties properties
+            KnowledgeEmbeddingProperties properties,
+            ProviderDataAssuranceProperties assurances,
+            Clock clock
     ) {
         this(
                 properties,
@@ -62,13 +71,15 @@ public class OpenAiKnowledgeEmbeddingProvider
                         properties.connectTimeout(),
                         properties.readTimeout(),
                         MAX_RESPONSE_BYTES
-                )
+                ), assurances.embedding(), clock
         );
     }
 
     OpenAiKnowledgeEmbeddingProvider(
             KnowledgeEmbeddingProperties properties,
-            RestClient client
+            RestClient client,
+            ProviderDataEvidence evidence,
+            Clock clock
     ) {
         this.properties =
                 Objects.requireNonNull(
@@ -81,6 +92,8 @@ public class OpenAiKnowledgeEmbeddingProvider
                         client,
                         "client не должен быть null"
                 );
+        this.evidence = evidence;
+        this.clock = Objects.requireNonNull(clock);
     }
 
     @Override
@@ -296,6 +309,11 @@ public class OpenAiKnowledgeEmbeddingProvider
                 "float"
         );
 
+        if (!KnowledgeProviderDataGuard.permits(evidence, clock, properties.baseUrl(),
+                KnowledgeProviderDataGuard.embeddingBinding(properties))) {
+            throw new KnowledgeEmbeddingException("EMBEDDING_DATA_ASSURANCE_DENIED",
+                    "External embedding requires current no-training and zero-retention assurance", false);
+        }
         try {
             JsonNode body =
                     client.post()
@@ -318,6 +336,10 @@ public class OpenAiKnowledgeEmbeddingProvider
                                     JsonNode.class
                             );
 
+            if (ProviderCredentialEvidence.reflected(body, null, properties.apiKey())) {
+                throw new KnowledgeEmbeddingException("EMBEDDING_PROVIDER_PROTOCOL_ERROR",
+                        "Embedding response contains forbidden credential material", false);
+            }
             return parse(
                     body,
                     normalized.size()
@@ -338,16 +360,14 @@ public class OpenAiKnowledgeEmbeddingProvider
                             + status,
                     "Production embedding provider вернул HTTP "
                             + status,
-                    retryable,
-                    exception
+                    retryable
             );
 
-        } catch (RestClientException exception) {
+        } catch (RestClientException ignored) {
             throw new KnowledgeEmbeddingException(
                     "EMBEDDING_PROVIDER_UNAVAILABLE",
                     "Production embedding provider недоступен",
-                    true,
-                    exception
+                    true
             );
         }
     }

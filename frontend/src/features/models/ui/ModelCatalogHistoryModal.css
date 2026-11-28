@@ -34,6 +34,19 @@
     container-type: inline-size;
 }
 
+/* The shared resizable modal uses flex for forms. History is a vertical
+   document, so its introduction, notices and version list must not shrink
+   into neighbouring columns. Keep scrolling in the shared modal body. */
+.modal-card.models-history-modal.modal-card--resizable .modal-body {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.modal-card.models-history-modal.modal-card--resizable .modal-body > * {
+    flex: 0 0 auto;
+    min-width: 0;
+}
+
 .models-history-modal__intro {
     display: grid;
     grid-template-columns: minmax(240px, 0.72fr) minmax(0, 1.28fr);
@@ -115,8 +128,17 @@
     background: linear-gradient(180deg, var(--history-blue) 0%, #7b8aff 100%);
 }
 
+.models-history-card[data-navigation-target="true"] {
+    border-color: #526bea;
+    box-shadow: inset 0 0 0 1px #526bea;
+    scroll-margin-block: 12px;
+}
+.models-history-card[data-navigation-target="true"]:focus { outline: 2px solid #3459dc; outline-offset: -3px; }
+.models-history-card .models-history-state--selected { background: #e9eeff; color: #2b49b7; border-color: #aebdf6; }
+
 .models-history-card__header {
     display: flex;
+    flex-wrap: wrap;
     gap: var(--history-card-gap);
     align-items: flex-start;
     justify-content: space-between;
@@ -142,6 +164,7 @@
 
 .models-history-card__badges {
     display: flex;
+    min-width: 0;
     flex-wrap: wrap;
     justify-content: flex-end;
     gap: calc(6px * var(--modal-resize-scale, 1));
@@ -208,6 +231,7 @@
 }
 
 .models-history-card__facts dt {
+    overflow-wrap: anywhere;
     color: #65758d;
     font-size: var(--modal-resize-small-font-size, 11px);
     font-weight: 800;
@@ -224,6 +248,7 @@
 }
 
 .models-history-card__facts small {
+    overflow-wrap: anywhere;
     color: #708097;
     font-size: var(--modal-resize-small-font-size, 11px);
     line-height: 1.25;

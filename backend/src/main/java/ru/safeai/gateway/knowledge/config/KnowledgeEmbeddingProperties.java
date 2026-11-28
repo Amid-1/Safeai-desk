@@ -147,8 +147,8 @@ public record KnowledgeEmbeddingProperties(
                 );
             }
 
-            apiKey =
-                    apiKey.strip();
+            apiKey = ru.safeai.gateway.ai.provider.ProviderPropertyValidator.requireSecret(
+                    apiKey, "OPENAI_EMBEDDING_API_KEY");
 
             model =
                     model == null
@@ -199,11 +199,10 @@ public record KnowledgeEmbeddingProperties(
             return URI.create(
                     value
             );
-        } catch (IllegalArgumentException exception) {
+        } catch (IllegalArgumentException ignored) {
             throw new IllegalStateException(
                     "Некорректное значение "
-                            + "safeai.knowledge.embedding.base-url",
-                    exception
+                        + "safeai.knowledge.embedding.base-url"
             );
         }
     }

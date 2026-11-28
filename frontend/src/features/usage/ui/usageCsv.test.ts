@@ -30,4 +30,15 @@ describe('usage CSV export', () => {
     it('does not create synthetic zero for unknown cost', () => {
         expect(serializeUsageCsv('summary', [{...SOURCE, costUsd: null}])).toContain('"";"USD"')
     })
+    it('сохраняет область, период, фильтры, страницу и полноту учёта', () => {
+        const csv = serializeUsageCsv('summary', [SOURCE], {
+            dateFrom: '2026-11-01', dateTo: '2026-11-21', organizationId: SOURCE.userId,
+            model: '=formula', userId: '', budgetStatus: '', order: 'tokens', page: 2, scope: 'displayed',
+        })
+        expect(csv).toContain('"Сохранённые записи ответов AI";"2026-11-01";"2026-11-21"')
+        expect(csv).toContain('"\u0027=formula"')
+        expect(csv).toContain('"Текущий отчёт";"3";"1"')
+        expect(csv).toContain('"Ошибок ответа"')
+        expect(csv).toContain('"Цена неприменима"')
+    })
 })

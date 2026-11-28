@@ -32,8 +32,7 @@ class AnthropicWireGovernanceContractTest {
         AiRetryProperties retry = new AiRetryProperties(retryEnabled, retryEnabled ? 2 : 1,
                 Duration.ofMillis(10), Duration.ofMillis(10), Duration.ofSeconds(1), Duration.ofSeconds(5));
         return new AnthropicProvider(props,
-                new AiResponseMetadataService(new StaticConfigurationPricingResolver(
-                        new ModelPricingService(new ModelPricingProperties(List.of()), clock))),
+                new AiResponseMetadataService(CatalogPricingFixture.unpriced(clock)),
                 new AiProviderRetryExecutor(retry, scope),
                 new AiContextWindowService(AiContextWindowProperties.defaults()), clock,
                 AiRestClientFactory.create(server.baseUrl(), Duration.ofSeconds(1), Duration.ofSeconds(2), 65_536L));
@@ -62,6 +61,34 @@ class AnthropicWireGovernanceContractTest {
             assertThat(server.requests()).hasSize(1);
         }
     }
+    @Test void rateLimitPayloadCannotOverrideNon429StatusOrInvalidRetryAfter() throws IOException {
+        String error = "{\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\"}}";
+        try (ProviderContractTestServer server = new ProviderContractTestServer()) {
+            server.enqueue(400, error);
+            server.enqueue(200, success());
+            assertThatThrownBy(() -> send(provider(server, true), governed()))
+                    .isInstanceOf(AiProviderRateLimitedException.class)
+                    .satisfies(e -> assertThat(((AiProviderException)e).isRetryable()).isFalse());
+            assertThat(server.requests()).hasSize(1);
+        }
+        try (ProviderContractTestServer server = new ProviderContractTestServer()) {
+            server.enqueue(429, Map.of("Retry-After", "invalid"), error);
+            server.enqueue(200, success());
+            assertThatThrownBy(() -> send(provider(server, true), governed()))
+                    .isInstanceOf(AiProviderRateLimitedException.class)
+                    .satisfies(e -> assertThat(((AiProviderException)e).isRetryable()).isFalse());
+            assertThat(server.requests()).hasSize(1);
+        }
+    }
+    @Test void explicit429WithValidAdviceAllowsExactlyOneNewAttempt() throws IOException {
+        try (ProviderContractTestServer server = new ProviderContractTestServer()) {
+            server.enqueue(429, Map.of("Retry-After", "0"),
+                    "{\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\"}}");
+            server.enqueue(200, success());
+            assertThat(send(provider(server, true), governed()).content()).isEqualTo("ok");
+            assertThat(server.requests()).hasSize(2);
+        }
+    }
     @Test void malformedHttp200CannotBeRetriedAsIfNoExecutionHappened() throws IOException {
         try (ProviderContractTestServer server = new ProviderContractTestServer()) {
             server.enqueue(200, "{broken");
@@ -71,14 +98,30 @@ class AnthropicWireGovernanceContractTest {
     }
     @Test void secretsAndRawProviderBodyNeverAppearInExceptionMessage() throws IOException {
         try (ProviderContractTestServer server = new ProviderContractTestServer()) {
-            server.enqueue(401, "{\"type\":\"error\",\"error\":{\"message\":\"" + SECRET + " private text\"}}");
+            server.enqueue(401, Map.of("request-id", SECRET),
+                    "{\"type\":\"error\",\"error\":{\"type\":\"" + SECRET + "\",\"message\":\"" + SECRET + " private text\"}}");
             assertThatThrownBy(() -> send(provider(server, false), governed()))
                     .isInstanceOf(AiProviderException.class)
                     .satisfies(e -> {
                         AiProviderException error = (AiProviderException) e;
                         assertThat(error.getMessage()).doesNotContain(SECRET, "private text");
                         assertThat(error.getStatusCode()).isEqualTo(401);
+                        assertThat(error.getCause()).isNull();
+                        assertThat(error.getProviderRequestId()).isNull();
+                        assertThat(error.getProviderErrorCode()).isNull();
+                        var trace = new java.io.StringWriter();
+                        try (var writer = new java.io.PrintWriter(trace)) {
+                            error.printStackTrace(writer);
+                        }
+                        assertThat(trace.toString()).doesNotContain(SECRET, "private text");
                     });
+            assertThat(server.requests()).hasSize(1);
+        }
+    }
+    @Test void successfulLookingResponseCannotPublishReflectedCredential() throws IOException {
+        try (ProviderContractTestServer server = new ProviderContractTestServer()) {
+            server.enqueue(200, success().replace("msg-test", SECRET));
+            assertAmbiguous(() -> send(provider(server, true), governed()));
             assertThat(server.requests()).hasSize(1);
         }
     }

@@ -62,13 +62,25 @@ public class ChatSessionEntity {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Setter(AccessLevel.NONE)
     @Column(name = "archived_at")
     private Instant archivedAt;
 
+    @Setter(AccessLevel.NONE)
     @Column(name = "archived_by_user_id")
     private UUID archivedByUserId;
 
+    @Setter(AccessLevel.NONE)
+    @Enumerated(EnumType.STRING)
+    @Column(name = "erasure_state", nullable = false, length = 16)
+    private ChatErasureState erasureState = ChatErasureState.AVAILABLE;
+
+    @Setter(AccessLevel.NONE)
+    @Column(name = "erased_at")
+    private Instant erasedAt;
+
     @Version
+    @Setter(AccessLevel.NONE)
     @Column(name = "version", nullable = false)
     private long version;
 
@@ -108,6 +120,7 @@ public class ChatSessionEntity {
                 ? ChatTitleSource.DEFAULT
                 : ChatTitleSource.USER;
 
+        session.erasureState = ChatErasureState.AVAILABLE;
         session.createdAt = now;
         session.updatedAt = now;
 
@@ -137,6 +150,12 @@ public class ChatSessionEntity {
      * @return true when the title was changed, false when USER/AUTO already
      *         owns the title.
      */
+    private void requireWritableMetadata() {
+        if (erasureState != ChatErasureState.AVAILABLE || archivedAt != null) {
+            throw new IllegalStateException("Архивный/стираемый чат нельзя изменять");
+        }
+    }
+
     public boolean assignAutomaticTitle(
             String automaticTitle,
             Instant now
@@ -151,6 +170,7 @@ public class ChatSessionEntity {
                 "titleSource не должен быть null"
         );
 
+        requireWritableMetadata();
         if (titleSource != ChatTitleSource.DEFAULT) {
             return false;
         }
@@ -175,6 +195,7 @@ public class ChatSessionEntity {
             String newTitle,
             Instant now
     ) {
+        requireWritableMetadata();
         String normalized =
                 ChatTitlePolicy.normalizeManualTitle(
                         newTitle
@@ -199,6 +220,9 @@ public class ChatSessionEntity {
                 "now не должен быть null"
         );
 
+        if (erasureState != ChatErasureState.AVAILABLE) {
+            throw new IllegalStateException("Чат уже стирается или стёрт");
+        }
         if (archivedAt != null) {
             throw new IllegalStateException(
                     "Чат уже архивирован"
@@ -208,6 +232,16 @@ public class ChatSessionEntity {
         touch(now);
         archivedAt = now;
         archivedByUserId = userId;
+    }
+
+    public void restore(Instant now) {
+        Objects.requireNonNull(now, "now");
+        if (erasureState != ChatErasureState.AVAILABLE || archivedAt == null) {
+            throw new IllegalStateException("Восстановление чата недоступно");
+        }
+        touch(now);
+        archivedAt = null;
+        archivedByUserId = null;
     }
 
     @PrePersist
@@ -258,6 +292,18 @@ public class ChatSessionEntity {
             );
         }
 
+        if (erasureState == null) {
+            throw new IllegalStateException("Некорректное состояние стирания чата");
+        }
+        if (erasureState == ChatErasureState.ERASED && (erasedAt == null || archivedAt == null)) {
+            throw new IllegalStateException("Стертый чат обязан оставаться архивированным");
+        }
+        if (erasureState == ChatErasureState.ERASING && archivedAt == null) {
+            throw new IllegalStateException("Стирание требует архивирования");
+        }
+        if (erasureState != ChatErasureState.ERASED && erasedAt != null) {
+            throw new IllegalStateException("Не стёртый чат не должен содержать erasedAt");
+        }
         if ((archivedAt == null)
                 != (archivedByUserId == null)) {
             throw new IllegalStateException(

@@ -41,6 +41,11 @@ validate_role_name "$SAFEAI_DB_MIGRATOR_USER"
 validate_role_name "$SAFEAI_DB_APP_USER"
 require_distinct_roles
 
+[[ "$SAFEAI_DB_MIGRATOR_USER" == safeai_migrator && "$SAFEAI_DB_APP_USER" == safeai_app ]] || {
+    echo 'V86+ requires canonical database roles' >&2
+    exit 1
+}
+
 migrator_password="$(read_secret /run/secrets/db_migrator_password)"
 app_password="$(read_secret /run/secrets/db_app_password)"
 
@@ -51,6 +56,9 @@ app_password="$(read_secret /run/secrets/db_app_password)"
 
 psql_command=(
     psql
+    -X
+    --single-transaction
+    --file=-
     --set=ON_ERROR_STOP=1
     --username "$POSTGRES_USER"
     --dbname "$POSTGRES_DB"
@@ -99,7 +107,7 @@ WHERE NOT EXISTS (
 
 SELECT format(
     'ALTER ROLE %I LOGIN PASSWORD %L '
-    'NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS',
+    'NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT',
     :'migrator_user',
     :'migrator_password'
 )
@@ -119,11 +127,33 @@ WHERE NOT EXISTS (
 
 SELECT format(
     'ALTER ROLE %I LOGIN PASSWORD %L '
-    'NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS',
+    'NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT',
     :'app_user',
     :'app_password'
 )
 \gexec
+
+-- Workers are provisioned without passwords until explicitly enabled by DBA.
+-- Existing worker credentials are preserved; operator roles are never LOGIN.
+DO $roles$
+DECLARE r text;
+BEGIN
+    FOREACH r IN ARRAY ARRAY['safeai_chat_erasure_worker','safeai_knowledge_erasure_worker',
+                              'safeai_chat_erasure_operator','safeai_knowledge_erasure_operator'] LOOP
+        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname=r) THEN
+            EXECUTE format('CREATE ROLE %I %s NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT',
+                r, CASE WHEN r LIKE '%_operator' THEN 'NOLOGIN' ELSE 'LOGIN' END);
+        END IF;
+    END LOOP;
+    IF EXISTS (SELECT FROM pg_roles p WHERE rolname IN ('safeai_app','safeai_migrator',
+        'safeai_chat_erasure_worker','safeai_knowledge_erasure_worker',
+        'safeai_chat_erasure_operator','safeai_knowledge_erasure_operator')
+        AND (rolsuper OR rolbypassrls OR rolcreatedb OR rolcreaterole OR rolreplication OR rolinherit
+          OR rolcanlogin = (rolname LIKE '%_operator')
+          OR EXISTS (SELECT FROM pg_auth_members m WHERE m.member=p.oid))) THEN
+        RAISE EXCEPTION 'Unsafe SafeAI role attributes or memberships; DBA review required';
+    END IF;
+END $roles$;
 
 -- The migration role owns the application database/schema. The runtime role
 -- receives only explicit data-plane privileges below.
@@ -359,68 +389,33 @@ SELECT format(
 )
 \gexec
 
--- Runtime DML is broad at schema level because the current application uses a
--- single DB role. RLS/tenant isolation remains an application/schema invariant.
-SELECT format(
-    'GRANT SELECT, INSERT, UPDATE, DELETE '
-    'ON ALL TABLES IN SCHEMA public TO %I',
-    :'app_user'
-)
+-- The service MUST be offline while the schema/ACL transition runs.
+-- Remove historical grants (including column grants) BEFORE V86–V90 checks.
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM safeai_app, PUBLIC;
+REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM safeai_app, PUBLIC;
+SELECT format('REVOKE ALL (%I) ON TABLE public.%I FROM safeai_app, PUBLIC', a.attname,c.relname)
+FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid
+JOIN pg_namespace n ON n.oid=c.relnamespace
+WHERE n.nspname='public' AND c.relkind IN ('r','p','v','m','f')
+AND a.attnum>0 AND NOT a.attisdropped AND a.attacl IS NOT NULL
 \gexec
+ALTER DEFAULT PRIVILEGES FOR ROLE safeai_migrator IN SCHEMA public REVOKE ALL ON TABLES FROM safeai_app, PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE safeai_migrator IN SCHEMA public REVOKE ALL ON SEQUENCES FROM safeai_app, PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE safeai_migrator IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM safeai_app, PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE safeai_migrator REVOKE ALL ON TABLES FROM safeai_app, PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE safeai_migrator REVOKE ALL ON SEQUENCES FROM safeai_app, PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE safeai_migrator REVOKE ALL ON FUNCTIONS FROM safeai_app, PUBLIC;
+REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC, safeai_app;
 
-SELECT format(
-    'GRANT USAGE, SELECT, UPDATE '
-    'ON ALL SEQUENCES IN SCHEMA public TO %I',
-    :'app_user'
-)
+-- Extension-owned vector routines are managed by bootstrap, not Flyway.
+SELECT format('GRANT EXECUTE ON FUNCTION %s TO safeai_migrator,safeai_app,safeai_chat_erasure_worker,safeai_knowledge_erasure_worker',p.oid::regprocedure)
+FROM pg_proc p JOIN pg_depend d ON d.classid='pg_proc'::regclass AND d.objid=p.oid AND d.deptype='e'
+JOIN pg_extension e ON e.oid=d.refobjid AND e.extname='vector'
+WHERE NOT p.prosecdef
 \gexec
-
--- PostgreSQL grants EXECUTE on functions to PUBLIC by default. Remove that
--- implicit surface, then grant only the application role explicitly.
-REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC;
-
-SELECT format(
-    'GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO %I',
-    :'migrator_user'
-)
+SELECT format('GRANT CONNECT ON DATABASE %I TO safeai_chat_erasure_worker,safeai_knowledge_erasure_worker,safeai_chat_erasure_operator,safeai_knowledge_erasure_operator',current_database())
 \gexec
-
-SELECT format(
-    'GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO %I',
-    :'app_user'
-)
-\gexec
-
-SELECT format(
-    'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public '
-    'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO %I',
-    :'migrator_user',
-    :'app_user'
-)
-\gexec
-
-SELECT format(
-    'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public '
-    'GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO %I',
-    :'migrator_user',
-    :'app_user'
-)
-\gexec
-
-SELECT format(
-    'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public '
-    'REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC',
-    :'migrator_user'
-)
-\gexec
-
-SELECT format(
-    'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public '
-    'GRANT EXECUTE ON FUNCTIONS TO %I',
-    :'migrator_user',
-    :'app_user'
-)
-\gexec
+GRANT USAGE ON SCHEMA public TO safeai_chat_erasure_worker,safeai_knowledge_erasure_worker,safeai_chat_erasure_operator,safeai_knowledge_erasure_operator;
 
 SELECT format(
     'ALTER ROLE %I SET search_path = public',

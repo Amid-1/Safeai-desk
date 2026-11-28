@@ -11,6 +11,7 @@ import type {
     ModelPolicyPreview,
     CreateModelCatalogVersionRequest,
     CreateOrganizationModelPolicyVersionRequest,
+    RubBudgetQuote,
 } from './modelTypes'
 import {
     parseRuntimeModelStatus,
@@ -21,9 +22,16 @@ import {
     parseModelPolicyPreview,
 } from './modelParsers'
 import { requireArray, requireUuid } from './modelWire'
+import {parseRubBudgetQuote} from './modelBudgetFx'
 
 type ModelApiRequestOptions = {
     signal?: AbortSignal
+}
+
+export async function getRubBudgetQuote(signal?: AbortSignal): Promise<RubBudgetQuote> {
+    return parseRubBudgetQuote(await apiRequest<unknown>('/api/admin/models/policies/rub-quote', {
+        method: 'GET', signal,
+    }))
 }
 
 export async function getRuntimeModelStatus(

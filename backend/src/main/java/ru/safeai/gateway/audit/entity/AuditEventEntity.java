@@ -34,6 +34,9 @@ public class AuditEventEntity {
     )
     private UUID id;
 
+    @Column(name = "correlation_id", updatable = false)
+    private UUID correlationId;
+
     @Column(
             name = "actor_user_id",
             updatable = false

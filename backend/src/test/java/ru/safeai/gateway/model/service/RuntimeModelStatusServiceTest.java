@@ -2,7 +2,8 @@ package ru.safeai.gateway.model.service;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
-import ru.safeai.gateway.ai.pricing.ModelPricingProperties;
+import ru.safeai.gateway.ai.testsupport.CatalogPricingFixture;
+import ru.safeai.gateway.model.repository.ModelCatalogRepository;
 import ru.safeai.gateway.ai.provider.AiProviderProperties;
 import ru.safeai.gateway.ai.provider.anthropic.AnthropicProperties;
 import ru.safeai.gateway.ai.provider.openai.OpenAiProperties;
@@ -23,6 +24,46 @@ import static org.mockito.Mockito.when;
 class RuntimeModelStatusServiceTest {
 
     @Test
+    void openAiAssuranceIsBoundToCredentialAndStoreMode() {
+        Instant now = Instant.parse("2026-11-17T12:00:00Z");
+        Clock clock = Clock.fixed(now, ZoneOffset.UTC);
+        OpenAiProperties openAi = mock(OpenAiProperties.class);
+        when(openAi.baseUrl()).thenReturn("https://api.openai.com/v1");
+        when(openAi.apiKey()).thenReturn("test-key");
+        when(openAi.model()).thenReturn("gpt-test");
+        when(openAi.maxInputTokens()).thenReturn(32000);
+        when(openAi.maxOutputTokens()).thenReturn(2048);
+        var configuration = new ru.safeai.gateway.ai.provider.ProviderDataAssuranceProperties(
+                new ru.safeai.gateway.ai.provider.ProviderDataEvidence("CONTRACT-42", now,
+                        now.plusSeconds(60), ru.safeai.gateway.ai.provider.ProviderDataEvidence.fingerprint(
+                        "chat", "openai", "https://api.openai.com/v1", "gpt-test", "test-key", "false"),
+                        true, true), null, null);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<OpenAiProperties> openAiProvider = mock(ObjectProvider.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<AnthropicProperties> anthropicProvider = mock(ObjectProvider.class);
+        when(openAiProvider.getIfAvailable()).thenReturn(openAi);
+        var service = new RuntimeModelStatusService(new AiProviderProperties("openai"),
+                mock(ModelCatalogRepository.class), openAiProvider, anthropicProvider, clock, configuration);
+        assertThat(service.current().dataAssurance().zeroDataRetention()).isTrue();
+        assertThat(service.current().dataAssurance().noTraining()).isTrue();
+        when(openAi.apiKey()).thenReturn("rotated-key");
+        assertThat(service.current().dataAssurance().noTraining()).isFalse();
+        when(openAi.apiKey()).thenReturn("test-key");
+        when(openAi.effectiveStore()).thenReturn(true);
+        assertThat(service.current().dataAssurance().zeroDataRetention()).isFalse();
+        var storeConfiguration = new ru.safeai.gateway.ai.provider.ProviderDataAssuranceProperties(
+                new ru.safeai.gateway.ai.provider.ProviderDataEvidence("CONTRACT-42", now,
+                        now.plusSeconds(60), ru.safeai.gateway.ai.provider.ProviderDataEvidence.fingerprint(
+                        "chat", "openai", "https://api.openai.com/v1", "gpt-test", "test-key", "true"),
+                        true, true), null, null);
+        var storeService = new RuntimeModelStatusService(new AiProviderProperties("openai"),
+                mock(ModelCatalogRepository.class), openAiProvider, anthropicProvider, clock, storeConfiguration);
+        assertThat(storeService.current().dataAssurance().noTraining()).isTrue();
+        assertThat(storeService.current().dataAssurance().zeroDataRetention()).isFalse();
+    }
+
+    @Test
     void mockRuntimeIsTruthfulAndDoesNotPretendToHaveProviderCapabilities() {
         RuntimeModelStatusService service = service(
                 "mock",
@@ -31,7 +72,7 @@ class RuntimeModelStatusServiceTest {
                 null
         );
 
-        var status = service.current();
+        var status = service.currentWithCatalogPricing();
 
         assertThat(status.provider())
                 .isEqualTo("mock");
@@ -69,7 +110,7 @@ class RuntimeModelStatusServiceTest {
                 null
         );
 
-        var status = service.current();
+        var status = service.currentWithCatalogPricing();
 
         assertThat(status.pricingStatus())
                 .isEqualTo("FREE");
@@ -95,7 +136,7 @@ class RuntimeModelStatusServiceTest {
                 null
         );
 
-        var status = service.current();
+        var status = service.currentWithCatalogPricing();
 
         assertThat(status.pricingStatus())
                 .isEqualTo("CONFIGURED");
@@ -103,6 +144,38 @@ class RuntimeModelStatusServiceTest {
                 .isEqualByComparingTo("1");
         assertThat(status.outputUsdPer1mTokens())
                 .isEqualByComparingTo("4");
+    }
+
+    @Test
+    void ambiguousRuntimeMappingDoesNotExposeAnotherLogicalModelsTariff() {
+        var service = service("mock", List.of(
+                price("mock-safeai", "1", "4", "v1"),
+                price("mock-safeai", "0", "0", "v2")), null, null);
+        var status = service.currentWithCatalogPricing();
+        assertThat(status.pricingStatus()).isEqualTo("UNPRICED");
+        assertThat(status.inputUsdPer1mTokens()).isNull();
+        assertThat(status.outputUsdPer1mTokens()).isNull();
+        assertThat(status.pricingVersion()).isNull();
+    }
+
+    @Test
+    void runtimeNeverBorrowsAnAliasOrDifferentPhysicalModelsPrice() {
+        var service = service("mock", List.of(
+                price("different-model", "0", "0", "v-free")), null, null);
+        assertThat(service.currentWithCatalogPricing().pricingStatus()).isEqualTo("UNPRICED");
+    }
+
+    @Test
+    void dataPlaneRuntimeIdentityDoesNotLoadCatalogPricingTwice() {
+        ModelCatalogRepository catalog = mock(ModelCatalogRepository.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<OpenAiProperties> openAi = mock(ObjectProvider.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<AnthropicProperties> anthropic = mock(ObjectProvider.class);
+        var runtime = new RuntimeModelStatusService(
+                new AiProviderProperties("mock"), catalog, openAi, anthropic);
+        assertThat(runtime.current().model()).isEqualTo("mock-safeai");
+        org.mockito.Mockito.verifyNoInteractions(catalog);
     }
 
     @Test
@@ -306,7 +379,7 @@ class RuntimeModelStatusServiceTest {
 
     private static RuntimeModelStatusService service(
             String provider,
-            List<ModelPricingProperties.ModelPrice> prices,
+            List<CatalogPricingFixture.Price> prices,
             OpenAiProperties openAi,
             AnthropicProperties anthropic
     ) {
@@ -315,7 +388,7 @@ class RuntimeModelStatusServiceTest {
 
     private static RuntimeModelStatusService service(
             String provider,
-            List<ModelPricingProperties.ModelPrice> prices,
+            List<CatalogPricingFixture.Price> prices,
             OpenAiProperties openAi,
             AnthropicProperties anthropic,
             Clock clock
@@ -328,22 +401,29 @@ class RuntimeModelStatusServiceTest {
         when(openAiProvider.getIfAvailable()).thenReturn(openAi);
         when(anthropicProvider.getIfAvailable()).thenReturn(anthropic);
 
+        ModelCatalogRepository catalog = mock(ModelCatalogRepository.class);
+        for (CatalogPricingFixture.Price price : prices) {
+            when(catalog.findEffectiveByRuntime(org.mockito.ArgumentMatchers.eq(provider),
+                    org.mockito.ArgumentMatchers.eq(price.model()), org.mockito.ArgumentMatchers.any(Instant.class)))
+                    .thenReturn(prices.stream().filter(p -> p.model().equals(price.model()))
+                            .map(p -> CatalogPricingFixture.entry(provider, p, clock)).toList());
+        }
         return new RuntimeModelStatusService(
                 new AiProviderProperties(provider),
-                new ModelPricingProperties(prices),
+                catalog,
                 openAiProvider,
                 anthropicProvider,
                 clock
         );
     }
 
-    private static ModelPricingProperties.ModelPrice price(
+    private static CatalogPricingFixture.Price price(
             String model,
             String input,
             String output,
             String version
     ) {
-        return new ModelPricingProperties.ModelPrice(
+        return new CatalogPricingFixture.Price(
                 model,
                 new BigDecimal(input),
                 new BigDecimal(output),

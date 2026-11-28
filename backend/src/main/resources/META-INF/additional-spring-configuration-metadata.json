@@ -1,51 +1,59 @@
 {
   "properties": [
     {
-      "name": "safeai.knowledge.storage.type",
-      "description": "Тип объектного хранилища базы знаний.",
-      "defaultValue": "local"
+      "name": "safeai.chat.erasure.accept-enabled",
+      "type": "java.lang.Boolean",
+      "defaultValue": false,
+      "description": "Fail-closed admission gate for chat content erasure."
     },
     {
-      "name": "safeai.knowledge.storage.local-root",
-      "description": "Корневая директория локального объектного хранилища базы знаний.",
-      "defaultValue": "./var/knowledge-objects"
+      "name": "safeai.chat.erasure.executor-enabled",
+      "type": "java.lang.Boolean",
+      "defaultValue": false,
+      "description": "Separate physical chat redaction worker gate."
     },
     {
-      "name": "safeai.knowledge.storage.max-upload-bytes",
-      "description": "Максимальный размер загружаемого объекта базы знаний в байтах.",
-      "defaultValue": 26214400
+      "name": "safeai.chat.erasure.retention-approved",
+      "type": "java.lang.Boolean",
+      "defaultValue": false,
+      "description": "Requires approved content retention policy."
     },
     {
-      "name": "safeai.knowledge.storage.endpoint",
-      "description": "Endpoint S3-совместимого объектного хранилища. Обязателен при type=s3."
+      "name": "safeai.chat.erasure.poll-delay",
+      "type": "java.time.Duration",
+      "description": "Polling delay of isolated chat erasure worker."
     },
     {
-      "name": "safeai.knowledge.storage.access-key",
-      "description": "Access key для S3-совместимого объектного хранилища. В production должен поступать из секретного окружения."
+      "name": "safeai.chat.erasure.worker-jdbc-url",
+      "type": "java.lang.String",
+      "description": "Dedicated PostgreSQL connection for isolated erasure worker."
     },
     {
-      "name": "safeai.knowledge.storage.secret-key",
-      "description": "Secret key для S3-совместимого объектного хранилища. В production должен поступать из секретного окружения."
+      "name": "safeai.chat.erasure.worker-username",
+      "type": "java.lang.String",
+      "description": "Dedicated PostgreSQL worker login, never the app login."
     },
     {
-      "name": "safeai.knowledge.storage.bucket",
-      "description": "Имя bucket для объектов базы знаний.",
-      "defaultValue": "safeai-knowledge"
-    }
-  ],
-  "hints": [
+      "name": "safeai.chat.erasure.worker-password",
+      "type": "java.lang.String",
+      "description": "Dedicated PostgreSQL worker password supplied through secrets."
+    },
     {
-      "name": "safeai.knowledge.storage.type",
-      "values": [
-        {
-          "value": "local",
-          "description": "Локальная файловая система."
-        },
-        {
-          "value": "s3",
-          "description": "S3-совместимое объектное хранилище."
-        }
-      ]
+      "name": "safeai.erasure.requests.enabled",
+      "type": "java.lang.Boolean",
+      "defaultValue": false,
+      "description": "R1a case intake only (preview, draft, submit and withdraw); no physical erasure executor. Disabled by default. Do not enable in production before R1a security and migration gates."
+    },
+    {
+      "name": "safeai.erasure.approvals.enabled",
+      "type": "java.lang.Boolean",
+      "defaultValue": false,
+      "description": "R1b independent case review only. No destructive execution. Disabled by default."
+    },
+    {
+      "name": "safeai.erasure.review.actor-proof-key",
+      "type": "java.lang.String",
+      "description": "Hex-encoded 32-byte R1b DB actor HMAC proof key, provisioned independently into erasure_review_actor_keys_v105. Secret; never commit. Missing or mismatched keys fail closed."
     }
   ]
 }

@@ -300,6 +300,24 @@ class AiProviderSupportTest {
     }
 
     @Test
+    void duplicateRetryAfterCannotAuthorizeRetryButMissingHeaderCan() {
+        Clock clock = Clock.systemUTC();
+        HttpHeaders headers = new HttpHeaders();
+        headers.add(HttpHeaders.RETRY_AFTER, "0");
+        headers.add(HttpHeaders.RETRY_AFTER, "10");
+        var duplicate = HttpClientErrorException.create(HttpStatus.TOO_MANY_REQUESTS, "",
+                headers, new byte[0], StandardCharsets.UTF_8);
+        Duration parsed = AiProviderSupport.extractRetryAfter(duplicate, clock);
+        assertThat(parsed).isNull();
+        assertThat(AiProviderSupport.retryAfterPermitsRetry(duplicate, parsed)).isFalse();
+
+        var missing = HttpClientErrorException.create(HttpStatus.TOO_MANY_REQUESTS, "",
+                new HttpHeaders(), new byte[0], StandardCharsets.UTF_8);
+        assertThat(AiProviderSupport.extractRetryAfter(missing, clock)).isNull();
+        assertThat(AiProviderSupport.retryAfterPermitsRetry(missing, null)).isTrue();
+    }
+
+    @Test
     void networkFailureKindsAreDistinguished() {
         assertThat(AiProviderSupport.isConnectFailure(
                 new ResourceAccessException(

@@ -135,6 +135,7 @@ export function CatalogIdentitySection({draft, setDraft, base}: CatalogSectionPr
                                         }))
                                     }}
                                 />
+                                <small className="models-form__hint">Пустое поле — сразу после сохранения. Дата и время вводятся в часовом поясе браузера.</small>
                             </label>
                         </div>
                     </section>

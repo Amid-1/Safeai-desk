@@ -7,6 +7,7 @@ import type {
     UsageModelSummary,
     UsageSummary,
     UsageUserSummary,
+    UsageOrganizationSummary,
 } from '../api/usageApi'
 import type { UsageReportTab } from '../lib/adminUsagePageSupport'
 import {
@@ -24,6 +25,7 @@ export type UsageRowsType =
     | PagedRows
     | UsageModelSummary[]
     | UsageDailySummary[]
+    | UsageOrganizationSummary[]
 
 export function UsageReportFooter({
     tab,
@@ -45,21 +47,21 @@ export function UsageReportFooter({
 }) {
     const paged =
         tab === 'summary'
-        || tab === 'users'
+        || tab === 'users' || tab === 'organizations'
 
     const summaryLabel =
         tab === 'models'
             ? 'Моделей'
             : tab === 'daily'
                 ? 'Дней'
-                : 'Записей'
+                : tab === 'organizations' ? 'Организаций' : 'Записей'
 
     const allShownTitle =
         tab === 'models'
             ? 'Все модели показаны'
             : tab === 'daily'
-                ? 'Все дни показаны'
-                : 'Все записи показаны'
+                ? 'Все дни с записями'
+                : tab === 'organizations' ? 'Все организации показаны' : 'Все записи показаны'
 
     if (
         !paged
@@ -153,9 +155,25 @@ export function UsageReportFooter({
 export function UsageRows({
     tab,
     rows,
+    onInspectModel,
+    onInspectUser,
+    appliedModel,
+    appliedUserId,
+    onInspectDay,
+    relatedLinks = false,
+    organizationId = '',
+    drilldownDisabled = false,
 }: {
     tab: UsageReportTab
     rows: UsageRowsType
+    onInspectModel?: (model: string) => void
+    onInspectUser?: (userId: string, email: string) => void
+    appliedModel?: string
+    appliedUserId?: string
+    onInspectDay?: (date: string) => void
+    relatedLinks?: boolean
+    organizationId?: string
+    drilldownDisabled?: boolean
 }) {
     if (
         rows.length === 0
@@ -175,32 +193,32 @@ export function UsageRows({
             <table className="admin-table usage-table">
                 <thead>
                     <tr>
-                        <th>
+                        <th scope="col">
                             Пользователь
                         </th>
 
-                        <th>
+                        <th scope="col">
                             Модель
                         </th>
 
-                        <th>
-                            Вход
+                        <th scope="col">
+                            Входные токены
                         </th>
 
-                        <th>
-                            Выход
+                        <th scope="col">
+                            Выходные токены
                         </th>
 
-                        <th>
-                            Всего
+                        <th scope="col">
+                            Всего подтверждено
                         </th>
 
-                        <th>
+                        <th scope="col">
                             Известная стоимость
                         </th>
 
-                        <th>
-                            Качество данных
+                        <th scope="col">
+                            Полнота учёта
                         </th>
                     </tr>
                 </thead>
@@ -218,6 +236,10 @@ export function UsageRows({
                                     }
                                     showUser
                                     showModel
+                                    relatedLinks={relatedLinks} organizationId={organizationId}
+                                    onInspectModel={row.model === appliedModel ? undefined : onInspectModel}
+                                    onInspectUser={row.userId === appliedUserId ? undefined : onInspectUser}
+                                    drilldownDisabled={drilldownDisabled}
                                 />
                             ),
                         )
@@ -234,28 +256,28 @@ export function UsageRows({
             <table className="admin-table usage-table">
                 <thead>
                     <tr>
-                        <th>
+                        <th scope="col">
                             Пользователь
                         </th>
 
-                        <th>
-                            Вход
+                        <th scope="col">
+                            Входные токены
                         </th>
 
-                        <th>
-                            Выход
+                        <th scope="col">
+                            Выходные токены
                         </th>
 
-                        <th>
-                            Всего
+                        <th scope="col">
+                            Всего подтверждено
                         </th>
 
-                        <th>
+                        <th scope="col">
                             Известная стоимость
                         </th>
 
-                        <th>
-                            Качество данных
+                        <th scope="col">
+                            Полнота учёта
                         </th>
                     </tr>
                 </thead>
@@ -274,6 +296,9 @@ export function UsageRows({
                                         row
                                     }
                                     showUser
+                                    relatedLinks={relatedLinks} organizationId={organizationId}
+                                    onInspectUser={onInspectUser}
+                                    drilldownDisabled={drilldownDisabled}
                                 />
                             ),
                         )
@@ -290,28 +315,28 @@ export function UsageRows({
             <table className="admin-table usage-table">
                 <thead>
                     <tr>
-                        <th>
+                        <th scope="col">
                             Модель
                         </th>
 
-                        <th>
-                            Вход
+                        <th scope="col">
+                            Входные токены
                         </th>
 
-                        <th>
-                            Выход
+                        <th scope="col">
+                            Выходные токены
                         </th>
 
-                        <th>
-                            Всего
+                        <th scope="col">
+                            Всего подтверждено
                         </th>
 
-                        <th>
+                        <th scope="col">
                             Известная стоимость
                         </th>
 
-                        <th>
-                            Качество данных
+                        <th scope="col">
+                            Полнота учёта
                         </th>
                     </tr>
                 </thead>
@@ -330,6 +355,9 @@ export function UsageRows({
                                         row
                                     }
                                     showModel
+                                    relatedLinks={relatedLinks} organizationId={organizationId}
+                                    onInspectModel={onInspectModel}
+                                    drilldownDisabled={drilldownDisabled}
                                 />
                             ),
                         )
@@ -343,28 +371,28 @@ export function UsageRows({
         <table className="admin-table usage-table">
             <thead>
                 <tr>
-                    <th>
+                    <th scope="col">
                         Дата
                     </th>
 
-                    <th>
-                        Вход
+                    <th scope="col">
+                        Входные токены
                     </th>
 
-                    <th>
-                        Выход
+                    <th scope="col">
+                        Выходные токены
                     </th>
 
-                    <th>
-                        Всего
+                    <th scope="col">
+                        Всего подтверждено
                     </th>
 
-                    <th>
+                    <th scope="col">
                         Известная стоимость
                     </th>
 
-                    <th>
-                        Качество данных
+                    <th scope="col">
+                        Полнота учёта
                     </th>
                 </tr>
             </thead>
@@ -381,11 +409,14 @@ export function UsageRows({
                                 }
                             >
                                 <td>
-                                    {
-                                        formatIsoDate(
-                                            row.usageDate,
-                                        )
-                                    }
+                                    {onInspectDay ? (
+                                        <button type="button" className="usage-drilldown"
+                                            disabled={drilldownDisabled}
+                                            title="Открыть детализацию за этот день UTC"
+                                            onClick={() => onInspectDay(row.usageDate)}>
+                                            {formatIsoDate(row.usageDate)} →
+                                        </button>
+                                    ) : formatIsoDate(row.usageDate)}
                                 </td>
 
                                 <UsageAmountCells
@@ -406,35 +437,57 @@ function UsageSummaryRow({
     row,
     showUser = false,
     showModel = false,
+    onInspectModel,
+    onInspectUser,
+    relatedLinks = false,
+    organizationId = '',
+    drilldownDisabled = false,
 }: {
     row:
         UsageAmounts
         & {
             userEmail?: string
+            userId?: string
             model?: string
         }
     showUser?: boolean
     showModel?: boolean
+    onInspectModel?: (model: string) => void
+    onInspectUser?: (userId: string, email: string) => void
+    relatedLinks?: boolean
+    organizationId?: string
+    drilldownDisabled?: boolean
 }) {
     return (
         <tr>
             {showUser
                 && (
                     <td>
-                        {
-                            row.userEmail
-                            ?? '—'
-                        }
+                        {onInspectUser && row.userId ? <button type="button" className="usage-drilldown"
+                            disabled={drilldownDisabled} title="Открыть детализацию по пользователю"
+                            onClick={() => onInspectUser(row.userId!, row.userEmail ?? row.userId!)}>
+                            {row.userEmail ?? row.userId} →
+                        </button> : <span className="usage-user-label">
+                            {row.userEmail ?? '—'}
+                        </span>}
+                        {relatedLinks && row.userId && <div><a className="admin-related-link usage-related-action"
+                            href={`/admin/users?userId=${encodeURIComponent(row.userId)}`}>Карточка пользователя</a></div>}
                     </td>
                 )}
 
             {showModel
                 && (
                     <td>
-                        {
-                            row.model
-                            ?? '—'
-                        }
+                        {onInspectModel && row.model ? (
+                            <button type="button" className="usage-drilldown"
+                                disabled={drilldownDisabled}
+                                title="Открыть детализацию по этой модели"
+                                onClick={() => onInspectModel(row.model!)}>
+                                {row.model} →
+                            </button>
+                        ) : row.model ?? '—'}
+                        {relatedLinks && row.model && <div><a className="admin-related-link usage-related-action"
+                            href={`/admin/models?section=catalog&usageModel=${encodeURIComponent(row.model)}${organizationId ? '&organizationId=' + encodeURIComponent(organizationId) : ''}`}>Карточка модели</a></div>}
                     </td>
                 )}
 
@@ -480,7 +533,7 @@ function UsageAmountCells({
                 {row.partialTotalTokens !== '0'
                     && (
                         <div className="muted">
-                            + известно из partial:
+                            Отдельно из неполных ответов:
                             {' '}
                             {
                                 formatCount(
@@ -501,7 +554,7 @@ function UsageAmountCells({
                 {row.coverage.pricingComplete === false
                     && (
                         <div className="muted">
-                            Это только известная часть стоимости.
+                            Не все цены известны. Ноль не означает бесплатно.
                         </div>
                     )}
             </td>
@@ -533,7 +586,7 @@ function CoverageView({
         coverage.pricingComplete === true
             ? 'Стоимость рассчитана'
             : coverage.pricingComplete === false
-                ? 'Стоимость рассчитана частично'
+                ? 'Не все цены известны'
                 : 'Полнота стоимости неизвестна'
 
     const details = [

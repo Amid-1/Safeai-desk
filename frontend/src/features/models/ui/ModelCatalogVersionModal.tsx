@@ -10,18 +10,20 @@ import type {
 } from '../../../entities/model/api/modelApi'
 import Modal from '../../../shared/ui/Modal'
 import type { ModalResizeOptions } from '../../../shared/ui/Modal'
-import { getApiErrorMessage } from '../../../shared/api/http'
+import { ApiError, getApiErrorMessage } from '../../../shared/api/http'
 import { ErrorState } from '../../../shared/ui/StateBlock'
 import {
     buildCatalogRequest,
+    CatalogDraftValidationError,
     createCatalogDraft,
 } from './modelControlPlaneSupport'
-import type { CatalogDraft } from './modelControlPlaneSupport'
+import type { CatalogDraft, CatalogSection } from './modelControlPlaneSupport'
 import { CatalogIdentitySection } from './catalogVersion/CatalogIdentitySection'
 import { CatalogLimitsSection } from './catalogVersion/CatalogLimitsSection'
 import { CatalogDataSection } from './catalogVersion/CatalogDataSection'
 import { CatalogCapabilitiesSection } from './catalogVersion/CatalogCapabilitiesSection'
 import { CatalogPricingSection } from './catalogVersion/CatalogPricingSection'
+import { CatalogFormTabs } from './catalogVersion/CatalogFormTabs'
 import './ModelControlPlaneModalShell.css'
 import './ModelCatalogVersionModal.css'
 
@@ -38,15 +40,13 @@ type ModelCatalogVersionModalProps = {
 
 const CATALOG_MODAL_RESIZE:
     ModalResizeOptions = {
-        initialWidth: 1480,
-        initialHeight: 920,
+        initialWidth: 1120,
+        initialHeight: 770,
 
-        minWidth: 640,
-        minHeight: 480,
+        minWidth: 360,
+        minHeight: 400,
 
-        scaleContent: true,
-        minScale: 0.72,
-        maxScale: 1.08,
+        scaleContent: false,
         maximizable: true,
     }
 
@@ -79,6 +79,8 @@ export function ModelCatalogVersionModal({
 
     const [formError, setFormError] =
         useState('')
+    const [section, setSection] = useState<CatalogSection>('identity')
+    const [advancedPricingOpen, setAdvancedPricingOpen] = useState(false)
 
     const isDirty =
         JSON.stringify(draft) !== initialDraftFingerprint
@@ -126,13 +128,18 @@ export function ModelCatalogVersionModal({
 
             await onSubmit(request)
         } catch (failure) {
+            if (failure instanceof CatalogDraftValidationError) {
+                setSection(failure.section)
+                if (failure.section === 'pricing' && failure.message.includes('JSON')) {
+                    setAdvancedPricingOpen(true)
+                }
+            }
             setFormError(
-                failure instanceof Error
-                    ? getApiErrorMessage(
-                        failure,
-                        failure.message,
-                    )
-                    : 'Не удалось сохранить модель.',
+                failure instanceof CatalogDraftValidationError
+                    ? failure.message
+                    : failure instanceof ApiError && failure.status === 409
+                        ? 'Данные были изменены. Обновите страницу.'
+                        : getApiErrorMessage(failure, 'Не удалось сохранить модель.'),
             )
         } finally {
             submittingRef.current = false
@@ -144,6 +151,9 @@ export function ModelCatalogVersionModal({
         <div
             className="models-catalog-modal__footer"
         >
+            <span className="models-catalog-modal__draft" role="status">
+                {isDirty ? 'Есть несохранённые изменения' : 'Изменений нет'}
+            </span>
             <button
                 type="button"
                 disabled={busy}
@@ -191,10 +201,12 @@ export function ModelCatalogVersionModal({
             size="lg"
             className="models-catalog-modal"
             resize={CATALOG_MODAL_RESIZE}
+            dragEnabled
         >
             <form
                 id={formId}
-                className="models-form models-catalog-form"
+                className="models-form models-catalog-form models-catalog-form--tabs"
+                noValidate
                 onSubmit={(event) => {
                     event.preventDefault()
                     void handleSubmit()
@@ -230,19 +242,15 @@ export function ModelCatalogVersionModal({
                     />
                 )}
 
-                <div
-                    className="models-catalog-form__layout"
-                >
-                    <CatalogIdentitySection draft={draft} setDraft={setDraft} base={base} />
-
-                    <CatalogLimitsSection draft={draft} setDraft={setDraft} />
-
-                    <CatalogDataSection draft={draft} setDraft={setDraft} />
-
-                    <CatalogCapabilitiesSection draft={draft} setDraft={setDraft} />
-
-                    <CatalogPricingSection draft={draft} setDraft={setDraft} />
-                </div>
+                <CatalogFormTabs formId={formId} selected={section} onSelect={setSection}
+                    panels={{
+                        identity: <CatalogIdentitySection draft={draft} setDraft={setDraft} base={base} />,
+                        limits: <CatalogLimitsSection draft={draft} setDraft={setDraft} />,
+                        pricing: <CatalogPricingSection draft={draft} setDraft={setDraft} active={section === 'pricing'}
+                            advancedOpen={advancedPricingOpen} setAdvancedOpen={setAdvancedPricingOpen} />,
+                        data: <CatalogDataSection draft={draft} setDraft={setDraft} />,
+                        capabilities: <CatalogCapabilitiesSection draft={draft} setDraft={setDraft} />,
+                    }} />
             </form>
         </Modal>
     )

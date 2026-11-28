@@ -37,6 +37,12 @@ function walk(dir) {
     }
 }
 walk(src)
+// Общая геометрия диалогов не должна зависеть от загрузки lazy route Users.
+const usersCss = fs.readFileSync(path.join(src, 'features/admin-users/styles/AdminUsersPage.css'), 'utf8')
+const genericModal = /^\s*(?:body\.modal-open|\.modal-(?:card|backdrop|header|body|footer|actions|close-button))\s*\{/m
+if (genericModal.test(usersCss)) {
+    errors.push('Общие стили Modal должны находиться в shared, а не в AdminUsersPage.css')
+}
 for (const route of routes) {
     if (!fs.existsSync(path.join(src, 'pages', route))) errors.push('Не найдена страница: ' + route)
 }

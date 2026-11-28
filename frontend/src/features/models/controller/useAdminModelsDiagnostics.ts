@@ -2,18 +2,17 @@
 // ============================================================
 // frontend/src/features/models/controller/useAdminModelsDiagnostics.ts
 // ============================================================
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import { getModelRouteDecision, probeRuntimeModel } from '../../../entities/model/api/modelApi'
-import type { ModelRouteDecision, RuntimeModelProbe } from '../../../entities/model/api/modelApi'
+import type { ModelRouteDecision, RuntimeModelProbe, RuntimeModelStatus } from '../../../entities/model/api/modelApi'
 import { getApiErrorMessage } from '../../../shared/api/http'
-
-const UUID_PATTERN =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+import { MODEL_DECISION_ID_PATTERN } from '../../../shared/lib/modelRouteDenial'
 
 export function useAdminModelsDiagnostics(
     isSuperAdmin: boolean,
     setError: Dispatch<SetStateAction<string>>,
+    runtime: RuntimeModelStatus | null,
 ) {
     const [routeDecisionId, setRouteDecisionId] =
         useState('')
@@ -29,41 +28,62 @@ export function useAdminModelsDiagnostics(
     const [routeError, setRouteError] =
         useState('')
 
-    const [runtimeProbe, setRuntimeProbe] =
-        useState<RuntimeModelProbe | null>(
+    const [probeResult, setRuntimeProbe] =
+        useState<{context: string; result: RuntimeModelProbe} | null>(
             null,
         )
+    const [probeAttemptContext, setProbeAttemptContext] = useState<string | null>(null)
 
     const [
         runtimeProbePending,
         setRuntimeProbePending,
     ] = useState(false)
 
+    const probeContext = JSON.stringify(runtime)
+    const probeControllerRef = useRef<AbortController | null>(null)
+    useLayoutEffect(() => {
+        setRuntimeProbe(null)
+        setProbeAttemptContext(null)
+        setRuntimeProbePending(false)
+        return () => {
+            probeControllerRef.current?.abort()
+            probeControllerRef.current = null
+        }
+    }, [probeContext, isSuperAdmin])
+    const runtimeProbe = isSuperAdmin && probeResult?.context === probeContext ? probeResult.result : null
     const handleRuntimeProbe =
         useCallback(async () => {
-            if (!isSuperAdmin) {
+            if (!isSuperAdmin || !runtime || !runtime.enabled || probeControllerRef.current) {
                 return
             }
 
+            const controller = new AbortController()
+            probeControllerRef.current = controller
+            setProbeAttemptContext(probeContext)
+            setRuntimeProbe(null)
             setRuntimeProbePending(true)
             setError('')
 
             try {
                 const result =
-                    await probeRuntimeModel()
+                    await probeRuntimeModel({signal: controller.signal})
 
-                setRuntimeProbe(result)
-            } catch (failure) {
-                setError(
-                    getApiErrorMessage(
-                        failure,
-                        'Не удалось проверить доступность runtime-модели.',
-                    ),
-                )
+                if (controller.signal.aborted) return
+                if (result.provider !== runtime.provider || result.model !== runtime.model) {
+                    setError('Подключение изменилось. Обновите страницу и выполните проверку заново.')
+                    return
+                }
+                setRuntimeProbe({context: probeContext, result})
+            } catch {
+                if (controller.signal.aborted) return
+                setError('Не удалось проверить доступность подключённой модели.')
             } finally {
-                setRuntimeProbePending(false)
+                if (probeControllerRef.current === controller) {
+                    probeControllerRef.current = null
+                    setRuntimeProbePending(false)
+                }
             }
-        }, [isSuperAdmin, setError])
+        }, [isSuperAdmin, setError, runtime, probeContext])
 
     const routeControllerRef = useRef<AbortController | null>(null)
     useEffect(() => () => routeControllerRef.current?.abort(), [])
@@ -76,17 +96,19 @@ export function useAdminModelsDiagnostics(
         setRoutePending(false)
     }, [])
 
-    const handleRouteLookup =
-        useCallback(async () => {
-            const decisionId =
-                routeDecisionId.trim()
+    const lookupRouteDecision =
+        useCallback(async (value: string) => {
+            const decisionId = value.trim()
+            routeControllerRef.current?.abort()
+            setRouteDecisionId(value)
 
             setRouteDecision(null)
             setRouteError('')
 
-            if (!UUID_PATTERN.test(decisionId)) {
+            if (!MODEL_DECISION_ID_PATTERN.test(decisionId)) {
+                setRoutePending(false)
                 setRouteError(
-                    'Введите корректный ID решения (UUID).',
+                    'Введите номер решения из журнала событий, а не идентификатор пользователя.',
                 )
                 return
             }
@@ -117,7 +139,9 @@ export function useAdminModelsDiagnostics(
                     setRoutePending(false)
                 }
             }
-        }, [routeDecisionId])
+        }, [])
+    const handleRouteLookup = useCallback(() => lookupRouteDecision(routeDecisionId),
+        [lookupRouteDecision, routeDecisionId])
 
     return {
         routeDecisionId,
@@ -126,8 +150,10 @@ export function useAdminModelsDiagnostics(
         routePending,
         routeError,
         runtimeProbe,
+        runtimeHealthUnconfirmed: isSuperAdmin && probeAttemptContext === probeContext && !runtimeProbe,
         runtimeProbePending,
         handleRuntimeProbe,
         handleRouteLookup,
+        lookupRouteDecision,
     }
 }

@@ -18,7 +18,7 @@ export function CatalogCapabilitiesSection({draft, setDraft}: CatalogSectionProp
                         ].join(' ')}
                     >
                         <SectionHeading
-                            title="Возможности и типы данных"
+                            title="Возможности модели"
                             hint="Заявленные возможности и типы данных. Фактическое исполнение отдельно проверяет Runtime."
                             tone="primary"
                         />

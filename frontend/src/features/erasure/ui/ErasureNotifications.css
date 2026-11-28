@@ -1,0 +1,11 @@
+/* frontend/src/features/erasure/ui/ErasureNotifications.css */
+.erasure-menu-count { display:inline-flex; align-items:center; justify-content:center; min-width:1.4em; margin-inline-start:.35em; padding:.1em .4em; border-radius:12px; background:#dbeafe; color:#1746a2; font-size:.75em; font-weight:700; }
+.erasure-notifications { position:relative; color:inherit; font-size:.85rem; }
+.erasure-notifications summary { cursor:pointer; white-space:nowrap; }
+.erasure-notifications-panel { position:absolute; z-index:100; right:0; top:calc(100% + 12px); width:min(340px,85vw); max-height:60vh; overflow:auto; background:white; color:#17253c; border:1px solid #d4dfef; border-radius:12px; padding:14px; box-shadow:0 12px 32px #17253c25; }
+.erasure-notifications-panel small,.erasure-notifications-panel time { display:block; margin-top:4px; color:#51647c; }
+.erasure-notifications-panel ul { list-style:none; padding:0; margin:8px 0 0; }
+.erasure-notifications-panel li { border-top:1px solid #e2e8f0; padding:10px 0; }
+.erasure-notifications-panel a { color:#2054be; text-decoration:none; }
+.erasure-context-link { display:inline-flex; align-items:center; font-size:.85rem; color:var(--link-color,#245bd4); padding:5px 8px; border-radius:6px; }
+@media(max-width:760px) { .erasure-notifications-panel { position:fixed; top:70px; right:12px; } }

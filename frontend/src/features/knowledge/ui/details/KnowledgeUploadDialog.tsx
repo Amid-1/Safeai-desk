@@ -58,6 +58,7 @@ export function KnowledgeUploadDialog({
                     onClose={
                         closeUpload
                     }
+                    closeDisabled={busy}
                 >
                     <div className="knowledge-upload-form">
                         {uploadTarget === 'new' && (
@@ -118,7 +119,7 @@ export function KnowledgeUploadDialog({
 
                         <p className="knowledge-upload-hint">
                             PDF, DOCX, TXT, HTML, MD, CSV, XLSX, PPTX, JSON или XML, не более 25 МБ.
-                            Формат и структура проверяются backend по фактическому содержимому файла.
+                            После загрузки файл будет проверен и подготовлен для поиска.
                         </p>
 
                         {uploadFile && (

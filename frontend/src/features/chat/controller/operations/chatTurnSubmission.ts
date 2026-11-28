@@ -6,7 +6,10 @@
 import type { KeyboardEvent } from 'react'
 import { sendMessage } from '../../api/chatApi'
 import type { PendingTurn } from '../../lib/chatPage.helpers'
-import { createPendingTurn, hasMeaningfulContent, isSafeToPrepareNewRequest, normalizeMessageContent } from '../../lib/chatPage.helpers'
+import {
+    canRetryPendingStatus, createPendingTurn, hasMeaningfulContent,
+    isSafeToPrepareNewRequest, normalizeMessageContent,
+} from '../../lib/chatPage.helpers'
 import { createSecureUuid } from '../../../../shared/lib/secureUuid'
 import { getRetryAfterSeconds } from '../../lib/chatPageSupport'
 import type { ChatControllerDependencies } from './chatControllerTypes'
@@ -16,6 +19,8 @@ export function createTurnSubmission(deps: Pick<ChatControllerDependencies,
     | 'activeChat'
     | 'knowledgeMode'
     | 'knowledgeBaseId'
+    | 'knowledgeBases'
+    | 'knowledgeBasesStatus'
     | 'drafts'
     | 'clock'
     | 'pendingTurnsRef'
@@ -25,14 +30,32 @@ export function createTurnSubmission(deps: Pick<ChatControllerDependencies,
     | 'activePendingTurn'
     | 'activeChatHasPending'
     | 'refreshChatTitle'
+    | 'ensureAutomaticChatTitle'
     | 'handleSendFailure'
     | 'applySendSuccess'
     | 'finishPendingTurn'
     | 'setDraft'
     | 'putPendingTurn'
     | 'sendInFlightRef'
+    | 'reconciliationControllersRef'
 >) {
-    const { capabilities, activeChat, knowledgeMode, knowledgeBaseId, drafts, clock, pendingTurnsRef, activeChatRef, scrollIntentRef, setSendError, activePendingTurn, activeChatHasPending, refreshChatTitle, handleSendFailure, applySendSuccess, finishPendingTurn, setDraft, putPendingTurn, sendInFlightRef } = deps
+    const {
+        capabilities, knowledgeMode, knowledgeBaseId, knowledgeBases, knowledgeBasesStatus,
+        drafts, pendingTurnsRef, activeChatRef,
+        scrollIntentRef, setSendError, activePendingTurn, activeChatHasPending, refreshChatTitle,
+        ensureAutomaticChatTitle, handleSendFailure, applySendSuccess, finishPendingTurn,
+        setDraft, putPendingTurn, sendInFlightRef, reconciliationControllersRef,
+    } = deps
+
+    function getCurrentPending(): PendingTurn | undefined {
+        const chatId = activeChatRef.current?.id
+        if (!chatId || activePendingTurn?.chatId !== chatId) return undefined
+        const current = pendingTurnsRef.current[chatId]
+        if (current?.clientRequestId !== activePendingTurn.clientRequestId
+            || sendInFlightRef.current.has(chatId)
+            || reconciliationControllersRef.current.has(chatId)) return undefined
+        return current
+    }
 
     async function handleSendMessage() {
         const chat = activeChatRef.current
@@ -64,8 +87,10 @@ export function createTurnSubmission(deps: Pick<ChatControllerDependencies,
             return
         }
 
-        if (knowledgeMode !== 'GENERAL' && !knowledgeBaseId) {
-            setSendError('Выберите базу знаний для RAG-режима.')
+        if (knowledgeMode !== 'GENERAL' && (knowledgeBasesStatus !== 'ready'
+            || !knowledgeBases.some(base => base.id === knowledgeBaseId && base.enabled
+                && base.lifecycleState !== 'DELETING'))) {
+            setSendError('Выберите доступную базу знаний. Сообщение не отправлено.')
             return
         }
 
@@ -88,21 +113,27 @@ export function createTurnSubmission(deps: Pick<ChatControllerDependencies,
             type: 'BOTTOM',
         }
 
+        // Non-blocking metadata request: every role/tenant gets a title even
+        // if model policy prevents the AI request from being accepted.
+        if (chat.title === 'Новый чат') {
+            void ensureAutomaticChatTitle(chat.id, content)
+        }
         await executePendingTurn(pending)
     }
 
     async function retryPendingTurn() {
-        if (!activePendingTurn) {
+        const current = getCurrentPending()
+        if (!current || !canRetryPendingStatus(current.status)) {
             return
         }
 
         const remaining = getRetryAfterSeconds(
-            activePendingTurn,
-            clock,
+            current,
+            Date.now(),
         )
 
         if (
-            activePendingTurn.status
+            current.status
                 === 'RATE_LIMITED'
             && remaining > 0
         ) {
@@ -110,26 +141,20 @@ export function createTurnSubmission(deps: Pick<ChatControllerDependencies,
         }
 
         await executePendingTurn({
-            ...activePendingTurn,
+            ...current,
             status: 'SENDING',
             error: null,
             retryAfterUntil: null,
         })
     }
 
-    const sendingRequests = new Set<string>()
-
     async function executePendingTurn(
         pending: PendingTurn,
     ) {
-        // Предотвращаем конкурентные POST для одного turn в пределах рендера.
-        // Между рендерами блокировка хранится в неизменяемом ref контроллера.
-        const requestKey = `${pending.chatId}:${pending.clientRequestId}`
-        if (sendingRequests.has(requestKey)
-            || sendInFlightRef.current.has(pending.chatId)) {
+        // Единственная блокировка на чат между всеми рендерами React.
+        if (sendInFlightRef.current.has(pending.chatId)) {
             return
         }
-        sendingRequests.add(requestKey)
         sendInFlightRef.current.add(pending.chatId)
 
         putPendingTurn({
@@ -164,43 +189,40 @@ export function createTurnSubmission(deps: Pick<ChatControllerDependencies,
                 error,
             )
         } finally {
-            sendingRequests.delete(requestKey)
             sendInFlightRef.current.delete(pending.chatId)
         }
     }
 
     function prepareNewRequestFromPending() {
+        const current = getCurrentPending()
         if (
-            !activeChat
-            || !activePendingTurn
-            || !isSafeToPrepareNewRequest(
-                activePendingTurn.status,
-            )
+            !current || !isSafeToPrepareNewRequest(current.status)
         ) {
             return
         }
 
         setDraft(
-            activeChat.id,
-            activePendingTurn.content,
+            current.chatId,
+            current.content,
         )
-        finishPendingTurn(activeChat.id)
+        finishPendingTurn(current.chatId)
         setSendError('')
     }
 
     function dismissUnsafePending() {
-        if (!activeChat || !activePendingTurn) {
+        const current = getCurrentPending()
+        if (!current) {
             return
         }
 
         if (
-            activePendingTurn.status !== 'AMBIGUOUS'
-            && activePendingTurn.status !== 'IDEMPOTENCY_CONFLICT'
+            current.status !== 'AMBIGUOUS'
+            && current.status !== 'IDEMPOTENCY_CONFLICT'
         ) {
             return
         }
 
-        finishPendingTurn(activeChat.id)
+        finishPendingTurn(current.chatId)
         setSendError('')
     }
 

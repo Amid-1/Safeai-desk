@@ -205,8 +205,8 @@ public record KnowledgeOcrProperties(
                 );
             }
 
-            apiKey =
-                    apiKey.strip();
+            apiKey = ru.safeai.gateway.ai.provider.ProviderPropertyValidator.requireSecret(
+                    apiKey, "KNOWLEDGE_OCR_API_KEY");
 
         } else {
             /*
@@ -253,11 +253,10 @@ public record KnowledgeOcrProperties(
             return URI.create(
                     value
             );
-        } catch (IllegalArgumentException exception) {
+        } catch (IllegalArgumentException ignored) {
             throw new IllegalStateException(
                     "Некорректное значение "
-                            + "safeai.knowledge.ocr.endpoint",
-                    exception
+                        + "safeai.knowledge.ocr.endpoint"
             );
         }
     }

@@ -48,9 +48,7 @@ public final class AiProductionConfigurationValidator {
         if (!ALLOWED_PRODUCTION_PROVIDERS.contains(provider)) {
             throw new IllegalStateException(
                     "В production параметр safeai.ai.provider "
-                            + "должен иметь значение openai или anthropic. "
-                            + "Текущее значение: "
-                            + displayValue(provider)
+                            + "должен иметь значение openai или anthropic"
             );
         }
     }
@@ -67,11 +65,4 @@ public final class AiProductionConfigurationValidator {
                 .toLowerCase(Locale.ROOT);
     }
 
-    private static String displayValue(
-            String provider
-    ) {
-        return provider.isEmpty()
-                ? "<не задано>"
-                : provider;
-    }
 }

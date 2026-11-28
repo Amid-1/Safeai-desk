@@ -12,6 +12,15 @@ import {
 } from './adminUsage.helpers'
 
 describe('admin usage helpers', () => {
+    it('round trips budget status only for a platform organization report', () => {
+        const state = readUsageUrlState('?report=organizations&budgetStatus=UNKNOWN', true)
+        expect(state.budgetStatus).toBe('UNKNOWN')
+        expect(buildUsageSearchParams({...state.draft, tab: state.tab, page: 2, budgetStatus: state.budgetStatus}).get('budgetStatus')).toBe('UNKNOWN')
+        expect(readUsageUrlState('?report=organizations&budgetStatus=UNKNOWN', false).budgetStatus).toBeUndefined()
+        expect(readUsageUrlState('?report=users&budgetStatus=UNKNOWN', true).budgetStatus).toBeUndefined()
+        expect(readUsageUrlState('?report=organizations&budgetStatus=bogus', true).budgetStatus).toBeUndefined()
+        expect(readUsageUrlState('?report=organizations&budgetStatus=UNKNOWN&organizationId=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', true).budgetStatus).toBeUndefined()
+    })
     it('по умолчанию показывает явный 30-дневный UTC диапазон', () => {
         const state = readUsageUrlState(
             '',
@@ -108,5 +117,18 @@ describe('admin usage helpers', () => {
 
         expect(params.get('model'))
             .toBe('gpt-example')
+    })
+
+    it('validates and restores the subject UUID without changing tenant scope', () => {
+        const userId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+        const values = {
+            tab: 'daily' as const, page: 0, dateFrom: '2026-11-01', dateTo: '2026-11-16',
+            model: 'mock-safeai', organizationId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', userId,
+        }
+        const state = readUsageUrlState(buildUsageSearchParams(values).toString(), false)
+        expect(state.draft.userId).toBe(userId)
+        expect(state.draft.organizationId).toBe('')
+        expect(toUsageFilter(state.draft, false).filter.userId).toBe(userId)
+        expect(readUsageUrlState('userId=bad-id', false).draft.userId).toBeUndefined()
     })
 })

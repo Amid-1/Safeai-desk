@@ -1,7 +1,5 @@
 package ru.safeai.gateway.model.pricing;
 
-import org.springframework.context.annotation.Primary;
-import ru.safeai.gateway.ai.pricing.ModelPricingScheme;
 import org.springframework.stereotype.Service;
 import ru.safeai.gateway.ai.pricing.PricingResolver;
 import ru.safeai.gateway.ai.pricing.PricingResult;
@@ -35,7 +33,6 @@ import java.util.UUID;
  * silently prices an unexpected resolved physical model as the routed model.
  * Provider-specific usage counter semantics are explicit and fail closed.
  */
-@Primary
 @Service
 public final class VersionedCatalogPricingResolver implements PricingResolver {
     private static final BigDecimal MILLION = BigDecimal.valueOf(1_000_000);
@@ -55,13 +52,6 @@ public final class VersionedCatalogPricingResolver implements PricingResolver {
         this.decisions = Objects.requireNonNull(decisions, "decisions");
         this.catalog = Objects.requireNonNull(catalog, "catalog");
         this.clock = Objects.requireNonNull(clock, "clock");
-    }
-
-    /** Identity-less pricing cannot claim to be catalog-grounded. */
-    @Override
-    public PricingResult resolve(
-            ProviderExecutionTarget target, String resolvedModel, AiTokenUsage usage) {
-        return PricingResult.unpriced(clock.instant());
     }
 
     @Override
@@ -101,12 +91,7 @@ public final class VersionedCatalogPricingResolver implements PricingResolver {
                 || !price.modelKey().equals(decision.selectedModelKey())
                 || !price.provider().equals(target.providerType())
                 || !price.providerModelId().equals(resolvedModel)
-                || price.pricingScheme() != ModelPricingScheme.FLAT_TOKEN_V1
-                || !price.pricingComplete()
-                || price.pricingVersion() == null
-                || price.pricingVersion().isBlank()
-                || (price.pricingStatus() != ModelPricingStatus.CONFIGURED
-                    && price.pricingStatus() != ModelPricingStatus.FREE)) {
+                || !CatalogPricingEligibility.verified(price)) {
             return PricingResult.unpriced(now);
         }
         try {
@@ -139,7 +124,11 @@ public final class VersionedCatalogPricingResolver implements PricingResolver {
                 || write > 0 && price.cacheWriteInputUsdPer1mTokens() == null) {
             return PricingResult.unpriced(now);
         }
-        if (!"openai".equals(provider) && !"anthropic".equals(provider)) {
+        if (!"openai".equals(provider) && !"anthropic".equals(provider)
+                && !"mock".equals(provider)) {
+            return PricingResult.unpriced(now);
+        }
+        if ("mock".equals(provider) && (read != 0 || write != 0)) {
             return PricingResult.unpriced(now);
         }
         long ordinaryInput;

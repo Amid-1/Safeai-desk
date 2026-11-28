@@ -1,5 +1,15 @@
 // frontend/src/features/models/ui/modelsNavigationState.ts
 export type ModelsSection = 'overview' | 'catalog' | 'access' | 'diagnostics'
+export type DiagnosticsTarget = 'connection' | 'probe'
+
+export const DIAGNOSTICS_TARGET_IDS: Record<DiagnosticsTarget, string> = {
+    connection: 'models-runtime-connection',
+    probe: 'models-runtime-probe',
+}
+
+export function parseDiagnosticsTarget(value: string | null): DiagnosticsTarget | null {
+    return value === 'connection' || value === 'probe' ? value : null
+}
 
 export const MODELS_SECTIONS: ReadonlyArray<{ id: ModelsSection; label: string; description: string }> = [
     { id: 'overview', label: 'Обзор', description: 'Текущее состояние подключения и предварительная совместимость' },

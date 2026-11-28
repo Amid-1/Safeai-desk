@@ -1,0 +1,5156 @@
+openapi: 3.1.0
+jsonSchemaDialect: https://spec.openapis.org/oas/3.1/dialect/base
+info:
+  title: SafeAI Desk — Erasure Case Management API
+  version: 1.3.0-design-r2.5.6a
+  summary: Canonical hardened design through R2.5.6a; R2.6 acceptance planned; not a verified runtime contract
+  description: |
+    DESIGN ONLY / NO PRODUCTION GO.
+    This specification does not enable any destructive endpoint.
+    R1a registers DRAFT/SUBMITTED/WITHDRAWN; R1b registers independent review and holds.
+    R2.3 workspace, R2.4 notifications and R2.5.x refinements remain candidates for complete acceptance.
+    R2.5.6a is locally installed according to the reported installer log, not a production release.
+    R2.6 is independent review acceptance, not an executor rollout or new public API.
+    Physical execution through the case workflow remains disabled; legacy operations are separate.
+    See roadmap.md version 1.3 / 27.11.2026, sections 12, 21 and 22, for evidence and pending gates.
+    This file is the single manually maintained specification for this design.
+    Any workspace-only view must be derived from this file, not maintained independently.
+    Original paths/schemas are TARGET_DESIGN_NOT_RUNTIME unless explicitly marked otherwise.
+    Do not generate a runtime client from this combined design document.
+    Every transition checks fresh server-side actor, tenant, resource version, hold, policy
+    and approval state.
+    Existing Chat, Knowledge and User destructive endpoints MUST share the enforcement gate before
+    any executor rollout.
+servers:
+  - url: /
+    description: Relative server URL; authorization and origins follow existing deployment
+tags:
+  - name: Read
+  - name: Workspace
+  - name: Cases
+  - name: Identity
+  - name: Approvals
+  - name: Holds
+  - name: Evidence
+  - name: Operations
+security:
+  - bearerAuth: []
+x-safeai-security-notes: |
+  Bearer flow modeled here. Existing browser cookie authentication may also apply in the
+  deployment.
+  Its exact cookie name and CSRF mechanism must be copied from the actual Auth/Security
+  configuration
+  before generating a cookie-auth client or enabling these routes. All browser
+  state-changing actions
+  require the existing CSRF protection; never invent a CSRF exemption or accept client
+  roles/tenant.
+  Security requirements in OpenAPI alone do not enforce RBAC, RLS, step-up or independence.
+  Workspace reads must derive authority and scope from fresh server-side identity and grants.
+  Feature flags and capabilities never grant authority or replace object-level authorization.
+  Failure to establish authority must deny access; failures to load data must not be presented
+  as successful empty results or zero counters.
+  All workspace responses containing case metadata must use Cache-Control: no-store.
+  These are mandatory acceptance requirements, not claims of verified runtime behavior.
+x-safeai-release-gates:
+  R1: Case intake, preview, approval registration and read only; all execution flags OFF.
+  R2: User/tenant/platform UI and read-only projections; notifications require verification; no destructive dispatch.
+  R2_3: Registry summary/detail/history and role acceptance; candidate, no destructive dispatch.
+  R2_4: Scoped in-app notification feed and counters; candidate, no destructive dispatch.
+    Requires role/tenant isolation, grant revocation, self-exclusion for REVIEW, nullable counter
+    handling, no-store HTTP checks and frontend/backend/CI acceptance.
+  R2_5: Intake UX, notification route/session isolation, registry contract and geometry refinements.
+    Candidate only. Successful empty pages retain items, page, pageSize and hasNext;
+    errors are not empty pages; nullable counters are not zero. No new authority or execution.
+  R2_6: Planned independent REVIEW/LEGAL functional acceptance using actual R1b routes.
+    Requires real PostgreSQL, runtime ACL, HTTP, browser and CI evidence, grant revocation,
+    self-review refusal, independent hold release, state/version checks and no destructive dispatch.
+  R3_PLUS: Individually reviewed executor/worker/storage/legal evidence per resource type.
+x-safeai-runtime-route-map:
+  R1a:
+    status: SOURCE_OBSERVED_NOT_ACCEPTED
+    notes: Actual list is self only, limit 100. Existing same-name target DTOs are not runtime DTOs. Preview uses
+      Target; submit/withdraw use headers and no body in R1a. Flag safeai.erasure.requests.enabled.
+  R1b:
+    status: SOURCE_OBSERVED_NOT_ACCEPTED
+    notes: 'Actual review controller under /api/admin/erasure/reviews: GET base/access/overview/{id}/{id}/events;
+      POST {id}/decision, {id}/holds, {id}/holds/release. Personal /api/erasure/requests/{id}/review, /review-events
+      and POST /provide-information. Flag safeai.erasure.approvals.enabled. APPROVED_REVIEW_ONLY is never execution.
+      Do not substitute target approve/reject/release-hold routes.'
+  R2.3:
+    status: CANDIDATE_NOT_ACCEPTED
+    notes: Workspace read contract below, pending Maven/real PostgreSQL/HTTP/CI. No runtime mutation schema changes.
+  R2.4:
+    status: CANDIDATE_NOT_ACCEPTED
+    notes: Scoped notification feed only. Counts describe current work, not unread messages.
+      No persistent read receipts, external delivery or destructive execution are specified.
+      Require real PostgreSQL, HTTP and CI evidence before acceptance.
+  R2.5.4:
+    status: IMPLEMENTED_PARTIAL_LOCAL_OBSERVATION_NOT_ACCEPTED
+    notes: Existing registry/summary/detail/history contracts retained; explicit serialization for
+      empty page envelopes and nullable projection fields, scope validation and error differentiation.
+      Platform empty filters observed in local UI; ErasureRegistryHttpIT and full CI pending confirmation.
+  R2.5.5:
+    status: IMPLEMENTED_PARTIAL_LOCAL_OBSERVATION_NOT_ACCEPTED
+    notes: UI-only registry icons, pagination, UUID copy, contextual empty results and history navigation.
+      No new API fields or authorization. Targeted tests previously reported 19 pass and 3 fail;
+      subsequent accessibility/header fixes require a confirmed full CI result.
+  R2.5.6a:
+    status: LOCAL_INSTALL_REPORTED_NOT_ACCEPTED
+    notes: UI-only geometry patch and four E2E scenarios. Installer audit/apply reported three files;
+      git diff --check reported no errors. Final browser/CI evidence and Git HEAD not supplied.
+  R2.6:
+    status: PLANNED_NOT_ACCEPTED
+    notes: Exercise actual R1b decision, information and legal hold routes; no new execution,
+      identity proof, receipt or legacy admission bypass is authorized.
+x-safeai-r25-acceptance:
+  asOf: '2026-11-27'
+  status: CANDIDATE_NOT_ACCEPTED
+  emptyPage: HTTP 200 with items as an empty array, page, pageSize 25 and hasNext when authorized query succeeds.
+  nullableCounters: Preserve null where not authorized or applicable; do not substitute zero.
+  registrySummary: PLATFORM and TENANT remain separate; summary is scoped globally within authorized area, not current filter.
+  notificationIsolation: No notification polling on statically role-denied routes; abort stale scope and reset protected pages on security context changes.
+  uiOnly: R2.5.5 and R2.5.6a do not introduce API operations, schemas, grants or migrations.
+  pendingEvidence: Full Maven verify, real PostgreSQL HTTP/runtime ACL, frontend CI, full Playwright and GitHub Actions for final revision.
+  execution: NOT_AVAILABLE
+  completionProven: false
+paths:
+  /api/erasure/requests/notifications:
+    get:
+      tags:
+      - Workspace
+      summary: Уведомления по заявкам и счётчики
+      operationId: workspaceNotificationsR24
+      description: Read-only. Server live-role and feature-flag checks; personal events
+        limited to own identity and tenant; review events only for REVIEW in own tenant
+        excluding own cases. Counts are not unread counts. No deletion.
+      x-safeai-contract-status: R2_4_CANDIDATE_NOT_ACCEPTED
+      x-safeai-release-phase: R2_READ_ONLY
+      x-safeai-security-acceptance:
+        - Recheck live roles, tenant, feature flags and independent REVIEW grant.
+        - Deny cross-tenant disclosure and exclude the reviewer's own requests from reviewer notifications.
+        - LEGAL alone must not enable REVIEW notifications.
+        - Never disclose raw resource contents, requester identity, or secret material in this feed.
+        - Null counters must not be converted to zero or presented as successful empty data.
+        - Do not treat notifications or counters as a grant to mutate any case.
+      x-safeai-cache-control: no-store
+      responses:
+        '200':
+          description: Scoped notification feed
+          headers:
+            Cache-Control:
+              required: true
+              description: Required acceptance contract; no-store directive must be present.
+              schema:
+                type: string
+                pattern: '(?:^|,)[ \t]*[Nn][Oo]-[Ss][Tt][Oo][Rr][Ee][ \t]*(?:,|$)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceNotificationsR24'
+        '401':
+          description: Authentication required
+        '403':
+          description: Forbidden
+        '500':
+          description: Sanitized server error
+  /api/erasure/capabilities:
+    get:
+      tags:
+        - Read
+      summary: Проверить возможность создания заявки
+      operationId: get_api_erasure_capabilities
+      description: |
+        Tenant, owner and current roles are checked server-side; no foreign resource enumeration.
+        Read-only hint; no permission grant. No physical proof.
+      x-safeai-actor-authority: SUBJECT
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: R1_CASE_ONLY
+      responses:
+        '200':
+          description: Успешно; не является доказательством стирания.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Capability'
+          headers:
+            Cache-Control:
+              description: No browser or proxy storage of case metadata
+              schema:
+                type: string
+                const: no-store
+        '400':
+          description: Invalid request or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication or verified identity required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Not authorized or independent approver required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Not found or foreign resource (same response)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Conflict, retention hold, stale manifest or competing transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '412':
+          description: If-Match precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: Request payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Unsupported/unsafe scope or preview required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '428':
+          description: If-Match or other required precondition absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Sanitized internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Executor or verified storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      parameters:
+        - $ref: '#/components/parameters/ResourceTypeQuery'
+        - $ref: '#/components/parameters/ResourceIdQuery'
+        - $ref: '#/components/parameters/OperationQuery'
+        - $ref: '#/components/parameters/ScopeQuery'
+      x-safeai-body-size-limit-bytes: 0
+      x-safeai-audit: SANITIZED_APPEND_ONLY
+      x-safeai-cache-control: no-store
+  /api/erasure/previews:
+    post:
+      tags:
+        - Cases
+      summary: Создать привязанный предпросмотр
+      operationId: post_api_erasure_previews
+      description: |
+        Recheck actor, tenant, resource versions, policy and holds; never trust client supplied
+        authority. Preview is actor+tenant+resource+scope+policy+hold epoch+TTL bound.
+      x-safeai-actor-authority: SUBJECT
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: R1_CASE_ONLY
+      responses:
+        '200':
+          description: Успешно; не является доказательством стирания.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreviewResult'
+          headers:
+            Cache-Control:
+              description: No browser or proxy storage of case metadata
+              schema:
+                type: string
+                const: no-store
+        '400':
+          description: Invalid request or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication or verified identity required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Not authorized or independent approver required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Not found or foreign resource (same response)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Conflict, retention hold, stale manifest or competing transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '412':
+          description: If-Match precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: Request payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Unsupported/unsafe scope or preview required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '428':
+          description: If-Match or other required precondition absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Sanitized internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Executor or verified storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PreviewCreate'
+      x-safeai-body-size-limit-bytes: 8192
+      x-safeai-audit: SANITIZED_APPEND_ONLY
+      x-safeai-cache-control: no-store
+  /api/erasure/requests:
+    get:
+      tags:
+        - Cases
+      summary: Перечень разрешённых заявок
+      operationId: get_api_erasure_requests
+      description: |
+        Tenant, owner and current roles are checked server-side; no foreign resource enumeration.
+        USER sees own, ADMIN only assigned tenant, PLATFORM requires authorized explicit scope.
+      x-safeai-actor-authority: SUBJECT
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: R1_CASE_ONLY
+      responses:
+        '200':
+          description: Успешно; не является доказательством стирания.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestPage'
+          headers:
+            Cache-Control:
+              description: No browser or proxy storage of case metadata
+              schema:
+                type: string
+                const: no-store
+        '400':
+          description: Invalid request or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication or verified identity required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Not authorized or independent approver required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Not found or foreign resource (same response)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Conflict, retention hold, stale manifest or competing transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '412':
+          description: If-Match precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: Request payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Unsupported/unsafe scope or preview required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '428':
+          description: If-Match or other required precondition absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Sanitized internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Executor or verified storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/StateFilter'
+        - $ref: '#/components/parameters/TenantSelector'
+      x-safeai-body-size-limit-bytes: 0
+      x-safeai-audit: SANITIZED_APPEND_ONLY
+      x-safeai-cache-control: no-store
+    post:
+      tags:
+        - Cases
+      summary: Создать черновик DRAFT без исполнения
+      operationId: post_api_erasure_requests
+      description: |
+        Recheck actor, tenant, resource versions, policy and holds; never trust client supplied
+        authority. Atomically persist a short-lived DRAFT. No worker intent/dispatch.
+      x-safeai-actor-authority: SUBJECT
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: R1_CASE_ONLY
+      responses:
+        '201':
+          description: Черновик создан; удаление не начато.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestView'
+          headers:
+            Location:
+              description: Scoped link to created draft
+              schema:
+                type: string
+                minLength: 1
+                maxLength: 256
+            ETag:
+              description: Current strong case version
+              schema:
+                type: string
+                pattern: ^"[0-9]+"$
+            Cache-Control:
+              description: No browser or proxy storage of case metadata
+              schema:
+                type: string
+                const: no-store
+        '400':
+          description: Invalid request or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication or verified identity required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Not authorized or independent approver required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Not found or foreign resource (same response)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Conflict, retention hold, stale manifest or competing transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '412':
+          description: If-Match precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: Request payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Unsupported/unsafe scope or preview required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '428':
+          description: If-Match or other required precondition absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Sanitized internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Executor or verified storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestCreate'
+      x-safeai-body-size-limit-bytes: 8192
+      x-safeai-audit: SANITIZED_APPEND_ONLY
+      x-safeai-cache-control: no-store
+  /api/erasure/requests/{requestId}:
+    get:
+      tags:
+        - Cases
+      summary: Получить заявку и разрешённые действия
+      operationId: get_api_erasure_requests_requestId
+      description: |
+        Tenant, owner and current roles are checked server-side; no foreign resource enumeration.
+      x-safeai-actor-authority: SUBJECT
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: R1_CASE_ONLY
+      responses:
+        '200':
+          description: Успешно; не является доказательством стирания.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestView'
+          headers:
+            Cache-Control:
+              description: No browser or proxy storage of case metadata
+              schema:
+                type: string
+                const: no-store
+            ETag:
+              description: Current strong entity version
+              schema:
+                type: string
+                pattern: ^"[0-9]+"$
+        '400':
+          description: Invalid request or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication or verified identity required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Not authorized or independent approver required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Not found or foreign resource (same response)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Conflict, retention hold, stale manifest or competing transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '412':
+          description: If-Match precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: Request payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Unsupported/unsafe scope or preview required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '428':
+          description: If-Match or other required precondition absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Sanitized internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Executor or verified storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      x-safeai-body-size-limit-bytes: 0
+      x-safeai-audit: SANITIZED_APPEND_ONLY
+      x-safeai-cache-control: no-store
+  /api/erasure/requests/{requestId}/events:
+    get:
+      tags:
+        - Cases
+      summary: История событий конкретной заявки
+      operationId: get_api_erasure_requests_requestId_events
+      description: |
+        Tenant, owner and current roles are checked server-side; no foreign resource enumeration.
+        Append-only sanitized state transitions; actor identity disclosure separately authorized.
+      x-safeai-actor-authority: SUBJECT
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: R1_CASE_ONLY
+      responses:
+        '200':
+          description: Успешно; не является доказательством стирания.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventsPage'
+          headers:
+            Cache-Control:
+              description: No browser or proxy storage of case metadata
+              schema:
+                type: string
+                const: no-store
+        '400':
+          description: Invalid request or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication or verified identity required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Not authorized or independent approver required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Not found or foreign resource (same response)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Conflict, retention hold, stale manifest or competing transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '412':
+          description: If-Match precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: Request payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Unsupported/unsafe scope or preview required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '428':
+          description: If-Match or other required precondition absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Sanitized internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Executor or verified storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      x-safeai-body-size-limit-bytes: 0
+      x-safeai-audit: SANITIZED_APPEND_ONLY
+      x-safeai-cache-control: no-store
+  /api/erasure/requests/{requestId}/verification-challenges:
+    post:
+      tags:
+        - Identity
+      summary: Запросить подтверждение личности
+      operationId: post_api_erasure_requests_requestId_verification_challenges
+      description: |
+        Recheck actor, tenant, resource versions, policy and holds; never trust client supplied
+        authority. Proof TTL, single-use, actor+case+channel bound. Never return secret in
+        response.
+      x-safeai-actor-authority: SUBJECT
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: FUTURE_GATED
+      responses:
+        '200':
+          description: Успешно; не является доказательством стирания.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationChallenge'
+          headers:
+            ETag:
+              description: Current strong case version
+              schema:
+                type: string
+                pattern: ^"[0-9]+"$
+            Cache-Control:
+              description: No browser or proxy storage of case metadata
+              schema:
+                type: string
+                const: no-store
+        '400':
+          description: Invalid request or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication or verified identity required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Not authorized or independent approver required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Not found or foreign resource (same response)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Conflict, retention hold, stale manifest or competing transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '412':
+          description: If-Match precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: Request payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Unsupported/unsafe scope or preview required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '428':
+          description: If-Match or other required precondition absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Sanitized internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Executor or verified storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerificationChallengeCreate'
+      x-safeai-body-size-limit-bytes: 8192
+      x-safeai-audit: SANITIZED_APPEND_ONLY
+      x-safeai-cache-control: no-store
+  /api/erasure/requests/{requestId}/verify-identity:
+    post:
+      tags:
+        - Identity
+      summary: Подтвердить заявителя, не выдавая право удаления
+      operationId: post_api_erasure_requests_requestId_verify_identity
+      description: |
+        Recheck actor, tenant, resource versions, policy and holds; never trust client supplied
+        authority. Consume server-issued single-use proof; verifying identity does not approve
+        deletion.
+      x-safeai-actor-authority: SUBJECT
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: FUTURE_GATED
+      responses:
+        '200':
+          description: Успешно; не является доказательством стирания.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestView'
+          headers:
+            ETag:
+              description: Current strong case version
+              schema:
+                type: string
+                pattern: ^"[0-9]+"$
+            Cache-Control:
+              description: No browser or proxy storage of case metadata
+              schema:
+                type: string
+                const: no-store
+        '400':
+          description: Invalid request or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication or verified identity required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Not authorized or independent approver required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Not found or foreign resource (same response)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Conflict, retention hold, stale manifest or competing transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '412':
+          description: If-Match precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: Request payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Unsupported/unsafe scope or preview required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '428':
+          description: If-Match or other required precondition absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Sanitized internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Executor or verified storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdentityProof'
+      x-safeai-body-size-limit-bytes: 8192
+      x-safeai-audit: SANITIZED_APPEND_ONLY
+      x-safeai-cache-control: no-store
+  /api/erasure/requests/{requestId}/submit:
+    post:
+      tags:
+        - Cases
+      summary: Подать черновик на рассмотрение
+      operationId: post_api_erasure_requests_requestId_submit
+      description: |
+        Recheck actor, tenant, resource versions, policy and holds; never trust client supplied
+        authority. Transactionally create SUBMITTED+event+outbox. No destructive intent/worker
+        dispatch.
+      x-safeai-actor-authority: SUBJECT
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: R1_CASE_ONLY
+      responses:
+        '202':
+          description: Заявка зарегистрирована на обработку; удаление не начато.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestView'
+          headers:
+            ETag:
+              description: Current strong case version
+              schema:
+                type: string
+                pattern: ^"[0-9]+"$
+            Retry-After:
+              description: Minimum recommended polling interval (seconds)
+              schema:
+                type: integer
+                minimum: 1
+                maximum: 3600
+            Cache-Control:
+              description: No browser or proxy storage of case metadata
+              schema:
+                type: string
+                const: no-store
+        '400':
+          description: Invalid request or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication or verified identity required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Not authorized or independent approver required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Not found or foreign resource (same response)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Conflict, retention hold, stale manifest or competing transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '412':
+          description: If-Match precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: Request payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Unsupported/unsafe scope or preview required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '428':
+          description: If-Match or other required precondition absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Sanitized internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Executor or verified storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestSubmit'
+      x-safeai-body-size-limit-bytes: 8192
+      x-safeai-audit: SANITIZED_APPEND_ONLY
+      x-safeai-cache-control: no-store
+  /api/erasure/requests/{requestId}/confirm-scope:
+    post:
+      tags:
+        - Cases
+      summary: Подтвердить пересчитанный состав удаления
+      operationId: post_api_erasure_requests_requestId_confirm_scope
+      description: |
+        Recheck actor, tenant, resource versions, policy and holds; never trust client supplied
+        authority. Required after preflight scope expansion; no silent extra data removal.
+      x-safeai-actor-authority: SUBJECT
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: FUTURE_GATED
+      responses:
+        '200':
+          description: Успешно; не является доказательством стирания.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestView'
+          headers:
+            ETag:
+              description: Current strong case version
+              schema:
+                type: string
+                pattern: ^"[0-9]+"$
+            Cache-Control:
+              description: No browser or proxy storage of case metadata
+              schema:
+                type: string
+                const: no-store
+        '400':
+          description: Invalid request or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication or verified identity required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Not authorized or independent approver required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Not found or foreign resource (same response)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Conflict, retention hold, stale manifest or competing transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '412':
+          description: If-Match precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: Request payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Unsupported/unsafe scope or preview required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '428':
+          description: If-Match or other required precondition absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Sanitized internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Executor or verified storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScopeConfirmation'
+      x-safeai-body-size-limit-bytes: 8192
+      x-safeai-audit: SANITIZED_APPEND_ONLY
+      x-safeai-cache-control: no-store
+  /api/erasure/requests/{requestId}/provide-information:
+    post:
+      tags:
+        - Cases
+      summary: Предоставить запрошенные подтверждения
+      operationId: post_api_erasure_requests_requestId_provide_information
+      description: |
+        Recheck actor, tenant, resource versions, policy and holds; never trust client supplied
+        authority. Only in NEEDS_INFORMATION; no freeform PII copied into case/audit.
+      x-safeai-actor-authority: SUBJECT
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: R1_CASE_ONLY
+      responses:
+        '200':
+          description: Успешно; не является доказательством стирания.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestView'
+          headers:
+            ETag:
+              description: Current strong case version
+              schema:
+                type: string
+                pattern: ^"[0-9]+"$
+            Cache-Control:
+              description: No browser or proxy storage of case metadata
+              schema:
+                type: string
+                const: no-store
+        '400':
+          description: Invalid request or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication or verified identity required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Not authorized or independent approver required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Not found or foreign resource (same response)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Conflict, retention hold, stale manifest or competing transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '412':
+          description: If-Match precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: Request payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Unsupported/unsafe scope or preview required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '428':
+          description: If-Match or other required precondition absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Sanitized internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Executor or verified storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdditionalInformation'
+      x-safeai-body-size-limit-bytes: 8192
+      x-safeai-audit: SANITIZED_APPEND_ONLY
+      x-safeai-cache-control: no-store
+  /api/erasure/requests/{requestId}/withdraw:
+    post:
+      tags:
+        - Cases
+      summary: Отозвать до необратимого шага
+      operationId: post_api_erasure_requests_requestId_withdraw
+      description: |
+        Recheck actor, tenant, resource versions, policy and holds; never trust client supplied
+        authority. Serialize with irreversible barrier. Never show WITHDRAWN after irreversible
+        action.
+      x-safeai-actor-authority: SUBJECT
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: R1_CASE_ONLY
+      responses:
+        '200':
+          description: Успешно; не является доказательством стирания.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestView'
+          headers:
+            ETag:
+              description: Current strong case version
+              schema:
+                type: string
+                pattern: ^"[0-9]+"$
+            Cache-Control:
+              description: No browser or proxy storage of case metadata
+              schema:
+                type: string
+                const: no-store
+        '400':
+          description: Invalid request or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication or verified identity required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Not authorized or independent approver required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Not found or foreign resource (same response)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Conflict, retention hold, stale manifest or competing transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '412':
+          description: If-Match precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: Request payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Unsupported/unsafe scope or preview required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '428':
+          description: If-Match or other required precondition absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Sanitized internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Executor or verified storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionReason'
+      x-safeai-body-size-limit-bytes: 8192
+      x-safeai-audit: SANITIZED_APPEND_ONLY
+      x-safeai-cache-control: no-store
+  /api/erasure/requests/{requestId}/request-pause:
+    post:
+      tags:
+        - Cases
+      summary: После начала удаления запросить безопасную приостановку
+      operationId: post_api_erasure_requests_requestId_request_pause
+      description: |
+        Recheck actor, tenant, resource versions, policy and holds; never trust client supplied
+        authority. Stop remaining safe steps when possible, then reconcile; cannot undo removed
+        data.
+      x-safeai-actor-authority: SUBJECT
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: FUTURE_GATED
+      responses:
+        '200':
+          description: Успешно; не является доказательством стирания.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestView'
+          headers:
+            ETag:
+              description: Current strong case version
+              schema:
+                type: string
+                pattern: ^"[0-9]+"$
+            Cache-Control:
+              description: No browser or proxy storage of case metadata
+              schema:
+                type: string
+                const: no-store
+        '400':
+          description: Invalid request or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication or verified identity required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Not authorized or independent approver required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Not found or foreign resource (same response)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Conflict, retention hold, stale manifest or competing transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '412':
+          description: If-Match precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: Request payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Unsupported/unsafe scope or preview required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '428':
+          description: If-Match or other required precondition absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Sanitized internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Executor or verified storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PauseRequest'
+      x-safeai-body-size-limit-bytes: 8192
+      x-safeai-audit: SANITIZED_APPEND_ONLY
+      x-safeai-cache-control: no-store
+  /api/erasure/requests/{requestId}/receipt:
+    get:
+      tags:
+        - Evidence
+      summary: Получить доказательства проверенного scope
+      operationId: get_api_erasure_requests_requestId_receipt
+      description: |
+        Tenant, owner and current roles are checked server-side; no foreign resource enumeration.
+        Non-terminal: 409 RECEIPT_NOT_READY; never fabricate completion or expose raw data.
+      x-safeai-actor-authority: SUBJECT
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: FUTURE_GATED
+      responses:
+        '200':
+          description: Успешно; не является доказательством стирания.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Receipt'
+          headers:
+            Cache-Control:
+              description: No browser or proxy storage of case metadata
+              schema:
+                type: string
+                const: no-store
+        '400':
+          description: Invalid request or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication or verified identity required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Not authorized or independent approver required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Not found or foreign resource (same response)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Conflict, retention hold, stale manifest or competing transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '412':
+          description: If-Match precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: Request payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Unsupported/unsafe scope or preview required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '428':
+          description: If-Match or other required precondition absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Sanitized internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Executor or verified storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      x-safeai-body-size-limit-bytes: 0
+      x-safeai-audit: SANITIZED_APPEND_ONLY
+      x-safeai-cache-control: no-store
+  /api/admin/erasure/queue:
+    get:
+      tags:
+        - Approvals
+      summary: Очередь независимых согласующих
+      operationId: get_api_admin_erasure_queue
+      description: |
+        Tenant, owner and current roles are checked server-side; no foreign resource enumeration.
+        Designated approver only, not automatic ADMIN authority.
+        Server-side entitlement is separate from ordinary ADMIN/SUPER_ADMIN role.
+      x-safeai-actor-authority: DESIGNATED_APPROVER
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: R1_CASE_ONLY
+      responses:
+        '200':
+          description: Успешно; не является доказательством стирания.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestPage'
+          headers:
+            Cache-Control:
+              description: No browser or proxy storage of case metadata
+              schema:
+                type: string
+                const: no-store
+        '400':
+          description: Invalid request or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication or verified identity required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Not authorized or independent approver required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Not found or foreign resource (same response)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Conflict, retention hold, stale manifest or competing transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '412':
+          description: If-Match precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: Request payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Unsupported/unsafe scope or preview required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '428':
+          description: If-Match or other required precondition absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Sanitized internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Executor or verified storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/TenantSelector'
+      x-safeai-body-size-limit-bytes: 0
+      x-safeai-audit: SANITIZED_APPEND_ONLY
+      x-safeai-cache-control: no-store
+  /api/admin/erasure/requests/{requestId}/impact:
+    get:
+      tags:
+        - Approvals
+      summary: Манифест затрагиваемых данных
+      operationId: get_api_admin_erasure_requests_requestId_impact
+      description: |
+        Tenant, owner and current roles are checked server-side; no foreign resource enumeration.
+        Only frozen, sanitized manifest. No raw content and no mutable approval target.
+        Server-side entitlement is separate from ordinary ADMIN/SUPER_ADMIN role.
+      x-safeai-actor-authority: DESIGNATED_APPROVER
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: FUTURE_GATED
+      responses:
+        '200':
+          description: Успешно; не является доказательством стирания.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreviewResult'
+          headers:
+            Cache-Control:
+              description: No browser or proxy storage of case metadata
+              schema:
+                type: string
+                const: no-store
+            ETag:
+              description: Current strong entity version
+              schema:
+                type: string
+                pattern: ^"[0-9]+"$
+        '400':
+          description: Invalid request or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication or verified identity required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Not authorized or independent approver required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Not found or foreign resource (same response)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Conflict, retention hold, stale manifest or competing transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '412':
+          description: If-Match precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: Request payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Unsupported/unsafe scope or preview required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '428':
+          description: If-Match or other required precondition absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Sanitized internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Executor or verified storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      x-safeai-body-size-limit-bytes: 0
+      x-safeai-audit: SANITIZED_APPEND_ONLY
+      x-safeai-cache-control: no-store
+  /api/admin/erasure/requests/{requestId}/approve:
+    post:
+      tags:
+        - Approvals
+      summary: Независимое согласование
+      operationId: post_api_admin_erasure_requests_requestId_approve
+      description: |
+        Recheck actor, tenant, resource versions, policy and holds; never trust client supplied
+        authority. No self-approval, no same beneficial actor, verify manifest and step-up; no
+        execution.
+        Server-side entitlement is separate from ordinary ADMIN/SUPER_ADMIN role.
+      x-safeai-actor-authority: DESIGNATED_APPROVER
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: R1_CASE_ONLY
+      responses:
+        '200':
+          description: Успешно; не является доказательством стирания.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestView'
+          headers:
+            ETag:
+              description: Current strong case version
+              schema:
+                type: string
+                pattern: ^"[0-9]+"$
+            Cache-Control:
+              description: No browser or proxy storage of case metadata
+              schema:
+                type: string
+                const: no-store
+        '400':
+          description: Invalid request or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication or verified identity required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Not authorized or independent approver required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Not found or foreign resource (same response)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Conflict, retention hold, stale manifest or competing transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '412':
+          description: If-Match precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: Request payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Unsupported/unsafe scope or preview required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '428':
+          description: If-Match or other required precondition absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Sanitized internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Executor or verified storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Decision'
+      x-safeai-body-size-limit-bytes: 8192
+      x-safeai-audit: SANITIZED_APPEND_ONLY
+      x-safeai-cache-control: no-store
+  /api/admin/erasure/requests/{requestId}/reject:
+    post:
+      tags:
+        - Approvals
+      summary: Отказать в разрешении
+      operationId: post_api_admin_erasure_requests_requestId_reject
+      description: |
+        Recheck actor, tenant, resource versions, policy and holds; never trust client supplied
+        authority. Sanitized reason, append-only decision.
+        Server-side entitlement is separate from ordinary ADMIN/SUPER_ADMIN role.
+      x-safeai-actor-authority: DESIGNATED_APPROVER
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: R1_CASE_ONLY
+      responses:
+        '200':
+          description: Успешно; не является доказательством стирания.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestView'
+          headers:
+            ETag:
+              description: Current strong case version
+              schema:
+                type: string
+                pattern: ^"[0-9]+"$
+            Cache-Control:
+              description: No browser or proxy storage of case metadata
+              schema:
+                type: string
+                const: no-store
+        '400':
+          description: Invalid request or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication or verified identity required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Not authorized or independent approver required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Not found or foreign resource (same response)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Conflict, retention hold, stale manifest or competing transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '412':
+          description: If-Match precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: Request payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Unsupported/unsafe scope or preview required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '428':
+          description: If-Match or other required precondition absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Sanitized internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Executor or verified storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionReason'
+      x-safeai-body-size-limit-bytes: 8192
+      x-safeai-audit: SANITIZED_APPEND_ONLY
+      x-safeai-cache-control: no-store
+  /api/admin/erasure/requests/{requestId}/request-information:
+    post:
+      tags:
+        - Approvals
+      summary: Запросить сведения без копирования персональных данных
+      operationId: post_api_admin_erasure_requests_requestId_request_information
+      description: |
+        Recheck actor, tenant, resource versions, policy and holds; never trust client supplied
+        authority. Enter NEEDS_INFORMATION with deadline and notification.
+        Server-side entitlement is separate from ordinary ADMIN/SUPER_ADMIN role.
+      x-safeai-actor-authority: DESIGNATED_APPROVER
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: R1_CASE_ONLY
+      responses:
+        '200':
+          description: Успешно; не является доказательством стирания.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestView'
+          headers:
+            ETag:
+              description: Current strong case version
+              schema:
+                type: string
+                pattern: ^"[0-9]+"$
+            Cache-Control:
+              description: No browser or proxy storage of case metadata
+              schema:
+                type: string
+                const: no-store
+        '400':
+          description: Invalid request or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication or verified identity required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Not authorized or independent approver required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Not found or foreign resource (same response)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Conflict, retention hold, stale manifest or competing transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '412':
+          description: If-Match precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: Request payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Unsupported/unsafe scope or preview required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '428':
+          description: If-Match or other required precondition absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Sanitized internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Executor or verified storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionReason'
+      x-safeai-body-size-limit-bytes: 8192
+      x-safeai-audit: SANITIZED_APPEND_ONLY
+      x-safeai-cache-control: no-store
+  /api/admin/erasure/requests/{requestId}/hold:
+    post:
+      tags:
+        - Holds
+      summary: Установить юридическое удержание
+      operationId: post_api_admin_erasure_requests_requestId_hold
+      description: |
+        Recheck actor, tenant, resource versions, policy and holds; never trust client supplied
+        authority. Serialize legal hold with destructive step; no bypass.
+        Server-side entitlement is separate from ordinary ADMIN/SUPER_ADMIN role.
+      x-safeai-actor-authority: LEGAL_AUTHORITY
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: R1_CASE_ONLY
+      responses:
+        '200':
+          description: Успешно; не является доказательством стирания.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestView'
+          headers:
+            ETag:
+              description: Current strong case version
+              schema:
+                type: string
+                pattern: ^"[0-9]+"$
+            Cache-Control:
+              description: No browser or proxy storage of case metadata
+              schema:
+                type: string
+                const: no-store
+        '400':
+          description: Invalid request or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication or verified identity required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Not authorized or independent approver required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Not found or foreign resource (same response)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Conflict, retention hold, stale manifest or competing transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '412':
+          description: If-Match precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: Request payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Unsupported/unsafe scope or preview required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '428':
+          description: If-Match or other required precondition absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Sanitized internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Executor or verified storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HoldCreate'
+      x-safeai-body-size-limit-bytes: 8192
+      x-safeai-audit: SANITIZED_APPEND_ONLY
+      x-safeai-cache-control: no-store
+  /api/admin/erasure/requests/{requestId}/release-hold:
+    post:
+      tags:
+        - Holds
+      summary: Подать ходатайство о снятии удержания, НЕ снять удержание
+      operationId: post_api_admin_erasure_requests_requestId_release_hold
+      description: |
+        Recheck actor, tenant, resource versions, policy and holds; never trust client supplied
+        authority. Petition only. Hold remains ACTIVE until independent legal approval and
+        provider proof.
+        Server-side entitlement is separate from ordinary ADMIN/SUPER_ADMIN role.
+      x-safeai-actor-authority: LEGAL_AUTHORITY
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: R1_CASE_ONLY
+      responses:
+        '202':
+          description: Заявка зарегистрирована на обработку; удаление не начато.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HoldState'
+          headers:
+            ETag:
+              description: Current strong case version
+              schema:
+                type: string
+                pattern: ^"[0-9]+"$
+            Retry-After:
+              description: Minimum recommended polling interval (seconds)
+              schema:
+                type: integer
+                minimum: 1
+                maximum: 3600
+            Cache-Control:
+              description: No browser or proxy storage of case metadata
+              schema:
+                type: string
+                const: no-store
+        '400':
+          description: Invalid request or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication or verified identity required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Not authorized or independent approver required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Not found or foreign resource (same response)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Conflict, retention hold, stale manifest or competing transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '412':
+          description: If-Match precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: Request payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Unsupported/unsafe scope or preview required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '428':
+          description: If-Match or other required precondition absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Sanitized internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Executor or verified storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HoldReleasePetition'
+      x-safeai-body-size-limit-bytes: 8192
+      x-safeai-audit: SANITIZED_APPEND_ONLY
+      x-safeai-cache-control: no-store
+  /api/admin/erasure/holds/{holdId}:
+    get:
+      tags:
+        - Holds
+      summary: Посмотреть состояние юридического удержания
+      operationId: get_api_admin_erasure_holds_holdId
+      description: |
+        Tenant, owner and current roles are checked server-side; no foreign resource enumeration.
+        Exact hold scope, never expose case sensitive legal documents.
+        Server-side entitlement is separate from ordinary ADMIN/SUPER_ADMIN role.
+      x-safeai-actor-authority: LEGAL_AUTHORITY
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: R1_CASE_ONLY
+      responses:
+        '200':
+          description: Успешно; не является доказательством стирания.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HoldState'
+          headers:
+            Cache-Control:
+              description: No browser or proxy storage of case metadata
+              schema:
+                type: string
+                const: no-store
+            ETag:
+              description: Current strong entity version
+              schema:
+                type: string
+                pattern: ^"[0-9]+"$
+        '400':
+          description: Invalid request or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication or verified identity required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Not authorized or independent approver required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Not found or foreign resource (same response)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Conflict, retention hold, stale manifest or competing transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '412':
+          description: If-Match precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: Request payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Unsupported/unsafe scope or preview required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '428':
+          description: If-Match or other required precondition absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Sanitized internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Executor or verified storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      parameters:
+        - $ref: '#/components/parameters/HoldId'
+      x-safeai-body-size-limit-bytes: 0
+      x-safeai-audit: SANITIZED_APPEND_ONLY
+      x-safeai-cache-control: no-store
+  /api/admin/erasure/holds/{holdId}/release-decisions:
+    post:
+      tags:
+        - Holds
+      summary: Независимое юридическое решение о снятии удержания
+      operationId: post_api_admin_erasure_holds_holdId_release_decisions
+      description: |
+        Recheck actor, tenant, resource versions, policy and holds; never trust client supplied
+        authority. Do not bypass S3 Compliance or provider retention. Completion requires verified
+        hold release.
+        Server-side entitlement is separate from ordinary ADMIN/SUPER_ADMIN role.
+      x-safeai-actor-authority: INDEPENDENT_LEGAL_AUTHORITY
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: FUTURE_GATED
+      responses:
+        '200':
+          description: Успешно; не является доказательством стирания.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HoldState'
+          headers:
+            ETag:
+              description: Current strong case version
+              schema:
+                type: string
+                pattern: ^"[0-9]+"$
+            Cache-Control:
+              description: No browser or proxy storage of case metadata
+              schema:
+                type: string
+                const: no-store
+        '400':
+          description: Invalid request or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication or verified identity required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Not authorized or independent approver required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Not found or foreign resource (same response)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Conflict, retention hold, stale manifest or competing transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '412':
+          description: If-Match precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: Request payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Unsupported/unsafe scope or preview required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '428':
+          description: If-Match or other required precondition absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Sanitized internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Executor or verified storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      parameters:
+        - $ref: '#/components/parameters/HoldId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HoldReleaseDecision'
+      x-safeai-body-size-limit-bytes: 8192
+      x-safeai-audit: SANITIZED_APPEND_ONLY
+      x-safeai-cache-control: no-store
+  /api/admin/erasure/operations:
+    get:
+      tags:
+        - Operations
+      summary: Операционная очередь без контента
+      operationId: get_api_admin_erasure_operations
+      description: |
+        Tenant, owner and current roles are checked server-side; no foreign resource enumeration.
+        May see metadata only, never raw target contents or broad actor access.
+        Server-side entitlement is separate from ordinary ADMIN/SUPER_ADMIN role.
+      x-safeai-actor-authority: OPERATOR
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: FUTURE_GATED
+      responses:
+        '200':
+          description: Успешно; не является доказательством стирания.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationPage'
+          headers:
+            Cache-Control:
+              description: No browser or proxy storage of case metadata
+              schema:
+                type: string
+                const: no-store
+        '400':
+          description: Invalid request or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication or verified identity required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Not authorized or independent approver required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Not found or foreign resource (same response)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Conflict, retention hold, stale manifest or competing transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '412':
+          description: If-Match precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: Request payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Unsupported/unsafe scope or preview required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '428':
+          description: If-Match or other required precondition absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Sanitized internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Executor or verified storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/TenantSelector'
+      x-safeai-body-size-limit-bytes: 0
+      x-safeai-audit: SANITIZED_APPEND_ONLY
+      x-safeai-cache-control: no-store
+  /api/operator/erasure/steps/{stepId}/retry:
+    post:
+      tags:
+        - Operations
+      summary: Повторить шаг по runbook
+      operationId: post_api_operator_erasure_steps_stepId_retry
+      description: |
+        Recheck actor, tenant, resource versions, policy and holds; never trust client supplied
+        authority. Enforce approved manifest and new fencing; operator cannot mark complete.
+        Server-side entitlement is separate from ordinary ADMIN/SUPER_ADMIN role.
+      x-safeai-actor-authority: OPERATOR
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: R3_PLUS_EXECUTION
+      responses:
+        '200':
+          description: Успешно; не является доказательством стирания.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationStep'
+          headers:
+            ETag:
+              description: Current strong case version
+              schema:
+                type: string
+                pattern: ^"[0-9]+"$
+            Cache-Control:
+              description: No browser or proxy storage of case metadata
+              schema:
+                type: string
+                const: no-store
+        '400':
+          description: Invalid request or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication or verified identity required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Not authorized or independent approver required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Not found or foreign resource (same response)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Conflict, retention hold, stale manifest or competing transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '412':
+          description: If-Match precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: Request payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Unsupported/unsafe scope or preview required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '428':
+          description: If-Match or other required precondition absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Sanitized internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Executor or verified storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      parameters:
+        - $ref: '#/components/parameters/StepId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperatorAction'
+      x-safeai-body-size-limit-bytes: 8192
+      x-safeai-audit: SANITIZED_APPEND_ONLY
+      x-safeai-cache-control: no-store
+  /api/operator/erasure/steps/{stepId}/reconcile:
+    post:
+      tags:
+        - Operations
+      summary: Повторная проверка доказательств, без ручного COMPLETE
+      operationId: post_api_operator_erasure_steps_stepId_reconcile
+      description: |
+        Recheck actor, tenant, resource versions, policy and holds; never trust client supplied
+        authority. Reconcile from external verified evidence; operator cannot mark DELETED
+        manually.
+        Server-side entitlement is separate from ordinary ADMIN/SUPER_ADMIN role.
+      x-safeai-actor-authority: OPERATOR
+      x-safeai-contract-status: TARGET_DESIGN_NOT_RUNTIME
+      x-safeai-release-phase: R3_PLUS_EXECUTION
+      responses:
+        '200':
+          description: Успешно; не является доказательством стирания.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationStep'
+          headers:
+            ETag:
+              description: Current strong case version
+              schema:
+                type: string
+                pattern: ^"[0-9]+"$
+            Cache-Control:
+              description: No browser or proxy storage of case metadata
+              schema:
+                type: string
+                const: no-store
+        '400':
+          description: Invalid request or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication or verified identity required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Not authorized or independent approver required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Not found or foreign resource (same response)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Conflict, retention hold, stale manifest or competing transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '412':
+          description: If-Match precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: Request payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Unsupported/unsafe scope or preview required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '428':
+          description: If-Match or other required precondition absent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Sanitized internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Executor or verified storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+      parameters:
+        - $ref: '#/components/parameters/StepId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperatorAction'
+      x-safeai-body-size-limit-bytes: 8192
+      x-safeai-audit: SANITIZED_APPEND_ONLY
+      x-safeai-cache-control: no-store
+  /api/erasure/requests/capabilities:
+    get:
+      tags:
+      - Workspace
+      summary: Доступные возможности
+      operationId: workspaceCapabilities
+      description: All authenticated USER/ADMIN/SUPER_ADMIN; live roles, scope and flags. Not an authority grant.
+      x-safeai-contract-status: R2_2_SOURCE_OBSERVED_NOT_ACCEPTED
+      x-safeai-release-phase: R2_READ_ONLY
+      parameters: []
+      x-safeai-cache-control: no-store
+      responses:
+        '200':
+          description: Read-only result; does not prove deletion.
+          headers:
+            Cache-Control:
+              required: true
+              description: Required acceptance contract; no-store directive must be present.
+              schema:
+                type: string
+                pattern: '(?:^|,)[ \t]*[Nn][Oo]-[Ss][Tt][Oo][Rr][Ee][ \t]*(?:,|$)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceCapabilitiesR23'
+        '400':
+          description: Invalid parameters
+        '401':
+          description: Authentication required
+        '403':
+          description: Not authorized
+        '404':
+          description: Not found or foreign scoped ID
+        '500':
+          description: Sanitized server error
+  /api/admin/erasure/overview:
+    get:
+      tags:
+      - Workspace
+      summary: Прежняя сводка V105
+      operationId: workspaceLegacyOverview
+      description: Platform SUPER_ADMIN only; independent of approvals flag. total counts review rows; held counts
+        holds, not necessarily distinct cases. Retained for compatibility.
+      x-safeai-contract-status: R2_1_SOURCE_OBSERVED_NOT_ACCEPTED
+      x-safeai-release-phase: R2_READ_ONLY
+      parameters: []
+      x-safeai-cache-control: no-store
+      responses:
+        '200':
+          description: Read-only result; does not prove deletion.
+          headers:
+            Cache-Control:
+              required: true
+              description: Required acceptance contract; no-store directive must be present.
+              schema:
+                type: string
+                pattern: '(?:^|,)[ \t]*[Nn][Oo]-[Ss][Tt][Oo][Rr][Ee][ \t]*(?:,|$)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceLegacySummary'
+        '400':
+          description: Invalid parameters
+        '401':
+          description: Authentication required
+        '403':
+          description: Not authorized
+        '404':
+          description: Not found or foreign scoped ID
+        '500':
+          description: Sanitized server error
+  /api/admin/erasure/registry-summary:
+    get:
+      tags:
+      - Workspace
+      summary: Сводка реестра
+      operationId: workspaceRegistrySummary
+      description: 'Platform: registered and withdrawn, excludes drafts; held counts distinct cases. Tenant ADMIN:
+        only own organization with tenantRegistry capability; no V105 metadata, null review counts. total equals
+        registry ALL at the same database state.'
+      x-safeai-contract-status: R2_3_CANDIDATE_NOT_ACCEPTED
+      x-safeai-release-phase: R2_READ_ONLY
+      parameters: []
+      x-safeai-cache-control: no-store
+      responses:
+        '200':
+          description: Read-only result; does not prove deletion.
+          headers:
+            Cache-Control:
+              required: true
+              description: Required acceptance contract; no-store directive must be present.
+              schema:
+                type: string
+                pattern: '(?:^|,)[ \t]*[Nn][Oo]-[Ss][Tt][Oo][Rr][Ee][ \t]*(?:,|$)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceRegistrySummaryR23'
+        '400':
+          description: Invalid parameters
+        '401':
+          description: Authentication required
+        '403':
+          description: Not authorized
+        '404':
+          description: Not found or foreign scoped ID
+        '500':
+          description: Sanitized server error
+  /api/admin/erasure/registry:
+    get:
+      tags:
+      - Workspace
+      summary: Реестр заявок
+      operationId: workspaceRegistry
+      description: Platform redacted metadata only, no drafts; tenant ADMIN only own organization including drafts,
+        no review data. state is compatibility projection; SUBMITTED in platform filter means no review row. Offset
+        paging, 25 records; concurrent updates may move rows.
+      x-safeai-contract-status: R2_3_CANDIDATE_NOT_ACCEPTED
+      x-safeai-release-phase: R2_READ_ONLY
+      parameters:
+      - name: state
+        in: query
+        schema:
+          type: string
+          enum:
+          - ALL
+          - ATTENTION
+          - HELD
+          - PENDING
+          - NEEDS_INFORMATION
+          - APPROVED_REVIEW_ONLY
+          - REJECTED
+          - WITHDRAWN
+          - SUBMITTED
+          - DRAFT
+          default: ALL
+      - name: query
+        in: query
+        schema:
+          type: string
+          maxLength: 160
+          default: ''
+      - name: page
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 100000
+          default: 0
+      x-safeai-cache-control: no-store
+      responses:
+        '200':
+          description: Read-only result; does not prove deletion.
+          headers:
+            Cache-Control:
+              required: true
+              description: Required acceptance contract; no-store directive must be present.
+              schema:
+                type: string
+                pattern: '(?:^|,)[ \t]*[Nn][Oo]-[Ss][Tt][Oo][Rr][Ee][ \t]*(?:,|$)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceRegistryPageR23'
+        '400':
+          description: Invalid parameters
+        '401':
+          description: Authentication required
+        '403':
+          description: Not authorized
+        '404':
+          description: Not found or foreign scoped ID
+        '500':
+          description: Sanitized server error
+  /api/admin/erasure/registry/{requestId}:
+    get:
+      tags:
+      - Workspace
+      summary: Карточка заявки только для чтения
+      operationId: workspaceRegistryDetail
+      description: Identical scope to registry; foreign/missing or platform draft returns 404. No requester, resource
+        ID, contents or actions. Tenant sees no review fields. Never executes deletion.
+      x-safeai-contract-status: R2_3_CANDIDATE_NOT_ACCEPTED
+      x-safeai-release-phase: R2_READ_ONLY
+      parameters:
+      - name: requestId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      x-safeai-cache-control: no-store
+      responses:
+        '200':
+          description: Read-only result; does not prove deletion.
+          headers:
+            Cache-Control:
+              required: true
+              description: Required acceptance contract; no-store directive must be present.
+              schema:
+                type: string
+                pattern: '(?:^|,)[ \t]*[Nn][Oo]-[Ss][Tt][Oo][Rr][Ee][ \t]*(?:,|$)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceRegistryDetailR23'
+        '400':
+          description: Invalid parameters
+        '401':
+          description: Authentication required
+        '403':
+          description: Not authorized
+        '404':
+          description: Not found or foreign scoped ID
+        '500':
+          description: Sanitized server error
+  /api/admin/erasure/review-queue:
+    get:
+      tags:
+      - Workspace
+      summary: Очередь согласований
+      operationId: workspaceReviewQueue
+      description: Requires separate REVIEW or LEGAL grant and approvals flag; current actor organization only even
+        for SUPER_ADMIN. Case mutation permission separately checked.
+      x-safeai-contract-status: R2_3_CANDIDATE_NOT_ACCEPTED
+      x-safeai-release-phase: R2_READ_ONLY
+      parameters:
+      - name: state
+        in: query
+        schema:
+          type: string
+          enum:
+          - ALL
+          - ATTENTION
+          - HELD
+          - PENDING
+          - NEEDS_INFORMATION
+          - APPROVED_REVIEW_ONLY
+          - REJECTED
+          - WITHDRAWN
+          - SUBMITTED
+          - DRAFT
+          default: ALL
+      - name: query
+        in: query
+        schema:
+          type: string
+          maxLength: 160
+          default: ''
+      - name: page
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 100000
+          default: 0
+      x-safeai-cache-control: no-store
+      responses:
+        '200':
+          description: Read-only result; does not prove deletion.
+          headers:
+            Cache-Control:
+              required: true
+              description: Required acceptance contract; no-store directive must be present.
+              schema:
+                type: string
+                pattern: '(?:^|,)[ \t]*[Nn][Oo]-[Ss][Tt][Oo][Rr][Ee][ \t]*(?:,|$)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceRegistryPageR23'
+        '400':
+          description: Invalid parameters
+        '401':
+          description: Authentication required
+        '403':
+          description: Not authorized
+        '404':
+          description: Not found or foreign scoped ID
+        '500':
+          description: Sanitized server error
+  /api/admin/erasure/history:
+    get:
+      tags:
+      - Workspace
+      summary: История регистрации и рассмотрения
+      operationId: workspaceHistory
+      description: Platform or current independently granted reviewer/LEGAL in actor organization, restricted to
+        reviewed cases for tenant. V103+V105 journals; no still-draft cases; source and eventId distinguish versions
+        and mirrored events. Search request UUID substring.
+      x-safeai-contract-status: R2_3_CANDIDATE_NOT_ACCEPTED
+      x-safeai-release-phase: R2_READ_ONLY
+      parameters:
+      - name: query
+        in: query
+        schema:
+          type: string
+          maxLength: 160
+          default: ''
+      - name: page
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 100000
+          default: 0
+      x-safeai-cache-control: no-store
+      responses:
+        '200':
+          description: Read-only result; does not prove deletion.
+          headers:
+            Cache-Control:
+              required: true
+              description: Required acceptance contract; no-store directive must be present.
+              schema:
+                type: string
+                pattern: '(?:^|,)[ \t]*[Nn][Oo]-[Ss][Tt][Oo][Rr][Ee][ \t]*(?:,|$)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceHistoryPageR23'
+        '400':
+          description: Invalid parameters
+        '401':
+          description: Authentication required
+        '403':
+          description: Not authorized
+        '404':
+          description: Not found or foreign scoped ID
+        '500':
+          description: Sanitized server error
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Actual JWT/session handling comes from the existing SafeAI Auth layer.
+  parameters:
+    RequestId:
+      name: requestId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    StepId:
+      name: stepId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    HoldId:
+      name: holdId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Replay scoped by authenticated principal, tenant, endpoint and canonical body
+        digest.
+      schema:
+        type: string
+        minLength: 12
+        maxLength: 128
+        pattern: ^[A-Za-z0-9._:-]+$
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: Strong ETag from latest authorized response, e.g. "3".
+      schema:
+        type: string
+        pattern: ^"[0-9]+"$
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 2048
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+    TenantSelector:
+      name: organizationId
+      in: query
+      required: false
+      description: Only platform-authorized principals; ordinary users cannot select another tenant.
+      schema:
+        type: string
+        format: uuid
+    StateFilter:
+      name: state
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/RequestState'
+    ResourceTypeQuery:
+      name: resourceType
+      in: query
+      required: true
+      schema:
+        $ref: '#/components/schemas/ResourceType'
+    ResourceIdQuery:
+      name: resourceId
+      in: query
+      required: true
+      schema:
+        type: string
+        format: uuid
+    OperationQuery:
+      name: operation
+      in: query
+      required: true
+      schema:
+        $ref: '#/components/schemas/Operation'
+    ScopeQuery:
+      name: scope
+      in: query
+      required: true
+      schema:
+        $ref: '#/components/schemas/Scope'
+  schemas:
+    WorkspaceNotificationsR24:
+      type: object
+      additionalProperties: false
+      required:
+      - canRequest
+      - registryCount
+      - reviewCount
+      - personal
+      - review
+      properties:
+        canRequest:
+          type: boolean
+        registryCount:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          description: 'Platform: submitted without review or pending; tenant: submitted
+            in own organization; null if not visible or unavailable. Zero means a known empty count.'
+        reviewCount:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          description: Pending cases of own organization excluding own requests; null
+            without REVIEW or if unavailable. Zero means a known empty count.
+        personal:
+          type: array
+          maxItems: 20
+          items:
+            allOf:
+              - $ref: '#/components/schemas/WorkspaceNotificationEventR24'
+              - properties:
+                  audience:
+                    const: PERSONAL
+        review:
+          type: array
+          maxItems: 20
+          items:
+            allOf:
+              - $ref: '#/components/schemas/WorkspaceNotificationEventR24'
+              - properties:
+                  audience:
+                    const: REVIEW
+    WorkspaceNotificationEventR24:
+      type: object
+      additionalProperties: false
+      required:
+      - eventId
+      - requestId
+      - eventCode
+      - createdAt
+      - audience
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        requestId:
+          type: string
+          format: uuid
+        eventCode:
+          type: string
+          enum:
+          - APPROVED_REVIEW_ONLY
+          - REJECTED
+          - NEEDS_INFORMATION
+          - SUBMITTED
+          - INFORMATION_PROVIDED
+        createdAt:
+          type: string
+          format: date-time
+        audience:
+          type: string
+          enum:
+          - PERSONAL
+          - REVIEW
+      allOf:
+        - if:
+            properties:
+              audience:
+                const: PERSONAL
+          then:
+            properties:
+              eventCode:
+                enum: [APPROVED_REVIEW_ONLY, REJECTED, NEEDS_INFORMATION]
+          else:
+            properties:
+              eventCode:
+                enum: [SUBMITTED, INFORMATION_PROVIDED]
+    WorkspaceCapabilitiesR23:
+      type: object
+      required:
+      - platform
+      - tenantRegistry
+      - personalRequests
+      - reviewQueue
+      - requestsEnabled
+      - approvalsEnabled
+      additionalProperties: false
+      properties:
+        platform:
+          type: boolean
+        tenantRegistry:
+          type: boolean
+        personalRequests:
+          type: boolean
+        reviewQueue:
+          type: boolean
+        requestsEnabled:
+          type: boolean
+        approvalsEnabled:
+          type: boolean
+    WorkspaceLegacySummary:
+      type: object
+      required:
+      - total
+      - pending
+      - held
+      - needsInformation
+      additionalProperties: false
+      properties:
+        total:
+          type: integer
+          minimum: 0
+        pending:
+          type: integer
+          minimum: 0
+        held:
+          type: integer
+          minimum: 0
+        needsInformation:
+          type: integer
+          minimum: 0
+    WorkspaceRegistrySummaryR23:
+      type: object
+      required:
+      - scope
+      - total
+      - registered
+      - withdrawn
+      - drafts
+      - reviewed
+      - pending
+      - needsInformation
+      - held
+      additionalProperties: false
+      properties:
+        scope:
+          type: string
+          enum:
+          - PLATFORM
+          - TENANT
+        total:
+          type: integer
+          minimum: 0
+        registered:
+          type: integer
+          minimum: 0
+        withdrawn:
+          type: integer
+          minimum: 0
+        drafts:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        reviewed:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        pending:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        needsInformation:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        held:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+      allOf:
+      - if:
+          properties:
+            scope:
+              const: TENANT
+        then:
+          properties:
+            reviewed:
+              type: 'null'
+            pending:
+              type: 'null'
+            needsInformation:
+              type: 'null'
+            held:
+              type: 'null'
+            drafts:
+              type: integer
+              minimum: 0
+        else:
+          properties:
+            reviewed:
+              type: integer
+              minimum: 0
+            pending:
+              type: integer
+              minimum: 0
+            needsInformation:
+              type: integer
+              minimum: 0
+            held:
+              type: integer
+              minimum: 0
+            drafts:
+              type: 'null'
+    WorkspaceRegistryItemR23:
+      type: object
+      required:
+      - requestId
+      - organization
+      - requester
+      - resourceType
+      - state
+      - holdActive
+      - updatedAt
+      - intakeState
+      - reviewState
+      - reviewVisible
+      additionalProperties: false
+      properties:
+        requestId:
+          type: string
+          format: uuid
+        organization:
+          type: string
+        requester:
+          type:
+          - string
+          - 'null'
+        resourceType:
+          type: string
+        state:
+          type: string
+        holdActive:
+          type: boolean
+        updatedAt:
+          type: string
+          format: date-time
+        intakeState:
+          type: string
+          enum:
+          - DRAFT
+          - SUBMITTED
+          - WITHDRAWN
+        reviewState:
+          type:
+          - string
+          - 'null'
+          enum:
+          - null
+          - PENDING
+          - NEEDS_INFORMATION
+          - APPROVED_REVIEW_ONLY
+          - REJECTED
+          - WITHDRAWN
+        reviewVisible:
+          type: boolean
+      allOf:
+      - if:
+          properties:
+            reviewVisible:
+              const: false
+        then:
+          properties:
+            reviewState:
+              type: 'null'
+            holdActive:
+              const: false
+    WorkspaceRegistryDetailR23:
+      type: object
+      required:
+      - requestId
+      - organization
+      - resourceType
+      - intakeState
+      - reviewState
+      - reviewVisible
+      - holdActive
+      - createdAt
+      - updatedAt
+      - executionState
+      - completionProven
+      additionalProperties: false
+      properties:
+        requestId:
+          type: string
+          format: uuid
+        organization:
+          type: string
+        resourceType:
+          type: string
+        intakeState:
+          type: string
+          enum:
+          - DRAFT
+          - SUBMITTED
+          - WITHDRAWN
+        reviewState:
+          type:
+          - string
+          - 'null'
+          enum:
+          - null
+          - PENDING
+          - NEEDS_INFORMATION
+          - APPROVED_REVIEW_ONLY
+          - REJECTED
+          - WITHDRAWN
+        reviewVisible:
+          type: boolean
+        holdActive:
+          type:
+          - boolean
+          - 'null'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        executionState:
+          type: string
+          const: NOT_AVAILABLE
+        completionProven:
+          type: boolean
+          const: false
+      allOf:
+      - if:
+          properties:
+            reviewVisible:
+              const: false
+        then:
+          properties:
+            reviewState:
+              type: 'null'
+            holdActive:
+              type: 'null'
+        else:
+          properties:
+            holdActive:
+              type: boolean
+    WorkspaceHistoryItemR23:
+      type: object
+      required:
+      - requestId
+      - organization
+      - eventCode
+      - createdAt
+      - version
+      - eventId
+      - source
+      additionalProperties: false
+      properties:
+        requestId:
+          type: string
+          format: uuid
+        organization:
+          type: string
+        eventCode:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          minimum: 0
+        eventId:
+          type: string
+          format: uuid
+        source:
+          type: string
+          enum:
+          - INTAKE
+          - REVIEW
+    WorkspaceRegistryPageR23:
+      type: object
+      required:
+      - items
+      - page
+      - pageSize
+      - hasNext
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceRegistryItemR23'
+          maxItems: 25
+        page:
+          type: integer
+          minimum: 0
+          maximum: 100000
+        pageSize:
+          type: integer
+          const: 25
+        hasNext:
+          type: boolean
+    WorkspaceHistoryPageR23:
+      type: object
+      required:
+      - items
+      - page
+      - pageSize
+      - hasNext
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceHistoryItemR23'
+          maxItems: 25
+        page:
+          type: integer
+          minimum: 0
+          maximum: 100000
+        pageSize:
+          type: integer
+          const: 25
+        hasNext:
+          type: boolean
+    ResourceType:
+      type: string
+      enum:
+        - CHAT
+        - CHAT_MESSAGE
+        - AI_RESPONSE
+        - KNOWLEDGE_DOCUMENT
+        - KNOWLEDGE_DOCUMENT_VERSION
+        - KNOWLEDGE_BASE
+        - USER_ACCOUNT
+        - ORGANIZATION
+        - MODEL_BINDING
+        - MODEL_CATALOG
+        - PROVIDER_SECRET
+        - EXPORT
+    Operation:
+      type: string
+      enum:
+        - REDACT_CONTENT
+        - DELETE_OBJECT
+        - DELETE_ACCOUNT
+        - OFFBOARD_TENANT
+        - RETIRE_MODEL
+        - DETACH
+        - REVOKE_SECRET
+    Risk:
+      type: string
+      enum:
+        - L
+        - M
+        - H
+        - C
+    RequestState:
+      type: string
+      enum:
+        - DRAFT
+        - IDENTITY_VERIFICATION_REQUIRED
+        - IDENTITY_VERIFIED
+        - SUBMITTED
+        - PREFLIGHT_RUNNING
+        - PREFLIGHT_READY
+        - NEEDS_INFORMATION
+        - APPROVAL_REQUIRED
+        - AUTO_APPROVED
+        - APPROVED
+        - COOLING_PERIOD
+        - QUEUED
+        - EXECUTING
+        - VERIFYING
+        - COMPLETED_ACTIVE_SCOPE
+        - COMPLETED_FULL_SCOPE
+        - COMPLETED_WITH_EXCEPTIONS
+        - REJECTED
+        - WITHDRAWN
+        - BLOCKED_POLICY
+        - BLOCKED_RETENTION
+        - BLOCKED_DEPENDENCIES
+        - BLOCKED_SECURITY
+        - EXPIRED
+        - FAILED_RETRYABLE
+        - NEEDS_REVIEW
+        - PENDING_EXTERNAL
+    ExecutionReadiness:
+      type: string
+      enum:
+        - NOT_RELEASED
+        - CONFIGURED_UNVERIFIED
+        - BLOCKED
+        - VERIFIED
+    ObligationState:
+      type: string
+      enum:
+        - PENDING
+        - BLOCKED_RETENTION
+        - PENDING_EXTERNAL
+        - NEEDS_REVIEW
+        - VERIFIED_REMOVED
+        - RETAINED_LEGAL
+        - EXPIRED_CONFIRMED
+    ReasonCode:
+      type: string
+      description: Closed union of design reason codes. Backend also enforces smaller per-action
+        allowlists.
+      enum:
+        - OWNER_REQUEST
+        - DATA_SUBJECT_REQUEST
+        - AUTHORIZED_ADMIN_REQUEST
+        - VERIFIED_OWNER_REQUEST
+        - VERIFIED_SUPPORT_REQUEST
+        - ORGANIZATION_CLOSURE_REQUEST
+        - CONTRACT_TERMINATION
+        - RETENTION_EXPIRY
+        - LEGAL_REQUEST
+        - SECURITY_INCIDENT
+        - PENDING_VERIFICATION
+        - PENDING_APPROVAL
+        - INFORMATION_REQUESTED
+        - DOCUMENTATION_REQUIRED
+        - MANIFEST_CHANGED
+        - RESOURCE_VERSION_CHANGED
+        - POLICY_PAUSED
+        - RETENTION_HOLD
+        - LEGAL_HOLD_ACTIVE
+        - ACTIVE_AI_OPERATION
+        - DEPENDENCIES_REQUIRE_RESOLUTION
+        - INDEPENDENT_APPROVAL_REQUIRED
+        - EXECUTOR_NOT_RELEASED
+        - STORAGE_UNVERIFIED
+        - BACKUP_EXPIRY_PENDING
+        - EXTERNAL_PROVIDER_PENDING
+        - DATA_SCOPE_UNVERIFIED
+        - UNKNOWN_COPY
+        - USER_WITHDRAWAL
+        - PAUSE_REQUESTED
+        - OPERATOR_RECOVERY
+        - OPERATOR_RECONCILIATION
+        - LEGAL_HOLD_REQUESTED
+        - HOLD_RELEASE_REQUESTED
+        - LEGAL_RELEASE_VERIFIED
+        - MANUAL_ESCALATION
+        - NEEDS_REVIEW
+        - NO_BLOCKING_REASONS
+    ErrorCode:
+      type: string
+      enum:
+        - INVALID_SCOPE
+        - INVALID_CONFIRMATION
+        - AUTH_REQUIRED
+        - STEP_UP_REQUIRED
+        - NOT_AUTHORIZED
+        - INDEPENDENT_APPROVER_REQUIRED
+        - RESOURCE_NOT_FOUND
+        - RESOURCE_VERSION_CHANGED
+        - IDEMPOTENCY_CONFLICT
+        - APPROVAL_STALE
+        - EXECUTION_ALREADY_STARTED
+        - RETENTION_HOLD
+        - ACTIVE_AI_OPERATION
+        - DEPENDENCIES_REQUIRE_RESOLUTION
+        - POLICY_PAUSED
+        - PRECONDITION_FAILED
+        - PRECONDITION_REQUIRED
+        - UNSUPPORTED_OPERATION
+        - PREVIEW_REQUIRED
+        - RATE_LIMITED
+        - EXECUTOR_UNAVAILABLE
+        - STORAGE_UNVERIFIED
+        - RECEIPT_NOT_READY
+        - CHALLENGE_EXPIRED
+        - CHALLENGE_REPLAYED
+        - MANIFEST_CHANGED
+        - HOLD_RELEASE_NOT_AUTHORIZED
+        - DATA_SCOPE_UNVERIFIED
+        - PAYLOAD_TOO_LARGE
+        - INTERNAL_ERROR
+        - NEEDS_REVIEW
+        - REQUEST_EXPIRED
+        - TARGET_STATE_CHANGED
+    Scope:
+      type: string
+      enum:
+        - FULL_CHAT_CONTENT
+        - MESSAGE_CONTENT
+        - AI_RESPONSE_CONTENT
+        - FULL_DOCUMENT
+        - DOCUMENT_VERSION
+        - FULL_KNOWLEDGE_BASE
+        - PERSONAL_DATA_AND_ACCESS
+        - ORGANIZATION_OFFBOARDING
+        - TENANT_MODEL_ACCESS
+        - GLOBAL_MODEL_LIFECYCLE
+        - PROVIDER_CREDENTIAL
+        - SERVER_EXPORT
+    ResourceSelector:
+      type: object
+      additionalProperties: false
+      required:
+        - resourceType
+        - resourceId
+      properties:
+        resourceType:
+          $ref: '#/components/schemas/ResourceType'
+        resourceId:
+          type: string
+          format: uuid
+    ErasureTarget:
+      description: Exactly one allowed (operation, resourceType, scope) triple; availability is
+        independently gated.
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required:
+            - operation
+            - resourceType
+            - scope
+            - resourceId
+          properties:
+            operation:
+              const: REDACT_CONTENT
+            resourceType:
+              const: CHAT
+            scope:
+              const: FULL_CHAT_CONTENT
+            resourceId:
+              type: string
+              format: uuid
+        - type: object
+          additionalProperties: false
+          required:
+            - operation
+            - resourceType
+            - scope
+            - resourceId
+          properties:
+            operation:
+              const: REDACT_CONTENT
+            resourceType:
+              const: CHAT_MESSAGE
+            scope:
+              const: MESSAGE_CONTENT
+            resourceId:
+              type: string
+              format: uuid
+        - type: object
+          additionalProperties: false
+          required:
+            - operation
+            - resourceType
+            - scope
+            - resourceId
+          properties:
+            operation:
+              const: REDACT_CONTENT
+            resourceType:
+              const: AI_RESPONSE
+            scope:
+              const: AI_RESPONSE_CONTENT
+            resourceId:
+              type: string
+              format: uuid
+        - type: object
+          additionalProperties: false
+          required:
+            - operation
+            - resourceType
+            - scope
+            - resourceId
+          properties:
+            operation:
+              const: DELETE_OBJECT
+            resourceType:
+              const: KNOWLEDGE_DOCUMENT
+            scope:
+              const: FULL_DOCUMENT
+            resourceId:
+              type: string
+              format: uuid
+        - type: object
+          additionalProperties: false
+          required:
+            - operation
+            - resourceType
+            - scope
+            - resourceId
+          properties:
+            operation:
+              const: DELETE_OBJECT
+            resourceType:
+              const: KNOWLEDGE_DOCUMENT_VERSION
+            scope:
+              const: DOCUMENT_VERSION
+            resourceId:
+              type: string
+              format: uuid
+        - type: object
+          additionalProperties: false
+          required:
+            - operation
+            - resourceType
+            - scope
+            - resourceId
+          properties:
+            operation:
+              const: DELETE_OBJECT
+            resourceType:
+              const: KNOWLEDGE_BASE
+            scope:
+              const: FULL_KNOWLEDGE_BASE
+            resourceId:
+              type: string
+              format: uuid
+        - type: object
+          additionalProperties: false
+          required:
+            - operation
+            - resourceType
+            - scope
+            - resourceId
+          properties:
+            operation:
+              const: DELETE_ACCOUNT
+            resourceType:
+              const: USER_ACCOUNT
+            scope:
+              const: PERSONAL_DATA_AND_ACCESS
+            resourceId:
+              type: string
+              format: uuid
+        - type: object
+          additionalProperties: false
+          required:
+            - operation
+            - resourceType
+            - scope
+            - resourceId
+          properties:
+            operation:
+              const: OFFBOARD_TENANT
+            resourceType:
+              const: ORGANIZATION
+            scope:
+              const: ORGANIZATION_OFFBOARDING
+            resourceId:
+              type: string
+              format: uuid
+        - type: object
+          additionalProperties: false
+          required:
+            - operation
+            - resourceType
+            - scope
+            - resourceId
+          properties:
+            operation:
+              const: DETACH
+            resourceType:
+              const: MODEL_BINDING
+            scope:
+              const: TENANT_MODEL_ACCESS
+            resourceId:
+              type: string
+              format: uuid
+        - type: object
+          additionalProperties: false
+          required:
+            - operation
+            - resourceType
+            - scope
+            - resourceId
+          properties:
+            operation:
+              const: RETIRE_MODEL
+            resourceType:
+              const: MODEL_CATALOG
+            scope:
+              const: GLOBAL_MODEL_LIFECYCLE
+            resourceId:
+              type: string
+              format: uuid
+        - type: object
+          additionalProperties: false
+          required:
+            - operation
+            - resourceType
+            - scope
+            - resourceId
+          properties:
+            operation:
+              const: REVOKE_SECRET
+            resourceType:
+              const: PROVIDER_SECRET
+            scope:
+              const: PROVIDER_CREDENTIAL
+            resourceId:
+              type: string
+              format: uuid
+        - type: object
+          additionalProperties: false
+          required:
+            - operation
+            - resourceType
+            - scope
+            - resourceId
+          properties:
+            operation:
+              const: DELETE_OBJECT
+            resourceType:
+              const: EXPORT
+            scope:
+              const: SERVER_EXPORT
+            resourceId:
+              type: string
+              format: uuid
+    PreviewCreate:
+      type: object
+      additionalProperties: false
+      required:
+        - target
+      properties:
+        target:
+          $ref: '#/components/schemas/ErasureTarget'
+    PreviewSummary:
+      type: object
+      additionalProperties: false
+      description: Only non-sensitive category counts, never foreign resource names or contents
+      required:
+        - categories
+        - holdsCount
+        - dependenciesCount
+      properties:
+        categories:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - code
+              - count
+            properties:
+              code:
+                type: string
+                maxLength: 64
+                pattern: ^[A-Z0-9_]+$
+              count:
+                type: integer
+                minimum: 0
+          maxItems: 64
+        holdsCount:
+          type: integer
+          minimum: 0
+        dependenciesCount:
+          type: integer
+          minimum: 0
+        transferRequired:
+          type: boolean
+        activeSessions:
+          type: integer
+          minimum: 0
+        retainedEvidencePresent:
+          type: boolean
+    PreviewResult:
+      type: object
+      additionalProperties: false
+      description: Preview bound in storage to actor, tenant, target, policy/hold epochs and TTL
+      required:
+        - previewId
+        - target
+        - risk
+        - summary
+        - blockedReasons
+        - manifestDigest
+        - previewDigest
+        - expiresAt
+        - resourceVersion
+        - policyVersion
+        - holdEpoch
+        - submitAllowed
+      properties:
+        previewId:
+          type: string
+          format: uuid
+        target:
+          $ref: '#/components/schemas/ErasureTarget'
+        risk:
+          $ref: '#/components/schemas/Risk'
+        summary:
+          $ref: '#/components/schemas/PreviewSummary'
+        blockedReasons:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReasonCode'
+          maxItems: 32
+        manifestDigest:
+          type: string
+          maxLength: 64
+          pattern: ^[0-9a-f]{64}$
+          minLength: 64
+        previewDigest:
+          type: string
+          maxLength: 64
+          pattern: ^[0-9a-f]{64}$
+          minLength: 64
+        expiresAt:
+          type: string
+          format: date-time
+        resourceVersion:
+          type: integer
+          minimum: 0
+        policyVersion:
+          type: integer
+          minimum: 0
+        holdEpoch:
+          type: integer
+          minimum: 0
+        submitAllowed:
+          type: boolean
+        approvalRequirement:
+          type: object
+          additionalProperties: false
+          required:
+            - minimumIndependentApprovals
+          properties:
+            minimumIndependentApprovals:
+              type: integer
+              minimum: 0
+              maximum: 2
+            stepUpRequired:
+              type: boolean
+    RequestCreate:
+      type: object
+      additionalProperties: false
+      description: Creates DRAFT only; organization and actor are derived by the server
+      required:
+        - previewId
+        - previewDigest
+        - target
+        - expectedResourceVersion
+        - reasonCode
+      properties:
+        previewId:
+          type: string
+          format: uuid
+        previewDigest:
+          type: string
+          maxLength: 64
+          pattern: ^[0-9a-f]{64}$
+          minLength: 64
+        target:
+          $ref: '#/components/schemas/ErasureTarget'
+        expectedResourceVersion:
+          type: integer
+          minimum: 0
+        reasonCode:
+          $ref: '#/components/schemas/ReasonCode'
+        externalCaseRef:
+          type: string
+          minLength: 1
+          maxLength: 96
+          pattern: ^[A-Za-z0-9._:-]+$
+    RequestSubmit:
+      type: object
+      additionalProperties: false
+      description: Fast revalidation at submit, full dependency preflight follows asynchronously
+      required:
+        - previewDigest
+        - manifestDigest
+      properties:
+        previewDigest:
+          type: string
+          maxLength: 64
+          pattern: ^[0-9a-f]{64}$
+          minLength: 64
+        manifestDigest:
+          type: string
+          maxLength: 64
+          pattern: ^[0-9a-f]{64}$
+          minLength: 64
+    ScopeConfirmation:
+      type: object
+      additionalProperties: false
+      description: Needed if full preflight expands scope or changes dependency/hold digest; does not
+        execute
+      required:
+        - manifestDigest
+        - resourceVersion
+      properties:
+        manifestDigest:
+          type: string
+          maxLength: 64
+          pattern: ^[0-9a-f]{64}$
+          minLength: 64
+        resourceVersion:
+          type: integer
+          minimum: 0
+        stepUpProofId:
+          type: string
+          format: uuid
+    RequestView:
+      type: object
+      additionalProperties: false
+      description: Sanitized, scoped case view. Does not expose other tenants, secrets or contents
+      required:
+        - requestId
+        - state
+        - target
+        - version
+        - createdAt
+        - updatedAt
+        - executionStarted
+        - completionProven
+        - nextActions
+        - approvalProgress
+        - executionReadiness
+        - verifiedCompletionScope
+      properties:
+        requestId:
+          type: string
+          format: uuid
+        state:
+          $ref: '#/components/schemas/RequestState'
+        target:
+          $ref: '#/components/schemas/ErasureTarget'
+        version:
+          type: integer
+          minimum: 0
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        executionStarted:
+          type: boolean
+        completionProven:
+          type: boolean
+        nextActions:
+          type: array
+          items:
+            type: string
+            enum:
+              - VERIFY_IDENTITY
+              - SUBMIT
+              - CONFIRM_SCOPE
+              - PROVIDE_INFORMATION
+              - WITHDRAW
+              - REQUEST_PAUSE
+              - WAIT
+              - VIEW_RECEIPT
+          maxItems: 8
+        approvalProgress:
+          type: object
+          additionalProperties: false
+          required:
+            - required
+            - recorded
+          properties:
+            required:
+              type: integer
+              minimum: 0
+              maximum: 2
+            recorded:
+              type: integer
+              minimum: 0
+              maximum: 2
+        executionReadiness:
+          $ref: '#/components/schemas/ExecutionReadiness'
+        verifiedCompletionScope:
+          type: string
+          enum:
+            - NONE
+            - ACTIVE_SCOPE
+            - FULL_SCOPE
+        blockedReasons:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReasonCode'
+          maxItems: 32
+        coolingUntil:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+        ownerDisplayCategory:
+          type: string
+          maxLength: 60
+        receiptAvailable:
+          type: boolean
+        links:
+          type: object
+          additionalProperties: false
+          required:
+            - self
+          properties:
+            self:
+              type: string
+              minLength: 1
+              maxLength: 256
+      allOf:
+        - if:
+            properties:
+              state:
+                const: DRAFT
+            required:
+              - state
+          then:
+            properties:
+              executionStarted:
+                const: false
+              completionProven:
+                const: false
+              verifiedCompletionScope:
+                const: NONE
+        - if:
+            properties:
+              state:
+                const: COMPLETED_FULL_SCOPE
+            required:
+              - state
+          then:
+            properties:
+              completionProven:
+                const: true
+              verifiedCompletionScope:
+                const: FULL_SCOPE
+    RequestPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - nextCursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RequestView'
+          maxItems: 100
+        nextCursor:
+          oneOf:
+            - type: string
+              minLength: 1
+              maxLength: 2048
+            - type: 'null'
+    CaseEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - eventId
+        - state
+        - reasonCode
+        - createdAt
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        state:
+          $ref: '#/components/schemas/RequestState'
+        reasonCode:
+          $ref: '#/components/schemas/ReasonCode'
+        createdAt:
+          type: string
+          format: date-time
+        actorKind:
+          type: string
+          enum:
+            - REQUESTER
+            - APPROVER
+            - OPERATOR
+            - WORKER
+            - SYSTEM
+    EventsPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - nextCursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaseEvent'
+          maxItems: 100
+        nextCursor:
+          oneOf:
+            - type: string
+              maxLength: 2048
+            - type: 'null'
+    Capability:
+      type: object
+      additionalProperties: false
+      description: Hint only; authorization is revalidated on every transition and worker dispatch
+      required:
+        - canCreateDraft
+        - canSubmit
+        - executionReadiness
+        - reasons
+        - minimumIndependentApprovals
+      properties:
+        canCreateDraft:
+          type: boolean
+        canSubmit:
+          type: boolean
+        executionReadiness:
+          $ref: '#/components/schemas/ExecutionReadiness'
+        reasons:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReasonCode'
+          maxItems: 32
+        minimumIndependentApprovals:
+          type: integer
+          minimum: 0
+          maximum: 2
+        stepUpRequired:
+          type: boolean
+        resourceVersion:
+          type: integer
+          minimum: 0
+    Decision:
+      type: object
+      additionalProperties: false
+      description: Approver must be eligible, independent, fresh-auth and current at decision time
+      required:
+        - manifestDigest
+        - reasonCode
+        - stepUpProofId
+      properties:
+        manifestDigest:
+          type: string
+          maxLength: 64
+          pattern: ^[0-9a-f]{64}$
+          minLength: 64
+        reasonCode:
+          $ref: '#/components/schemas/ReasonCode'
+        stepUpProofId:
+          type: string
+          format: uuid
+    ActionReason:
+      type: object
+      additionalProperties: false
+      required:
+        - reasonCode
+      properties:
+        reasonCode:
+          $ref: '#/components/schemas/ReasonCode'
+    IdentityProof:
+      type: object
+      additionalProperties: false
+      required:
+        - proofId
+      properties:
+        proofId:
+          type: string
+          format: uuid
+    VerificationChallengeCreate:
+      type: object
+      additionalProperties: false
+      description: No raw password, one-time code or personal identifier in request body
+      required:
+        - channel
+      properties:
+        channel:
+          type: string
+          enum:
+            - VERIFIED_IN_APP
+            - VERIFIED_SUPPORT
+    VerificationChallenge:
+      type: object
+      additionalProperties: false
+      description: Opaque handle, does not reveal whether a foreign account exists
+      required:
+        - challengeId
+        - expiresAt
+        - nextAction
+      properties:
+        challengeId:
+          type: string
+          format: uuid
+        expiresAt:
+          type: string
+          format: date-time
+        nextAction:
+          type: string
+          enum:
+            - COMPLETE_STEP_UP
+            - CONTACT_VERIFIED_SUPPORT
+    AdditionalInformation:
+      type: object
+      additionalProperties: false
+      description: References verified evidence held in a separate controlled store, not raw PII
+      required:
+        - informationCode
+        - evidenceRef
+      properties:
+        informationCode:
+          $ref: '#/components/schemas/ReasonCode'
+        evidenceRef:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9._:-]+$
+    PauseRequest:
+      type: object
+      additionalProperties: false
+      description: After destructive barrier, safe pause/review only; never promises rollback
+      required:
+        - reasonCode
+      properties:
+        reasonCode:
+          $ref: '#/components/schemas/ReasonCode'
+    HoldCreate:
+      type: object
+      additionalProperties: false
+      description: Legal authority only; hold placement serialized against destructive fence
+      required:
+        - reasonCode
+        - legalReferenceId
+        - effectiveScope
+      properties:
+        reasonCode:
+          $ref: '#/components/schemas/ReasonCode'
+        legalReferenceId:
+          type: string
+          format: uuid
+        effectiveScope:
+          type: string
+          enum:
+            - TARGET
+            - MANIFEST_CHILDREN
+    HoldReleasePetition:
+      type: object
+      additionalProperties: false
+      description: Petition only; cannot release an Object Lock/legal hold
+      required:
+        - holdId
+        - reasonCode
+        - legalEvidenceRef
+        - stepUpProofId
+      properties:
+        holdId:
+          type: string
+          format: uuid
+        reasonCode:
+          $ref: '#/components/schemas/ReasonCode'
+        legalEvidenceRef:
+          type: string
+          format: uuid
+        stepUpProofId:
+          type: string
+          format: uuid
+    HoldReleaseDecision:
+      type: object
+      additionalProperties: false
+      description: Independent authorized decision, legal checks and provider enforcement required
+      required:
+        - petitionId
+        - reasonCode
+        - stepUpProofId
+      properties:
+        petitionId:
+          type: string
+          format: uuid
+        reasonCode:
+          $ref: '#/components/schemas/ReasonCode'
+        stepUpProofId:
+          type: string
+          format: uuid
+    HoldState:
+      type: object
+      additionalProperties: false
+      required:
+        - holdId
+        - state
+        - scope
+        - releasePetitionState
+      properties:
+        holdId:
+          type: string
+          format: uuid
+        state:
+          type: string
+          enum:
+            - ACTIVE
+            - RELEASE_REVIEW
+            - RELEASED
+        scope:
+          type: string
+          enum:
+            - TARGET
+            - MANIFEST_CHILDREN
+        releasePetitionState:
+          type: string
+          enum:
+            - NONE
+            - PENDING
+            - APPROVED
+            - REJECTED
+        protectedUntil:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+    OperationStep:
+      type: object
+      additionalProperties: false
+      description: Diagnostic only; neither retry nor reconcile can mark removed manually
+      required:
+        - stepId
+        - state
+        - reasonCode
+        - version
+        - updatedAt
+        - attempts
+      properties:
+        stepId:
+          type: string
+          format: uuid
+        state:
+          type: string
+          enum:
+            - WAITING
+            - RUNNING
+            - RETRY_WAIT
+            - BLOCKED
+            - NEEDS_REVIEW
+            - VERIFYING
+            - VERIFIED
+        reasonCode:
+          $ref: '#/components/schemas/ReasonCode'
+        version:
+          type: integer
+          minimum: 0
+        updatedAt:
+          type: string
+          format: date-time
+        attempts:
+          type: integer
+          minimum: 0
+        fencingEpoch:
+          type: integer
+          minimum: 0
+    OperationPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - nextCursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationStep'
+          maxItems: 100
+        nextCursor:
+          oneOf:
+            - type: string
+              maxLength: 2048
+            - type: 'null'
+    OperatorAction:
+      type: object
+      additionalProperties: false
+      description: Operator cannot choose a target, scope or terminal result
+      required:
+        - reasonCode
+        - runbookId
+      properties:
+        reasonCode:
+          $ref: '#/components/schemas/ReasonCode'
+        runbookId:
+          type: string
+          minLength: 3
+          maxLength: 80
+          pattern: ^[A-Za-z0-9._:-]+$
+    ExceptionObligation:
+      type: object
+      additionalProperties: false
+      description: No object path, PII or raw provider diagnostics
+      required:
+        - category
+        - state
+        - reasonCode
+      properties:
+        category:
+          type: string
+          minLength: 3
+          maxLength: 64
+          pattern: ^[A-Z][A-Z0-9_]*$
+        state:
+          $ref: '#/components/schemas/ObligationState'
+        reasonCode:
+          $ref: '#/components/schemas/ReasonCode'
+        reviewAfter:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+        legalBasisCode:
+          $ref: '#/components/schemas/ReasonCode'
+    Receipt:
+      type: object
+      additionalProperties: false
+      description: Sanitized proof for explicitly verified scope; no promise of universal erasure
+      required:
+        - requestId
+        - completionState
+        - verifiedScope
+        - evidenceDigest
+        - verifiedAt
+        - obligations
+        - externalScopeStatus
+        - backupScopeStatus
+      properties:
+        requestId:
+          type: string
+          format: uuid
+        completionState:
+          type: string
+          enum:
+            - COMPLETED_ACTIVE_SCOPE
+            - COMPLETED_FULL_SCOPE
+            - COMPLETED_WITH_EXCEPTIONS
+        verifiedScope:
+          type: array
+          items:
+            $ref: '#/components/schemas/Scope'
+          maxItems: 24
+        evidenceDigest:
+          type: string
+          maxLength: 64
+          pattern: ^[0-9a-f]{64}$
+          minLength: 64
+        verifiedAt:
+          type: string
+          format: date-time
+        obligations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExceptionObligation'
+          maxItems: 500
+        externalScopeStatus:
+          type: string
+          enum:
+            - VERIFIED
+            - NOT_APPLICABLE
+            - PENDING
+            - UNVERIFIABLE
+        backupScopeStatus:
+          type: string
+          enum:
+            - VERIFIED
+            - NOT_APPLICABLE
+            - PENDING
+            - RETAINED
+        signatureReference:
+          type: string
+          maxLength: 128
+      allOf:
+        - if:
+            properties:
+              completionState:
+                const: COMPLETED_FULL_SCOPE
+            required:
+              - completionState
+          then:
+            properties:
+              externalScopeStatus:
+                enum:
+                  - VERIFIED
+                  - NOT_APPLICABLE
+              backupScopeStatus:
+                enum:
+                  - VERIFIED
+                  - NOT_APPLICABLE
+              obligations:
+                type: array
+                items:
+                  allOf:
+                    - $ref: '#/components/schemas/ExceptionObligation'
+                    - properties:
+                        state:
+                          enum:
+                            - VERIFIED_REMOVED
+                            - EXPIRED_CONFIRMED
+    ApiError:
+      type: object
+      additionalProperties: false
+      description: No SQL, bucket names, foreign tenant, raw PII, provider secret or document text
+      required:
+        - code
+        - message
+        - correlationId
+        - retryable
+      properties:
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+        message:
+          type: string
+          minLength: 1
+          maxLength: 240
+        correlationId:
+          type: string
+          format: uuid
+        retryable:
+          type: boolean
+        retryAfterSeconds:
+          type: integer
+          minimum: 1
+        details:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - field
+              - reasonCode
+            properties:
+              field:
+                type: string
+                maxLength: 64
+                pattern: ^[A-Za-z0-9._-]+$
+              reasonCode:
+                $ref: '#/components/schemas/ReasonCode'
+          maxItems: 16

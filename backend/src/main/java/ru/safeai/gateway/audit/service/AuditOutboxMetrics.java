@@ -33,11 +33,13 @@ public class AuditOutboxMetrics {
     private final AtomicLong pendingRows = new AtomicLong();
     private final AtomicLong deadLetterRows = new AtomicLong();
     private final AtomicLong oldestPendingAgeSeconds = new AtomicLong();
+    private final AtomicLong lastSuccessfulRefresh = new AtomicLong();
 
     private final Counter deadLetterTransitions;
     private final Counter deliveryFailures;
     private final Counter processorFailures;
     private final Counter metricsRefreshFailures;
+    private final Counter integrityConflicts;
     private Instant lastDeadLetterLogAt;
 
     public AuditOutboxMetrics(
@@ -59,6 +61,10 @@ public class AuditOutboxMetrics {
                 .description("Age of the oldest pending audit outbox row")
                 .baseUnit("seconds")
                 .register(registry);
+        Gauge.builder("safeai.audit.outbox.metrics.last.success.timestamp", lastSuccessfulRefresh, AtomicLong::get)
+                .description("Unix time of the last successful audit backlog refresh")
+                .baseUnit("seconds")
+                .register(registry);
 
         deadLetterTransitions = Counter.builder("safeai.audit.outbox.dead.letter")
                 .description("Audit outbox rows moved to dead-letter").register(registry);
@@ -69,6 +75,14 @@ public class AuditOutboxMetrics {
         metricsRefreshFailures = Counter.builder("safeai.audit.outbox.metrics.refresh.failures")
                 .description("Failures while refreshing audit outbox backlog metrics")
                 .register(registry);
+        integrityConflicts = Counter.builder("safeai.audit.outbox.integrity.conflicts")
+                .description("Audit deliveries blocked by conflicting evidence")
+                .register(registry);
+    }
+
+    public void recordIntegrityConflict() {
+        integrityConflicts.increment();
+        log.error("AUDIT EVIDENCE CONFLICT: conflicting event and outbox evidence retained");
     }
 
     public void recordDeliveryFailure(boolean deadLettered) {
@@ -107,6 +121,7 @@ public class AuditOutboxMetrics {
             if (deadLettered == 0L) {
                 lastDeadLetterLogAt = null;
             }
+            lastSuccessfulRefresh.set(now.getEpochSecond());
         } catch (RuntimeException failure) {
             try {
                 metricsRefreshFailures.increment();

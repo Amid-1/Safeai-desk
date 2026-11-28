@@ -1,5 +1,7 @@
 package ru.safeai.gateway.chat.repository;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -17,6 +19,7 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -117,6 +120,9 @@ public class ChatQuotaRepository {
                and state = 'RESERVED'
             """;
 
+    // The V67 view counts evidence for executed responses only. A provider
+    // rejection is not proof of zero usage or cost. Keep such liabilities
+    // visible even after the logical reservation has been RELEASED.
     private static final String ORGANIZATION_CONSUMPTION_SQL = """
             select
                 count(*) filter (where r.state <> 'RELEASED')::bigint as requests,
@@ -147,7 +153,8 @@ public class ChatQuotaRepository {
                         select 1 from model_execution_plans ep
                         join model_execution_attempts ea on ea.execution_plan_id = ep.id
                         where ep.chat_turn_id = r.turn_id
-                          and ea.outcome in ('STARTED', 'AMBIGUOUS')
+                          and (ea.outcome in ('STARTED', 'AMBIGUOUS')
+                               or ea.outcome_certainty = 'KNOWN_REJECTED')
                     )
                     or (r.state <> 'RELEASED' and (
                         r.state = 'AMBIGUOUS'
@@ -164,6 +171,7 @@ public class ChatQuotaRepository {
                           on ea.execution_plan_id = ep.id
                         where ep.chat_turn_id = r.turn_id
                           and (ea.outcome in ('STARTED', 'AMBIGUOUS')
+                               or ea.outcome_certainty = 'KNOWN_REJECTED'
                                or (ea.outcome_certainty is distinct from 'KNOWN_NOT_EXECUTED'
                                    and ea.outcome is distinct from 'SUCCEEDED'
                                    and ea.pricing_status is distinct from 'PRICED'
@@ -218,7 +226,8 @@ public class ChatQuotaRepository {
                         select 1 from model_execution_plans ep
                         join model_execution_attempts ea on ea.execution_plan_id = ep.id
                         where ep.chat_turn_id = r.turn_id
-                          and ea.outcome in ('STARTED', 'AMBIGUOUS')
+                          and (ea.outcome in ('STARTED', 'AMBIGUOUS')
+                               or ea.outcome_certainty = 'KNOWN_REJECTED')
                     )
                     or (r.state <> 'RELEASED' and (
                         r.state = 'AMBIGUOUS'
@@ -235,6 +244,7 @@ public class ChatQuotaRepository {
                           on ea.execution_plan_id = ep.id
                         where ep.chat_turn_id = r.turn_id
                           and (ea.outcome in ('STARTED', 'AMBIGUOUS')
+                               or ea.outcome_certainty = 'KNOWN_REJECTED'
                                or (ea.outcome_certainty is distinct from 'KNOWN_NOT_EXECUTED'
                                    and ea.outcome is distinct from 'SUCCEEDED'
                                    and ea.pricing_status is distinct from 'PRICED'
@@ -268,14 +278,21 @@ public class ChatQuotaRepository {
             );
 
     private final JdbcTemplate jdbcTemplate;
+    private final ZoneId periodZone;
 
     public ChatQuotaRepository(
             JdbcTemplate jdbcTemplate
     ) {
+        this(jdbcTemplate, new ChatQuotaProperties(null, null, null, null, "UTC"));
+    }
+
+    @Autowired
+    public ChatQuotaRepository(JdbcTemplate jdbcTemplate, ChatQuotaProperties properties) {
         this.jdbcTemplate = Objects.requireNonNull(
                 jdbcTemplate,
                 "jdbcTemplate не должен быть null"
         );
+        this.periodZone = Objects.requireNonNull(properties, "properties").effectivePeriodZone();
     }
 
     public ChatQuotaPolicy lockOrganizationPolicy(
@@ -451,13 +468,16 @@ public class ChatQuotaRepository {
         Objects.requireNonNull(now, "now не должен быть null");
 
         Timestamp timestamp = Timestamp.from(now);
+        // Граница месяца фиксируется при резервировании, а не при повторе.
+        Instant periodBegin = periodStart.atStartOfDay(periodZone).toInstant();
+        Instant periodEnd = periodStart.plusMonths(1).atStartOfDay(periodZone).toInstant();
         int updated = jdbcTemplate.update("""
                 insert into chat_quota_reservations (
                     turn_id, organization_id, user_id, period_start, state,
                     model_route_decision_id, reservation_version, cost_verifiable,
                     reserved_input_tokens, reserved_output_tokens, reserved_cost_usd,
-                    created_at, updated_at
-                ) select ?, ?, ?, ?, 'RESERVED', d.id, 2, ?, ?, ?, ?, ?, ?
+                    created_at, updated_at, physical_period_start, physical_period_end
+                ) select ?, ?, ?, ?, 'RESERVED', d.id, 2, ?, ?, ?, ?, ?, ?, ?, ?
                   from model_route_decisions d
                  where d.id = ? and d.chat_turn_id = ?
                    and d.organization_id = ? and d.user_id = ?
@@ -472,6 +492,7 @@ public class ChatQuotaRepository {
                 reservation.costVerifiable(),
                 reservation.inputUnits(), reservation.outputUnits(),
                 reservation.databaseReservedCostUsd(), timestamp, timestamp,
+                Timestamp.from(periodBegin), Timestamp.from(periodEnd),
                 reservation.modelRouteDecisionId(), turnId, organizationId, userId,
                 reservation.inputUnits(), reservation.outputUnits(),
                 reservation.costVerifiable(), reservation.databaseReservedCostUsd());
@@ -595,6 +616,14 @@ public class ChatQuotaRepository {
             String sql,
             UUID subjectId
     ) {
+        // First lock the policy namespace, including absent rows. The caller
+        // holds this shared transaction lock through the reservation INSERT.
+        jdbcTemplate.execute("select public.lock_quota_admission_v96()");
+        String configuredZone = jdbcTemplate.queryForObject(
+                "select period_zone from public.chat_quota_calendar_v96 where singleton", String.class);
+        if (!periodZone.getId().equals(configuredZone)) {
+            throw new IllegalStateException("Chat quota period zone differs from database calendar");
+        }
         try {
             ChatQuotaPolicy policy =
                     jdbcTemplate.queryForObject(

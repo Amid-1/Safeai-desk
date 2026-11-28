@@ -7,8 +7,15 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
+/**
+ * Общие инструменты интеграционных тестов аудита на настоящем PostgreSQL.
+ *
+ * <p>Очистка выполняется только в тестовой базе. Транзакции, внешние ключи,
+ * неизменяемость событий и работа outbox не отключаются.</p>
+ */
 @SuppressWarnings({
         "SqlResolve",
         "SqlNoDataSourceInspection"
@@ -27,15 +34,10 @@ public abstract class AbstractAuditPostgresIntegrationTest
     @BeforeEach
     protected void cleanAuditStorage() {
         /*
-         * Test-only cleanup. TRUNCATE avoids the misleading IntelliJ
-         * "DELETE without WHERE" inspection and is faster for integration
-         * test isolation.
-         *
-         * V70: audit_event_user_links references audit_events.
-         * Both tables must be included in the same TRUNCATE statement.
-         *
-         * CASCADE is intentionally not used to avoid truncating
-         * unrelated tables through additional foreign keys.
+         * Изоляция тестов: очищаются только таблицы аудита в тестовой БД.
+         * После V70 таблица связей с пользователями зависит от audit_events,
+         * поэтому все три таблицы очищаются одним TRUNCATE.
+         * CASCADE намеренно отсутствует: затрагивать другие таблицы нельзя.
          */
         jdbcTemplate.execute(
                 """
@@ -67,7 +69,7 @@ public abstract class AbstractAuditPostgresIntegrationTest
 
         if (roleId == null) {
             throw new IllegalStateException(
-                    "Role not found: " + roleName
+                    "Не найдена роль для тестового пользователя: " + roleName
             );
         }
 
@@ -175,7 +177,8 @@ public abstract class AbstractAuditPostgresIntegrationTest
                 args
         );
 
-        return value == null ? 0 : value;
+        return Objects.requireNonNull(value,
+                "PostgreSQL вернул null вместо обязательного целого результата");
     }
 
     @SuppressWarnings("SqlSourceToSinkFlow")
@@ -190,16 +193,25 @@ public abstract class AbstractAuditPostgresIntegrationTest
         );
     }
 
-    @SuppressWarnings("SqlSourceToSinkFlow")
-    protected UUID queryUuid(
-            String sql,
-            Object... args
-    ) {
-        return jdbcTemplate.queryForObject(
-                sql,
+    /**
+     * Возвращает ID единственного намерения аудита заданной организации.
+     *
+     * <p>SQL фиксирован и параметризован: тесты не передают произвольную строку
+     * запроса. Отсутствие или несколько записей считаются ошибкой фикстуры,
+     * а не успешным получением пустого идентификатора.</p>
+     */
+    protected UUID auditOutboxIdForOrganization(UUID organizationId) {
+        Objects.requireNonNull(organizationId, "organizationId не должен быть null");
+        UUID id = jdbcTemplate.queryForObject(
+                """
+                SELECT id
+                FROM public.audit_outbox
+                WHERE organization_id = ?
+                """,
                 UUID.class,
-                args
+                organizationId
         );
+        return Objects.requireNonNull(id, "PostgreSQL вернул null вместо ID audit_outbox");
     }
 
     protected String toJson(
@@ -209,7 +221,7 @@ public abstract class AbstractAuditPostgresIntegrationTest
             return jsonMapper.writeValueAsString(value);
         } catch (JacksonException exception) {
             throw new IllegalArgumentException(
-                    "Unable to serialize test JSON",
+                    "Не удалось сериализовать JSON тестовых данных",
                     exception
             );
         }

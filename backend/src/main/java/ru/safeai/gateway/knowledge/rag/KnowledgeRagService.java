@@ -1,6 +1,8 @@
+// SafeAI-Desk/backend/src/main/java/ru/safeai/gateway/knowledge/rag/KnowledgeRagService.java
 package ru.safeai.gateway.knowledge.rag;
 
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import ru.safeai.gateway.ai.dto.AiChatRequest;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
@@ -9,6 +11,7 @@ import ru.safeai.gateway.knowledge.retrieval.KnowledgeRetrievalExecution;
 import ru.safeai.gateway.knowledge.service.KnowledgeRetrievalService;
 
 import java.util.Objects;
+import java.util.UUID;
 
 @Service
 public class KnowledgeRagService {
@@ -18,13 +21,28 @@ public class KnowledgeRagService {
     private final KnowledgeCitationValidator citationValidator;
     private final KnowledgeRagContextReceiptService contextReceiptService;
     private final KnowledgeRagProperties properties;
+    private final KnowledgeRagExecutionPermitService executionPermitService;
 
+    /** Source-compatible constructor for isolated unit tests. Production uses the permit-aware constructor. */
     public KnowledgeRagService(
             KnowledgeRetrievalService retrievalService,
             KnowledgeContextAssembler contextAssembler,
             KnowledgeCitationValidator citationValidator,
             KnowledgeRagContextReceiptService contextReceiptService,
             KnowledgeRagProperties properties
+    ) {
+        this(retrievalService, contextAssembler, citationValidator, contextReceiptService,
+                properties, null);
+    }
+
+    @Autowired
+    public KnowledgeRagService(
+            KnowledgeRetrievalService retrievalService,
+            KnowledgeContextAssembler contextAssembler,
+            KnowledgeCitationValidator citationValidator,
+            KnowledgeRagContextReceiptService contextReceiptService,
+            KnowledgeRagProperties properties,
+            KnowledgeRagExecutionPermitService executionPermitService
     ) {
         this.retrievalService = Objects.requireNonNull(
                 retrievalService,
@@ -46,6 +64,7 @@ public class KnowledgeRagService {
                 properties,
                 "properties не должен быть null"
         );
+        this.executionPermitService = executionPermitService;
     }
 
     public RagPreparation prepare(
@@ -124,6 +143,19 @@ public class KnowledgeRagService {
                 preparedRequest
         );
 
+        if (executionPermitService == null) {
+            throw new IllegalStateException(
+                    "Knowledge RAG execution permit service is required before provider dispatch");
+        }
+        UUID executionPermitId = executionPermitService.createPermit(
+                context.turnId(),
+                user.getOrganizationId(),
+                context.knowledgeBaseId(),
+                retrieval.retrievalRunId(),
+                assembled.contextSha256(),
+                assembled.sources()
+        );
+
         return new RagPreparation(
                 context.knowledgeMode(),
                 context.knowledgeBaseId(),
@@ -131,8 +163,24 @@ public class KnowledgeRagService {
                 retrieval.embeddingModel(),
                 assembled.contextSha256(),
                 assembled.sources(),
-                preparedRequest
+                preparedRequest,
+                executionPermitId
         );
+    }
+
+    /** Проверка уже сформированного контекста перед отправкой провайдеру. */
+    public void assertSourcesAvailable(RagPreparation preparation, SafeAiUserPrincipal user) {
+        Objects.requireNonNull(preparation, "preparation");
+        Objects.requireNonNull(user, "user");
+        contextReceiptService.assertSourcesAvailable(preparation, user.getOrganizationId());
+    }
+
+    /** Release an unused/failed context permit; active physical attempt leases remain independently fenced. */
+    public void closeExecutionPermit(RagPreparation preparation) {
+        if (preparation != null && preparation.executionPermitId() != null
+                && executionPermitService != null) {
+            executionPermitService.closePermit(preparation.executionPermitId());
+        }
     }
 
     public RagCompletion complete(

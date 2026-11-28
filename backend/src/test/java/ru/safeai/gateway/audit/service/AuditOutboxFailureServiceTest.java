@@ -33,6 +33,22 @@ class AuditOutboxFailureServiceTest {
     private AuditDatabaseClock databaseClock;
 
     @Test
+    void evidenceConflictImmediatelyBecomesTerminal() {
+        AuditOutboxEntity item = entity(0);
+        when(repository.findByIdForUpdate(item.getId())).thenReturn(Optional.of(item));
+        when(databaseClock.now()).thenReturn(NOW);
+
+        var result = service(10).markFailure(item.getId(), new AuditEvidenceConflictException());
+        assertThat(result.rowFound()).isTrue();
+        assertThat(result.deadLettered()).isTrue();
+        assertThat(result.attemptCount()).isEqualTo(1);
+        assertThat(item.getDeadLetteredAt()).isEqualTo(NOW);
+        assertThat(item.getNextAttemptAt()).isNull();
+        assertThat(item.getLastError()).isEqualTo(AuditEvidenceConflictException.class.getName());
+        verify(repository).saveAndFlush(item);
+    }
+
+    @Test
     void firstFailureSchedulesInitialBackoff() {
         AuditOutboxEntity entity =
                 entity(

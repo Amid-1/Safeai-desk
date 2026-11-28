@@ -2,7 +2,7 @@
 // Состояние входа, блокировка повторной отправки и обработка ответов API.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, SyntheticEvent } from 'react'
-import { ApiError, getApiErrorMessage } from '../../../shared/api/http'
+import { ApiError, getApiErrorMessage, rateLimitRetrySeconds } from '../../../shared/api/http'
 import { useAuth } from '../state/useAuth'
 
 type InvalidField = 'email' | 'password' | 'credentials' | null
@@ -20,6 +20,7 @@ export function useLoginPageController() {
     const passwordInputRef =
         useRef<HTMLInputElement | null>(null)
     const submitInFlightRef = useRef(false)
+    const retryUntilRef = useRef(0)
 
     const [email, setEmail] = useState('')
     const [password, setPassword] =
@@ -81,7 +82,7 @@ export function useLoginPageController() {
         if (
             submitInFlightRef.current
             || loading
-            || retryAfterSeconds > 0
+            || Date.now() < retryUntilRef.current
         ) {
             return
         }
@@ -136,15 +137,11 @@ export function useLoginPageController() {
             if (
                 loginError instanceof ApiError
                 && loginError.status === 429
-                && loginError.retryAfterSeconds
             ) {
                 const currentTime = Date.now()
-
-                setRetryUntil(
-                    currentTime
-                    + loginError.retryAfterSeconds
-                    * 1_000,
-                )
+                const deadline = currentTime + rateLimitRetrySeconds(loginError) * 1_000
+                retryUntilRef.current = deadline
+                setRetryUntil(deadline)
                 setNow(currentTime)
                 setError(
                     'Слишком много попыток входа.',

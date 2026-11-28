@@ -12,10 +12,37 @@ import {buildPolicyRequest, createPolicyDraft} from '../modelControlPlaneSupport
 import type {PolicyDraft} from '../modelControlPlaneSupport'
 import type {ModelKeySelectorInteractionState} from '../ModelPolicyModelSelectors'
 import type {ModelPolicyModalProps} from './policyModalTypes'
+import {POLICY_EDITOR_TARGETS} from './policyFormTabsConfig'
+import type {PolicyTab} from './policyFormTabsConfig'
+import {validatePolicyNumericFields} from '../modelControlPlane/policyNumericFields'
+import {budgetMoneyEqual, moscowBudgetDate} from '../../../../entities/model/api/modelApi'
+import {parsePolicyMoney} from '../modelControlPlane/policyNumericFields'
 
 type ModelPolicyModalControllerInput = Pick<ModelPolicyModalProps,
-    'policy' | 'organizationId' | 'effectiveCatalog' | 'runtime' | 'pending' | 'onClose' | 'onPreview' | 'onSubmit'
+    'policy' | 'organizationId' | 'effectiveCatalog' | 'runtime' | 'pending' | 'onClose' | 'onPreview' | 'onSubmit' | 'initialTarget'
 >
+
+// List ordering and decimal formatting do not change the actual rules.
+function policyContentFingerprint(draft: PolicyDraft): string | null {
+    try {
+        const request = buildPolicyRequest(draft, 0)
+        const decimal = (value: string | null) => value === null ? null
+            : value.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '').replace(/^0+(?=\d)/, '')
+        return JSON.stringify({...request,
+            allowModelKeys: [...request.allowModelKeys].sort(),
+            denyModelKeys: [...request.denyModelKeys].sort(),
+            maxRequestCostUsd: decimal(request.maxRequestCostUsd),
+            monthlyBudgetUsd: decimal(request.monthlyBudgetUsd),
+            ...(request.rubBudget ? {rubBudget: {...request.rubBudget,
+                maxRequestCostRub: decimal(request.rubBudget.maxRequestCostRub),
+                monthlyBudgetRub: decimal(request.rubBudget.monthlyBudgetRub),
+                rubPerUsd: decimal(request.rubBudget.rubPerUsd),
+            }} : {}),
+        })
+    } catch {
+        return null
+    }
+}
 
 export function useModelPolicyModalController({
     policy,
@@ -26,6 +53,7 @@ export function useModelPolicyModalController({
     onClose,
     onPreview,
     onSubmit,
+    initialTarget,
 }: ModelPolicyModalControllerInput) {
     // Исходная версия фиксируется на весь сеанс редактирования. Нельзя
     // сохранять старый черновик под новой optimistic-lock версией после
@@ -33,14 +61,17 @@ export function useModelPolicyModalController({
     const [openedPolicy] = useState(() => ({
         id: policy.id,
         version: policy.version,
+        organizationId: policy.organizationId,
     }))
     const policyChangedExternally =
         openedPolicy.version !== policy.version
         || openedPolicy.id !== policy.id
+        || openedPolicy.organizationId !== policy.organizationId
 
     // Защищаем запросы от повторных действий до следующего обновления React.
     const previewInFlightRef = useRef(false)
     const submitInFlightRef = useRef(false)
+    const [ratePending, setRatePending] = useState(false)
 
     const formId =
         useId()
@@ -68,6 +99,7 @@ export function useModelPolicyModalController({
                 createPolicyDraft(policy),
             ),
         )
+    const [initialContentFingerprint] = useState(() => policyContentFingerprint(createPolicyDraft(policy)))
 
     const [
         formError,
@@ -146,7 +178,7 @@ export function useModelPolicyModalController({
         )
 
     const [activeSection, setActiveSection] =
-        useState<'access' | 'limits' | 'budget' | 'data' | 'preview'>('access')
+        useState<PolicyTab>(() => initialTarget ? POLICY_EDITOR_TARGETS[initialTarget].tab : 'access')
 
     // Локально поясняем только метаданные каталога: решения о маршрутизации и блокировке принимает сервер.
     const undeclaredTrainingModels = effectiveCatalog.filter((entry) =>
@@ -194,6 +226,10 @@ export function useModelPolicyModalController({
     // A server preview is valid only for the exact runtime and effective catalog
     // used to request it. Reordering catalog entries must not invalidate it.
     const previewContextFingerprint = JSON.stringify({
+        organizationId,
+        policyOrganizationId: policy.organizationId,
+        policyId: policy.id,
+        policyVersion: policy.version,
         runtime,
         effectiveCatalog: [...effectiveCatalog].sort((a, b) =>
             a.modelKey.localeCompare(b.modelKey) || a.version - b.version,
@@ -209,9 +245,11 @@ export function useModelPolicyModalController({
         && verifiedDraftRevision === draftRevision
         && verifiedContextFingerprint === previewContextFingerprint
         && !policyChangedExternally
+        && organizationId === policy.organizationId
         && policyPreview?.organizationId === policy.organizationId
         && policyPreview.basePolicyVersion === policy.version
         && policyPreview.enabled === draft.enabled
+        && Date.parse(policyPreview.confirmationExpiresAt) > Date.now()
             ? policyPreview
             : null
 
@@ -256,6 +294,19 @@ export function useModelPolicyModalController({
         setLockoutAcknowledged(false)
     }, [draftRevision, previewContextFingerprint])
 
+    useEffect(() => {
+        if (!policyPreview) return
+        const expire = () => {
+            setVerifiedDraftRevision(null)
+            setLockoutAcknowledged(false)
+            setPreviewError('Срок серверного подтверждения истёк. Повторите проверку правил.')
+        }
+        const remaining = Date.parse(policyPreview.confirmationExpiresAt) - Date.now()
+        if (!(remaining > 0)) return
+        const timer = window.setTimeout(expire, remaining)
+        return () => window.clearTimeout(timer)
+    }, [policyPreview])
+
     // A changed runtime/catalog invalidates the issued preview permanently,
     // even if those props later happen to return to their previous values.
     // The exact fingerprint check above closes the render-to-effect gap.
@@ -266,8 +317,30 @@ export function useModelPolicyModalController({
         setVerifiedContextFingerprint('')
     }, [previewContextFingerprint])
 
-    const isDirty =
-        draftFingerprint !== initialDraftFingerprint
+    const contentFingerprint = useMemo(() => policyContentFingerprint(draft), [draft])
+    const isDirty = draftFingerprint !== initialDraftFingerprint
+        && (contentFingerprint === null || contentFingerprint !== initialContentFingerprint)
+    const canSaveChanges = !policy.configured || isDirty
+    const numericErrors = validatePolicyNumericFields(draft)
+    if (draft.rubQuote && draft.rubQuote.quoteDate !== moscowBudgetDate()
+        && !numericErrors.maxRequestCostUsd && !numericErrors.monthlyBudgetUsd) {
+        const max = parsePolicyMoney(draft.maxRequestCostUsd, 'Лимит')
+        const monthly = parsePolicyMoney(draft.monthlyBudgetUsd, 'Бюджет')
+        const saved = policy.rubBudget
+        const unchanged = saved && saved.quoteDate === draft.rubQuote.quoteDate
+            && saved.effectiveDate === draft.rubQuote.effectiveDate
+            && budgetMoneyEqual(saved.rubPerUsd, draft.rubQuote.rubPerUsd)
+            && budgetMoneyEqual(saved.maxRequestCostRub, max)
+            && budgetMoneyEqual(saved.monthlyBudgetRub, monthly)
+        if (!unchanged && (max !== null || monthly !== null)) {
+            const message = 'Для изменения рублёвого бюджета получите актуальный курс.'
+            if (max !== null) numericErrors.maxRequestCostUsd = message
+            if (monthly !== null) numericErrors.monthlyBudgetUsd = message
+        }
+    }
+    const invalidNumericSection = numericErrors.maxInputTokens || numericErrors.maxOutputTokens
+        ? 'limits' : numericErrors.maxRequestCostUsd || numericErrors.monthlyBudgetUsd
+            ? 'budget' : null
 
     const requestClose = () => {
         if (pending || previewPending) {
@@ -304,6 +377,11 @@ export function useModelPolicyModalController({
             // политика относятся к разным tenant.
             if (organizationId !== policy.organizationId) {
                 setFormError('Организация формы не совпадает с загруженными правилами. Обновите данные.')
+                return null
+            }
+
+            if (invalidNumericSection) {
+                setActiveSection(invalidNumericSection)
                 return null
             }
 
@@ -345,7 +423,7 @@ export function useModelPolicyModalController({
         }
 
     const handlePreview = async () => {
-        if (pending || previewInFlightRef.current || submitInFlightRef.current) {
+        if (pending || ratePending || previewInFlightRef.current || submitInFlightRef.current) {
             return
         }
         const request = buildCurrentRequest()
@@ -394,6 +472,8 @@ export function useModelPolicyModalController({
                 || result.enabled !== request.enabled
                 || result.runtimeProvider !== runtime.provider
                 || result.runtimeModel !== runtime.model
+                || !result.previewConfirmationId
+                || !(Date.parse(result.confirmationExpiresAt) > Date.now())
             ) {
                 // Это ошибка контракта ответа, а не исключение HTTP-запроса.
                 // Не бросаем исключение, которое тут же поймает этот catch.
@@ -408,7 +488,7 @@ export function useModelPolicyModalController({
         } catch (failure) {
             invalidatePreview(
                 failure instanceof Error
-                    ? getApiErrorMessage(failure, failure.message)
+                    ? getApiErrorMessage(failure, 'Не удалось проверить правила. Попробуйте повторно.')
                     : 'Не удалось проверить правила.',
             )
         } finally {
@@ -418,7 +498,7 @@ export function useModelPolicyModalController({
     }
 
     const handleSubmit = async () => {
-        if (pending || previewInFlightRef.current || submitInFlightRef.current) {
+        if (!canSaveChanges || pending || ratePending || previewInFlightRef.current || submitInFlightRef.current) {
             return
         }
         const request = buildCurrentRequest()
@@ -426,10 +506,10 @@ export function useModelPolicyModalController({
             return
         }
 
-        if (draft.enabled && currentPreview === null) {
+        if (currentPreview === null || !(Date.parse(currentPreview.confirmationExpiresAt) > Date.now())) {
             setActiveSection('preview')
             setFormError(
-                'Перед сохранением включённых правил выполните «Проверить правила». Проверка должна соответствовать текущему черновику.',
+                'Перед сохранением выполните «Проверить правила». Проверка должна соответствовать текущему черновику.',
             )
             return
         }
@@ -448,13 +528,19 @@ export function useModelPolicyModalController({
 
         submitInFlightRef.current = true
         try {
-            await onSubmit(request)
+            await onSubmit({...request, previewConfirmationId: currentPreview.previewConfirmationId,
+                acknowledgeLockout: currentPreview.wouldLockOutOrganization && lockoutAcknowledged})
         } catch (failure) {
+            if (typeof failure === 'object' && failure !== null && 'status' in failure && failure.status === 409) {
+                setVerifiedDraftRevision(null)
+                setLockoutAcknowledged(false)
+                setActiveSection('preview')
+            }
             setFormError(
                 failure instanceof Error
                     ? getApiErrorMessage(
                         failure,
-                        failure.message,
+                        'Не удалось сохранить правила. Попробуйте повторно.',
                     )
                     : 'Не удалось сохранить правила.',
             )
@@ -466,9 +552,8 @@ export function useModelPolicyModalController({
     const versionMessage =
         policy.configured
             ? (
-                `Действующие правила организации: версия ${policy.version}. `
-                + `При успешном сохранении будет создана версия ${policy.version + 1}. `
-                + 'Предыдущая версия сохранится в истории.'
+                `Действующая версия: ${policy.version}. `
+                + `При сохранении изменений будет создана версия ${policy.version + 1}; предыдущая сохранится в истории.`
             )
             : (
                 'Это первая настройка правил. '
@@ -483,13 +568,12 @@ export function useModelPolicyModalController({
     const rulesStatusHint =
         draft.enabled
             ? (
-                'Ограничения и лимиты применяются '
-                + 'к запросам этой организации.'
+                'Ограничения черновика вступят в силу после сохранения.'
             )
             : policy.configured
                 ? (
-                    'Сохранённые правила существуют, '
-                    + 'но сейчас не ограничивают маршрутизацию.'
+                    'После сохранения ограничения организации не будут применяться. '
+                    + 'Серверные проверки безопасности сохраняются.'
                 )
                 : (
                     'Первая настройка не включится, '
@@ -506,7 +590,8 @@ export function useModelPolicyModalController({
         activeSection, setActiveSection, policyChangedExternally,
         undeclaredTrainingModels, activationWarning,
         serverConfirmedTrainingLockout, serverTrainingRejectedModelKeys,
-        isDirty, requestClose, handlePreview, handleSubmit,
+        isDirty, canSaveChanges, requestClose, handlePreview, handleSubmit,
+        numericErrors, invalidNumericSection, ratePending, setRatePending,
         versionMessage, rulesStatusLabel, rulesStatusHint,
     }
 }

@@ -1,0 +1,486 @@
+rule_files:
+  - ../rules/safeai-ratelimit.yml
+evaluation_interval: 1m
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'up{job="safeai-backend",instance="a"}'
+        values: '0x12'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: SafeAiRateLimitScrapeUnavailable
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: SafeAiRateLimitScrapeUnavailable
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: safeai-backend
+              job: safeai-backend
+              instance: a
+            exp_annotations:
+              summary: 'RateLimit backend scrape unavailable'
+  - interval: 1m
+    input_series:
+      - series: 'up{job="safeai-backend",instance="a"}'
+        values: '1x12'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: SafeAiRateLimitInstrumentationMissing
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: SafeAiRateLimitInstrumentationMissing
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: safeai-backend
+              job: safeai-backend
+              instance: a
+            exp_annotations:
+              summary: 'RateLimit instrumentation incomplete'
+  - interval: 1m
+    input_series:
+      - series: 'up{job="safeai-backend",instance="a"}'
+        values: '1x12'
+      - series: 'safeai_rate_limit_redis_observation_healthy{job="safeai-backend",instance="a"}'
+        values: '1x12'
+      - series: 'safeai_rate_limit_redis_last_observation_timestamp{job="safeai-backend",instance="a"}'
+        values: '1x12'
+      - series: 'safeai_rate_limit_redis_epoch_required{job="safeai-backend",instance="a"}'
+        values: '1x12'
+      - series: 'safeai_rate_limit_redis_memory_max_bytes{job="safeai-backend",instance="a"}'
+        values: '1x12'
+      - series: 'safeai_rate_limit_redis_memory_accounted_bytes{job="safeai-backend",instance="a"}'
+        values: '1x12'
+      - series: 'safeai_rate_limit_redis_noeviction{job="safeai-backend",instance="a"}'
+        values: '1x12'
+      - series: 'safeai_rate_limit_redis_primary{job="safeai-backend",instance="a"}'
+        values: '1x12'
+      - series: 'safeai_rate_limit_redis_aof_healthy{job="safeai-backend",instance="a"}'
+        values: '1x12'
+      - series: 'safeai_rate_limit_redis_evicted_keys{job="safeai-backend",instance="a"}'
+        values: '1x12'
+      - series: 'safeai_rate_limit_redis_epoch_state{job="safeai-backend",instance="a",state="active"}'
+        values: '1x12'
+      - series: 'safeai_rate_limit_redis_allocation_active{job="safeai-backend",instance="a",type="login"}'
+        values: '0x12'
+      - series: 'safeai_rate_limit_redis_allocation_limit{job="safeai-backend",instance="a",type="login"}'
+        values: '4096x12'
+      - series: 'safeai_rate_limit_redis_allocation_active{job="safeai-backend",instance="a",type="refresh"}'
+        values: '0x12'
+      - series: 'safeai_rate_limit_redis_allocation_limit{job="safeai-backend",instance="a",type="refresh"}'
+        values: '4096x12'
+      - series: 'safeai_rate_limit_allowed_total{job="safeai-backend",instance="a",type="login"}'
+        values: '0x12'
+      - series: 'safeai_rate_limit_allowed_total{job="safeai-backend",instance="a",type="refresh"}'
+        values: '0x12'
+      - series: 'safeai_rate_limit_allowed_total{job="safeai-backend",instance="a",type="ai_message"}'
+        values: '0x12'
+      - series: 'safeai_rate_limit_rejected_total{job="safeai-backend",instance="a",type="login",dimension="capacity"}'
+        values: '0x12'
+      - series: 'safeai_rate_limit_rejected_total{job="safeai-backend",instance="a",type="refresh",dimension="capacity"}'
+        values: '0x12'
+      - series: 'safeai_rate_limit_rejected_total{job="safeai-backend",instance="a",type="ai_message",dimension="organization"}'
+        values: '0x12'
+      - series: 'safeai_rate_limit_unavailable_total{job="safeai-backend",instance="a",type="login"}'
+        values: '0x12'
+      - series: 'safeai_rate_limit_unavailable_total{job="safeai-backend",instance="a",type="refresh"}'
+        values: '0x12'
+      - series: 'safeai_rate_limit_unavailable_total{job="safeai-backend",instance="a",type="ai_message"}'
+        values: '0x12'
+      - series: 'safeai_rate_limit_audit_publish_failed_total{job="safeai-backend",instance="a",type="login"}'
+        values: '0x12'
+      - series: 'safeai_rate_limit_audit_publish_failed_total{job="safeai-backend",instance="a",type="ai_message"}'
+        values: '0x12'
+      - series: 'safeai_rate_limit_redis_duration_seconds_count{job="safeai-backend",instance="a",type="login",operation="check",outcome="success"}'
+        values: '0x12'
+      - series: 'safeai_rate_limit_redis_duration_seconds_count{job="safeai-backend",instance="a",type="refresh",operation="check",outcome="success"}'
+        values: '0x12'
+      - series: 'safeai_rate_limit_redis_duration_seconds_count{job="safeai-backend",instance="a",type="ai_message",operation="check",outcome="success"}'
+        values: '0x12'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: SafeAiRateLimitInstrumentationMissing
+        exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'safeai_rate_limit_redis_observation_healthy{job="safeai-backend",instance="a"}'
+        values: '0x12'
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: SafeAiRateLimitObservationUnhealthy
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: SafeAiRateLimitObservationUnhealthy
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: safeai-backend
+              job: safeai-backend
+              instance: a
+            exp_annotations:
+              summary: 'RateLimit Redis observation unavailable or stale'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_rate_limit_redis_observation_healthy{job="safeai-backend",instance="a"}'
+        values: '1x12'
+      - series: 'safeai_rate_limit_redis_last_observation_timestamp{job="safeai-backend",instance="a"}'
+        values: '0x12'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: SafeAiRateLimitObservationUnhealthy
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: SafeAiRateLimitObservationUnhealthy
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: safeai-backend
+              job: safeai-backend
+              instance: a
+            exp_annotations:
+              summary: 'RateLimit Redis observation unavailable or stale'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_rate_limit_redis_observation_healthy{job="safeai-backend",instance="a"}'
+        values: '1x12'
+      - series: 'safeai_rate_limit_redis_last_observation_timestamp{job="safeai-backend",instance="a"}'
+        values: '0+60x12'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: SafeAiRateLimitObservationUnhealthy
+        exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'safeai_rate_limit_redis_epoch_required{job="safeai-backend",instance="a"}'
+        values: '1x12'
+      - series: 'safeai_rate_limit_redis_epoch_state{job="safeai-backend",instance="a",state="active"}'
+        values: '0x12'
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: SafeAiRateLimitEpochUnavailable
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: SafeAiRateLimitEpochUnavailable
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: safeai-backend
+              job: safeai-backend
+              instance: a
+            exp_annotations:
+              summary: 'RateLimit epoch not active; admission remains fail closed'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_rate_limit_redis_epoch_required{job="safeai-backend",instance="a"}'
+        values: '0x12'
+      - series: 'safeai_rate_limit_redis_epoch_state{job="safeai-backend",instance="a",state="active"}'
+        values: '0x12'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: SafeAiRateLimitEpochUnavailable
+        exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'safeai_rate_limit_redis_memory_max_bytes{job="safeai-backend",instance="a"}'
+        values: '0x12'
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: SafeAiRateLimitRedisUnsafe
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: SafeAiRateLimitRedisUnsafe
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: safeai-backend
+              job: safeai-backend
+              instance: a
+            exp_annotations:
+              summary: 'Redis memory policy primary or AOF unsafe'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_rate_limit_redis_noeviction{job="safeai-backend",instance="a"}'
+        values: '0x12'
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: SafeAiRateLimitRedisUnsafe
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: SafeAiRateLimitRedisUnsafe
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: safeai-backend
+              job: safeai-backend
+              instance: a
+            exp_annotations:
+              summary: 'Redis memory policy primary or AOF unsafe'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_rate_limit_redis_primary{job="safeai-backend",instance="a"}'
+        values: '0x12'
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: SafeAiRateLimitRedisUnsafe
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: SafeAiRateLimitRedisUnsafe
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: safeai-backend
+              job: safeai-backend
+              instance: a
+            exp_annotations:
+              summary: 'Redis memory policy primary or AOF unsafe'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_rate_limit_redis_aof_healthy{job="safeai-backend",instance="a"}'
+        values: '0x12'
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: SafeAiRateLimitRedisUnsafe
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: SafeAiRateLimitRedisUnsafe
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: safeai-backend
+              job: safeai-backend
+              instance: a
+            exp_annotations:
+              summary: 'Redis memory policy primary or AOF unsafe'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_rate_limit_redis_evicted_keys{job="safeai-backend",instance="a"}'
+        values: '0 1x11'
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: SafeAiRateLimitRedisEvictions
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: SafeAiRateLimitRedisEvictions
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: safeai-backend
+              job: safeai-backend
+              instance: a
+            exp_annotations:
+              summary: 'Redis has evicted keys since process start'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_rate_limit_redis_memory_accounted_bytes{job="safeai-backend",instance="a"}'
+        values: '80x12'
+      - series: 'safeai_rate_limit_redis_memory_max_bytes{job="safeai-backend",instance="a"}'
+        values: '100x12'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: SafeAiRateLimitRedisMemoryHigh
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: SafeAiRateLimitRedisMemoryHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: safeai-backend
+              job: safeai-backend
+              instance: a
+            exp_annotations:
+              summary: 'Redis memory at least 80 percent of configured maximum'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_rate_limit_redis_memory_accounted_bytes{job="safeai-backend",instance="a"}'
+        values: '79x12'
+      - series: 'safeai_rate_limit_redis_memory_max_bytes{job="safeai-backend",instance="a"}'
+        values: '100x12'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: SafeAiRateLimitRedisMemoryHigh
+        exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'safeai_rate_limit_redis_memory_accounted_bytes{job="safeai-backend",instance="a"}'
+        values: '95x12'
+      - series: 'safeai_rate_limit_redis_memory_max_bytes{job="safeai-backend",instance="a"}'
+        values: '100x12'
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: SafeAiRateLimitRedisMemoryCritical
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: SafeAiRateLimitRedisMemoryCritical
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: safeai-backend
+              job: safeai-backend
+              instance: a
+            exp_annotations:
+              summary: 'Redis memory at least 95 percent of configured maximum'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_rate_limit_redis_memory_accounted_bytes{job="safeai-backend",instance="a"}'
+        values: '79x12'
+      - series: 'safeai_rate_limit_redis_memory_max_bytes{job="safeai-backend",instance="a"}'
+        values: '100x12'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: SafeAiRateLimitRedisMemoryCritical
+        exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'safeai_rate_limit_redis_allocation_active{job="safeai-backend",instance="a",type="login"}'
+        values: '80x12'
+      - series: 'safeai_rate_limit_redis_allocation_limit{job="safeai-backend",instance="a",type="login"}'
+        values: '100x12'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: SafeAiRateLimitAllocationHigh
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: SafeAiRateLimitAllocationHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: safeai-backend
+              type: login
+            exp_annotations:
+              summary: 'Anonymous allocation capacity at least 80 percent'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_rate_limit_rejected_total{job="safeai-backend",instance="a",type="login",dimension="capacity"}'
+        values: '0 5x11'
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: SafeAiRateLimitCapacityRejects
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: SafeAiRateLimitCapacityRejects
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: safeai-backend
+              type: login
+            exp_annotations:
+              summary: 'Anonymous allocation capacity rejected requests'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_rate_limit_rejected_total{job="safeai-backend",instance="a",type="login",dimension="capacity"}'
+        values: '0x12'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: SafeAiRateLimitCapacityRejects
+        exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'safeai_rate_limit_unavailable_total{job="safeai-backend",instance="a",type="login"}'
+        values: '0 5x11'
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: SafeAiRateLimitUnavailable
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: SafeAiRateLimitUnavailable
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: safeai-backend
+              type: login
+            exp_annotations:
+              summary: 'RateLimit Redis operation unavailable'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_rate_limit_unavailable_total{job="safeai-backend",instance="a",type="login"}'
+        values: '0x12'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: SafeAiRateLimitUnavailable
+        exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'safeai_rate_limit_audit_publish_failed_total{job="safeai-backend",instance="a",type="login"}'
+        values: '0 5x11'
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: SafeAiRateLimitAuditPublishFailed
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: SafeAiRateLimitAuditPublishFailed
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: safeai-backend
+              type: login
+            exp_annotations:
+              summary: 'RateLimit audit notification publication failed'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_rate_limit_audit_publish_failed_total{job="safeai-backend",instance="a",type="login"}'
+        values: '0x12'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: SafeAiRateLimitAuditPublishFailed
+        exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'safeai_rate_limit_rejected_total{job="safeai-backend",instance="a",type="login",dimension="ip"}'
+        values: '0+10x12'
+      - series: 'safeai_rate_limit_allowed_total{job="safeai-backend",instance="a",type="login"}'
+        values: '0+5x12'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: SafeAiRateLimitRejectionRatio
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: safeai-backend
+              type: login
+            exp_annotations:
+              summary: 'At least half of RateLimit decisions rejected'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_rate_limit_rejected_total{job="safeai-backend",instance="a",type="login",dimension="ip"}'
+        values: '0+1x12'
+      - series: 'safeai_rate_limit_allowed_total{job="safeai-backend",instance="a",type="login"}'
+        values: '0x12'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: SafeAiRateLimitRejectionRatio
+        exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'safeai_rate_limit_redis_duration_seconds_bucket{job="safeai-backend",instance="a",type="login",operation="check",outcome="success",le="0.25"}'
+        values: '0x12'
+      - series: 'safeai_rate_limit_redis_duration_seconds_bucket{job="safeai-backend",instance="a",type="login",operation="check",outcome="success",le="1"}'
+        values: '0+20x12'
+      - series: 'safeai_rate_limit_redis_duration_seconds_bucket{job="safeai-backend",instance="a",type="login",operation="check",outcome="success",le="+Inf"}'
+        values: '0+20x12'
+      - series: 'safeai_rate_limit_redis_duration_seconds_count{job="safeai-backend",instance="a",type="login",operation="check",outcome="success"}'
+        values: '0+20x12'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: SafeAiRateLimitRedisSlow
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: safeai-backend
+              type: login
+            exp_annotations:
+              summary: 'RateLimit successful check p95 above 250 milliseconds'
+  - interval: 1m
+    input_series:
+      - series: 'safeai_rate_limit_redis_duration_seconds_bucket{job="safeai-backend",instance="a",type="login",operation="check",outcome="success",le="0.25"}'
+        values: '0+20x12'
+      - series: 'safeai_rate_limit_redis_duration_seconds_bucket{job="safeai-backend",instance="a",type="login",operation="check",outcome="success",le="1"}'
+        values: '0+20x12'
+      - series: 'safeai_rate_limit_redis_duration_seconds_bucket{job="safeai-backend",instance="a",type="login",operation="check",outcome="success",le="+Inf"}'
+        values: '0+20x12'
+      - series: 'safeai_rate_limit_redis_duration_seconds_count{job="safeai-backend",instance="a",type="login",operation="check",outcome="success"}'
+        values: '0+20x12'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: SafeAiRateLimitRedisSlow
+        exp_alerts: []

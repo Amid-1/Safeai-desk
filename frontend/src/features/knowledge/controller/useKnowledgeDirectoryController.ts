@@ -1,7 +1,9 @@
 // frontend/src/features/knowledge/controller/useKnowledgeDirectoryController.ts
 // Состояние каталога баз знаний, фильтрация, пагинация и операции изменения.
 import { useCallback, useEffect, useState } from 'react'
-import { createKnowledgeBase, getKnowledgeBase, getKnowledgeBases, searchKnowledgeBases, updateKnowledgeBase } from '../../../entities/knowledge/api/knowledgeApi'
+import {
+    createKnowledgeBase, getKnowledgeBase, getKnowledgeBases, searchKnowledgeBases, updateKnowledgeBase,
+} from '../../../entities/knowledge/api/knowledgeApi'
 import type { KnowledgeBase } from '../../../entities/knowledge/api/knowledgeApi'
 import { getApiErrorMessage } from '../../../shared/api/http'
 import { useAuth } from '../../auth/state/useAuth'

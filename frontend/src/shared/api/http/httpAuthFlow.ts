@@ -7,7 +7,7 @@ import { ApiError } from '../httpErrors'
 import { parseSuccessBody, createApiErrorFromResponse } from '../httpResponseSupport'
 import { awaitWithDeadline, createDeadline, toCoordinationApiError, toNetworkApiError } from '../httpRequestSupport'
 import { publishAuthEvent, runWithAuthRefreshLock } from '../authCoordinator'
-import { API_TIMEOUTS, CSRF_COOKIE_NAME, CSRF_HEADER_NAME, REQUEST_ID_HEADER_NAME, UNAUTHORIZED_EVENT_NAME, CSRF_RETRYABLE_ERROR_CODES } from './httpConfig'
+import { API_TIMEOUTS, CSRF_COOKIE_NAME, HOST_CSRF_COOKIE_NAME, CSRF_HEADER_NAME, REQUEST_ID_HEADER_NAME, UNAUTHORIZED_EVENT_NAME, CSRF_RETRYABLE_ERROR_CODES } from './httpConfig'
 import { fetchWithApiError, createRequestId } from './httpTransport'
 
 export type UnauthorizedReason =
@@ -49,8 +49,12 @@ export function subscribeUnauthorized(
     }
 }
 
+function getCsrfCookie(): string | null {
+    return getCookie(HOST_CSRF_COOKIE_NAME) ?? getCookie(CSRF_COOKIE_NAME)
+}
+
 export async function ensureCsrfToken(): Promise<string> {
-    const existingToken = getCookie(CSRF_COOKIE_NAME)
+    const existingToken = getCsrfCookie()
 
     if (existingToken) {
         return existingToken
@@ -75,7 +79,7 @@ export async function rotateCsrfToken(
 export async function requireCsrfToken(
     deadline: number | null,
 ): Promise<string> {
-    const existingToken = getCookie(CSRF_COOKIE_NAME)
+    const existingToken = getCsrfCookie()
 
     if (existingToken) {
         return existingToken
@@ -90,7 +94,7 @@ export async function fetchCsrfToken(
     rotationBaseline?: string | null,
 ): Promise<string> {
     const previousToken = rotationBaseline
-        ?? getCookie(CSRF_COOKIE_NAME)
+        ?? getCsrfCookie()
 
     const headers = new Headers()
 
@@ -117,7 +121,7 @@ export async function fetchCsrfToken(
 
     await parseSuccessBody<unknown>(response)
 
-    const token = getCookie(CSRF_COOKIE_NAME)
+    const token = getCsrfCookie()
 
     if (!token) {
         throw new ApiError(
