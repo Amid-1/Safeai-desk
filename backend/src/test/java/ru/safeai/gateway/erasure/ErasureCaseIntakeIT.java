@@ -188,6 +188,31 @@ class ErasureCaseIntakeIT extends AbstractPostgresIntegrationTest {
                 'public.erasure_request_events_v103','TRUNCATE')
                 """, Boolean.class)).isFalse();
     }
+    @Test void sharedSpringFlywayUsesSeparateNonSuperuserMigrationOwner() {
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM pg_roles
+                WHERE rolname='safeai_migrator' AND rolcanlogin AND NOT rolsuper
+                  AND NOT rolcreaterole AND NOT rolcreatedb AND NOT rolreplication AND NOT rolbypassrls
+                """, Long.class)).isEqualTo(1L);
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+                WHERE n.nspname='public' AND p.proname IN ('guard_erasure_hold_v105','guard_erasure_review_v105')
+                  AND p.prosecdef AND p.proowner='safeai_migrator'::regrole
+                """, Long.class)).isEqualTo(2L);
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM public.flyway_schema_history
+                WHERE version IS NOT NULL AND success AND installed_by='safeai_migrator'
+                """, Long.class)).isEqualTo(108L);
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM public.flyway_schema_history WHERE version='0'
+                """, Long.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT has_table_privilege('safeai_app','public.erasure_review_authorities_v105','UPDATE')
+                  OR has_any_column_privilege('safeai_app','public.erasure_review_authorities_v105','UPDATE')
+                  OR has_function_privilege('safeai_app','public.guard_erasure_hold_v105()','EXECUTE')
+                """, Boolean.class)).isFalse();
+    }
+
     @Test void protectedSuperAdminAccountCannotCreateSelfErasureCase() {
         UUID root = UUID.randomUUID();
         insertUser(root, PLATFORM_ORGANIZATION_ID,

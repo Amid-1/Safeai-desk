@@ -33,9 +33,18 @@ final class ChatErasurePreconditions {
     }
 
     boolean hasRetentionHold(UUID chatId) {
+        // A read projection for UX/admission. V107 enforces the same union under
+        // PostgreSQL locks; no successful capability check authorizes the worker.
         return requiredBoolean(jdbc.queryForObject("""
-                SELECT EXISTS(SELECT 1 FROM public.chat_retention_holds_v86
-                    WHERE chat_id=? AND released_at IS NULL)
+                SELECT EXISTS(SELECT 1 FROM public.chat_retention_holds_v86 h
+                               WHERE h.chat_id=c.id AND h.organization_id=c.organization_id
+                                 AND h.released_at IS NULL)
+                    OR EXISTS(SELECT 1 FROM public.erasure_review_holds_v105 h
+                        JOIN public.erasure_requests_v103 r
+                          ON r.id=h.request_id AND r.organization_id=h.organization_id
+                        WHERE r.organization_id=c.organization_id AND r.resource_type='CHAT'
+                          AND r.resource_id=c.id AND h.released_at IS NULL)
+                FROM public.chat_sessions c WHERE c.id=?
                 """, Boolean.class, chatId), "CHAT_ERASURE_RETENTION_CHECK_UNKNOWN");
     }
 

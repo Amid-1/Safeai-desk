@@ -905,6 +905,10 @@ Spring Security увеличат регрессионный риск и не и�
 
 ```text
 common/
+├── db/
+│   ├── ChatExecutionV106MigrationIT.java
+│   ├── DatabaseMigrationMainTest.java
+│   └── RuntimeAclPolicyTest.java
 ├── exception/
 │   ├── ApiErrorResponseFactoryTest.java
 │   ├── ApiErrorResponseTest.java
@@ -917,7 +921,7 @@ common/
 ├── persistence/
 │   ├── DatabaseConstraintClassifierTest.java
 │   ├── PostgresAdvisoryLockExecutorIT.java
-│   └── PostgresAdvisoryLockExecutorTest.java
+│   └── 
 ├── security/
 │   ├── AccessTokenSubjectTest.java
 │   ├── ClientIpPropertiesTest.java

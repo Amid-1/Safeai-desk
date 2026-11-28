@@ -86,6 +86,8 @@ public abstract class AbstractPostgresIntegrationTest {
 
     static {
         POSTGRES.start();
+        PostgresTestMigrationBootstrap.prepare(POSTGRES.getJdbcUrl(),
+                POSTGRES.getUsername(), POSTGRES.getPassword());
     }
 
     @DynamicPropertySource
@@ -98,8 +100,12 @@ public abstract class AbstractPostgresIntegrationTest {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
         registry.add("spring.jpa.open-in-view", () -> "false");
         registry.add("spring.flyway.enabled", () -> "true");
-        registry.add("spring.flyway.locations", () ->
-                "classpath:db/migration");
+        // Root credentials remain solely the existing shared fixture/data-source
+        // path. Flyway uses the same dedicated migration identity as production.
+        registry.add("spring.flyway.url", POSTGRES::getJdbcUrl);
+        registry.add("spring.flyway.user", () -> PostgresTestMigrationBootstrap.MIGRATOR);
+        registry.add("spring.flyway.password", () -> PostgresTestMigrationBootstrap.MIGRATOR_PASSWORD);
+        registry.add("spring.flyway.locations", PostgresTestMigrationBootstrap::productionLocation);
         registry.add(
                 "spring.flyway.postgresql.transactional-lock",
                 () -> "false"

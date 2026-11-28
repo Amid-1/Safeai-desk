@@ -187,6 +187,8 @@ export SAFEAI_JWT_PRIVATE_KEY="$(cat .local-secrets/jwt-private.pem)"
 
 echo "Requests: $SAFEAI_ERASURE_REQUESTS_ENABLED"
 echo "Approvals: $SAFEAI_ERASURE_APPROVALS_ENABLED"
+echo "Migrator: $SPRING_FLYWAY_USER"
+echo "Runtime: $SPRING_DATASOURCE_USERNAME"
 
 ./mvnw spring-boot:run
 ```

@@ -157,6 +157,9 @@ public class ErasureCaseMutations {
         }
 
         UUID organizationId = actor.getOrganizationId();
+        if ("SUBMITTED".equals(state) && repository.hasActiveReviewHold(id, organizationId)) {
+            throw new ConflictException("Нельзя отозвать заявку до снятия юридического удержания.");
+        }
         if (!repository.transition(id, organizationId, state, "WITHDRAWN", expectedVersion, key)) {
             throw changed();
         }

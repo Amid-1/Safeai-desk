@@ -32,6 +32,9 @@ class RuntimeAclPolicyTest {
     private static final String V103 = "/db/migration/V103__erasure_case_intake.sql";
     private static final String V104 = "/db/migration/V104__erasure_actor_detachment_guards.sql";
     private static final String V105 = "/db/migration/V105__erasure_review_intake.sql";
+    private static final String V106 = "/db/migration/V106__chat_execution_permit_ledger.sql";
+    private static final String V107 = "/db/migration/V107__chat_execution_hardening.sql";
+    private static final String V108 = "/db/migration/V108__erasure_review_guard_lock_privileges.sql";
     private static final String V87_CONF =
             "/db/migration/V87__chat_archive_owner_online_index.sql.conf";
     private static final String V94_CONF = V94 + ".conf";
@@ -44,7 +47,7 @@ class RuntimeAclPolicyTest {
     void acceptsCompleteReviewedMigrationInventory() throws IOException {
         var reviewed = RuntimeAclPolicy.verifyReviewedResources();
 
-        assertEquals(105, reviewed.size());
+        assertEquals(108, reviewed.size());
         assertEquals(RuntimeAclPolicy.REVIEWED_THROUGH, reviewed.size());
         assertEquals("V94__operation_correlation.sql", reviewed.get(94));
         assertEquals("V95__chat_quota_physical_attempt_gate.sql", reviewed.get(95));
@@ -58,12 +61,15 @@ class RuntimeAclPolicyTest {
         assertEquals("V103__erasure_case_intake.sql", reviewed.get(103));
         assertEquals("V104__erasure_actor_detachment_guards.sql", reviewed.get(104));
         assertEquals("V105__erasure_review_intake.sql", reviewed.get(105));
+        assertEquals("V106__chat_execution_permit_ledger.sql", reviewed.get(106));
+        assertEquals("V107__chat_execution_hardening.sql", reviewed.get(107));
+        assertEquals("V108__erasure_review_guard_lock_privileges.sql", reviewed.get(108));
     }
 
     @Test
     void blocksMissingAclOrManifestBeforeMigration() {
         for (String absent : new String[]{
-                RuntimeAclPolicy.ACL_RESOURCE, MANIFEST, V92, V94, V95, V96, V97, V98, V99, V100, V101, V102, V103, V104, V105
+                RuntimeAclPolicy.ACL_RESOURCE, MANIFEST, V92, V94, V95, V96, V97, V98, V99, V100, V101, V102, V103, V104, V105, V106, V107, V108
         }) {
             fails(
                     path -> path.equals(absent) ? null : read(path),
@@ -76,7 +82,7 @@ class RuntimeAclPolicyTest {
     void blocksModifiedMigrationOrConfigAndNewOrMissingConfig() {
         for (String changed : new String[]{
                 V92, V94, V95, V96, V97, V98, V99, V87_CONF, V94_CONF, V95_CONF, V96_CONF,
-                V97 + ".conf", V98 + ".conf", V99 + ".conf", V100, V100 + ".conf", V101, V101 + ".conf", V102, V103, V104, V105
+                V97 + ".conf", V98 + ".conf", V99 + ".conf", V100, V100 + ".conf", V101, V101 + ".conf", V102, V103, V104, V105, V106, V107, V108
         }) {
             fails(
                     path -> path.equals(changed)
@@ -96,6 +102,18 @@ class RuntimeAclPolicyTest {
 
         fails(
                 path -> path.equals(V92 + ".conf") ? new byte[0] : read(path),
+                "unreviewed migration configuration"
+        );
+        fails(
+                path -> path.equals(V106 + ".conf") ? new byte[0] : read(path),
+                "unreviewed migration configuration"
+        );
+        fails(
+                path -> path.equals(V107 + ".conf") ? new byte[0] : read(path),
+                "unreviewed migration configuration"
+        );
+        fails(
+                path -> path.equals(V108 + ".conf") ? new byte[0] : read(path),
                 "unreviewed migration configuration"
         );
     }

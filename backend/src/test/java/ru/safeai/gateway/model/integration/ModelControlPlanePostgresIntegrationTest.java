@@ -1,5 +1,6 @@
 package ru.safeai.gateway.model.integration;
 
+import ru.safeai.gateway.testsupport.PostgresTestMigrationBootstrap;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.database.postgresql.PostgreSQLConfigurationExtension;
 import org.assertj.core.api.ThrowableAssert;
@@ -113,6 +114,7 @@ class ModelControlPlanePostgresIntegrationTest {
 
     @BeforeAll
     static void migrateSchema() {
+        PostgresTestMigrationBootstrap.prepare(POSTGRES);
         DriverManagerDataSource dataSource = new DriverManagerDataSource(
                 POSTGRES.getJdbcUrl(),
                 POSTGRES.getUsername(),
@@ -120,8 +122,8 @@ class ModelControlPlanePostgresIntegrationTest {
         );
 
         var configuration = Flyway.configure()
-                .dataSource(dataSource)
-                .locations("classpath:db/migration");
+                .dataSource(PostgresTestMigrationBootstrap.migrationDataSource(POSTGRES))
+                .locations(PostgresTestMigrationBootstrap.productionLocation());
 
         PostgreSQLConfigurationExtension postgresql =
                 configuration.getConfigurationExtension(
@@ -132,6 +134,7 @@ class ModelControlPlanePostgresIntegrationTest {
         configuration.load().migrate();
 
         jdbc = new JdbcTemplate(dataSource);
+        PostgresTestMigrationBootstrap.verifyMigratedSchema(jdbc, false);
         transaction = new TransactionTemplate(
                 new DataSourceTransactionManager(dataSource)
         );

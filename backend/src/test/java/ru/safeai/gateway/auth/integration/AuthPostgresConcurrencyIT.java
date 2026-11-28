@@ -1,5 +1,6 @@
 package ru.safeai.gateway.auth.integration;
 
+import ru.safeai.gateway.testsupport.PostgresTestMigrationBootstrap;
 import jakarta.persistence.EntityManager;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.AfterEach;
@@ -11,7 +12,6 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
@@ -25,6 +25,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.web.csrf.CsrfTokenRepository;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
@@ -142,9 +144,14 @@ class AuthPostgresConcurrencyIT {
     private static final int CONCURRENT_CLEANUP_BATCH_SIZE = 4;
 
     @Container
-    @ServiceConnection
     static final PostgreSQLContainer POSTGRES =
             new PostgreSQLContainer("pgvector/pgvector:pg17");
+
+    @DynamicPropertySource
+    static void isolatedMigrationProperties(DynamicPropertyRegistry registry) {
+        PostgresTestMigrationBootstrap.configureSpring(registry, POSTGRES);
+    }
+
 
     @Autowired
     private RefreshTokenService refreshTokenService;
@@ -222,6 +229,11 @@ class AuthPostgresConcurrencyIT {
         Clock clock() {
             return Clock.fixed(NOW, ZoneOffset.UTC);
         }
+    }
+
+    @Test
+    void migrationHistoryUsesIsolatedOwner() {
+        PostgresTestMigrationBootstrap.verifyMigratedSchema(jdbcTemplate, false);
     }
 
     @AfterEach

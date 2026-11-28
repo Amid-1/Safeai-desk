@@ -1,5 +1,6 @@
 package ru.safeai.gateway.migration;
 
+import ru.safeai.gateway.testsupport.PostgresTestMigrationBootstrap;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationInfo;
 import org.flywaydb.core.api.MigrationVersion;
@@ -33,7 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
  *
  * <p>V0 is an intentional test-only role bootstrap. It must run before V1,
  * not be hidden or excluded to make the migration count look convenient.
- * Production migrations begin at V1 and currently extend through V105.</p>
+ * Production migrations begin at V1 and currently extend through V108.</p>
  */
 @Tag("integration")
 @Testcontainers
@@ -60,6 +61,7 @@ class FlywaySequentialUpgradeIT {
                 """, Long.class), "public schema must exist before migration");
 
         Flyway catalog = flyway(dataSource, null);
+        var migrationDataSource = PostgresTestMigrationBootstrap.migrationDataSource(POSTGRES);
         List<String> versions = Arrays.stream(catalog.info().all())
                 .map(MigrationInfo::getVersion)
                 .filter(Objects::nonNull)
@@ -67,10 +69,10 @@ class FlywaySequentialUpgradeIT {
                 .toList();
 
         // Validate the complete catalog, not just the migration that failed.
-        assertThat(versions).as("Expected test V0 and production versions through V105")
+        assertThat(versions).as("Expected test V0 and production versions through V108")
                 .hasSizeGreaterThanOrEqualTo(105)
                 .startsWith("0", "1")
-                .contains("92", "93", "94", "95", "96", "97", "98", "99", "100", "101", "102", "103", "104", "105");
+                .contains("92", "93", "94", "95", "96", "97", "98", "99", "100", "101", "102", "103", "104", "105", "106", "107", "108");
 
         UUID existingOrganization = UUID.randomUUID();
         UUID existingActor = UUID.randomUUID();
@@ -86,7 +88,17 @@ class FlywaySequentialUpgradeIT {
                     .as("Migration versions must be contiguous and ordered: V%s", index)
                     .isEqualTo(Integer.toString(index));
 
-            Flyway step = flyway(dataSource, MigrationVersion.fromVersion(version));
+            Flyway step = flyway(index == 0 ? dataSource : migrationDataSource,
+                    MigrationVersion.fromVersion(version));
+            if (index == 108) {
+                // Negative control: root must not be accepted as the V108 owner.
+                Flyway forbidden = flyway(dataSource, MigrationVersion.fromVersion(version));
+                FlywayException failure = assertThrows(FlywayException.class, forbidden::migrate);
+                assertSqlState(failure, "P0001");
+                assertThat(failure).hasMessageContaining("V108 requires isolated schema owner and successful V107");
+                assertThat(jdbc.queryForObject("SELECT count(*) FROM public.flyway_schema_history WHERE version='108'", Long.class)).isZero();
+                assertThat(jdbc.queryForObject("SELECT NOT prosecdef FROM pg_proc WHERE oid='public.guard_erasure_hold_v105()'::regprocedure", Boolean.class)).isTrue();
+            }
             if (index == 94) {
                 assertV94LockTimeoutRollsBackAllDdl(dataSource, jdbc, step);
                 assertThat(legacyEvidence(jdbc, existingOrganization, auditId, outboxId, false))
@@ -129,6 +141,11 @@ class FlywaySequentialUpgradeIT {
                         """, Integer.class))
                         .as("Test V0 must bootstrap an isolated non-superuser login")
                         .isEqualTo(1);
+                PostgresTestMigrationBootstrap.prepareAfterRecordedV0(POSTGRES);
+            }
+            if (index > 0) {
+                assertThat(jdbc.queryForObject("SELECT installed_by FROM public.flyway_schema_history WHERE version=? AND success", String.class, version))
+                        .isEqualTo(PostgresTestMigrationBootstrap.MIGRATOR);
             }
 
             if (index == 21) {
@@ -317,7 +334,8 @@ class FlywaySequentialUpgradeIT {
             }
         }
 
-        Flyway finalFlyway = flyway(dataSource, null);
+        Flyway finalFlyway = flyway(migrationDataSource, null);
+        PostgresTestMigrationBootstrap.verifyMigratedSchema(jdbc, true);
         finalFlyway.validate();
         assertThat(finalFlyway.migrate().migrationsExecuted)
                 .as("A second full migration must be an idempotent no-op")

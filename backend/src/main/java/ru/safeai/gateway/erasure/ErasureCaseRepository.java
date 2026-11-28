@@ -50,6 +50,10 @@ public class ErasureCaseRepository {
                       AND operation = ? AND scope = ?
                       AND resource_version = ? AND preview_digest = ?
                       AND expires_at > transaction_timestamp()
+                      AND isfinite(created_at) AND isfinite(expires_at)
+                      AND created_at <= clock_timestamp()
+                      AND expires_at <= created_at + interval '15 minutes'
+                      AND expires_at > clock_timestamp()
                 )
                 """, Boolean.class, id, organizationId, userId,
                 target.resourceType().name(), target.resourceId(),
@@ -86,6 +90,17 @@ public class ErasureCaseRepository {
                     (id, request_id, organization_id, actor_user_id, event_type, version)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """, UUID.randomUUID(), requestId, organizationId, actorId, eventType, version);
+    }
+
+    /** Caller holds the base case lock; V108 serializes legal hold changes on it. */
+    public boolean hasActiveReviewHold(UUID requestId, UUID organizationId) {
+        Boolean active = jdbc.queryForObject("""
+                SELECT EXISTS (
+                    SELECT 1 FROM public.erasure_review_holds_v105
+                    WHERE request_id = ? AND organization_id = ? AND released_at IS NULL
+                )
+                """, Boolean.class, requestId, organizationId);
+        return !Boolean.FALSE.equals(active);
     }
 
     public boolean transition(
